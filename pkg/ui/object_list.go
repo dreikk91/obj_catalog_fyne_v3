@@ -10,8 +10,10 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
@@ -34,6 +36,8 @@ type ObjectListPanel struct {
 	CurrentFilter string
 	LoadingLabel  *widget.Label
 	SelectedRow   int
+	TitleText     *canvas.Text
+	lastFontSize  float32
 
 	// Callback при виборі об'єкта
 	OnObjectSelected func(object models.Object)
@@ -48,9 +52,10 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 	}
 
 	// Заголовок
-	titleText := canvas.NewText("📋 ОБ'ЄКТИ", nil)
-	titleText.TextSize = 14
-	titleText.TextStyle = fyne.TextStyle{Bold: true}
+	panel.TitleText = canvas.NewText("📋 ОБ'ЄКТИ", nil)
+	themeSize := fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
+	panel.TitleText.TextSize = themeSize + 1
+	panel.TitleText.TextStyle = fyne.TextStyle{Bold: true}
 
 	// Поле пошуку
 	panel.SearchEntry = widget.NewEntry()
@@ -89,7 +94,7 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
 			txt := canvas.NewText("Cell Data", color.White)
-			txt.TextSize = 13
+			// Буде оновлено в UpdateCell
 			return container.NewStack(bg, container.NewPadded(txt))
 		},
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
@@ -137,6 +142,12 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 				cellText = item.ContractNum
 			}
 			txt.Text = cellText
+			txt.Text = cellText
+			if panel.lastFontSize > 0 {
+				txt.TextSize = panel.lastFontSize
+			} else {
+				txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
+			}
 			txt.Refresh()
 		},
 	)
@@ -166,7 +177,7 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 
 	// Збираємо все разом
 	header := container.NewVBox(
-		container.NewPadded(titleText),
+		container.NewPadded(panel.TitleText),
 		panel.SearchEntry,
 		panel.FilterSelect,
 	)
@@ -285,7 +296,7 @@ func (p *ObjectListPanel) applyFilters() {
 			fmt.Sprintf("Всі (%d)", countAll),
 			fmt.Sprintf("Тривога (%d)", countAlarm),
 			fmt.Sprintf("Без зв'язку (%d)", countOffline),
-			fmt.Sprintf("Знято (%d)", countDisarmed),
+			fmt.Sprintf("Знято зі спостереження (%d)", countDisarmed),
 		}
 
 		// Знаходимо поточний вибраний фільтр в оновленому списку, щоб він не зникав
@@ -339,7 +350,19 @@ func (l *objectListTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return fyne.NewSize(450, 200)
 }
 
-// Refresh оновлює дані та таблицю (виклик ззовні)
 func (p *ObjectListPanel) Refresh() {
+	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+	p.OnThemeChanged(uiCfg.FontSizeObjects)
 	go p.RefreshData()
+}
+
+func (p *ObjectListPanel) OnThemeChanged(fontSize float32) {
+	p.lastFontSize = fontSize
+	if p.TitleText != nil {
+		p.TitleText.TextSize = fontSize + 1
+		p.TitleText.Refresh()
+	}
+	if p.Table != nil {
+		p.Table.Refresh()
+	}
 }

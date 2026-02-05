@@ -2,3 +2,4 @@ arm_monitor
 log/*
 *.exe
 *.dll
+pkg/data/mock.go1

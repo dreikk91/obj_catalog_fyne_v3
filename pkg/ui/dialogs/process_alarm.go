@@ -80,13 +80,3 @@ func ShowProcessAlarmDialog(parent fyne.Window, alarm models.Alarm, onConfirm fu
 	d.Resize(fyne.NewSize(400, 350))
 	d.Show()
 }
-
-// ShowInfoDialog показує просте інформаційне повідомлення
-func ShowInfoDialog(parent fyne.Window, title string, message string) {
-	dialog.ShowInformation(title, message, parent)
-}
-
-// ShowErrorDialog показує діалог з помилкою
-func ShowErrorDialog(parent fyne.Window, title string, err error) {
-	dialog.ShowError(err, parent)
-}

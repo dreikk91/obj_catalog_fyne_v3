@@ -12,7 +12,7 @@ import (
 // ShowTestMessagesDialog відкриває вікно з тестовими повідомленнями об'єкта
 func ShowTestMessagesDialog(parent fyne.Window, provider data.DataProvider, objectID string) {
 	win := fyne.CurrentApp().NewWindow("Тестові повідомлення: " + objectID)
-	win.Resize(fyne.NewSize(600, 400))
+	win.Resize(fyne.NewSize(700, 400))
 
 	loading := widget.NewProgressBarInfinite()
 	content := container.NewStack(loading)
@@ -50,7 +50,7 @@ func ShowTestMessagesDialog(parent fyne.Window, provider data.DataProvider, obje
 			)
 
 			table.SetColumnWidth(0, 150)
-			table.SetColumnWidth(1, 150)
+			table.SetColumnWidth(1, 250)
 			table.SetColumnWidth(2, 280)
 
 			win.SetContent(container.NewBorder(

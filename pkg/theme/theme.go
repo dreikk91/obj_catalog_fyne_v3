@@ -30,11 +30,13 @@ var (
 // ================== ТЕМНА ТЕМА ==================
 
 // DarkTheme - темна тема для нічної роботи диспетчерів
-type DarkTheme struct{}
+type DarkTheme struct {
+	fontSize float32
+}
 
-// NewDarkTheme створює нову темну тему
-func NewDarkTheme() fyne.Theme {
-	return &DarkTheme{}
+// NewDarkTheme створює нову темну тему з вказаним розміром шрифту
+func NewDarkTheme(fontSize float32) fyne.Theme {
+	return &DarkTheme{fontSize: fontSize}
 }
 
 // Color повертає колір для заданого елемента
@@ -79,7 +81,7 @@ func (t *DarkTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 func (t *DarkTheme) Size(name fyne.ThemeSizeName) float32 {
 	switch name {
 	case theme.SizeNameText:
-		return 13 // Трохи менший текст для щільності
+		return t.fontSize
 	case theme.SizeNamePadding:
 		return 4 // Менші відступи для компактності
 	case theme.SizeNameInnerPadding:
@@ -92,11 +94,13 @@ func (t *DarkTheme) Size(name fyne.ThemeSizeName) float32 {
 // ================== СВІТЛА ТЕМА ==================
 
 // LightTheme - світла тема для денної роботи
-type LightTheme struct{}
+type LightTheme struct {
+	fontSize float32
+}
 
-// NewLightTheme створює нову світлу тему
-func NewLightTheme() fyne.Theme {
-	return &LightTheme{}
+// NewLightTheme створює нову світлу тему з вказаним розміром шрифту
+func NewLightTheme(fontSize float32) fyne.Theme {
+	return &LightTheme{fontSize: fontSize}
 }
 
 // Color повертає колір для заданого елемента
@@ -141,7 +145,7 @@ func (t *LightTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 func (t *LightTheme) Size(name fyne.ThemeSizeName) float32 {
 	switch name {
 	case theme.SizeNameText:
-		return 13 // Трохи менший текст для щільності
+		return t.fontSize
 	case theme.SizeNamePadding:
 		return 4 // Менші відступи для компактності
 	case theme.SizeNameInnerPadding:

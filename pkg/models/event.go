@@ -18,6 +18,7 @@ const (
 	EventBatteryLow EventType = "batt_low"   // Низький заряд АКБ
 	EventOnline     EventType = "online"     // Прилад на зв'язку
 	EventOffline    EventType = "offline"    // Втрата зв'язку
+	SystemEvent     EventType = "system"     // Системна подія
 )
 
 // Event представляє подію в журналі
@@ -58,6 +59,8 @@ func (e *Event) GetTypeDisplay() string {
 		return "НА ЗВ'ЯЗКУ"
 	case EventOffline:
 		return "ВТРАТА ЗВ'ЯЗКУ"
+	case SystemEvent:
+		return "СИСТЕМА"
 	default:
 		return "ПОДІЯ"
 	}

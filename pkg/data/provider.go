@@ -3,7 +3,7 @@ package data
 
 import (
 	"obj_catalog_fyne_v3/pkg/models"
-	"strconv"
+	// "strconv"
 	"time"
 )
 
@@ -42,58 +42,58 @@ type DataProvider interface {
 
 // MockDataProvider адаптує MockData до інтерфейсу DataProvider
 // Це дозволяє легко замінити MockData на реальну БД пізніше.
-type MockDataProvider struct {
-	mock *MockData
-}
+// type MockDataProvider struct {
+// 	mock *MockData
+// }
 
-func NewMockDataProvider(mock *MockData) *MockDataProvider {
-	return &MockDataProvider{mock: mock}
-}
+// func NewMockDataProvider(mock *MockData) *MockDataProvider {
+// 	return &MockDataProvider{mock: mock}
+// }
 
-func (p *MockDataProvider) GetObjects() []models.Object {
-	return p.mock.GetObjects()
-}
+// func (p *MockDataProvider) GetObjects() []models.Object {
+// 	return p.mock.GetObjects()
+// }
 
-func (p *MockDataProvider) GetObjectByID(id string) *models.Object {
-	return p.mock.GetObjectByIDStr(id)
-}
+// func (p *MockDataProvider) GetObjectByID(id string) *models.Object {
+// 	return p.mock.GetObjectByIDStr(id)
+// }
 
-func (p *MockDataProvider) GetEvents() []models.Event {
-	return p.mock.GetEvents()
-}
+// func (p *MockDataProvider) GetEvents() []models.Event {
+// 	return p.mock.GetEvents()
+// }
 
-func (p *MockDataProvider) GetObjectEvents(objectID string) []models.Event {
-	id, _ := strconv.Atoi(objectID)
-	return p.mock.GetObjectEvents(id)
-}
+// func (p *MockDataProvider) GetObjectEvents(objectID string) []models.Event {
+// 	id, _ := strconv.Atoi(objectID)
+// 	return p.mock.GetObjectEvents(id)
+// }
 
-func (p *MockDataProvider) GetAlarms() []models.Alarm {
-	return p.mock.GetAlarms()
-}
+// func (p *MockDataProvider) GetAlarms() []models.Alarm {
+// 	return p.mock.GetAlarms()
+// }
 
-func (p *MockDataProvider) ProcessAlarm(id string, user string, note string) {
-	p.mock.ProcessAlarmStr(id, user, note)
-}
-func (p *MockDataProvider) GetZones(objectID string) []models.Zone {
-	obj := p.mock.GetObjectByIDStr(objectID)
-	if obj != nil {
-		return obj.Zones
-	}
-	return nil
-}
+// func (p *MockDataProvider) ProcessAlarm(id string, user string, note string) {
+// 	p.mock.ProcessAlarmStr(id, user, note)
+// }
+// func (p *MockDataProvider) GetZones(objectID string) []models.Zone {
+// 	obj := p.mock.GetObjectByIDStr(objectID)
+// 	if obj != nil {
+// 		return obj.Zones
+// 	}
+// 	return nil
+// }
 
-func (p *MockDataProvider) GetEmployees(objectID string) []models.Contact {
-	obj := p.mock.GetObjectByIDStr(objectID)
-	if obj != nil {
-		return obj.Contacts
-	}
-	return nil
-}
+// func (p *MockDataProvider) GetEmployees(objectID string) []models.Contact {
+// 	obj := p.mock.GetObjectByIDStr(objectID)
+// 	if obj != nil {
+// 		return obj.Contacts
+// 	}
+// 	return nil
+// }
 
-func (p *MockDataProvider) GetTestMessages(objectID string) []models.TestMessage {
-	return nil // Mock not implemented
-}
+// func (p *MockDataProvider) GetTestMessages(objectID string) []models.TestMessage {
+// 	return nil // Mock not implemented
+// }
 
-func (p *MockDataProvider) GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time) {
-	return "Mock Signal", "Mock Test", time.Now(), time.Now()
-}
+// func (p *MockDataProvider) GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time) {
+// 	return "Mock Signal", "Mock Test", time.Now(), time.Now()
+// }

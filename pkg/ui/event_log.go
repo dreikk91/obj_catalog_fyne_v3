@@ -3,11 +3,13 @@ package ui
 
 import (
 	"image/color"
+	"obj_catalog_fyne_v3/pkg/config"
 	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/data"
@@ -28,6 +30,8 @@ type EventLogPanel struct {
 	CurrentEvents []models.Event
 	mutex         sync.RWMutex
 	isRefreshing  bool
+	TitleText     *canvas.Text
+	lastFontSize  float32
 }
 
 // NewEventLogPanel створює панель журналу подій
@@ -38,9 +42,10 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 	}
 
 	// Заголовок
-	titleText := canvas.NewText("📜 ЖУРНАЛ ПОДІЙ", nil)
-	titleText.TextSize = 14
-	titleText.TextStyle = fyne.TextStyle{Bold: true}
+	panel.TitleText = canvas.NewText("📜 ЖУРНАЛ ПОДІЙ", nil)
+	themeSize := fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
+	panel.TitleText.TextSize = themeSize + 1
+	panel.TitleText.TextStyle = fyne.TextStyle{Bold: true}
 
 	// Кнопка паузи
 	panel.PauseBtn = widget.NewButton("⏸ Пауза", func() {
@@ -54,7 +59,7 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 
 	header := container.NewBorder(
 		nil, nil,
-		container.NewPadded(titleText),
+		container.NewPadded(panel.TitleText),
 		panel.PauseBtn,
 		nil,
 	)
@@ -69,7 +74,7 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
 			txt := canvas.NewText("Подія", color.White)
-			txt.TextSize = 13 // Співпадає з темою
+			// Буде оновлено в UpdateCell
 			return container.NewStack(bg, container.NewPadded(txt))
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
@@ -103,6 +108,11 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 					text += " — " + event.Details
 				}
 				txt.Text = text
+				if panel.lastFontSize > 0 {
+					txt.TextSize = panel.lastFontSize
+				} else {
+					txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
+				}
 				txt.Refresh()
 			}
 		},
@@ -130,37 +140,39 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 }
 
 // Refresh оновлює журнал асинхронно
-func (e *EventLogPanel) Refresh() {
-	if e.Data == nil || e.IsPaused {
+func (p *EventLogPanel) Refresh() {
+	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+	p.OnThemeChanged(uiCfg.FontSizeEvents)
+	if p.Data == nil || p.IsPaused || p.isRefreshing {
 		return
 	}
 
-	e.mutex.Lock()
-	if e.isRefreshing {
-		e.mutex.Unlock()
+	p.mutex.Lock()
+	if p.isRefreshing {
+		p.mutex.Unlock()
 		return
 	}
-	e.isRefreshing = true
-	e.mutex.Unlock()
+	p.isRefreshing = true
+	p.mutex.Unlock()
 
 	defer func() {
-		e.mutex.Lock()
-		e.isRefreshing = false
-		e.mutex.Unlock()
+		p.mutex.Lock()
+		p.isRefreshing = false
+		p.mutex.Unlock()
 	}()
 
 	// Отримуємо дані з БД (може заблокувати горутину, але не UI)
-	events := e.Data.GetEvents()
+	events := p.Data.GetEvents()
 
 	// Оновлюємо кеш
-	e.mutex.Lock()
-	e.CurrentEvents = events
-	e.mutex.Unlock()
+	p.mutex.Lock()
+	p.CurrentEvents = events
+	p.mutex.Unlock()
 
 	// Оновлюємо UI у головному вікні
 	fyne.Do(func() {
-		if e.List != nil {
-			e.List.Refresh()
+		if p.List != nil {
+			p.List.Refresh()
 		}
 	})
 }
@@ -180,6 +192,17 @@ func getEventIcon(eventType models.EventType) string {
 		return "🟢"
 	default:
 		return "⚪"
+	}
+}
+
+func (p *EventLogPanel) OnThemeChanged(fontSize float32) {
+	p.lastFontSize = fontSize
+	if p.TitleText != nil {
+		p.TitleText.TextSize = fontSize + 1
+		p.TitleText.Refresh()
+	}
+	if p.List != nil {
+		p.List.Refresh()
 	}
 }
 

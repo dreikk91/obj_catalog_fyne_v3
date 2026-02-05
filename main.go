@@ -2,15 +2,16 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
+	// "math/rand"
 	"runtime/debug"
-	"time"
+	// "time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
+	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/logger"
@@ -32,7 +33,7 @@ type Application struct {
 	// Сховище даних (інтерфейс)
 	dataProvider data.DataProvider
 	// Пряме посилання на MockData ТІЛЬКИ для симуляції
-	mockData *data.MockData
+	// mockData *data.MockData
 
 	// UI компоненти (нові структури)
 	alarmPanel *ui.AlarmPanelWidget
@@ -68,22 +69,23 @@ func main() {
 
 // NewApplication створює новий екземпляр додатку
 func NewApplication() *Application {
-	// Ініціалізація Fyne
-	fyneApp := app.New()
+	// Ініціалізація Fyne з унікальним ID для збереження налаштувань
+	fyneApp := app.NewWithID("com.most.obj_catalog_fyne_v3")
 
 	// Створюємо головне вікно
 	mainWindow := fyneApp.NewWindow("АРМ Пожежної Безпеки v1.0")
 	mainWindow.Resize(fyne.NewSize(1024, 768))
 
-	// Рядок підключення до Firebird
-	dsn := "SYSDBA:masterkey@localhost:3050/C:/MOST.PM/BASE/MOST5.FDB?charset=WIN1251&auth_plugin_name=Srp"
+	// Завантажуємо налаштування БД
+	dbCfg := config.LoadDBConfig(fyneApp.Preferences())
+	dsn := dbCfg.ToDSN()
 
-	// Ініціалізуємо БД (це швидко, просто створює структуру)
+	// Ініціалізуємо БД
 	db := database.InitDB(dsn)
 	database.StartHealthCheck(db)
 
 	// Створюємо mock дані
-	mockData := data.NewMockData()
+	// mockData := data.NewMockData()
 
 	// ВИБІР ПРОВАЙДЕРА
 	dataProvider := data.NewDBDataProvider(db, dsn)
@@ -93,7 +95,7 @@ func NewApplication() *Application {
 		mainWindow:   mainWindow,
 		db:           db,
 		dataProvider: dataProvider,
-		mockData:     mockData,
+		// mockData:     mockData,
 		isDarkTheme:  true,
 	}
 
@@ -107,7 +109,7 @@ func NewApplication() *Application {
 	// А дані будуть підтягуватись у фоні (вже запущено в конструкторах панелей)
 
 	// Запускаємо симуляцію подій / фонове оновлення
-	application.startEventSimulation()
+	// application.startEventSimulation()
 
 	return application
 }
@@ -115,10 +117,11 @@ func NewApplication() *Application {
 // setTheme встановлює тему (темну або світлу)
 func (a *Application) setTheme(dark bool) {
 	a.isDarkTheme = dark
+	uiCfg := config.LoadUIConfig(a.fyneApp.Preferences())
 	if dark {
-		a.fyneApp.Settings().SetTheme(theme.NewDarkTheme())
+		a.fyneApp.Settings().SetTheme(theme.NewDarkTheme(uiCfg.FontSize))
 	} else {
-		a.fyneApp.Settings().SetTheme(theme.NewLightTheme())
+		a.fyneApp.Settings().SetTheme(theme.NewLightTheme(uiCfg.FontSize))
 	}
 }
 
@@ -137,6 +140,13 @@ func (a *Application) buildUI() {
 
 	a.alarmPanel.OnAlarmSelected = func(alarm models.Alarm) {
 		obj := a.dataProvider.GetObjectByID(fmt.Sprintf("%d", alarm.ObjectID))
+		if obj != nil {
+			a.workArea.SetObject(*obj)
+		}
+	}
+
+	a.eventLog.OnEventSelected = func(event models.Event) {
+		obj := a.dataProvider.GetObjectByID(fmt.Sprintf("%d", event.ObjectID))
 		if obj != nil {
 			a.workArea.SetObject(*obj)
 		}
@@ -165,21 +175,37 @@ func (a *Application) buildUI() {
 		a.eventLog.Refresh()
 	}
 
+	// Кнопка налаштувань
+	settingsBtn := widget.NewButton("⚙️ Налаштування", func() {
+		dialogs.ShowSettingsDialog(a.mainWindow, a.fyneApp.Preferences(), func(dbCfg config.DBConfig, uiCfg config.UIConfig) {
+			a.Reconnect(dbCfg)
+			a.RefreshUI(uiCfg)
+		})
+	})
+
 	toolbar := container.NewHBox(
-		widget.NewLabel("АРМ Пожежної Безпеки"),
+		widget.NewLabel("Каталог об'єктів"),
 		widget.NewSeparator(),
 		themeBtn,
+		settingsBtn,
+	)
+
+	tabs := container.NewAppTabs(
+		container.NewTabItem("📜 ЖУРНАЛ ПОДІЙ", a.eventLog.Container),
+		container.NewTabItem("🔔 АКТИВНІ ТРИВОГИ", a.alarmPanel.Container),
 	)
 
 	// Layout
 	centerSplit := container.NewHSplit(a.objectList.Container, a.workArea.Container)
 	centerSplit.SetOffset(0.45)
 
-	mainSplit := container.NewVSplit(centerSplit, a.eventLog.Container)
+	mainSplit := container.NewVSplit(centerSplit, tabs)
 	mainSplit.SetOffset(0.75)
 
-	rootSplit := container.NewVSplit(a.alarmPanel.Container, mainSplit)
-	rootSplit.SetOffset(0.2)
+	// rootSplit := container.NewVSplit(a.alarmPanel.Container, mainSplit)
+	
+	rootSplit := mainSplit
+	// rootSplit.SetOffset(0.2)
 
 	finalLayout := container.NewBorder(
 		container.NewVBox(toolbar, widget.NewSeparator()),
@@ -190,51 +216,51 @@ func (a *Application) buildUI() {
 	a.mainWindow.SetContent(finalLayout)
 }
 
-// startEventSimulation запускає симуляцію подій
-func (a *Application) startEventSimulation() {
-	go func() {
-		secTicker := time.NewTicker(2 * time.Second) // Трохи повільніше
-		defer secTicker.Stop()
+// // startEventSimulation запускає симуляцію подій
+// func (a *Application) startEventSimulation() {
+// 	go func() {
+// 		secTicker := time.NewTicker(2 * time.Second) // Трохи повільніше
+// 		defer secTicker.Stop()
 
-		minTicker := time.NewTicker(60 * time.Second)
-		defer minTicker.Stop()
+// 		minTicker := time.NewTicker(60 * time.Second)
+// 		defer minTicker.Stop()
 
-		for {
-			select {
-			case <-secTicker.C:
-				// Симуляція тільки якщо використовуємо мок-дані або для візуального ефекту
-				// В реальному проекті тут краще робити фонове оновлення через провайдера
-				if a.mockData != nil && rand.Intn(3) == 0 {
-					a.mockData.SimulateRandomEvent()
-					a.mockData.SimulateNewAlarm()
-				}
+// 		for {
+// 			select {
+// 			case <-secTicker.C:
+// 				// Симуляція тільки якщо використовуємо мок-дані або для візуального ефекту
+// 				// В реальному проекті тут краще робити фонове оновлення через провайдера
+// 				// if a.mockData != nil && rand.Intn(3) == 0 {
+// 				// 	a.mockData.SimulateRandomEvent()
+// 				// 	a.mockData.SimulateNewAlarm()
+// 				// }
 
-				fyne.Do(func() {
-					if a.alarmPanel != nil {
-						a.alarmPanel.Refresh()
-					}
-					if a.eventLog != nil {
-						a.eventLog.Refresh()
-					}
-					if a.objectList != nil {
-						a.objectList.Refresh()
-					}
-				})
+// 				fyne.Do(func() {
+// 					if a.alarmPanel != nil {
+// 						a.alarmPanel.Refresh()
+// 					}
+// 					if a.eventLog != nil {
+// 						a.eventLog.Refresh()
+// 					}
+// 					if a.objectList != nil {
+// 						a.objectList.Refresh()
+// 					}
+// 				})
 
-			case <-minTicker.C:
-				if a.mockData != nil {
-					changedObj := a.mockData.SimulateObjectChange()
-					fyne.Do(func() {
-						a.objectList.Refresh()
-						if a.workArea.CurrentObject != nil && a.workArea.CurrentObject.ID == changedObj.ID {
-							a.workArea.SetObject(*changedObj)
-						}
-					})
-				}
-			}
-		}
-	}()
-}
+// 			case <-minTicker.C:
+// 				// if a.mockData != nil {
+// 				// 	changedObj := a.mockData.SimulateObjectChange()
+// 					fyne.Do(func() {
+// 						a.objectList.Refresh()
+// 						if a.workArea.CurrentObject != nil && a.workArea.CurrentObject.ID == changedObj.ID {
+// 							a.workArea.SetObject(*changedObj)
+// 						}
+// 					})
+// 				// }
+// 			}
+// 		}
+// 	}()
+// }
 
 // Run запускає додаток
 func (a *Application) Run() {
@@ -242,4 +268,52 @@ func (a *Application) Run() {
 		defer a.db.Close()
 	}
 	a.mainWindow.ShowAndRun()
+}
+
+// Reconnect перепідключає базу даних та оновлює провайдери
+func (a *Application) Reconnect(cfg config.DBConfig) {
+	dsn := cfg.ToDSN()
+	log.Info().Str("dsn", dsn).Msg("Перепідключення до бази даних...")
+
+	newDB := database.InitDB(dsn)
+	if err := newDB.Ping(); err != nil {
+		dialogs.ShowErrorDialog(a.mainWindow, "Помилка підключення", err)
+		return
+	}
+
+	// Закриваємо стару базу
+	if a.db != nil {
+		a.db.Close()
+	}
+
+	a.db = newDB
+	a.dataProvider = data.NewDBDataProvider(newDB, dsn)
+
+	// Оновлюємо посилання в панелях
+	a.alarmPanel.Data = a.dataProvider
+	a.objectList.Data = a.dataProvider
+	a.workArea.Data = a.dataProvider
+	a.eventLog.Data = a.dataProvider
+
+	// Перезавантажуємо дані
+	a.alarmPanel.Refresh()
+	a.objectList.Refresh()
+	a.eventLog.Refresh()
+
+	dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Підключення до бази даних оновлено")
+}
+
+// RefreshUI оновлює інтерфейс (тему, шрифти)
+func (a *Application) RefreshUI(cfg config.UIConfig) {
+	log.Info().Float32("fontSize", cfg.FontSize).Msg("Оновлення параметрів інтерфейсу...")
+	a.setTheme(a.isDarkTheme)
+
+	// Оновлюємо панелі
+	a.alarmPanel.OnThemeChanged(cfg.FontSizeAlarms)
+	a.alarmPanel.Refresh()
+	a.objectList.OnThemeChanged(cfg.FontSizeObjects)
+	a.objectList.Refresh()
+	a.workArea.OnThemeChanged(cfg.FontSize)
+	a.eventLog.OnThemeChanged(cfg.FontSizeEvents)
+	a.eventLog.Refresh()
 }

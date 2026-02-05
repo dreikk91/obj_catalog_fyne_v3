@@ -3,7 +3,6 @@ package data
 
 import (
 	"context"
-	"fmt"
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/models"
 	"strconv"
@@ -42,7 +41,7 @@ func (p *DBDataProvider) GetObjects() []models.Object {
 
 	rows, err := database.GetObjectsList(ctx, p.db)
 	if err != nil {
-		fmt.Printf("Error fetching objects: %v\n", err)
+		log.Error().Err(err).Msg("Error fetching objects")
 		return nil
 	}
 
@@ -88,10 +87,11 @@ func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 		Notes1:    ptrToString(row.Notes1),
 		Location1: ptrToString(row.Location1),
 
-		AkbState:    ptrToInt64(row.AkbState),
-		PowerFault:  ptrToInt64(row.PowerFault),
-		TestControl: ptrToInt64(row.TestControl1),
-		TestTime:    ptrToInt64(row.TestTime1),
+		AkbState:      ptrToInt64(row.AkbState),
+		PowerFault:    ptrToInt64(row.PowerFault),
+		TestControl:   ptrToInt64(row.TestControl1),
+		TestTime:      ptrToInt64(row.TestTime1),
+		AutoTestHours: int(ptrToInt64(row.TestTime1)) / 60,
 	}
 
 	// Оновлюємо PowerSource на основі PowerFault
@@ -256,14 +256,30 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 
 	var alarms []models.Alarm
 	for _, row := range rows {
+		// Визначаємо тип тривоги за SC1
+		alarmType := models.AlarmFire
+		if row.Sc1 != nil && *row.Sc1 == 3 {
+			alarmType = models.AlarmFault
+		}
+
+		details := ptrToString(row.Ukr1)
+		info1 := ptrToString(row.Info1)
+		if info1 != "" {
+			if details != "" {
+				details += " (" + info1 + ")"
+			} else {
+				details = info1
+			}
+		}
+
 		alarm := models.Alarm{
 			ID:         int(ptrToInt64(row.ObjN)),
 			ObjectID:   int(ptrToInt64(row.ObjN)),
 			ObjectName: ptrToString(row.ObjShortName1),
 			Address:    ptrToString(row.Address1),
-			Details:    ptrToString(row.Info1),
+			Details:    details,
 			Time:       ptrToTime(row.EvTime1),
-			Type:       models.AlarmFire,
+			Type:       alarmType,
 		}
 		alarms = append(alarms, alarm)
 	}
@@ -468,20 +484,29 @@ func mapEventRowToModel(row database.EventRow, objID int) models.Event {
 		e.ZoneNumber = int(*row.Zonen)
 	}
 	if row.Sc1 != nil {
-		switch *row.Sc1 {
-		case 1, 2:
+		sc1 := *row.Sc1
+		switch sc1 {
+		case 1:
 			e.Type = models.EventFire
+		case 2:
+			e.Type = models.EventFault
 		case 3:
 			e.Type = models.EventFault
+		case 5, 9, 13, 17:
+			e.Type = models.EventRestore
 		case 10:
 			e.Type = models.EventArm
 		case 11:
 			e.Type = models.EventDisarm
+		case 12:
+			e.Type = models.EventOffline
+		case 14, 18:
+			e.Type = models.EventDisarm // Часткова постановка/зняття
 		default:
-			e.Type = models.EventTest
+			e.Type = models.SystemEvent
 		}
 	} else {
-		e.Type = models.EventTest
+		e.Type = models.SystemEvent
 	}
 	return e
 }

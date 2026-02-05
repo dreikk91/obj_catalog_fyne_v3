@@ -8,8 +8,10 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/models"
 )
@@ -27,6 +29,8 @@ type AlarmPanelWidget struct {
 
 	OnAlarmSelected func(alarm models.Alarm)
 	OnProcessAlarm  func(alarm models.Alarm)
+	TitleText       *canvas.Text
+	lastFontSize    float32
 }
 
 // NewAlarmPanelWidget створює панель тривог
@@ -36,12 +40,13 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 	}
 
 	// Заголовок
-	titleText := canvas.NewText("🔔 АКТИВНІ ТРИВОГИ", color.White)
-	titleText.TextSize = 14
-	titleText.TextStyle = fyne.TextStyle{Bold: true}
+	panel.TitleText = canvas.NewText("🔔 АКТИВНІ ТРИВОГИ", color.White)
+	appTheme := fyne.CurrentApp().Settings().Theme()
+	panel.TitleText.TextSize = appTheme.Size(theme.SizeNameText) + 1
+	panel.TitleText.TextStyle = fyne.TextStyle{Bold: true}
 
 	titleBg := canvas.NewRectangle(color.NRGBA{R: 100, G: 0, B: 0, A: 255})
-	titleContainer := container.NewStack(titleBg, container.NewPadded(titleText))
+	titleContainer := container.NewStack(titleBg, container.NewPadded(panel.TitleText))
 
 	// Список тривог (тепер використовує кеш)
 	panel.List = widget.NewList(
@@ -51,29 +56,40 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 			return len(panel.CurrentAlarms)
 		},
 		func() fyne.CanvasObject {
-			label := widget.NewLabel("Тривога")
-			label.Importance = widget.DangerImportance
-			return label
+			bg := canvas.NewRectangle(color.Transparent)
+			txt := canvas.NewText("Тривога", color.White)
+			return container.NewStack(bg, container.NewPadded(txt))
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			panel.mutex.RLock()
 			defer panel.mutex.RUnlock()
 
 			if id < len(panel.CurrentAlarms) {
-				label := obj.(*widget.Label)
+				stack := obj.(*fyne.Container)
+				txtContainer := stack.Objects[1].(*fyne.Container)
+				txt := txtContainer.Objects[0].(*canvas.Text)
+
 				alarm := panel.CurrentAlarms[id]
 				icon := "🔴"
+				textColor := theme.ColorNameError
 				if alarm.Type == models.AlarmFault {
 					icon = "🟡"
-					label.Importance = widget.WarningImportance
-				} else {
-					label.Importance = widget.DangerImportance
+					textColor = theme.ColorNameWarning
 				}
 				displayText := icon + " " + alarm.GetTimeDisplay() + " | №" + itoa(alarm.ObjectID) + " " + alarm.ObjectName + " | " + alarm.GetTypeDisplay()
 				if alarm.Details != "" {
 					displayText += " — " + alarm.Details
 				}
-				label.SetText(displayText)
+				txt.Text = displayText
+				variant := fyne.CurrentApp().Settings().ThemeVariant()
+				txt.Color = fyne.CurrentApp().Settings().Theme().Color(textColor, variant)
+
+				if panel.lastFontSize > 0 {
+					txt.TextSize = panel.lastFontSize
+				} else {
+					txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
+				}
+				txt.Refresh()
 			}
 		},
 	)
@@ -101,6 +117,8 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 
 // Refresh оновлює панель асинхронно
 func (p *AlarmPanelWidget) Refresh() {
+	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+	p.OnThemeChanged(uiCfg.FontSizeAlarms)
 	if p.Data == nil {
 		return
 	}
@@ -132,4 +150,15 @@ func (p *AlarmPanelWidget) Refresh() {
 			p.List.Refresh()
 		}
 	})
+}
+
+func (p *AlarmPanelWidget) OnThemeChanged(fontSize float32) {
+	p.lastFontSize = fontSize
+	if p.TitleText != nil {
+		p.TitleText.TextSize = fontSize + 1
+		p.TitleText.Refresh()
+	}
+	if p.List != nil {
+		p.List.Refresh()
+	}
 }

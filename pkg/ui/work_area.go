@@ -12,7 +12,7 @@ import (
 
 	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/models"
-	"obj_catalog_fyne_v3/pkg/theme"
+	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
 )
 
@@ -77,13 +77,14 @@ func NewWorkAreaPanel(provider data.DataProvider, window fyne.Window) *WorkAreaP
 	}
 
 	// Шапка
+	themeSize := fyne.CurrentApp().Settings().Theme().Size(fyneTheme.SizeNameText)
 	panel.HeaderName = canvas.NewText("← Оберіть об'єкт зі списку", nil)
-	panel.HeaderName.TextSize = 18
+	panel.HeaderName.TextSize = themeSize + 5
 	panel.HeaderName.TextStyle = fyne.TextStyle{Bold: true}
 
 	panel.HeaderAddress = widget.NewLabel("")
-	panel.HeaderStatus = canvas.NewText("", theme.ColorNormal)
-	panel.HeaderStatus.TextSize = 14
+	panel.HeaderStatus = canvas.NewText("", appTheme.ColorNormal)
+	panel.HeaderStatus.TextSize = themeSize + 1
 	panel.HeaderStatus.TextStyle = fyne.TextStyle{Bold: true}
 
 	panel.CopyNameBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
@@ -116,7 +117,7 @@ func NewWorkAreaPanel(provider data.DataProvider, window fyne.Window) *WorkAreaP
 func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 	w.DeviceTypeLabel = widget.NewLabel("🔧 Тип: —")
 	w.PanelMarkLabel = widget.NewLabel("🏷️ Марка: —") // Initialized PanelMarkLabel
-	w.GSMLabel = widget.NewLabel("📶 GSM: —")
+	// w.GSMLabel = widget.NewLabel("📶 GSM: —")
 	w.PowerLabel = widget.NewLabel("🔌 Живлення: —")
 	w.SIMLabel = widget.NewLabel("📱 SIM: —")
 	w.AutoTestLabel = widget.NewLabel("⏱️ Автотест: —")
@@ -152,7 +153,7 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 		widget.NewLabel("📟 ЗАГАЛЬНА ІНФОРМАЦІЯ:"),
 		widget.NewSeparator(),
 		container.NewHBox(
-			container.NewVBox(w.DeviceTypeLabel, w.PanelMarkLabel, w.GSMLabel, w.SignalLabel, w.PowerLabel, w.ChanLabel),
+			container.NewVBox(w.DeviceTypeLabel, w.PanelMarkLabel, w.SignalLabel, w.PowerLabel, w.ChanLabel),
 			widget.NewSeparator(),
 			container.NewVBox(
 				container.NewBorder(nil, nil, nil, w.CopySimBtn, w.SIMLabel),
@@ -398,11 +399,11 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 
 	w.DeviceTypeLabel.SetText("🔧 Тип: " + obj.DeviceType)
 	w.PanelMarkLabel.SetText("🏷️ Марка: " + obj.PanelMark) // Updated PanelMarkLabel
-	gsmIcon := "📶"
-	if obj.GSMLevel < 30 {
-		gsmIcon = "📵"
-	}
-	w.GSMLabel.SetText(fmt.Sprintf("%s GSM: %d%%", gsmIcon, obj.GSMLevel))
+	// gsmIcon := "📶"
+	// if obj.GSMLevel < 30 {
+	// 	gsmIcon = "📵"
+	// }
+	// w.GSMLabel.SetText(fmt.Sprintf("%s GSM: %d%%", gsmIcon, obj.GSMLevel))
 
 	powerText := "220В (мережа)"
 	if obj.PowerSource == models.PowerBattery {
@@ -422,9 +423,10 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 	w.AutoTestLabel.SetText(fmt.Sprintf("⏱️ Автотест: кожні %d год", obj.AutoTestHours))
 
 	chanText := "Інший канал"
-	if obj.ObjChan == 1 {
+	switch obj.ObjChan {
+case 1:
 		chanText = "Автододзвон"
-	} else if obj.ObjChan == 5 {
+	case 5:
 		chanText = "GPRS"
 	}
 	w.ChanLabel.SetText("📡 Канал: " + chanText)
@@ -442,6 +444,12 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 		testCtrl = fmt.Sprintf("Активно (кожні %d хв)", obj.TestTime)
 	}
 	w.TestControlLabel.SetText("⏲️ Контроль тесту: " + testCtrl)
+
+	// Скидаємо динамічні дані перед завантаженням нових
+	w.SignalLabel.SetText("📶 Рівень: ...")
+	w.LastTestLabel.SetText("📝 Тест: ...")
+	w.LastTestTimeLabel.SetText("📅 Ост. тест: ...")
+	w.LastMessageTimeLabel.SetText("📅 Ост. подія: ...")
 
 	// Рівень сигналу та останній тест
 	go func() {
@@ -487,4 +495,19 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 
 func (w *WorkAreaPanel) showTestMessages(objectID string) {
 	dialogs.ShowTestMessagesDialog(w.Window, w.Data, objectID)
+}
+
+func (w *WorkAreaPanel) OnThemeChanged(fontSize float32) {
+	if w.HeaderName != nil {
+		w.HeaderName.TextSize = fontSize + 5
+		w.HeaderName.Refresh()
+	}
+	if w.HeaderStatus != nil {
+		w.HeaderStatus.TextSize = fontSize + 1
+		w.HeaderStatus.Refresh()
+	}
+	// Віджети (Labels, Tables) оновляться автоматично через Refresh
+	w.ZonesTable.Refresh()
+	w.ContactsList.Refresh()
+	w.EventsTable.Refresh()
 }

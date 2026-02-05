@@ -83,22 +83,17 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxext-dev libxfixes-dev
-
-      - name: Install Fyne
-        run: go install fyne.io/tools/cmd/fyne@latest
+      - name: Install fyne-cross
+        run: go install github.com/fyne-io/fyne-cross@latest
 
       - name: Build Linux 64-bit
-        run: GOOS=linux GOARCH=amd64 fyne package -icon icon.png -app-id com.fyne.objcatalog -release
+        run: fyne-cross linux -arch=amd64 -tags no_emoji,flatpak -output obj_catalog .
 
       - name: Upload Linux 64-bit artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-64-bit
-          path: |
-            *.AppImage
-            *.tar.gz
+          path: dist/linux-amd64/*
           retention-days: 7
 
   build-linux-32:
@@ -113,22 +108,17 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxext-dev libxfixes-dev
-
-      - name: Install Fyne
-        run: go install fyne.io/tools/cmd/fyne@latest
+      - name: Install fyne-cross
+        run: go install github.com/fyne-io/fyne-cross@latest
 
       - name: Build Linux 32-bit
-        run: GOOS=linux GOARCH=386 fyne package -icon icon.png -app-id com.fyne.objcatalog -release
+        run: fyne-cross linux -arch=386 -tags flatpak -output obj_catalog .
 
       - name: Upload Linux 32-bit artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-32-bit
-          path: |
-            *.AppImage
-            *.tar.gz
+          path: dist/linux-386/*
           retention-days: 7
 
   create-release:

@@ -6,6 +6,8 @@ on:
       - main
       - master
       - develop
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
@@ -21,25 +23,33 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.24.1'
 
-      - name: Install Fyne
-        run: go install fyne.io/tools/cmd/fyne@latest
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
       - name: Build Windows 64-bit
         run: |
           $env:GOOS='windows'
           $env:GOARCH='amd64'
-          fyne package -icon icon.png -app-id com.fyne.objcatalog -release
+          $env:CGO_ENABLED='1'
+          fyne package -os windows -icon icon.png -appID com.fyne.objcatalog -release
+        shell: powershell
+
+      - name: Rename artifact
+        run: |
+          if (Test-Path "*.exe") {
+            Rename-Item -Path "*.exe" -NewName "obj_catalog-windows-amd64.exe"
+          }
         shell: powershell
 
       - name: Upload Windows 64-bit artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-64-bit
-          path: '*.exe'
+          path: 'obj_catalog-windows-amd64.exe'
           retention-days: 7
 
   build-windows-32:
@@ -50,25 +60,33 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.24.1'
 
-      - name: Install Fyne
-        run: go install fyne.io/tools/cmd/fyne@latest
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
       - name: Build Windows 32-bit
         run: |
           $env:GOOS='windows'
           $env:GOARCH='386'
-          fyne package -icon icon.png -app-id com.fyne.objcatalog -release
+          $env:CGO_ENABLED='1'
+          fyne package -os windows -icon icon.png -appID com.fyne.objcatalog -release
+        shell: powershell
+
+      - name: Rename artifact
+        run: |
+          if (Test-Path "*.exe") {
+            Rename-Item -Path "*.exe" -NewName "obj_catalog-windows-386.exe"
+          }
         shell: powershell
 
       - name: Upload Windows 32-bit artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-32-bit
-          path: '*.exe'
+          path: 'obj_catalog-windows-386.exe'
           retention-days: 7
 
   build-linux-64:
@@ -79,21 +97,27 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.24.1'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
 
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
 
       - name: Build Linux 64-bit
-        run: fyne-cross linux -arch=amd64 -tags no_emoji,flatpak -output obj_catalog .
+        run: |
+          fyne-cross linux -arch=amd64 -icon=icon.png -app-id=com.fyne.objcatalog -release -output=obj_catalog
 
       - name: Upload Linux 64-bit artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-64-bit
-          path: dist/linux-amd64/*
+          path: 'fyne-cross/dist/linux-amd64/obj_catalog.tar.xz'
           retention-days: 7
 
   build-linux-32:
@@ -104,21 +128,27 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.24.1'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
 
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
 
       - name: Build Linux 32-bit
-        run: fyne-cross linux -arch=386 -tags flatpak -output obj_catalog .
+        run: |
+          fyne-cross linux -arch=386 -icon=icon.png -app-id=com.fyne.objcatalog -release -output=obj_catalog
 
       - name: Upload Linux 32-bit artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-32-bit
-          path: dist/linux-386/*
+          path: 'fyne-cross/dist/linux-386/obj_catalog.tar.xz'
           retention-days: 7
 
   create-release:
@@ -132,14 +162,16 @@ jobs:
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            windows-64-bit/*
-            windows-32-bit/*
-            linux-64-bit/*
-            linux-32-bit/*
+            artifacts/windows-64-bit/*
+            artifacts/windows-32-bit/*
+            artifacts/linux-64-bit/*
+            artifacts/linux-32-bit/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

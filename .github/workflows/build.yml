@@ -26,10 +26,14 @@ jobs:
           go-version: '1.24'
 
       - name: Install Fyne
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       - name: Build Windows 64-bit
-        run: fyne package -os windows -arch amd64 -icon icon.png -app-id com.fyne.objcatalog -release
+        run: |
+          $env:GOOS='windows'
+          $env:GOARCH='amd64'
+          fyne package -icon icon.png -app-id com.fyne.objcatalog -release
+        shell: powershell
 
       - name: Upload Windows 64-bit artifact
         uses: actions/upload-artifact@v4
@@ -51,10 +55,14 @@ jobs:
           go-version: '1.24'
 
       - name: Install Fyne
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       - name: Build Windows 32-bit
-        run: fyne package -os windows -arch 386 -icon icon.png -app-id com.fyne.objcatalog -release
+        run: |
+          $env:GOOS='windows'
+          $env:GOARCH='386'
+          fyne package -icon icon.png -app-id com.fyne.objcatalog -release
+        shell: powershell
 
       - name: Upload Windows 32-bit artifact
         uses: actions/upload-artifact@v4
@@ -79,10 +87,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxext-dev libxfixes-dev
 
       - name: Install Fyne
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       - name: Build Linux 64-bit
-        run: fyne package -os linux -arch amd64 -icon icon.png -app-id com.fyne.objcatalog -release
+        run: GOOS=linux GOARCH=amd64 fyne package -icon icon.png -app-id com.fyne.objcatalog -release
 
       - name: Upload Linux 64-bit artifact
         uses: actions/upload-artifact@v4
@@ -106,13 +114,13 @@ jobs:
           go-version: '1.24'
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib pkg-config libxcursor-dev:i386 libxrandr-dev:i386 libxinerama-dev:i386 libxi-dev:i386 libxext-dev:i386 libxfixes-dev:i386
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxext-dev libxfixes-dev
 
       - name: Install Fyne
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       - name: Build Linux 32-bit
-        run: fyne package -os linux -arch 386 -icon icon.png -app-id com.fyne.objcatalog -release
+        run: GOOS=linux GOARCH=386 fyne package -icon icon.png -app-id com.fyne.objcatalog -release
 
       - name: Upload Linux 32-bit artifact
         uses: actions/upload-artifact@v4

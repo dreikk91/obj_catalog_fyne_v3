@@ -119,10 +119,6 @@ jobs:
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
 
-      - name: Setup Docker
-        run: |
-          docker pull fyneio/fyne-cross:latest
-
       - name: Build Linux 64-bit
         run: |
           export GOTOOLCHAIN=auto
@@ -154,10 +150,6 @@ jobs:
 
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
-
-      - name: Setup Docker
-        run: |
-          docker pull fyneio/fyne-cross:latest
 
       - name: Build Linux 32-bit
         run: |

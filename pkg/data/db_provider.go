@@ -290,11 +290,23 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 	for _, row := range rows {
 		// Визначаємо тип тривоги за SC1
 		alarmType := models.AlarmFire
-		if row.Sc1 != nil && *row.Sc1 == 1 {
+
+		switch *row.Sc1 {
+		case 1:
 			alarmType = models.AlarmFire
-		} else {
+		case 2: 
+			alarmType = models.AlarmFault
+		case 12:
+			alarmType = models.AlarmOffline
+		default:
 			alarmType = models.AlarmFault
 		}
+		
+		// if row.Sc1 != nil && *row.Sc1 == 1 {
+		// 	alarmType = models.AlarmFire
+		// } else {
+		// 	alarmType = models.AlarmFault
+		// }
 
 		details := ptrToString(row.Ukr1)
 		info1 := ptrToString(row.Info1)

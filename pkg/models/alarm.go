@@ -9,6 +9,10 @@ type AlarmType string
 const (
 	AlarmFire  AlarmType = "fire"  // Пожежа
 	AlarmFault AlarmType = "fault" // Несправність
+	AlarmPowerFail AlarmType = "power_fail" // Втрата 220В
+	AlarmBatteryLow AlarmType = "battery_low" // Низький заряд АКБ
+	AlarmOffline AlarmType = "offline" // Втрата зв'язку
+	AlarmSystemEvent AlarmType = "system_event" // Системна подія
 )
 
 // Alarm представляє активну тривогу, що потребує обробки
@@ -34,8 +38,16 @@ func (a *Alarm) GetTypeDisplay() string {
 		return "ПОЖЕЖА"
 	case AlarmFault:
 		return "НЕСПРАВНІСТЬ"
-	default:
+	case AlarmPowerFail:
+		return "ВТРАТА 220В"
+	case AlarmBatteryLow:
+		return "НИЗЬКИЙ ЗАРЯД АКБ"
+	case AlarmOffline:
+		return "ВТРАТА ЗВ'ЯЗКУ"
+	case AlarmSystemEvent:
 		return "СИСТЕМА"
+	default:
+		return "ПОДІЯ"
 	}
 }
 

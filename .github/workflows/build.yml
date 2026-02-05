@@ -111,6 +111,7 @@ jobs:
 
       - name: Build Linux 64-bit
         run: |
+          export GOTOOLCHAIN=auto
           fyne-cross linux -arch=amd64 -icon=icon.png -app-id=com.fyne.objcatalog -release -output=obj_catalog
 
       - name: Upload Linux 64-bit artifact
@@ -142,6 +143,7 @@ jobs:
 
       - name: Build Linux 32-bit
         run: |
+          export GOTOOLCHAIN=auto
           fyne-cross linux -arch=386 -icon=icon.png -app-id=com.fyne.objcatalog -release -output=obj_catalog
 
       - name: Upload Linux 32-bit artifact

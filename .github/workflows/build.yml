@@ -1,0 +1,147 @@
+name: Build Fyne Application
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+
+jobs:
+  build-windows-64:
+    name: Build Windows 64-bit
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install Fyne
+        run: go install github.com/fyne-io/fyne/v2/cmd/fyne@latest
+
+      - name: Build Windows 64-bit
+        run: fyne package -os windows -arch amd64 -icon icon.png -app-id com.fyne.objcatalog -release
+
+      - name: Upload Windows 64-bit artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-64-bit
+          path: '*.exe'
+          retention-days: 7
+
+  build-windows-32:
+    name: Build Windows 32-bit
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install Fyne
+        run: go install github.com/fyne-io/fyne/v2/cmd/fyne@latest
+
+      - name: Build Windows 32-bit
+        run: fyne package -os windows -arch 386 -icon icon.png -app-id com.fyne.objcatalog -release
+
+      - name: Upload Windows 32-bit artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-32-bit
+          path: '*.exe'
+          retention-days: 7
+
+  build-linux-64:
+    name: Build Linux 64-bit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxext-dev libxfixes-dev
+
+      - name: Install Fyne
+        run: go install github.com/fyne-io/fyne/v2/cmd/fyne@latest
+
+      - name: Build Linux 64-bit
+        run: fyne package -os linux -arch amd64 -icon icon.png -app-id com.fyne.objcatalog -release
+
+      - name: Upload Linux 64-bit artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-64-bit
+          path: |
+            *.AppImage
+            *.tar.gz
+          retention-days: 7
+
+  build-linux-32:
+    name: Build Linux 32-bit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib pkg-config libxcursor-dev:i386 libxrandr-dev:i386 libxinerama-dev:i386 libxi-dev:i386 libxext-dev:i386 libxfixes-dev:i386
+
+      - name: Install Fyne
+        run: go install github.com/fyne-io/fyne/v2/cmd/fyne@latest
+
+      - name: Build Linux 32-bit
+        run: fyne package -os linux -arch 386 -icon icon.png -app-id com.fyne.objcatalog -release
+
+      - name: Upload Linux 32-bit artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-32-bit
+          path: |
+            *.AppImage
+            *.tar.gz
+          retention-days: 7
+
+  create-release:
+    name: Create Release
+    needs: [build-windows-64, build-windows-32, build-linux-64, build-linux-32]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            windows-64-bit/*
+            windows-32-bit/*
+            linux-64-bit/*
+            linux-32-bit/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

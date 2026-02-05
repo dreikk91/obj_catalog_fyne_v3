@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -26,6 +27,7 @@ type DBConfig struct {
 }
 
 func LoadDBConfig(p fyne.Preferences) DBConfig {
+	log.Debug().Msg("Завантаження налаштувань БД з преференсів...")
 	cfg := DBConfig{
 		User:     p.StringWithFallback(PrefUser, "SYSDBA"),
 		Password: p.StringWithFallback(PrefPassword, "masterkey"),
@@ -35,22 +37,33 @@ func LoadDBConfig(p fyne.Preferences) DBConfig {
 		Params:   p.StringWithFallback(PrefParams, "charset=WIN1251&auth_plugin_name=Srp"),
 	}
 
+	log.Debug().
+		Str("user", cfg.User).
+		Str("host", cfg.Host).
+		Str("port", cfg.Port).
+		Str("path", cfg.Path).
+		Msg("Налаштування БД завантажено")
+
 	// Якщо жодного ключа ще немає в преференсах, записуємо дефолтні значення
 	// Це гарантує, що конфіг з'явиться на диску одразу після першого запуску
 	if p.String(PrefUser) == "" {
+		log.Debug().Msg("Преференси порожні - записуємо дефолтні значення...")
 		SaveDBConfig(p, cfg)
+		log.Debug().Msg("Дефолтні налаштування записано")
 	}
 
 	return cfg
 }
 
 func SaveDBConfig(p fyne.Preferences, cfg DBConfig) {
+	log.Debug().Msg("Збереження налаштувань БД...")
 	p.SetString(PrefUser, cfg.User)
 	p.SetString(PrefPassword, cfg.Password)
 	p.SetString(PrefHost, cfg.Host)
 	p.SetString(PrefPort, cfg.Port)
 	p.SetString(PrefPath, cfg.Path)
 	p.SetString(PrefParams, cfg.Params)
+	log.Debug().Str("host", cfg.Host).Str("port", cfg.Port).Msg("Налаштування БД збережено")
 }
 
 func (c DBConfig) ToDSN() string {
@@ -62,5 +75,6 @@ func (c DBConfig) ToDSN() string {
 		}
 		dsn += c.Params
 	}
+	log.Debug().Str("dsn", dsn).Msg("DSN сформовано")
 	return dsn
 }

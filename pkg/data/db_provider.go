@@ -28,20 +28,25 @@ type DBDataProvider struct {
 }
 
 func NewDBDataProvider(db *sqlx.DB, baseDSN string) *DBDataProvider {
-	return &DBDataProvider{db: db, baseDSN: baseDSN}
+	provider := &DBDataProvider{db: db, baseDSN: baseDSN}
+	log.Debug().Msg("DBDataProvider ініціалізовано з підключенням до БД")
+	return provider
 }
 
 // GetObjects отримує список об'єктів з БД (швидкий запит)
 func (p *DBDataProvider) GetObjects() []models.Object {
 	if p.db == nil {
+		log.Warn().Msg("Спроба отримати об'єкти без активного з'єднання БД")
 		return nil
 	}
+
+	log.Debug().Msg("Завантаження списку об'єктів з БД...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	rows, err := database.GetObjectsList(ctx, p.db)
 	if err != nil {
-		log.Error().Err(err).Msg("Error fetching objects")
+		log.Error().Err(err).Msg("Помилка завантаження списку об'єктів")
 		return nil
 	}
 
@@ -49,23 +54,29 @@ func (p *DBDataProvider) GetObjects() []models.Object {
 	for _, row := range rows {
 		objects = append(objects, mapObjectRowToModel(row))
 	}
+	log.Debug().Int("objectsCount", len(objects)).Msg("Список об'єктів завантажено")
 	return objects
 }
 
 // GetObjectByID отримує базову інформацію про об'єкт
 func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 	if p.db == nil {
+		log.Warn().Str("id", idStr).Msg("Спроба отримати об'єкт без активного з'єднання БД")
 		return nil
 	}
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
+		log.Warn().Err(err).Str("id", idStr).Msg("Невірний формат ID об'єкта")
 		return nil
 	}
+
+	log.Debug().Int64("objectID", id).Msg("Завантаження деталей об'єкта...")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	row, err := database.GetObjectDetail(ctx, p.db, id)
 	if err != nil {
+		log.Warn().Err(err).Int64("objectID", id).Msg("Об'єкт не знайдено або помилка запиту")
 		return nil
 	}
 
@@ -100,6 +111,8 @@ func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 	} else {
 		obj.PowerSource = models.PowerMains
 	}
+
+	log.Debug().Int("objectID", obj.ID).Str("name", obj.Name).Str("status", obj.StatusText).Msg("Деталі об'єкта завантажено")
 
 	return obj
 }
@@ -159,31 +172,39 @@ func (p *DBDataProvider) GetEmployees(idStr string) []models.Contact {
 // GetEvents отримує глобальні події (інкрементально)
 func (p *DBDataProvider) GetEvents() []models.Event {
 	if p.db == nil {
+		log.Warn().Msg("Спроба отримати eventos без активного з'єднання БД")
 		return nil
 	}
 
 	p.eventMutex.Lock()
 	defer p.eventMutex.Unlock()
 
+	log.Debug().Msg("Завантаження глобальних подій...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// 1. Якщо це перший запуск, отримуємо останній ID з бази
 	if p.lastEventID == 0 {
+		log.Debug().Msg("Перший запуск GetEvents - отримання останнього ID...")
 		lastID, err := database.GetLastEventID(ctx, p.db)
 		if err == nil {
 			p.lastEventID = lastID
+			log.Debug().Int64("lastEventID", lastID).Msg("Останній ID подій встановлено")
+		} else {
+			log.Warn().Err(err).Msg("Помилка отримання останнього ID подій")
 		}
 	}
 
 	// 2. Отримуємо тільки нові події
 	rows, err := database.GetGlobalEvents(ctx, p.db, p.lastEventID)
 	if err != nil {
+		log.Error().Err(err).Msg("Помилка завантаження подій")
 		return p.cachedEvents
 	}
 
 	// 3. Додаємо нові події в кеш
 	if len(rows) > 0 {
+		log.Debug().Int("newEventsCount", len(rows)).Msg("Знайдено нові события")
 		var newEvents []models.Event
 		for _, row := range rows {
 			newEvents = append(newEvents, mapEventRowToModel(row, 0))
@@ -202,22 +223,29 @@ func (p *DBDataProvider) GetEvents() []models.Event {
 
 		// Обмежуємо розміри журналу
 		if len(p.cachedEvents) > 2000 {
+			log.Debug().Int("cachedEventsBefore", len(p.cachedEvents)).Msg("Кеш подій перевищує 2000, обрізаємо...")
 			p.cachedEvents = p.cachedEvents[:2000]
+			log.Debug().Int("cachedEventsAfter", len(p.cachedEvents)).Msg("Кеш обрізаний")
 		}
 	}
 
+	log.Debug().Int("totalCachedEvents", len(p.cachedEvents)).Msg("Події завантажено")
 	return p.cachedEvents
 }
 
 // GetObjectEvents отримує події конкретного об'єкта
 func (p *DBDataProvider) GetObjectEvents(objectID string) []models.Event {
 	if p.db == nil {
+		log.Warn().Str("objectID", objectID).Msg("Спроба отримати события об'єкта без активного з'єднання БД")
 		return nil
 	}
 	id, err := strconv.ParseInt(objectID, 10, 64)
 	if err != nil {
+		log.Warn().Err(err).Str("objectID", objectID).Msg("Невірний формат ID об'єкта при запиті подій")
 		return nil
 	}
+
+	log.Debug().Int64("objectID", id).Msg("Завантаження подій об'єкта...")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -230,7 +258,7 @@ func (p *DBDataProvider) GetObjectEvents(objectID string) []models.Event {
 
 	rows, err := database.GetObjectEvents(ctx, p.db, row.ObjUin)
 	if err != nil {
-		log.Error().Err(err).Int64("objn", id).Int64("objuin", row.ObjUin).Msg("Помилка отримання подій")
+		log.Error().Err(err).Int64("objn", id).Int64("objuin", row.ObjUin).Msg("Помилка отримання подій об'єкта")
 		return nil
 	}
 
@@ -244,13 +272,17 @@ func (p *DBDataProvider) GetObjectEvents(objectID string) []models.Event {
 // GetAlarms отримує список активних тривог (оптимізовано)
 func (p *DBDataProvider) GetAlarms() []models.Alarm {
 	if p.db == nil {
+		log.Warn().Msg("Спроба отримати тривоги без активного з'єднання БД")
 		return nil
 	}
+
+	log.Debug().Msg("Завантаження активних тривог з БД...")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	rows, err := database.GetAlarmsList(ctx, p.db)
 	if err != nil {
+		log.Error().Err(err).Msg("Помилка завантаження тривог")
 		return nil
 	}
 
@@ -283,10 +315,19 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 		}
 		alarms = append(alarms, alarm)
 	}
+
+	log.Debug().Int("alarmsCount", len(alarms)).Msg("Тривоги завантажено")
+	if len(alarms) > 0 {
+		log.Info().Int("count", len(alarms)).Msg("Активні тривоги знайдено!")
+		for _, a := range alarms {
+			log.Warn().Int("id", a.ID).Str("object", a.ObjectName).Str("address", a.Address).Msg("Тривога")
+		}
+	}
 	return alarms
 }
 
 func (p *DBDataProvider) ProcessAlarm(id string, user string, note string) {
+	log.Info().Str("alarmID", id).Str("user", user).Str("note", note).Msg("Обробка тривоги")
 	// Not implemented
 }
 

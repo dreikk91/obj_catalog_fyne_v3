@@ -99,8 +99,8 @@ jobs:
           path: 'obj_catalog-windows-386.exe'
           retention-days: 7
 
-  build-linux-64:
-    name: Build Linux 64-bit
+  build-linux:
+    name: Build Linux (64-bit & 32-bit)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -111,18 +111,12 @@ jobs:
         with:
           go-version: '1.24.6'
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
-
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
 
-      - name: Build Linux 64-bit
+      - name: Build Linux amd64 and 386
         run: |
-          export GOTOOLCHAIN=auto
-          fyne-cross linux -arch=amd64 -icon=icon.png -app-id=com.fyne.objcatalog -release -output=obj_catalog
+          fyne-cross linux -arch=amd64,386 -icon=icon.png -app-id=com.fyne.objcatalog -release -output=obj_catalog
 
       - name: Upload Linux 64-bit artifact
         uses: actions/upload-artifact@v4
@@ -130,31 +124,6 @@ jobs:
           name: linux-64-bit
           path: 'fyne-cross/dist/linux-amd64/obj_catalog.tar.xz'
           retention-days: 7
-
-  build-linux-32:
-    name: Build Linux 32-bit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24.6'
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev
-
-      - name: Install fyne-cross
-        run: go install github.com/fyne-io/fyne-cross@latest
-
-      - name: Build Linux 32-bit
-        run: |
-          export GOTOOLCHAIN=auto
-          fyne-cross linux -arch=386 -icon=icon.png -app-id=com.fyne.objcatalog -release -output=obj_catalog
 
       - name: Upload Linux 32-bit artifact
         uses: actions/upload-artifact@v4
@@ -165,7 +134,7 @@ jobs:
 
   create-release:
     name: Create Release
-    needs: [build-windows-64, build-windows-32, build-linux-64, build-linux-32]
+    needs: [build-windows-64, build-windows-32, build-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:

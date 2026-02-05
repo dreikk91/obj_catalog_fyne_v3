@@ -45,10 +45,12 @@ func DefaultConfig() *Config {
 
 // Setup налаштовує глобальний логер з розширеними можливостями
 func Setup(config *Config) error {
+	fmt.Printf("Налаштування системи логування...\n")
 	var writers []io.Writer
 
 	// Створюємо директорію для логів
 	if config.EnableFile {
+		fmt.Printf("  Створення директорії логів: %s\n", config.LogDir)
 		if err := os.MkdirAll(config.LogDir, 0755); err != nil {
 			return fmt.Errorf("не вдалося створити директорію логів: %w", err)
 		}
@@ -63,6 +65,7 @@ func Setup(config *Config) error {
 			LocalTime:  true,
 		}
 		writers = append(writers, fileWriter)
+		fmt.Printf("  Файловий логер налаштовано (app.log)\n")
 
 		// Окремий файл для помилок
 		errorWriter := &lumberjack.Logger{
@@ -80,6 +83,7 @@ func Setup(config *Config) error {
 			MinLevel: zerolog.ErrorLevel,
 		}
 		writers = append(writers, errorFilteredWriter)
+		fmt.Printf("  Логер помилок налаштовано (error.log)\n")
 	}
 
 	// Налаштування консольного виводу
@@ -87,6 +91,7 @@ func Setup(config *Config) error {
 		var consoleWriter io.Writer
 
 		if config.PrettyConsole {
+			fmt.Printf("  Увімкнено красивий формат консолі\n")
 			consoleWriter = zerolog.ConsoleWriter{
 				Out:        os.Stdout,
 				TimeFormat: "15:04:05",
@@ -106,6 +111,7 @@ func Setup(config *Config) error {
 		}
 
 		writers = append(writers, consoleWriter)
+		fmt.Printf("  Консолень логер налаштовано\n")
 	}
 
 	if len(writers) == 0 {
@@ -125,6 +131,7 @@ func Setup(config *Config) error {
 		level = zerolog.InfoLevel
 	}
 	zerolog.SetGlobalLevel(level)
+	fmt.Printf("  Рівень логування: %s\n", config.LogLevel)
 
 	// Створюємо базовий логер
 	logger := zerolog.New(multi).
@@ -140,11 +147,13 @@ func Setup(config *Config) error {
 			Period:      time.Second,
 			NextSampler: &zerolog.BasicSampler{N: 100},
 		})
+		fmt.Printf("  Sampling увімкнено\n")
 	}
 
 	// Встановлюємо глобальний логер
 	log.Logger = logger
 
+	fmt.Printf("Система логування готова\n\n")
 	log.Info().
 		Str("log_level", config.LogLevel).
 		Str("log_dir", config.LogDir).

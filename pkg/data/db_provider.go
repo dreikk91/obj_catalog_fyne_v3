@@ -290,7 +290,9 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 	for _, row := range rows {
 		// Визначаємо тип тривоги за SC1
 		alarmType := models.AlarmFire
-		if row.Sc1 != nil && *row.Sc1 == 3 {
+		if row.Sc1 != nil && *row.Sc1 == 1 {
+			alarmType = models.AlarmFire
+		} else {
 			alarmType = models.AlarmFault
 		}
 
@@ -318,10 +320,11 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 
 	log.Debug().Int("alarmsCount", len(alarms)).Msg("Тривоги завантажено")
 	if len(alarms) > 0 {
-		log.Info().Int("count", len(alarms)).Msg("Активні тривоги знайдено!")
-		for _, a := range alarms {
-			log.Warn().Int("id", a.ID).Str("object", a.ObjectName).Str("address", a.Address).Msg("Тривога")
-		}
+		
+		// log.Info().Int("count", len(alarms)).Msg("Активні тривоги знайдено!")
+		// for _, a := range alarms {
+		// 	log.Warn().Int("id", a.ID).Str("object", a.ObjectName).Str("address", a.Address).Msg("Тривога")
+		// }
 	}
 	return alarms
 }

@@ -35,7 +35,7 @@ func (a *Alarm) GetTypeDisplay() string {
 	case AlarmFault:
 		return "НЕСПРАВНІСТЬ"
 	default:
-		return "ТРИВОГА"
+		return "СИСТЕМА"
 	}
 }
 

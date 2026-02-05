@@ -4,7 +4,7 @@ import (
 	"fmt"
 	// "math/rand"
 	"runtime/debug"
-	// "time"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -130,7 +130,7 @@ func NewApplication() *Application {
 	// А дані будуть підтягуватись у фоні (вже запущено в конструкторах панелей)
 
 	// Запускаємо симуляцію подій / фонове оновлення
-	// application.startEventSimulation()
+	application.startGettingEvents()
 
 	log.Info().Msg("Ініціалізація завершена. Програма готова до роботи.")
 	return application
@@ -269,51 +269,51 @@ func (a *Application) buildUI() {
 	log.Debug().Msg("UI побудований та встановлений на вікно")
 }
 
-// // startEventSimulation запускає симуляцію подій
-// func (a *Application) startEventSimulation() {
-// 	go func() {
-// 		secTicker := time.NewTicker(2 * time.Second) // Трохи повільніше
-// 		defer secTicker.Stop()
+// startGettingEvents запускає симуляцію подій
+func (a *Application) startGettingEvents() {
+	go func() {
+		secTicker := time.NewTicker(2 * time.Second) // Трохи повільніше
+		defer secTicker.Stop()
 
-// 		minTicker := time.NewTicker(60 * time.Second)
-// 		defer minTicker.Stop()
+		minTicker := time.NewTicker(60 * time.Second)
+		defer minTicker.Stop()
 
-// 		for {
-// 			select {
-// 			case <-secTicker.C:
-// 				// Симуляція тільки якщо використовуємо мок-дані або для візуального ефекту
-// 				// В реальному проекті тут краще робити фонове оновлення через провайдера
-// 				// if a.mockData != nil && rand.Intn(3) == 0 {
-// 				// 	a.mockData.SimulateRandomEvent()
-// 				// 	a.mockData.SimulateNewAlarm()
-// 				// }
+		for {
+			select {
+			case <-secTicker.C:
+				// Симуляція тільки якщо використовуємо мок-дані або для візуального ефекту
+				// В реальному проекті тут краще робити фонове оновлення через провайдера
+				// if a.mockData != nil && rand.Intn(3) == 0 {
+				// 	a.mockData.SimulateRandomEvent()
+				// 	a.mockData.SimulateNewAlarm()
+				// }
 
-// 				fyne.Do(func() {
-// 					if a.alarmPanel != nil {
-// 						a.alarmPanel.Refresh()
-// 					}
-// 					if a.eventLog != nil {
-// 						a.eventLog.Refresh()
-// 					}
-// 					if a.objectList != nil {
-// 						a.objectList.Refresh()
-// 					}
-// 				})
+				fyne.Do(func() {
+					if a.alarmPanel != nil {
+						a.alarmPanel.Refresh()
+					}
+					if a.eventLog != nil {
+						a.eventLog.Refresh()
+					}
+					if a.objectList != nil {
+						a.objectList.Refresh()
+					}
+				})
 
-// 			case <-minTicker.C:
-// 				// if a.mockData != nil {
-// 				// 	changedObj := a.mockData.SimulateObjectChange()
-// 					fyne.Do(func() {
-// 						a.objectList.Refresh()
-// 						if a.workArea.CurrentObject != nil && a.workArea.CurrentObject.ID == changedObj.ID {
-// 							a.workArea.SetObject(*changedObj)
-// 						}
-// 					})
-// 				// }
-// 			}
-// 		}
-// 	}()
-// }
+			case <-minTicker.C:
+				// if a.mockData != nil {
+				// 	changedObj := a.mockData.SimulateObjectChange()
+				fyne.Do(func() {
+					a.objectList.Refresh()
+					// if a.workArea.CurrentObject != nil && a.workArea.CurrentObject.ID == changedObj.ID {
+					// 	a.workArea.SetObject(*changedObj)
+					// }
+				})
+				// }
+			}
+		}
+	}()
+}
 
 // Run запускає додаток
 func (a *Application) Run() {

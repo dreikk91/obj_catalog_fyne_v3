@@ -25,7 +25,7 @@ func InitDB(connStr string) *sqlx.DB {
 	zlog.Debug().Msg("Налаштування пулу з'єднань...")
 	db.SetMaxOpenConns(10)                  // Макс. активних з'єднань
 	db.SetMaxIdleConns(2)                   // Макс. з'єднань у черзі
-	db.SetConnMaxLifetime(time.Minute * 15) // Час життя з'єднання 
+	db.SetConnMaxLifetime(time.Minute * 15) // Час життя з'єднання
 	zlog.Debug().Int("maxOpenConns", 10).Int("maxIdleConns", 2).Str("maxConnLifetime", "15m").Msg("Пул з'єднань налаштовано")
 
 	// Перша фізична перевірка з'єднання
@@ -50,7 +50,7 @@ func StartHealthCheck(db *sqlx.DB) {
 			checkCount++
 			if err := db.Ping(); err != nil {
 				failCount++
-				
+
 				zlog.Warn().Err(err).Int("failCount", failCount).Msg("Втрачено зв'язок з Firebird!")
 				// Відновлюємо пул при багаторазових збоях
 				if failCount >= 3 {
@@ -59,12 +59,13 @@ func StartHealthCheck(db *sqlx.DB) {
 					db.SetMaxIdleConns(0)
 					time.Sleep(500 * time.Millisecond)
 					db.SetMaxIdleConns(2)
-					
+
 				} else {
-					db.DB.Close() // Закриваємо всі з'єднання, щоб очистити пул
-					time.Sleep(500 * time.Millisecond) // Коротка пауза перед повторною ініціалізацією
-					// Після закриття з'єднань, sqlx автоматично відновить їх при наступному запиті
-					failCount = 0 // Скидаємо лічильник після спроби відновлення
+					// Спроба "м'якого" відновлення - скидаємо простійні з'єднання
+					zlog.Warn().Msg("Спроба скидання пулу з'єднань...")
+					db.SetMaxIdleConns(0)
+					time.Sleep(500 * time.Millisecond)
+					db.SetMaxIdleConns(2)
 				}
 			} else {
 				if failCount > 0 {

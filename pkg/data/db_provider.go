@@ -246,7 +246,7 @@ func (p *DBDataProvider) GetObjectEvents(objectID string) []models.Event {
 	}
 
 	log.Debug().Int64("objectID", id).Msg("Завантаження подій об'єкта...")
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	// Для GetObjectEvents нам потрібен ObjUin. Отримуємо його через деталі.

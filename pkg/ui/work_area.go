@@ -3,6 +3,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -14,6 +15,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 // WorkAreaPanel - структура робочої області
@@ -66,7 +68,7 @@ type WorkAreaPanel struct {
 	// Таблиці
 	ZonesTable   *widget.Table
 	ContactsList *widget.List
-	EventsTable  *widget.Table
+	EventsList   *widget.List
 }
 
 // NewWorkAreaPanel створює робочу область
@@ -287,34 +289,56 @@ func (w *WorkAreaPanel) createContactsTab() fyne.CanvasObject {
 }
 
 func (w *WorkAreaPanel) createEventsTab() fyne.CanvasObject {
-	w.EventsTable = widget.NewTable(
-		func() (int, int) {
-			return len(w.Events), 3
+	eventsList := widget.NewList(
+		func() int {
+			return len(w.Events)
 		},
 		func() fyne.CanvasObject {
-			return widget.NewLabel("—")
+			bg := canvas.NewRectangle(color.Transparent)
+			txt := canvas.NewText("Подія", color.White)
+			return container.NewStack(bg, container.NewPadded(txt))
 		},
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			label := obj.(*widget.Label)
-			if id.Row >= len(w.Events) {
+		func(id widget.ListItemID, obj fyne.CanvasObject) {
+			if id >= len(w.Events) {
 				return
 			}
-			event := w.Events[id.Row]
-			switch id.Col {
-			case 0:
-				label.SetText(event.GetDateTimeDisplay())
-			case 1:
-				label.SetText(event.GetTypeDisplay())
-			case 2:
-				label.SetText(event.Details)
+			stack := obj.(*fyne.Container)
+			bg := stack.Objects[0].(*canvas.Rectangle)
+			txtContainer := stack.Objects[1].(*fyne.Container)
+			txt := txtContainer.Objects[0].(*canvas.Text)
+
+			event := w.Events[id]
+
+			// Вибираємо палітру кольорів залежно від теми
+			var textColor, rowColor color.NRGBA
+			if IsDarkMode() {
+				textColor, rowColor = utils.SelectColorNRGBADark(event.SC1)
+			} else {
+				textColor, rowColor = utils.SelectColorNRGBA(event.SC1)
 			}
+
+			bg.FillColor = rowColor
+			bg.Refresh()
+
+			txt.Color = textColor
+
+			// Формат: час | Зона N | тип — деталі
+			text := event.GetDateTimeDisplay()
+			if event.ZoneNumber > 0 {
+				text += " | Зона " + itoa(event.ZoneNumber)
+			}
+			text += " | " + event.GetTypeDisplay()
+			if event.Details != "" {
+				text += " — " + event.Details
+			}
+			txt.Text = text
+			txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(fyneTheme.SizeNameText)
+			txt.Refresh()
 		},
 	)
-	w.EventsTable.SetColumnWidth(0, 140)
-	w.EventsTable.SetColumnWidth(1, 120)
-	w.EventsTable.SetColumnWidth(2, 200)
 
-	return w.EventsTable
+	w.EventsList = eventsList
+	return eventsList
 }
 
 // SetObject встановлює об'єкт та запускає фонове завантаження деталей
@@ -386,8 +410,8 @@ func (w *WorkAreaPanel) refreshTabs() {
 	if w.ContactsList != nil {
 		w.ContactsList.Refresh()
 	}
-	if w.EventsTable != nil {
-		w.EventsTable.Refresh()
+	if w.EventsList != nil {
+		w.EventsList.Refresh()
 	}
 }
 
@@ -424,7 +448,7 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 
 	chanText := "Інший канал"
 	switch obj.ObjChan {
-case 1:
+	case 1:
 		chanText = "Автододзвон"
 	case 5:
 		chanText = "GPRS"
@@ -509,5 +533,5 @@ func (w *WorkAreaPanel) OnThemeChanged(fontSize float32) {
 	// Віджети (Labels, Tables) оновляться автоматично через Refresh
 	w.ZonesTable.Refresh()
 	w.ContactsList.Refresh()
-	w.EventsTable.Refresh()
+	w.EventsList.Refresh()
 }

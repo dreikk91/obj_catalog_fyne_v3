@@ -103,7 +103,11 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 				txt.Color = textColor
 
 				icon := getEventIcon(event.Type)
-				text := icon + " " + event.GetDateTimeDisplay() + " | №" + itoa(event.ObjectID) + " " + event.ObjectName + " | " + event.GetTypeDisplay()
+				text := icon + " " + event.GetDateTimeDisplay() + " | №" + itoa(event.ObjectID)
+				if event.ZoneNumber > 0 {
+					text += "-" + itoa(event.ZoneNumber)
+				}
+				text += " " + event.ObjectName + " | " + event.GetTypeDisplay()
 				if event.Details != "" {
 					text += " — " + event.Details
 				}

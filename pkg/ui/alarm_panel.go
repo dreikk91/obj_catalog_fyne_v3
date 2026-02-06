@@ -90,7 +90,11 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 				if alarm.Type == models.AlarmFault {
 					icon = "🟡"
 				}
-				displayText := icon + " " + alarm.GetTimeDisplay() + " | №" + itoa(alarm.ObjectID) + " " + alarm.ObjectName + " | " + alarm.GetTypeDisplay()
+				displayText := icon + " " + alarm.GetTimeDisplay() + " | №" + itoa(alarm.ObjectID)
+				if alarm.ZoneNumber > 0 {
+					displayText += "-" + itoa(alarm.ZoneNumber)
+				}
+				displayText += " " + alarm.ObjectName + " | " + alarm.GetTypeDisplay()
 				if alarm.Details != "" {
 					displayText += " — " + alarm.Details
 				}

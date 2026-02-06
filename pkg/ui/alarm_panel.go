@@ -14,6 +14,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 // AlarmPanelWidget - структура для панелі тривог
@@ -66,23 +67,34 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 
 			if id < len(panel.CurrentAlarms) {
 				stack := obj.(*fyne.Container)
+				bg := stack.Objects[0].(*canvas.Rectangle)
 				txtContainer := stack.Objects[1].(*fyne.Container)
 				txt := txtContainer.Objects[0].(*canvas.Text)
 
 				alarm := panel.CurrentAlarms[id]
+
+				// Вибираємо палітру кольорів залежно від теми
+				var textColor, rowColor color.NRGBA
+				if IsDarkMode() {
+					textColor, rowColor = utils.SelectColorNRGBADark(alarm.SC1)
+				} else {
+					textColor, rowColor = utils.SelectColorNRGBA(alarm.SC1)
+				}
+
+				bg.FillColor = rowColor
+				bg.Refresh()
+
+				txt.Color = textColor
+
 				icon := "🔴"
-				textColor := theme.ColorNameError
 				if alarm.Type == models.AlarmFault {
 					icon = "🟡"
-					textColor = theme.ColorNameWarning
 				}
 				displayText := icon + " " + alarm.GetTimeDisplay() + " | №" + itoa(alarm.ObjectID) + " " + alarm.ObjectName + " | " + alarm.GetTypeDisplay()
 				if alarm.Details != "" {
 					displayText += " — " + alarm.Details
 				}
 				txt.Text = displayText
-				variant := fyne.CurrentApp().Settings().ThemeVariant()
-				txt.Color = fyne.CurrentApp().Settings().Theme().Color(textColor, variant)
 
 				if panel.lastFontSize > 0 {
 					txt.TextSize = panel.lastFontSize

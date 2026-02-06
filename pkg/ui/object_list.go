@@ -271,7 +271,7 @@ func (p *ObjectListPanel) applyFilters() {
 			if !(obj.IsConnState == 0 && obj.GuardState != 0) {
 				statusMatch = false
 			}
-		case "Знято":
+		case "Знято зі спостереження":
 			if obj.GuardState != 0 {
 				statusMatch = false
 			}

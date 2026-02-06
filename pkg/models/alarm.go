@@ -7,11 +7,11 @@ import "time"
 type AlarmType string
 
 const (
-	AlarmFire  AlarmType = "fire"  // Пожежа
-	AlarmFault AlarmType = "fault" // Несправність
-	AlarmPowerFail AlarmType = "power_fail" // Втрата 220В
-	AlarmBatteryLow AlarmType = "battery_low" // Низький заряд АКБ
-	AlarmOffline AlarmType = "offline" // Втрата зв'язку
+	AlarmFire        AlarmType = "fire"         // Пожежа
+	AlarmFault       AlarmType = "fault"        // Несправність
+	AlarmPowerFail   AlarmType = "power_fail"   // Втрата 220В
+	AlarmBatteryLow  AlarmType = "battery_low"  // Низький заряд АКБ
+	AlarmOffline     AlarmType = "offline"      // Втрата зв'язку
 	AlarmSystemEvent AlarmType = "system_event" // Системна подія
 )
 
@@ -26,6 +26,7 @@ type Alarm struct {
 	Type        AlarmType // Тип тривоги
 	ZoneNumber  int       // Номер зони (шлейфу)
 	ZoneName    string    // Назва зони
+	SC1         int       // Код кольору з БД
 	IsProcessed bool      // Чи оброблена тривога
 	ProcessedBy string    // Ким оброблена
 	ProcessNote string    // Примітка при обробці

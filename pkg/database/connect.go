@@ -23,10 +23,10 @@ func InitDB(connStr string) *sqlx.DB {
 
 	// Налаштування пулу з'єднань
 	zlog.Debug().Msg("Налаштування пулу з'єднань...")
-	db.SetMaxOpenConns(25)                 // Макс. активних з'єднань
-	db.SetMaxIdleConns(5)                  // Макс. з'єднань у черзі
-	db.SetConnMaxLifetime(time.Minute * 5) // Час життя з'єднання (менше ніж таймаут Firebird)
-	zlog.Debug().Int("maxOpenConns", 25).Int("maxIdleConns", 5).Str("maxConnLifetime", "5m").Msg("Пул з'єднань налаштовано")
+	db.SetMaxOpenConns(10)                  // Макс. активних з'єднань
+	db.SetMaxIdleConns(2)                   // Макс. з'єднань у черзі
+	db.SetConnMaxLifetime(time.Minute * 15) // Час життя з'єднання 
+	zlog.Debug().Int("maxOpenConns", 10).Int("maxIdleConns", 2).Str("maxConnLifetime", "15m").Msg("Пул з'єднань налаштовано")
 
 	// Перша фізична перевірка з'єднання
 	zlog.Debug().Msg("Виконання першої перевірки з'єднання (ping)...")
@@ -41,7 +41,7 @@ func InitDB(connStr string) *sqlx.DB {
 }
 
 func StartHealthCheck(db *sqlx.DB) {
-	zlog.Info().Msg("Запуск моніторингу здоров'я БД (перевірка кожні 30 сек)...")
+	zlog.Info().Msg("Запуск моніторингу здоров'я БД (перевірка кожні 60 сек)...")
 	go func() {
 		checkCount := 0
 		failCount := 0
@@ -50,10 +50,21 @@ func StartHealthCheck(db *sqlx.DB) {
 			checkCount++
 			if err := db.Ping(); err != nil {
 				failCount++
+				
 				zlog.Warn().Err(err).Int("failCount", failCount).Msg("Втрачено зв'язок з Firebird!")
-				// Тут можна додати логіку сповіщення
+				// Відновлюємо пул при багаторазових збоях
 				if failCount >= 3 {
 					zlog.Error().Err(err).Int("consecutiveFailures", failCount).Msg("Багаторазові відмови з'єднання з БД!")
+					// Видаляємо мертві з'єднання з пулу
+					db.SetMaxIdleConns(0)
+					time.Sleep(500 * time.Millisecond)
+					db.SetMaxIdleConns(2)
+					
+				} else {
+					db.DB.Close() // Закриваємо всі з'єднання, щоб очистити пул
+					time.Sleep(500 * time.Millisecond) // Коротка пауза перед повторною ініціалізацією
+					// Після закриття з'єднань, sqlx автоматично відновить їх при наступному запиті
+					failCount = 0 // Скидаємо лічильник після спроби відновлення
 				}
 			} else {
 				if failCount > 0 {

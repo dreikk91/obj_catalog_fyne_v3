@@ -1,5 +1,6 @@
 arm_monitor
 log/*
-*.exe
+*.exe*
 *.dll
 pkg/data/mock.go1
+wasm/*

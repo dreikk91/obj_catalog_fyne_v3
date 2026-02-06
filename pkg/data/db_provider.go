@@ -294,14 +294,14 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 		switch *row.Sc1 {
 		case 1:
 			alarmType = models.AlarmFire
-		case 2: 
+		case 2:
 			alarmType = models.AlarmFault
 		case 12:
 			alarmType = models.AlarmOffline
 		default:
 			alarmType = models.AlarmFault
 		}
-		
+
 		// if row.Sc1 != nil && *row.Sc1 == 1 {
 		// 	alarmType = models.AlarmFire
 		// } else {
@@ -326,13 +326,14 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 			Details:    details,
 			Time:       ptrToTime(row.EvTime1),
 			Type:       alarmType,
+			SC1:        ptrToInt(row.Sc1),
 		}
 		alarms = append(alarms, alarm)
 	}
 
 	log.Debug().Int("alarmsCount", len(alarms)).Msg("Тривоги завантажено")
 	if len(alarms) > 0 {
-		
+
 		// log.Info().Int("count", len(alarms)).Msg("Активні тривоги знайдено!")
 		// for _, a := range alarms {
 		// 	log.Warn().Int("id", a.ID).Str("object", a.ObjectName).Str("address", a.Address).Msg("Тривога")

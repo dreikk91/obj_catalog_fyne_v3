@@ -50,7 +50,7 @@ func main() {
 	// Ініціалізація провайдера даних
 	dataProvider := data.NewDBDataProvider(db, dsn)
 
-	p := tea.NewProgram(tui.NewModel(dataProvider), tea.WithAltScreen())
+	p := tea.NewProgram(tui.NewModel(dataProvider), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		log.Error().Err(err).Msg("Помилка запуску TUI")
 	}

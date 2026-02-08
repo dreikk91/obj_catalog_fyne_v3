@@ -94,13 +94,13 @@ func NewModel(provider data.DataProvider) Model {
 	m.AlarmNoteInput.Placeholder = "Примітка..."
 
 	// We will initialize lists properly in Init or when data arrives
-	m.ObjectList = list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	m.ObjectList = list.New([]list.Item{}, objectDelegate{}, 0, 0)
 	m.ObjectList.Title = "Об'єкти"
 
-	m.AlarmList = list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	m.AlarmList = list.New([]list.Item{}, alarmDelegate{}, 0, 0)
 	m.AlarmList.Title = "Активні тривоги"
 
-	m.EventLog = list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	m.EventLog = list.New([]list.Item{}, eventDelegate{}, 0, 0)
 	m.EventLog.Title = "Журнал подій"
 
 	return m
@@ -223,6 +223,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Height = msg.Height
 		m.updateLayout()
 
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			headerHeight := 2
+			mainHeight := m.Height - headerHeight - 1
+			bottomHeight := mainHeight / 3
+			topHeight := mainHeight - bottomHeight
+
+			if msg.Y >= headerHeight {
+				if msg.Y < headerHeight+topHeight {
+					if msg.X < m.Width/3 {
+						m.Focus = FocusObjectList
+					} else {
+						m.Focus = FocusWorkArea
+					}
+				} else if msg.Y < m.Height-1 {
+					m.Focus = FocusBottomPanel
+				}
+			}
+		}
+
 	case msgFetchObjects:
 		m.Objects = msg
 		items := make([]list.Item, len(msg))
@@ -265,14 +285,92 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 	}
 
-	// Handle focus-specific updates
+	// Mouse handling and focus-specific updates
+	headerHeight := 2
+	mainHeight := m.Height - headerHeight - 1
+	bottomHeight := mainHeight / 3
+	topHeight := mainHeight - bottomHeight
+
+	if mouseMsg, ok := msg.(tea.MouseMsg); ok {
+		// Pass translated mouse messages to non-focused components
+		if mouseMsg.Y >= headerHeight && mouseMsg.Y < headerHeight+topHeight && mouseMsg.X < m.Width/3 {
+			if m.Focus != FocusObjectList {
+				translatedMsg := mouseMsg
+				translatedMsg.Y -= headerHeight
+				var cmd tea.Cmd
+				m.ObjectList, cmd = m.ObjectList.Update(translatedMsg)
+				cmds = append(cmds, cmd)
+			}
+		}
+		if mouseMsg.Y >= headerHeight+topHeight && mouseMsg.Y < m.Height-1 {
+			if m.Focus != FocusBottomPanel {
+				translatedMsg := mouseMsg
+				translatedMsg.Y -= (headerHeight + topHeight)
+				var cmd tea.Cmd
+				if m.BottomTab == 0 {
+					m.EventLog, cmd = m.EventLog.Update(translatedMsg)
+				} else {
+					m.AlarmList, cmd = m.AlarmList.Update(translatedMsg)
+				}
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+
+	// Update focused component
+	var cmd tea.Cmd
 	switch m.Focus {
 	case FocusObjectList:
-		var cmd tea.Cmd
-		m.ObjectList, cmd = m.ObjectList.Update(msg)
+		if mouseMsg, ok := msg.(tea.MouseMsg); ok {
+			translatedMsg := mouseMsg
+			translatedMsg.Y -= headerHeight
+			m.ObjectList, cmd = m.ObjectList.Update(translatedMsg)
+		} else {
+			m.ObjectList, cmd = m.ObjectList.Update(msg)
+		}
 		cmds = append(cmds, cmd)
 
-		// If selection changed, update details
+		// Additional key handling for object list
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "enter", " ":
+				m.Focus = FocusWorkArea
+			}
+		}
+	case FocusBottomPanel:
+		if m.BottomTab == 0 {
+			if mouseMsg, ok := msg.(tea.MouseMsg); ok {
+				translatedMsg := mouseMsg
+				translatedMsg.Y -= (headerHeight + topHeight)
+				m.EventLog, cmd = m.EventLog.Update(translatedMsg)
+			} else {
+				m.EventLog, cmd = m.EventLog.Update(msg)
+			}
+			cmds = append(cmds, cmd)
+		} else {
+			if mouseMsg, ok := msg.(tea.MouseMsg); ok {
+				translatedMsg := mouseMsg
+				translatedMsg.Y -= (headerHeight + topHeight)
+				m.AlarmList, cmd = m.AlarmList.Update(translatedMsg)
+			} else {
+				m.AlarmList, cmd = m.AlarmList.Update(msg)
+			}
+			cmds = append(cmds, cmd)
+
+			if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "enter" {
+				if item := m.AlarmList.SelectedItem(); item != nil {
+					alarm := item.(alarmItem).alarm
+					m.ActiveAlarm = &alarm
+					m.Mode = ModeProcessAlarm
+					m.AlarmNoteInput.SetValue("")
+					m.AlarmNoteInput.Focus()
+				}
+			}
+		}
+	}
+
+	// Always sync selection from lists
+	if m.Focus == FocusObjectList {
 		if item := m.ObjectList.SelectedItem(); item != nil {
 			obj := item.(objectItem).obj
 			if m.SelectedObject == nil || m.SelectedObject.ID != obj.ID {
@@ -280,12 +378,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.fetchObjectDetails(obj.ID))
 			}
 		}
-	case FocusBottomPanel:
+	} else if m.Focus == FocusBottomPanel {
 		if m.BottomTab == 0 {
-			var cmd tea.Cmd
-			m.EventLog, cmd = m.EventLog.Update(msg)
-			cmds = append(cmds, cmd)
-
 			if item := m.EventLog.SelectedItem(); item != nil {
 				event := item.(eventItem).event
 				if m.SelectedObject == nil || m.SelectedObject.ID != event.ObjectID {
@@ -297,10 +391,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		} else {
-			var cmd tea.Cmd
-			m.AlarmList, cmd = m.AlarmList.Update(msg)
-			cmds = append(cmds, cmd)
-
 			if item := m.AlarmList.SelectedItem(); item != nil {
 				alarm := item.(alarmItem).alarm
 				if m.SelectedObject == nil || m.SelectedObject.ID != alarm.ObjectID {
@@ -309,16 +399,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.SelectedObject = obj
 						cmds = append(cmds, m.fetchObjectDetails(obj.ID))
 					}
-				}
-			}
-
-			if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "enter" {
-				if item := m.AlarmList.SelectedItem(); item != nil {
-					alarm := item.(alarmItem).alarm
-					m.ActiveAlarm = &alarm
-					m.Mode = ModeProcessAlarm
-					m.AlarmNoteInput.SetValue("")
-					m.AlarmNoteInput.Focus()
 				}
 			}
 		}

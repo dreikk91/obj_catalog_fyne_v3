@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
+
+	"github.com/rs/zerolog/log"
 )
 
 type SimplePreferences struct {
@@ -25,16 +27,26 @@ func (p *SimplePreferences) load() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	file, err := os.ReadFile(p.path)
-	if err == nil {
-		json.Unmarshal(file, &p.data)
+	if err != nil {
+		log.Error().Err(err).Str("path", p.path).Msg("Помилка читання налаштувань")
+		return
+	}
+	if err := json.Unmarshal(file, &p.data); err != nil {
+		log.Error().Err(err).Msg("Помилка парсингу JSON налаштувань")
 	}
 }
 
 func (p *SimplePreferences) save() {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	file, _ := json.MarshalIndent(p.data, "", "  ")
-	os.WriteFile(p.path, file, 0644)
+	file, err := json.MarshalIndent(p.data, "", "  ")
+	if err != nil {
+		log.Error().Err(err).Msg("Помилка маршалінгу налаштувань")
+		return
+	}
+	if err := os.WriteFile(p.path, file, 0644); err != nil {
+		log.Error().Err(err).Str("path", p.path).Msg("Помилка запису налаштувань")
+	}
 }
 
 func (p *SimplePreferences) String(key string) string {

@@ -4,9 +4,17 @@ import (
 	"fmt"
 	"strings"
 
-	"fyne.io/fyne/v2"
 	"github.com/rs/zerolog/log"
 )
+
+type Preferences interface {
+	String(key string) string
+	StringWithFallback(key, fallback string) string
+	SetString(key, value string)
+	Float(key string) float64
+	FloatWithFallback(key string, fallback float64) float64
+	SetFloat(key string, value float64)
+}
 
 const (
 	PrefUser     = "db.user"
@@ -26,7 +34,7 @@ type DBConfig struct {
 	Params   string
 }
 
-func LoadDBConfig(p fyne.Preferences) DBConfig {
+func LoadDBConfig(p Preferences) DBConfig {
 	log.Debug().Msg("Завантаження налаштувань БД з преференсів...")
 	cfg := DBConfig{
 		User:     p.StringWithFallback(PrefUser, "SYSDBA"),
@@ -55,7 +63,7 @@ func LoadDBConfig(p fyne.Preferences) DBConfig {
 	return cfg
 }
 
-func SaveDBConfig(p fyne.Preferences, cfg DBConfig) {
+func SaveDBConfig(p Preferences, cfg DBConfig) {
 	log.Debug().Msg("Збереження налаштувань БД...")
 	p.SetString(PrefUser, cfg.User)
 	p.SetString(PrefPassword, cfg.Password)

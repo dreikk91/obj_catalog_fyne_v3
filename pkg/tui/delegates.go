@@ -58,7 +58,7 @@ func (d objectDelegate) Render(w io.Writer, m list.Model, index int, listItem li
 
 type eventDelegate struct{}
 
-func (d eventDelegate) Height() int                               { return 2 }
+func (d eventDelegate) Height() int                               { return 1 }
 func (d eventDelegate) Spacing() int                              { return 0 }
 func (d eventDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
 func (d eventDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
@@ -67,8 +67,7 @@ func (d eventDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 		return
 	}
 
-	str := fmt.Sprintf("%s | %s", i.event.GetDateTimeDisplay(), i.event.GetTypeDisplay())
-	desc := i.event.Details
+	str := fmt.Sprintf("%s | %s | %s", i.event.GetDateTimeDisplay(), i.event.GetTypeDisplay(), i.event.Details)
 
 	fn := itemStyle.Render
 	if index == m.Index() {
@@ -77,12 +76,12 @@ func (d eventDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 		}
 	}
 
-	fmt.Fprintf(w, "%s\n%s", fn(str), itemStyle.Faint(true).Render(desc))
+	fmt.Fprintf(w, "%s", fn(str))
 }
 
 type alarmDelegate struct{}
 
-func (d alarmDelegate) Height() int                               { return 2 }
+func (d alarmDelegate) Height() int                               { return 1 }
 func (d alarmDelegate) Spacing() int                              { return 0 }
 func (d alarmDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
 func (d alarmDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
@@ -91,8 +90,7 @@ func (d alarmDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 		return
 	}
 
-	str := fmt.Sprintf("🚨 %s - %s", i.alarm.ObjectName, i.alarm.GetTypeDisplay())
-	desc := i.alarm.GetDateTimeDisplay()
+	str := fmt.Sprintf("🚨 %s | %s | %s", i.alarm.GetDateTimeDisplay(), i.alarm.ObjectName, i.alarm.GetTypeDisplay())
 
 	fn := itemStyle.Render
 	if index == m.Index() {
@@ -101,5 +99,5 @@ func (d alarmDelegate) Render(w io.Writer, m list.Model, index int, listItem lis
 		}
 	}
 
-	fmt.Fprintf(w, "%s\n%s", statusFireStyle.Render(fn(str)), itemStyle.Faint(true).Render(desc))
+	fmt.Fprintf(w, "%s", statusFireStyle.Render(fn(str)))
 }

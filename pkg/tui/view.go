@@ -94,8 +94,11 @@ func (m Model) renderLeftPanel(width int) string {
 	headerHeight := 2
 	footerHeight := 1
 	mainHeight := m.Height - headerHeight - footerHeight
+	if mainHeight < 10 { mainHeight = 10 }
 	bottomHeight := mainHeight / 3
+	if bottomHeight < 5 { bottomHeight = 5 }
 	topHeight := mainHeight - bottomHeight
+	if topHeight < 5 { topHeight = 5 }
 
 	return style.Width(width).Height(topHeight - 1).Render(m.ObjectList.View())
 }
@@ -109,8 +112,11 @@ func (m Model) renderRightPanel(width int) string {
 	headerHeight := 2
 	footerHeight := 1
 	mainHeight := m.Height - headerHeight - footerHeight
+	if mainHeight < 10 { mainHeight = 10 }
 	bottomHeight := mainHeight / 3
+	if bottomHeight < 5 { bottomHeight = 5 }
 	topHeight := mainHeight - bottomHeight
+	if topHeight < 5 { topHeight = 5 }
 
 	var content string
 	if m.SelectedObject == nil {
@@ -125,8 +131,8 @@ func (m Model) renderRightPanel(width int) string {
 func (m Model) renderWorkArea(width int) string {
 	obj := m.SelectedObject
 
-	header := lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("%s (№%d)", obj.Name, obj.ID))
-	address := lipgloss.NewStyle().Faint(true).Render(fmt.Sprintf("📍 %s | 📄 %s", obj.Address, obj.ContractNum))
+	header := lipgloss.NewStyle().Bold(true).MaxWidth(m.WorkAreaViewport.Width).Height(1).Render(fmt.Sprintf("%s (№%d)", obj.Name, obj.ID))
+	address := lipgloss.NewStyle().Faint(true).MaxWidth(m.WorkAreaViewport.Width).Height(1).Render(fmt.Sprintf("📍 %s | 📄 %s", obj.Address, obj.ContractNum))
 
 	statusColor := "#34C759" // theme.ColorNormal
 	switch obj.Status {
@@ -137,7 +143,7 @@ func (m Model) renderWorkArea(width int) string {
 	case models.StatusOffline:
 		statusColor = "#888888"
 	}
-	status := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Bold(true).Render(obj.GetStatusDisplay())
+	status := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor)).Bold(true).Height(1).Render(obj.GetStatusDisplay())
 
 	// Tabs
 	tabs := []string{"📊 Стан", "🔌 Зони", "👥 Відповідальні", "📜 Журнал"}
@@ -244,7 +250,9 @@ func (m Model) renderBottomPanel() string {
 	headerHeight := 2
 	footerHeight := 1
 	mainHeight := m.Height - headerHeight - footerHeight
+	if mainHeight < 10 { mainHeight = 10 }
 	bottomHeight := mainHeight / 3
+	if bottomHeight < 5 { bottomHeight = 5 }
 
 	// Tabs
 	tabs := []string{"📜 Журнал подій", "🚨 Активні тривоги"}

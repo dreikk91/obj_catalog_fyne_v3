@@ -344,7 +344,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keyMsg, ok := msg.(tea.KeyMsg); ok {
 			switch keyMsg.String() {
 			case "enter", " ":
-				m.Focus = FocusWorkArea
+				if m.ObjectList.FilterState() != list.Filtering {
+					m.Focus = FocusWorkArea
+				}
 			}
 		}
 	case FocusWorkArea:
@@ -384,12 +386,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Always sync selection from lists
-	if m.Focus == FocusObjectList {
+	if m.Focus == FocusObjectList && m.ObjectList.FilterState() != list.Filtering {
 		if item := m.ObjectList.SelectedItem(); item != nil {
-			obj := item.(objectItem).obj
-			if m.SelectedObject == nil || m.SelectedObject.ID != obj.ID {
-				m.SelectedObject = &obj
-				cmds = append(cmds, m.fetchObjectDetails(obj.ID))
+			it := item.(objectItem)
+			// Check if we need to fetch details (either first time or different object)
+			// OR if the object we have is "sparse" (e.g. missing DeviceType which is only in details)
+			if m.SelectedObject == nil || m.SelectedObject.ID != it.obj.ID || m.SelectedObject.DeviceType == "" {
+				// Temporary sparse object until details arrive
+				if m.SelectedObject == nil || m.SelectedObject.ID != it.obj.ID {
+					m.SelectedObject = new(models.Object)
+					*m.SelectedObject = it.obj
+				}
+				cmds = append(cmds, m.fetchObjectDetails(it.obj.ID))
 			}
 		}
 	} else if m.Focus == FocusBottomPanel {
@@ -397,22 +405,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if item := m.EventLog.SelectedItem(); item != nil {
 				event := item.(eventItem).event
 				if m.SelectedObject == nil || m.SelectedObject.ID != event.ObjectID {
-					obj := m.DataProvider.GetObjectByID(fmt.Sprintf("%d", event.ObjectID))
-					if obj != nil {
-						m.SelectedObject = obj
-						cmds = append(cmds, m.fetchObjectDetails(obj.ID))
-					}
+					// Don't set SelectedObject here, let fetchObjectDetails do it asynchronously
+					cmds = append(cmds, m.fetchObjectDetails(event.ObjectID))
 				}
 			}
 		} else {
 			if item := m.AlarmList.SelectedItem(); item != nil {
 				alarm := item.(alarmItem).alarm
 				if m.SelectedObject == nil || m.SelectedObject.ID != alarm.ObjectID {
-					obj := m.DataProvider.GetObjectByID(fmt.Sprintf("%d", alarm.ObjectID))
-					if obj != nil {
-						m.SelectedObject = obj
-						cmds = append(cmds, m.fetchObjectDetails(obj.ID))
-					}
+					cmds = append(cmds, m.fetchObjectDetails(alarm.ObjectID))
 				}
 			}
 		}
@@ -424,19 +425,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) updateLayout() {
 	headerHeight := 2
 	footerHeight := 1
+
 	mainHeight := m.Height - headerHeight - footerHeight
+	if mainHeight < 10 { mainHeight = 10 } // Min height safety
+
 	bottomHeight := mainHeight / 3
+	if bottomHeight < 5 { bottomHeight = 5 }
+
 	topHeight := mainHeight - bottomHeight
+	if topHeight < 5 { topHeight = 5 }
 
 	listWidth := m.Width / 3
+	if listWidth < 20 { listWidth = 20 }
 
-	m.ObjectList.SetSize(listWidth-2, topHeight-2)
+	// Left panel inner size
+	m.ObjectList.SetSize(listWidth-2, topHeight-3)
 
-	m.EventLog.SetSize(m.Width-2, bottomHeight-4)
-	m.AlarmList.SetSize(m.Width-2, bottomHeight-4)
+	// Bottom panel inner size
+	m.EventLog.SetSize(m.Width-4, bottomHeight-3)
+	m.AlarmList.SetSize(m.Width-4, bottomHeight-3)
 
-	m.WorkAreaViewport.Width = m.Width - listWidth - 4
-	m.WorkAreaViewport.Height = topHeight - 8
+	// Work area viewport inner size
+	vw := m.Width - listWidth - 6
+	if vw < 10 { vw = 10 }
+	vh := topHeight - 10
+	if vh < 2 { vh = 2 } // Min height for viewport
+
+	m.WorkAreaViewport.Width = vw
+	m.WorkAreaViewport.Height = vh
 }
 
 type msgObjectDetails struct {
@@ -478,7 +494,7 @@ type objectItem struct {
 }
 func (i objectItem) Title() string       { return fmt.Sprintf("%s (№%d)", i.obj.Name, i.obj.ID) }
 func (i objectItem) Description() string { return i.obj.Address }
-func (i objectItem) FilterValue() string { return i.obj.Name + " " + i.obj.Address }
+func (i objectItem) FilterValue() string { return fmt.Sprintf("%d %s %s", i.obj.ID, i.obj.Name, i.obj.Address) }
 
 type alarmItem struct {
 	alarm models.Alarm

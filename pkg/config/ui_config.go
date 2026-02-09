@@ -1,9 +1,5 @@
 package config
 
-import (
-	"fyne.io/fyne/v2"
-)
-
 const (
 	PrefFontSize        = "ui.font_size"
 	PrefFontSizeObjects = "ui.font_size_objects"
@@ -18,7 +14,7 @@ type UIConfig struct {
 	FontSizeAlarms  float32
 }
 
-func LoadUIConfig(p fyne.Preferences) UIConfig {
+func LoadUIConfig(p Preferences) UIConfig {
 	return UIConfig{
 		FontSize:        float32(p.FloatWithFallback(PrefFontSize, 13.0)),
 		FontSizeObjects: float32(p.FloatWithFallback(PrefFontSizeObjects, 13.0)),
@@ -27,7 +23,7 @@ func LoadUIConfig(p fyne.Preferences) UIConfig {
 	}
 }
 
-func SaveUIConfig(p fyne.Preferences, cfg UIConfig) {
+func SaveUIConfig(p Preferences, cfg UIConfig) {
 	p.SetFloat(PrefFontSize, float64(cfg.FontSize))
 	p.SetFloat(PrefFontSizeObjects, float64(cfg.FontSizeObjects))
 	p.SetFloat(PrefFontSizeEvents, float64(cfg.FontSizeEvents))

@@ -82,7 +82,11 @@ func (m Model) View() string {
 func (m Model) renderHeader() string {
 	title := titleStyle.Render("АРМ Пожежної Безпеки v1.0")
 	status := fmt.Sprintf(" Останнє оновлення: %s", m.LastUpdate.Format("15:04:05"))
-	return headerStyle.Width(m.Width).Render(lipgloss.JoinHorizontal(lipgloss.Center, title, status))
+	loading := ""
+	if m.LoadingDetails {
+		loading = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFCC00")).Bold(true).Render(" [ЗАВАНТАЖЕННЯ...]")
+	}
+	return headerStyle.Width(m.Width).Render(lipgloss.JoinHorizontal(lipgloss.Center, title, status, loading))
 }
 
 func (m Model) renderLeftPanel(width int) string {
@@ -107,6 +111,10 @@ func (m Model) renderRightPanel(width int) string {
 	style := normalStyle
 	if m.Focus == FocusWorkArea {
 		style = focusedStyle
+	}
+
+	if m.LoadingDetails {
+		style = style.Foreground(lipgloss.Color("#888888"))
 	}
 
 	headerHeight := 2

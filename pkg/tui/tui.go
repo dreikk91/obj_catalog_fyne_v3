@@ -49,6 +49,7 @@ type Model struct {
 	Zones          []models.Zone
 	Contacts       []models.Contact
 	ObjectEvents   []models.Event
+	LoadingDetails bool
 
 	// Navigation State
 	Focus        focusArea
@@ -100,10 +101,14 @@ func NewModel(provider data.DataProvider) Model {
 	m.ObjectList.Title = "Об'єкти"
 
 	m.AlarmList = list.New([]list.Item{}, alarmDelegate{}, 0, 0)
-	m.AlarmList.Title = "Активні тривоги"
+	m.AlarmList.SetShowTitle(false)
+	m.AlarmList.SetShowStatusBar(false)
+	m.AlarmList.SetFilteringEnabled(false)
 
 	m.EventLog = list.New([]list.Item{}, eventDelegate{}, 0, 0)
-	m.EventLog.Title = "Журнал подій"
+	m.EventLog.SetShowTitle(false)
+	m.EventLog.SetShowStatusBar(false)
+	m.EventLog.SetFilteringEnabled(false)
 
 	m.WorkAreaViewport = viewport.New(0, 0)
 
@@ -251,36 +256,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case msgFetchObjects:
+		if len(m.Objects) == len(msg) && m.ObjectList.FilterState() == list.Filtering {
+			return m, nil
+		}
 		m.Objects = msg
 		items := make([]list.Item, len(msg))
 		for i, obj := range msg {
 			items[i] = objectItem{obj: obj}
 		}
+		currIdx := m.ObjectList.Index()
 		m.ObjectList.SetItems(items)
+		m.ObjectList.Select(currIdx)
 
 	case msgFetchAlarms:
+		if len(m.Alarms) == len(msg) && m.Focus == FocusBottomPanel && m.BottomTab == 1 {
+			// Skip update if user is looking at it and count is same
+			return m, nil
+		}
 		m.Alarms = msg
 		items := make([]list.Item, len(msg))
 		for i, alarm := range msg {
 			items[i] = alarmItem{alarm: alarm}
 		}
+		currIdx := m.AlarmList.Index()
 		m.AlarmList.SetItems(items)
+		m.AlarmList.Select(currIdx)
 
 	case msgFetchEvents:
+		if len(m.Events) == len(msg) && m.Focus == FocusBottomPanel && m.BottomTab == 0 {
+			return m, nil
+		}
 		m.Events = msg
 		items := make([]list.Item, len(msg))
 		for i, event := range msg {
 			items[i] = eventItem{event: event}
 		}
+		currIdx := m.EventLog.Index()
 		m.EventLog.SetItems(items)
+		m.EventLog.Select(currIdx)
 
 	case msgObjectDetails:
-		if msg.Object != nil {
+		if m.SelectedObject != nil && msg.Object != nil && m.SelectedObject.ID == msg.Object.ID {
 			m.SelectedObject = msg.Object
+			m.Zones = msg.Zones
+			m.Contacts = msg.Contacts
+			m.ObjectEvents = msg.Events
+			m.LoadingDetails = false
 		}
-		m.Zones = msg.Zones
-		m.Contacts = msg.Contacts
-		m.ObjectEvents = msg.Events
 
 	case []models.TestMessage:
 		m.TestMessages = msg
@@ -391,12 +413,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			it := item.(objectItem)
 			// Check if we need to fetch details (either first time or different object)
 			// OR if the object we have is "sparse" (e.g. missing DeviceType which is only in details)
-			if m.SelectedObject == nil || m.SelectedObject.ID != it.obj.ID || m.SelectedObject.DeviceType == "" {
-				// Temporary sparse object until details arrive
-				if m.SelectedObject == nil || m.SelectedObject.ID != it.obj.ID {
-					m.SelectedObject = new(models.Object)
-					*m.SelectedObject = it.obj
-				}
+			if m.SelectedObject == nil || m.SelectedObject.ID != it.obj.ID {
+				m.SelectedObject = new(models.Object)
+				*m.SelectedObject = it.obj
+				m.LoadingDetails = true
 				cmds = append(cmds, m.fetchObjectDetails(it.obj.ID))
 			}
 		}
@@ -405,7 +425,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if item := m.EventLog.SelectedItem(); item != nil {
 				event := item.(eventItem).event
 				if m.SelectedObject == nil || m.SelectedObject.ID != event.ObjectID {
-					// Don't set SelectedObject here, let fetchObjectDetails do it asynchronously
+					m.SelectedObject = &models.Object{ID: event.ObjectID}
+					m.LoadingDetails = true
 					cmds = append(cmds, m.fetchObjectDetails(event.ObjectID))
 				}
 			}
@@ -413,6 +434,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if item := m.AlarmList.SelectedItem(); item != nil {
 				alarm := item.(alarmItem).alarm
 				if m.SelectedObject == nil || m.SelectedObject.ID != alarm.ObjectID {
+					m.SelectedObject = &models.Object{ID: alarm.ObjectID}
+					m.LoadingDetails = true
 					cmds = append(cmds, m.fetchObjectDetails(alarm.ObjectID))
 				}
 			}

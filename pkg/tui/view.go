@@ -91,7 +91,13 @@ func (m Model) renderLeftPanel(width int) string {
 		style = focusedStyle
 	}
 
-	return style.Width(width).Height(m.Height * 2 / 3).Render(m.ObjectList.View())
+	headerHeight := 2
+	footerHeight := 1
+	mainHeight := m.Height - headerHeight - footerHeight
+	bottomHeight := mainHeight / 3
+	topHeight := mainHeight - bottomHeight
+
+	return style.Width(width).Height(topHeight - 1).Render(m.ObjectList.View())
 }
 
 func (m Model) renderRightPanel(width int) string {
@@ -100,6 +106,12 @@ func (m Model) renderRightPanel(width int) string {
 		style = focusedStyle
 	}
 
+	headerHeight := 2
+	footerHeight := 1
+	mainHeight := m.Height - headerHeight - footerHeight
+	bottomHeight := mainHeight / 3
+	topHeight := mainHeight - bottomHeight
+
 	var content string
 	if m.SelectedObject == nil {
 		content = "\n\n   ← Оберіть об'єкт зі списку"
@@ -107,7 +119,7 @@ func (m Model) renderRightPanel(width int) string {
 		content = m.renderWorkArea(width)
 	}
 
-	return style.Width(width).Height(m.Height * 2 / 3).Render(content)
+	return style.Width(width).Height(topHeight - 1).Render(content)
 }
 
 func (m Model) renderWorkArea(width int) string {
@@ -151,6 +163,8 @@ func (m Model) renderWorkArea(width int) string {
 		tabContent = m.renderObjectEventsTab()
 	}
 
+	m.WorkAreaViewport.SetContent(tabContent)
+
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		address,
@@ -158,7 +172,7 @@ func (m Model) renderWorkArea(width int) string {
 		"",
 		row,
 		"",
-		tabContent,
+		m.WorkAreaViewport.View(),
 	)
 }
 
@@ -227,6 +241,11 @@ func (m Model) renderBottomPanel() string {
 		style = focusedStyle
 	}
 
+	headerHeight := 2
+	footerHeight := 1
+	mainHeight := m.Height - headerHeight - footerHeight
+	bottomHeight := mainHeight / 3
+
 	// Tabs
 	tabs := []string{"📜 Журнал подій", "🚨 Активні тривоги"}
 	var renderedTabs []string
@@ -246,7 +265,7 @@ func (m Model) renderBottomPanel() string {
 		content = m.AlarmList.View()
 	}
 
-	return style.Width(m.Width - 2).Height(m.Height / 3).Render(
+	return style.Width(m.Width - 2).Height(bottomHeight).Render(
 		lipgloss.JoinVertical(lipgloss.Left, row, content),
 	)
 }
@@ -254,7 +273,7 @@ func (m Model) renderBottomPanel() string {
 func (m Model) renderFooter() string {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#888888")).
-		Render(" [Tab] Focus [←/→] Tabs [Enter] Process [m] TestMsg [c] Copy [s] Settings [q] Exit")
+		Render(" [Tab] Focus [←/→] Tabs [/] Search [Enter] Select [m] TestMsg [c] Copy [s] Settings [q] Exit")
 }
 
 func (m Model) renderProcessAlarmDialog() string {

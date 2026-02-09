@@ -7,6 +7,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/models"
@@ -41,6 +42,7 @@ type Model struct {
 	ObjectList   list.Model
 	AlarmList    list.Model
 	EventLog     list.Model
+	WorkAreaViewport viewport.Model
 
 	// Selection State
 	SelectedObject *models.Object
@@ -103,6 +105,8 @@ func NewModel(provider data.DataProvider) Model {
 	m.EventLog = list.New([]list.Item{}, eventDelegate{}, 0, 0)
 	m.EventLog.Title = "Журнал подій"
 
+	m.WorkAreaViewport = viewport.New(0, 0)
+
 	return m
 }
 
@@ -161,12 +165,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.AlarmNoteInput.Focus()
 				}
 			case "enter":
+				var cmd tea.Cmd
 				if m.ActiveAlarm != nil {
-					m.DataProvider.ProcessAlarm(fmt.Sprintf("%d", m.ActiveAlarm.ID), "Диспетчер (TUI)", m.AlarmNoteInput.Value())
+					cmd = m.processAlarmCmd(fmt.Sprintf("%d", m.ActiveAlarm.ID), "Диспетчер (TUI)", m.AlarmNoteInput.Value())
 				}
 				m.Mode = ModeNormal
 				m.AlarmNoteInput.Blur()
-				return m, m.fetchAlarms
+				return m, tea.Batch(cmd, m.fetchAlarms)
 			}
 
 			if m.AlarmNoteInput.Focused() {
@@ -207,12 +212,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "right":
 			if m.Focus == FocusWorkArea {
 				m.WorkAreaTab = (m.WorkAreaTab + 1) % 4
+				m.WorkAreaViewport.GotoTop()
 			} else if m.Focus == FocusBottomPanel {
 				m.BottomTab = (m.BottomTab + 1) % 2
 			}
 		case "left":
 			if m.Focus == FocusWorkArea {
 				m.WorkAreaTab = (m.WorkAreaTab - 1 + 4) % 4
+				m.WorkAreaViewport.GotoTop()
 			} else if m.Focus == FocusBottomPanel {
 				m.BottomTab = (m.BottomTab - 1 + 2) % 2
 			}
@@ -268,6 +275,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.EventLog.SetItems(items)
 
 	case msgObjectDetails:
+		if msg.Object != nil {
+			m.SelectedObject = msg.Object
+		}
 		m.Zones = msg.Zones
 		m.Contacts = msg.Contacts
 		m.ObjectEvents = msg.Events
@@ -337,6 +347,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Focus = FocusWorkArea
 			}
 		}
+	case FocusWorkArea:
+		var cmd tea.Cmd
+		m.WorkAreaViewport, cmd = m.WorkAreaViewport.Update(msg)
+		cmds = append(cmds, cmd)
 	case FocusBottomPanel:
 		if m.BottomTab == 0 {
 			if mouseMsg, ok := msg.(tea.MouseMsg); ok {
@@ -420,9 +434,13 @@ func (m *Model) updateLayout() {
 
 	m.EventLog.SetSize(m.Width-2, bottomHeight-4)
 	m.AlarmList.SetSize(m.Width-2, bottomHeight-4)
+
+	m.WorkAreaViewport.Width = m.Width - listWidth - 4
+	m.WorkAreaViewport.Height = topHeight - 8
 }
 
 type msgObjectDetails struct {
+	Object   *models.Object
 	Zones    []models.Zone
 	Contacts []models.Contact
 	Events   []models.Event
@@ -432,6 +450,7 @@ func (m Model) fetchObjectDetails(id int) tea.Cmd {
 	return func() tea.Msg {
 		idStr := fmt.Sprintf("%d", id)
 		return msgObjectDetails{
+			Object:   m.DataProvider.GetObjectByID(idStr),
 			Zones:    m.DataProvider.GetZones(idStr),
 			Contacts: m.DataProvider.GetEmployees(idStr),
 			Events:   m.DataProvider.GetObjectEvents(idStr),
@@ -443,6 +462,13 @@ func (m Model) fetchTestMessages(id int) tea.Cmd {
 	return func() tea.Msg {
 		idStr := fmt.Sprintf("%d", id)
 		return m.DataProvider.GetTestMessages(idStr)
+	}
+}
+
+func (m Model) processAlarmCmd(id, user, note string) tea.Cmd {
+	return func() tea.Msg {
+		m.DataProvider.ProcessAlarm(id, user, note)
+		return nil
 	}
 }
 

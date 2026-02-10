@@ -10,6 +10,9 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/layout"
+	fyneTheme "fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/config"
@@ -17,7 +20,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/logger"
 	"obj_catalog_fyne_v3/pkg/models"
-	"obj_catalog_fyne_v3/pkg/theme"
+	apptheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
 
@@ -45,6 +48,8 @@ type Application struct {
 
 	// Поточна тема
 	isDarkTheme bool
+
+	statusLabel *widget.Label
 }
 
 func main() {
@@ -145,10 +150,10 @@ func (a *Application) setTheme(dark bool) {
 	uiCfg := config.LoadUIConfig(a.fyneApp.Preferences())
 	if dark {
 		log.Debug().Msg("Застосування темної теми...")
-		a.fyneApp.Settings().SetTheme(theme.NewDarkTheme(uiCfg.FontSize))
+		a.fyneApp.Settings().SetTheme(apptheme.NewDarkTheme(uiCfg.FontSize))
 	} else {
 		log.Debug().Msg("Застосування світлої теми...")
-		a.fyneApp.Settings().SetTheme(theme.NewLightTheme(uiCfg.FontSize))
+		a.fyneApp.Settings().SetTheme(apptheme.NewLightTheme(uiCfg.FontSize))
 	}
 	log.Debug().Bool("darkTheme", dark).Float32("fontSize", uiCfg.FontSize).Msg("Тема застосована")
 }
@@ -211,23 +216,27 @@ func (a *Application) buildUI() {
 	log.Debug().Msg("Callbacks налаштовані")
 
 	// Кнопка перемикання теми
-	themeBtn := widget.NewButton("Темна тема", nil)
+	themeBtn := widget.NewButtonWithIcon("", fyneTheme.ColorPaletteIcon(), nil)
+	updateThemeButton := func() {
+		if a.isDarkTheme {
+			themeBtn.SetText("Світла тема")
+		} else {
+			themeBtn.SetText("Темна тема")
+		}
+	}
 	themeBtn.OnTapped = func() {
 		a.isDarkTheme = !a.isDarkTheme
 		log.Debug().Bool("darkTheme", a.isDarkTheme).Msg("Перемикання теми...")
 		a.setTheme(a.isDarkTheme)
-		if a.isDarkTheme {
-			themeBtn.SetText("Темна тема")
-		} else {
-			themeBtn.SetText("Світла тема")
-		}
+		updateThemeButton()
 		// Оновлюємо панелі, щоб застосувати нові кольори
 		a.objectList.Refresh()
 		a.eventLog.Refresh()
 	}
+	updateThemeButton()
 
 	// Кнопка налаштувань
-	settingsBtn := widget.NewButton("Налаштування", func() {
+	settingsBtn := widget.NewButtonWithIcon("Налаштування", fyneTheme.SettingsIcon(), func() {
 		log.Debug().Msg("Відкриття діалогу налаштувань...")
 		dialogs.ShowSettingsDialog(a.mainWindow, a.fyneApp.Preferences(), func(dbCfg config.DBConfig, uiCfg config.UIConfig) {
 			log.Info().Str("host", dbCfg.Host).Msg("Параметри в діалозі налаштувань змінено")
@@ -236,12 +245,8 @@ func (a *Application) buildUI() {
 		})
 	})
 
-	toolbar := container.NewHBox(
-		widget.NewLabel("Каталог об'єктів"),
-		widget.NewSeparator(),
-		themeBtn,
-		settingsBtn,
-	)
+	title := widget.NewLabel("Каталог об'єктів")
+	toolbar := container.NewHBox(title, layout.NewSpacer(), themeBtn, settingsBtn)
 
 	rightTabs := container.NewAppTabs(
 		container.NewTabItem("ДЕТАЛІ", a.workArea.Container),
@@ -253,16 +258,37 @@ func (a *Application) buildUI() {
 
 	// Layout: universal HSplit with right-side tabs (better for 1024x768 and 1920x1080)
 	rootSplit := container.NewHSplit(a.objectList.Container, rightTabs)
-	rootSplit.SetOffset(0.35)
+	rootSplit.SetOffset(0.32)
+
+	a.statusLabel = widget.NewLabel("БД : підключено")
+	shortcutsLabel := widget.NewLabel("Ctrl+1..3: вкладки | Ctrl+T: тема")
+	statusBar := container.NewVBox(
+		widget.NewSeparator(),
+		container.NewHBox(a.statusLabel, layout.NewSpacer(), shortcutsLabel),
+	)
 
 	finalLayout := container.NewBorder(
 		container.NewVBox(toolbar, widget.NewSeparator()),
-		nil, nil, nil,
+		statusBar, nil, nil,
 		rootSplit,
 	)
-
 	a.mainWindow.SetContent(finalLayout)
 	log.Debug().Msg("UI побудований та встановлений на вікно")
+
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyT, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		if themeBtn.OnTapped != nil {
+			themeBtn.OnTapped()
+		}
+	})
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key1, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		rightTabs.SelectIndex(0)
+	})
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key2, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		rightTabs.SelectIndex(1)
+	})
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key3, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		rightTabs.SelectIndex(2)
+	})
 }
 
 // startGettingEvents запускає симуляцію подій
@@ -333,11 +359,16 @@ func (a *Application) Run() {
 func (a *Application) Reconnect(cfg config.DBConfig) {
 	dsn := cfg.ToDSN()
 	log.Warn().Str("dsn", dsn).Msg("🔄 Перепідключення до бази даних...")
-
+	if a.statusLabel != nil {
+		a.statusLabel.SetText("БД : перепідключення...")
+	}
 	log.Debug().Msg("Ініціалізація нового з'єднання з БД...")
 	newDB := database.InitDB(dsn)
 	if err := newDB.Ping(); err != nil {
 		log.Error().Err(err).Msg("❌ Помилка перевірки з'єднання з новою БД")
+		if a.statusLabel != nil {
+			a.statusLabel.SetText("БД : помилка підключення")
+		}
 		dialogs.ShowErrorDialog(a.mainWindow, "Помилка підключення", err)
 		return
 	}
@@ -375,6 +406,9 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 	log.Debug().Msg("✓ Дані перезавантажено")
 
 	log.Info().Msg("✅ Перепідключення до БД завершено успішно")
+	if a.statusLabel != nil {
+		a.statusLabel.SetText("БД : підключено")
+	}
 	dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Підключення до бази даних оновлено")
 }
 
@@ -403,4 +437,3 @@ func (a *Application) RefreshUI(cfg config.UIConfig) {
 
 	log.Info().Msg("✅ Параметри інтерфейсу оновлено")
 }
-

@@ -85,12 +85,19 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 				bg.Refresh()
 
 				txt.Color = textColor
+				// txt.TextStyle.Bold = true
 
-				icon := "🔴"
-				if alarm.Type == models.AlarmFault {
-					icon = "🟡"
+				// icon := "🔴"
+				// if alarm.Type == models.AlarmFault {
+				// 	icon = "🟡"
+				// }
+				// displayText := icon + " " + alarm.GetTimeDisplay() + " | №" + itoa(alarm.ObjectID)
+				if alarm.Type == models.AlarmFire {
+					txt.TextStyle.Bold = true
+				} else {
+					txt.TextStyle.Bold = false
 				}
-				displayText := icon + " " + alarm.GetTimeDisplay() + " | №" + itoa(alarm.ObjectID)
+				displayText := alarm.GetTimeDisplay() + " | №" + itoa(alarm.ObjectID)
 				if alarm.ZoneNumber > 0 {
 					displayText += "-" + itoa(alarm.ZoneNumber)
 				}

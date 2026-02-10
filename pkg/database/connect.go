@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -40,15 +41,27 @@ func InitDB(connStr string) *sqlx.DB {
 	return db
 }
 
-func StartHealthCheck(db *sqlx.DB) {
+func StartHealthCheck(db *sqlx.DB) context.CancelFunc {
 	zlog.Info().Msg("Запуск моніторингу здоров'я БД (перевірка кожні 60 сек)...")
+	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		checkCount := 0
 		failCount := 0
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
 		for {
-			time.Sleep(30 * time.Second)
+			select {
+			case <-ctx.Done():
+				zlog.Info().Msg("Зупинка моніторингу здоров'я БД")
+				return
+			case <-ticker.C:
+			}
 			checkCount++
 			if err := db.Ping(); err != nil {
+				if err.Error() == "sql: database is closed" {
+					zlog.Info().Msg("Моніторинг БД зупинено: з'єднання закрито")
+					return
+				}
 				failCount++
 
 				zlog.Warn().Err(err).Int("failCount", failCount).Msg("Втрачено зв'язок з Firebird!")
@@ -76,4 +89,5 @@ func StartHealthCheck(db *sqlx.DB) {
 			}
 		}
 	}()
+	return cancel
 }

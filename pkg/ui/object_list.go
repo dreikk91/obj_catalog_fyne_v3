@@ -105,6 +105,7 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 			bg := stack.Objects[0].(*canvas.Rectangle)
 			txtContainer := stack.Objects[1].(*fyne.Container)
 			txt := txtContainer.Objects[0].(*canvas.Text)
+			txt.TextStyle.Monospace = true
 
 			if id.Row >= len(panel.FilteredItems) {
 				txt.Text = ""
@@ -135,7 +136,8 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 			case 0:
 				cellText = itoa(item.ID)
 			case 1:
-				cellText = getStatusIcon(item.Status) + " " + item.Name
+				// cellText = getStatusIcon(item.Status) + " " + item.Name
+				cellText = item.Name
 			case 2:
 				cellText = item.Address
 			case 3:
@@ -170,10 +172,10 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 	}
 
 	// Ширина колонок (початкова)
-	panel.Table.SetColumnWidth(0, 50)  // ID
-	panel.Table.SetColumnWidth(1, 200) // Назва (буде динамічною)
-	panel.Table.SetColumnWidth(2, 180) // Адреса
-	panel.Table.SetColumnWidth(3, 80)  // Контракт
+	panel.Table.SetColumnWidth(0, 50)  // ID (фіксована)
+	panel.Table.SetColumnWidth(1, 200) // Назва (стартове значення, далі динамічна)
+	panel.Table.SetColumnWidth(2, 250) // Адреса (стартове значення, далі динамічна)
+	panel.Table.SetColumnWidth(3, 80)  // Контракт (фіксована)
 
 	// Збираємо все разом
 	header := container.NewVBox(
@@ -318,25 +320,48 @@ func (p *ObjectListPanel) applyFilters() {
 	})
 }
 
-// objectListTableLayout для динамічного ресайзу колонки "Назва"
+// objectListTableLayout для динамічного ресайзу колонок "Назва" та "Адреса"
 type objectListTableLayout struct {
-	table     *widget.Table
-	lastWidth float32
+	table          *widget.Table
+	lastNameWidth  float32
+	lastAddrWidth  float32
 }
 
 func (l *objectListTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	// Фіксовані колонки: ID(50) + Адреса(180) + Контракт(80) = 310
-	fixedWidth := float32(310)
+	// Фіксовані колонки: ID(50) + Контракт(80) = 130
+	fixedWidth := float32(130)
 
-	// Розраховуємо ширину для колонки "Назва" (індекс 1)
-	newWidth := size.Width - fixedWidth - 10 // Буфер під скролл
-	if newWidth < 120 {
-		newWidth = 120
+	// Доступна ширина для динамічних колонок "Назва" (1) та "Адреса" (2)
+	available := size.Width - fixedWidth - 10 // невеликий буфер під скролл
+	if available < 260 {
+		available = 260
 	}
 
-	if l.lastWidth != newWidth {
-		l.table.SetColumnWidth(1, newWidth)
-		l.lastWidth = newWidth
+	// Розподіляємо доступну ширину між "Назва" та "Адреса" (45% / 55%)
+	nameWidth := available * 0.45
+	addrWidth := available * 0.55
+
+	// Мінімальні ширини, щоб текст був читабельний
+	if nameWidth < 140 {
+		nameWidth = 140
+	}
+	if addrWidth < 160 {
+		addrWidth = 160
+	}
+
+	// Оновлюємо ширини колонок тільки при зміні значень
+	needRefresh := false
+	if l.lastNameWidth != nameWidth {
+		l.table.SetColumnWidth(1, nameWidth)
+		l.lastNameWidth = nameWidth
+		needRefresh = true
+	}
+	if l.lastAddrWidth != addrWidth {
+		l.table.SetColumnWidth(2, addrWidth)
+		l.lastAddrWidth = addrWidth
+		needRefresh = true
+	}
+	if needRefresh {
 		l.table.Refresh()
 	}
 

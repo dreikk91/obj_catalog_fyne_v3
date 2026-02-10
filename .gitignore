@@ -4,3 +4,4 @@ log/*
 *.dll
 pkg/data/mock.go1
 wasm/*
+*.zip

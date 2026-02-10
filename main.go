@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	// "math/rand"
 	"runtime/debug"
@@ -9,6 +10,9 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/layout"
+	fyneTheme "fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/config"
@@ -16,7 +20,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/logger"
 	"obj_catalog_fyne_v3/pkg/models"
-	"obj_catalog_fyne_v3/pkg/theme"
+	apptheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
 
@@ -26,9 +30,10 @@ import (
 
 // Application зберігає стан додатку
 type Application struct {
-	fyneApp    fyne.App
-	mainWindow fyne.Window
-	db         *sqlx.DB
+	fyneApp        fyne.App
+	mainWindow     fyne.Window
+	db             *sqlx.DB
+	dbHealthCancel context.CancelFunc
 
 	// Сховище даних (інтерфейс)
 	dataProvider data.DataProvider
@@ -43,7 +48,13 @@ type Application struct {
 
 	// Поточна тема
 	isDarkTheme bool
+
+	statusLabel *widget.Label
 }
+
+const (
+	prefKeyObjectListSplitOffset = "ui.objectList.splitOffset"
+)
 
 func main() {
 	// Ініціалізація логера
@@ -95,7 +106,7 @@ func NewApplication() *Application {
 	log.Info().Msg("Підключення до бази даних...")
 	db := database.InitDB(dsn)
 	log.Info().Msg("БД підключена, запуск перевірки здоров'я...")
-	database.StartHealthCheck(db)
+	healthCancel := database.StartHealthCheck(db)
 
 	// Створюємо mock дані
 	// mockData := data.NewMockData()
@@ -107,10 +118,11 @@ func NewApplication() *Application {
 
 	log.Info().Msg("Створення структури додатку...")
 	application := &Application{
-		fyneApp:      fyneApp,
-		mainWindow:   mainWindow,
-		db:           db,
-		dataProvider: dataProvider,
+		fyneApp:        fyneApp,
+		mainWindow:     mainWindow,
+		db:             db,
+		dbHealthCancel: healthCancel,
+		dataProvider:   dataProvider,
 		// mockData:     mockData,
 		isDarkTheme: true,
 	}
@@ -142,10 +154,10 @@ func (a *Application) setTheme(dark bool) {
 	uiCfg := config.LoadUIConfig(a.fyneApp.Preferences())
 	if dark {
 		log.Debug().Msg("Застосування темної теми...")
-		a.fyneApp.Settings().SetTheme(theme.NewDarkTheme(uiCfg.FontSize))
+		a.fyneApp.Settings().SetTheme(apptheme.NewDarkTheme(uiCfg.FontSize))
 	} else {
 		log.Debug().Msg("Застосування світлої теми...")
-		a.fyneApp.Settings().SetTheme(theme.NewLightTheme(uiCfg.FontSize))
+		a.fyneApp.Settings().SetTheme(apptheme.NewLightTheme(uiCfg.FontSize))
 	}
 	log.Debug().Bool("darkTheme", dark).Float32("fontSize", uiCfg.FontSize).Msg("Тема застосована")
 }
@@ -208,23 +220,47 @@ func (a *Application) buildUI() {
 	log.Debug().Msg("Callbacks налаштовані")
 
 	// Кнопка перемикання теми
-	themeBtn := widget.NewButton("Темна тема", nil)
+	themeBtn := widget.NewButtonWithIcon("", fyneTheme.ColorPaletteIcon(), nil)
+	updateThemeButton := func() {
+		if a.isDarkTheme {
+			themeBtn.SetText("Світла тема")
+		} else {
+			themeBtn.SetText("Темна тема")
+		}
+	}
 	themeBtn.OnTapped = func() {
 		a.isDarkTheme = !a.isDarkTheme
 		log.Debug().Bool("darkTheme", a.isDarkTheme).Msg("Перемикання теми...")
 		a.setTheme(a.isDarkTheme)
-		if a.isDarkTheme {
-			themeBtn.SetText("Темна тема")
-		} else {
-			themeBtn.SetText("Світла тема")
-		}
+		updateThemeButton()
 		// Оновлюємо панелі, щоб застосувати нові кольори
 		a.objectList.Refresh()
 		a.eventLog.Refresh()
 	}
+	updateThemeButton()
+
+	// Кнопка налаштування кольорів подій/об'єктів
+	colorsBtn := widget.NewButtonWithIcon("Кольори", fyneTheme.ColorPaletteIcon(), func() {
+		log.Debug().Bool("darkTheme", a.isDarkTheme).Msg("Відкриття діалогу кольорів...")
+		dialogs.ShowColorPaletteDialog(a.mainWindow, a.isDarkTheme, func() {
+			// Після зміни кольорів оновлюємо всі панелі, які їх використовують
+			if a.alarmPanel != nil {
+				a.alarmPanel.Refresh()
+			}
+			if a.eventLog != nil {
+				a.eventLog.Refresh()
+			}
+			if a.objectList != nil {
+				a.objectList.Refresh()
+			}
+			if a.workArea != nil && a.workArea.EventsList != nil {
+				a.workArea.EventsList.Refresh()
+			}
+		})
+	})
 
 	// Кнопка налаштувань
-	settingsBtn := widget.NewButton("Налаштування", func() {
+	settingsBtn := widget.NewButtonWithIcon("Налаштування", fyneTheme.SettingsIcon(), func() {
 		log.Debug().Msg("Відкриття діалогу налаштувань...")
 		dialogs.ShowSettingsDialog(a.mainWindow, a.fyneApp.Preferences(), func(dbCfg config.DBConfig, uiCfg config.UIConfig) {
 			log.Info().Str("host", dbCfg.Host).Msg("Параметри в діалозі налаштувань змінено")
@@ -233,40 +269,62 @@ func (a *Application) buildUI() {
 		})
 	})
 
-	toolbar := container.NewHBox(
-		widget.NewLabel("Каталог об'єктів"),
-		widget.NewSeparator(),
-		themeBtn,
-		settingsBtn,
-	)
+	title := widget.NewLabel("Каталог об'єктів")
+	toolbar := container.NewHBox(title, layout.NewSpacer(), themeBtn, colorsBtn, settingsBtn)
 
-	tabs := container.NewAppTabs(
+	rightTabs := container.NewAppTabs(
+		container.NewTabItem("ДЕТАЛІ", a.workArea.Container),
 		container.NewTabItem("ЖУРНАЛ ПОДІЙ", a.eventLog.Container),
 		container.NewTabItem("АКТИВНІ ТРИВОГИ", a.alarmPanel.Container),
 	)
 
 	log.Debug().Msg("Компонування макета...")
 
-	// Layout
-	centerSplit := container.NewHSplit(a.objectList.Container, a.workArea.Container)
-	centerSplit.SetOffset(0.45)
+	// Layout: universal HSplit with right-side tabs (better for 1024x768 and 1920x1080)
+	rootSplit := container.NewHSplit(a.objectList.Container, rightTabs)
+	savedOffset := a.fyneApp.Preferences().FloatWithFallback(prefKeyObjectListSplitOffset, 0.32)
+	// Захист від некоректних значень (щоб не "зламати" макет)
+	if savedOffset < 0.10 || savedOffset > 0.90 {
+		savedOffset = 0.32
+	}
+	rootSplit.SetOffset(savedOffset)
 
-	mainSplit := container.NewVSplit(centerSplit, tabs)
-	mainSplit.SetOffset(0.75)
-
-	// rootSplit := container.NewVSplit(a.alarmPanel.Container, mainSplit)
-
-	rootSplit := mainSplit
-	// rootSplit.SetOffset(0.2)
+	a.statusLabel = widget.NewLabel("БД : підключено")
+	shortcutsLabel := widget.NewLabel("Ctrl+1..3: вкладки | Ctrl+T: тема")
+	statusBar := container.NewVBox(
+		widget.NewSeparator(),
+		container.NewHBox(a.statusLabel, layout.NewSpacer(), shortcutsLabel),
+	)
 
 	finalLayout := container.NewBorder(
 		container.NewVBox(toolbar, widget.NewSeparator()),
-		nil, nil, nil,
+		statusBar, nil, nil,
 		rootSplit,
 	)
-
 	a.mainWindow.SetContent(finalLayout)
 	log.Debug().Msg("UI побудований та встановлений на вікно")
+
+	// Запам'ятовуємо ширину (offset) списку об'єктів між запусками.
+	// Split не має callback на drag, тому зберігаємо при закритті вікна.
+	a.mainWindow.SetCloseIntercept(func() {
+		a.fyneApp.Preferences().SetFloat(prefKeyObjectListSplitOffset, rootSplit.Offset)
+		a.mainWindow.Close()
+	})
+
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyT, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		if themeBtn.OnTapped != nil {
+			themeBtn.OnTapped()
+		}
+	})
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key1, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		rightTabs.SelectIndex(0)
+	})
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key2, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		rightTabs.SelectIndex(1)
+	})
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key3, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		rightTabs.SelectIndex(2)
+	})
 }
 
 // startGettingEvents запускає симуляцію подій
@@ -321,9 +379,18 @@ func (a *Application) Run() {
 	if a.db != nil {
 		defer func() {
 			log.Debug().Msg("Закриття з'єднання з БД...")
+			if a.dbHealthCancel != nil {
+				a.dbHealthCancel()
+				a.dbHealthCancel = nil
+			}
 			a.db.Close()
 			log.Debug().Msg("✓ З'єднання з БД закрито")
 		}()
+	}
+
+	// Робимо рядок пошуку активним (виділеним) одразу після старту.
+	if a.objectList != nil && a.objectList.SearchEntry != nil {
+		a.mainWindow.Canvas().Focus(a.objectList.SearchEntry)
 	}
 	a.mainWindow.ShowAndRun()
 	log.Info().Msg("Основний цикл завершено")
@@ -333,11 +400,16 @@ func (a *Application) Run() {
 func (a *Application) Reconnect(cfg config.DBConfig) {
 	dsn := cfg.ToDSN()
 	log.Warn().Str("dsn", dsn).Msg("🔄 Перепідключення до бази даних...")
-
+	if a.statusLabel != nil {
+		a.statusLabel.SetText("БД : перепідключення...")
+	}
 	log.Debug().Msg("Ініціалізація нового з'єднання з БД...")
 	newDB := database.InitDB(dsn)
 	if err := newDB.Ping(); err != nil {
 		log.Error().Err(err).Msg("❌ Помилка перевірки з'єднання з новою БД")
+		if a.statusLabel != nil {
+			a.statusLabel.SetText("БД : помилка підключення")
+		}
 		dialogs.ShowErrorDialog(a.mainWindow, "Помилка підключення", err)
 		return
 	}
@@ -346,12 +418,17 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 	// Закриваємо стару базу
 	if a.db != nil {
 		log.Debug().Msg("Закриття старого з'єднання з БД...")
+		if a.dbHealthCancel != nil {
+			a.dbHealthCancel()
+			a.dbHealthCancel = nil
+		}
 		a.db.Close()
 		log.Debug().Msg("✓ Старе з'єднання закрито")
 	}
 
 	a.db = newDB
 	a.dataProvider = data.NewDBDataProvider(newDB, dsn)
+	a.dbHealthCancel = database.StartHealthCheck(newDB)
 	log.Debug().Msg("Провайдер даних оновлено")
 
 	// Оновлюємо посилання в панелях
@@ -370,6 +447,9 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 	log.Debug().Msg("✓ Дані перезавантажено")
 
 	log.Info().Msg("✅ Перепідключення до БД завершено успішно")
+	if a.statusLabel != nil {
+		a.statusLabel.SetText("БД : підключено")
+	}
 	dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Підключення до бази даних оновлено")
 }
 

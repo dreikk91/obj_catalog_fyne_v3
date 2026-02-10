@@ -235,6 +235,26 @@ func (a *Application) buildUI() {
 	}
 	updateThemeButton()
 
+	// Кнопка налаштування кольорів подій/об'єктів
+	colorsBtn := widget.NewButtonWithIcon("Кольори", fyneTheme.ColorIcon(), func() {
+		log.Debug().Bool("darkTheme", a.isDarkTheme).Msg("Відкриття діалогу кольорів...")
+		dialogs.ShowColorPaletteDialog(a.mainWindow, a.isDarkTheme, func() {
+			// Після зміни кольорів оновлюємо всі панелі, які їх використовують
+			if a.alarmPanel != nil {
+				a.alarmPanel.Refresh()
+			}
+			if a.eventLog != nil {
+				a.eventLog.Refresh()
+			}
+			if a.objectList != nil {
+				a.objectList.Refresh()
+			}
+			if a.workArea != nil && a.workArea.EventsList != nil {
+				a.workArea.EventsList.Refresh()
+			}
+		})
+	})
+
 	// Кнопка налаштувань
 	settingsBtn := widget.NewButtonWithIcon("Налаштування", fyneTheme.SettingsIcon(), func() {
 		log.Debug().Msg("Відкриття діалогу налаштувань...")
@@ -246,7 +266,7 @@ func (a *Application) buildUI() {
 	})
 
 	title := widget.NewLabel("Каталог об'єктів")
-	toolbar := container.NewHBox(title, layout.NewSpacer(), themeBtn, settingsBtn)
+	toolbar := container.NewHBox(title, layout.NewSpacer(), themeBtn, colorsBtn, settingsBtn)
 
 	rightTabs := container.NewAppTabs(
 		container.NewTabItem("ДЕТАЛІ", a.workArea.Container),

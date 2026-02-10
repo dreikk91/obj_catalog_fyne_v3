@@ -236,7 +236,7 @@ func (a *Application) buildUI() {
 	updateThemeButton()
 
 	// Кнопка налаштування кольорів подій/об'єктів
-	colorsBtn := widget.NewButtonWithIcon("Кольори", fyneTheme.ColorIcon(), func() {
+	colorsBtn := widget.NewButtonWithIcon("Кольори", fyneTheme.ColorPaletteIcon(), func() {
 		log.Debug().Bool("darkTheme", a.isDarkTheme).Msg("Відкриття діалогу кольорів...")
 		dialogs.ShowColorPaletteDialog(a.mainWindow, a.isDarkTheme, func() {
 			// Після зміни кольорів оновлюємо всі панелі, які їх використовують

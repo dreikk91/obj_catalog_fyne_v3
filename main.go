@@ -52,6 +52,10 @@ type Application struct {
 	statusLabel *widget.Label
 }
 
+const (
+	prefKeyObjectListSplitOffset = "ui.objectList.splitOffset"
+)
+
 func main() {
 	// Ініціалізація логера
 	logConfig := logger.DefaultConfig()
@@ -278,7 +282,12 @@ func (a *Application) buildUI() {
 
 	// Layout: universal HSplit with right-side tabs (better for 1024x768 and 1920x1080)
 	rootSplit := container.NewHSplit(a.objectList.Container, rightTabs)
-	rootSplit.SetOffset(0.32)
+	savedOffset := a.fyneApp.Preferences().FloatWithFallback(prefKeyObjectListSplitOffset, 0.32)
+	// Захист від некоректних значень (щоб не "зламати" макет)
+	if savedOffset < 0.10 || savedOffset > 0.90 {
+		savedOffset = 0.32
+	}
+	rootSplit.SetOffset(savedOffset)
 
 	a.statusLabel = widget.NewLabel("БД : підключено")
 	shortcutsLabel := widget.NewLabel("Ctrl+1..3: вкладки | Ctrl+T: тема")
@@ -294,6 +303,13 @@ func (a *Application) buildUI() {
 	)
 	a.mainWindow.SetContent(finalLayout)
 	log.Debug().Msg("UI побудований та встановлений на вікно")
+
+	// Запам'ятовуємо ширину (offset) списку об'єктів між запусками.
+	// Split не має callback на drag, тому зберігаємо при закритті вікна.
+	a.mainWindow.SetCloseIntercept(func() {
+		a.fyneApp.Preferences().SetFloat(prefKeyObjectListSplitOffset, rootSplit.Offset)
+		a.mainWindow.Close()
+	})
 
 	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyT, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
 		if themeBtn.OnTapped != nil {
@@ -370,6 +386,11 @@ func (a *Application) Run() {
 			a.db.Close()
 			log.Debug().Msg("✓ З'єднання з БД закрито")
 		}()
+	}
+
+	// Робимо рядок пошуку активним (виділеним) одразу після старту.
+	if a.objectList != nil && a.objectList.SearchEntry != nil {
+		a.mainWindow.Canvas().Focus(a.objectList.SearchEntry)
 	}
 	a.mainWindow.ShowAndRun()
 	log.Info().Msg("Основний цикл завершено")

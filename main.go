@@ -243,24 +243,17 @@ func (a *Application) buildUI() {
 		settingsBtn,
 	)
 
-	tabs := container.NewAppTabs(
+	rightTabs := container.NewAppTabs(
+		container.NewTabItem("ДЕТАЛІ", a.workArea.Container),
 		container.NewTabItem("ЖУРНАЛ ПОДІЙ", a.eventLog.Container),
 		container.NewTabItem("АКТИВНІ ТРИВОГИ", a.alarmPanel.Container),
 	)
 
 	log.Debug().Msg("Компонування макета...")
 
-	// Layout
-	centerSplit := container.NewHSplit(a.objectList.Container, a.workArea.Container)
-	centerSplit.SetOffset(0.45)
-
-	mainSplit := container.NewVSplit(centerSplit, tabs)
-	mainSplit.SetOffset(0.75)
-
-	// rootSplit := container.NewVSplit(a.alarmPanel.Container, mainSplit)
-
-	rootSplit := mainSplit
-	// rootSplit.SetOffset(0.2)
+	// Layout: universal HSplit with right-side tabs (better for 1024x768 and 1920x1080)
+	rootSplit := container.NewHSplit(a.objectList.Container, rightTabs)
+	rootSplit.SetOffset(0.35)
 
 	finalLayout := container.NewBorder(
 		container.NewVBox(toolbar, widget.NewSeparator()),
@@ -410,3 +403,4 @@ func (a *Application) RefreshUI(cfg config.UIConfig) {
 
 	log.Info().Msg("✅ Параметри інтерфейсу оновлено")
 }
+

@@ -24,7 +24,7 @@ var (
 	ColorInfo = color.NRGBA{R: 0, G: 122, B: 255, A: 255} // #007AFF
 
 	// ColorSelection - колір виділеного рядка
-	ColorSelection = color.NRGBA{R: 0, G: 122, B: 255, A: 100} // Напівпрозорий синій
+	ColorSelection = color.NRGBA{R: 0, G: 122, B: 255, A: 255} // Напівпрозорий синій
 )
 
 // ================== ТЕМНА ТЕМА ==================
@@ -86,6 +86,8 @@ func (t *DarkTheme) Size(name fyne.ThemeSizeName) float32 {
 		return 4 // Менші відступи для компактності
 	case theme.SizeNameInnerPadding:
 		return 6
+	case theme.SizeNameLineSpacing:
+		return 2 // Міжрядковий інтервал (менше = компактніше)
 	default:
 		return theme.DefaultTheme().Size(name)
 	}

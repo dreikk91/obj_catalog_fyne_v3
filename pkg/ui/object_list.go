@@ -105,6 +105,7 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 			bg := stack.Objects[0].(*canvas.Rectangle)
 			txtContainer := stack.Objects[1].(*fyne.Container)
 			txt := txtContainer.Objects[0].(*canvas.Text)
+			txt.TextStyle.Monospace = true
 
 			if id.Row >= len(panel.FilteredItems) {
 				txt.Text = ""
@@ -135,7 +136,8 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 			case 0:
 				cellText = itoa(item.ID)
 			case 1:
-				cellText = getStatusIcon(item.Status) + " " + item.Name
+				// cellText = getStatusIcon(item.Status) + " " + item.Name
+				cellText = item.Name
 			case 2:
 				cellText = item.Address
 			case 3:
@@ -172,7 +174,7 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 	// Ширина колонок (початкова)
 	panel.Table.SetColumnWidth(0, 50)  // ID
 	panel.Table.SetColumnWidth(1, 200) // Назва (буде динамічною)
-	panel.Table.SetColumnWidth(2, 180) // Адреса
+	panel.Table.SetColumnWidth(2, 250) // Адреса
 	panel.Table.SetColumnWidth(3, 80)  // Контракт
 
 	// Збираємо все разом

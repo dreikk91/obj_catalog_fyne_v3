@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	// "math/rand"
 	"runtime/debug"
@@ -26,9 +27,10 @@ import (
 
 // Application зберігає стан додатку
 type Application struct {
-	fyneApp    fyne.App
-	mainWindow fyne.Window
-	db         *sqlx.DB
+	fyneApp        fyne.App
+	mainWindow     fyne.Window
+	db             *sqlx.DB
+	dbHealthCancel context.CancelFunc
 
 	// Сховище даних (інтерфейс)
 	dataProvider data.DataProvider
@@ -95,7 +97,7 @@ func NewApplication() *Application {
 	log.Info().Msg("Підключення до бази даних...")
 	db := database.InitDB(dsn)
 	log.Info().Msg("БД підключена, запуск перевірки здоров'я...")
-	database.StartHealthCheck(db)
+	healthCancel := database.StartHealthCheck(db)
 
 	// Створюємо mock дані
 	// mockData := data.NewMockData()
@@ -107,10 +109,11 @@ func NewApplication() *Application {
 
 	log.Info().Msg("Створення структури додатку...")
 	application := &Application{
-		fyneApp:      fyneApp,
-		mainWindow:   mainWindow,
-		db:           db,
-		dataProvider: dataProvider,
+		fyneApp:        fyneApp,
+		mainWindow:     mainWindow,
+		db:             db,
+		dbHealthCancel: healthCancel,
+		dataProvider:   dataProvider,
 		// mockData:     mockData,
 		isDarkTheme: true,
 	}
@@ -321,6 +324,10 @@ func (a *Application) Run() {
 	if a.db != nil {
 		defer func() {
 			log.Debug().Msg("Закриття з'єднання з БД...")
+			if a.dbHealthCancel != nil {
+				a.dbHealthCancel()
+				a.dbHealthCancel = nil
+			}
 			a.db.Close()
 			log.Debug().Msg("✓ З'єднання з БД закрито")
 		}()
@@ -346,12 +353,17 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 	// Закриваємо стару базу
 	if a.db != nil {
 		log.Debug().Msg("Закриття старого з'єднання з БД...")
+		if a.dbHealthCancel != nil {
+			a.dbHealthCancel()
+			a.dbHealthCancel = nil
+		}
 		a.db.Close()
 		log.Debug().Msg("✓ Старе з'єднання закрито")
 	}
 
 	a.db = newDB
 	a.dataProvider = data.NewDBDataProvider(newDB, dsn)
+	a.dbHealthCancel = database.StartHealthCheck(newDB)
 	log.Debug().Msg("Провайдер даних оновлено")
 
 	// Оновлюємо посилання в панелях

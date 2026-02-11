@@ -5,3 +5,4 @@ log/*
 pkg/data/mock.go1
 wasm/*
 *.zip
+obj_catalog_fyne_v3

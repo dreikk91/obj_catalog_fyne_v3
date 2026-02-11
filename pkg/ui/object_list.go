@@ -26,6 +26,7 @@ type ObjectListPanel struct {
 	SearchEntry  *widget.Entry
 	FilterSelect *widget.Select
 	Data         data.ObjectProvider
+	ColumnHeader *fyne.Container
 
 	// Кеш усіх об'єктів
 	AllObjects    []models.Object
@@ -38,6 +39,8 @@ type ObjectListPanel struct {
 	SelectedRow   int
 	TitleText     *canvas.Text
 	lastFontSize  float32
+	colNameWidth  float32
+	colAddrWidth  float32
 
 	// Callback при виборі об'єкта
 	OnObjectSelected func(object models.Object)
@@ -49,10 +52,12 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 		Data:          provider,
 		CurrentFilter: "Всі",
 		SelectedRow:   -1,
+		colNameWidth:  200,
+		colAddrWidth:  250,
 	}
 
 	// Заголовок
-	panel.TitleText = canvas.NewText("📋 ОБ'ЄКТИ", nil)
+	panel.TitleText = canvas.NewText("ОБ'ЄКТИ", nil)
 	themeSize := fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
 	panel.TitleText.TextSize = themeSize + 1
 	panel.TitleText.TextStyle = fyne.TextStyle{Bold: true}
@@ -66,7 +71,7 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 	}
 
 	// Вибір фільтру
-	panel.FilterSelect = widget.NewSelect([]string{"Всі", "Тривога", "Без зв'язку", "Знято"}, func(selected string) {
+	panel.FilterSelect = widget.NewSelect([]string{"Всі", "Є тривоги", "Нема зв'язку", "Знято з охорони"}, func(selected string) {
 		if panel.isUpdating {
 			return
 		}
@@ -144,7 +149,6 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 				cellText = item.ContractNum
 			}
 			txt.Text = cellText
-			txt.Text = cellText
 			if panel.lastFontSize > 0 {
 				txt.TextSize = panel.lastFontSize
 			} else {
@@ -177,18 +181,31 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 	panel.Table.SetColumnWidth(2, 250) // Адреса (стартове значення, далі динамічна)
 	panel.Table.SetColumnWidth(3, 80)  // Контракт (фіксована)
 
+	// Заголовки колонок для читабельності таблиці.
+	hID := widget.NewLabel("№")
+	hName := widget.NewLabel("Об'єкт")
+	hAddr := widget.NewLabel("Адреса")
+	hContract := widget.NewLabel("Договір")
+	for _, l := range []*widget.Label{hID, hName, hAddr, hContract} {
+		l.TextStyle = fyne.TextStyle{Bold: true}
+	}
+	headerRow := container.New(&objectListHeaderLayout{panel: panel}, hID, hName, hAddr, hContract)
+	headerBg := canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 25})
+	panel.ColumnHeader = container.NewStack(headerBg, container.NewPadded(headerRow))
+
 	// Збираємо все разом
 	header := container.NewVBox(
 		container.NewPadded(panel.TitleText),
 		panel.SearchEntry,
 		panel.FilterSelect,
+		panel.ColumnHeader,
 	)
 
 	panel.Container = container.NewBorder(
 		header,
 		nil, nil, nil,
 		container.New(
-			&objectListTableLayout{table: panel.Table},
+			&objectListTableLayout{panel: panel, table: panel.Table},
 			container.NewStack(panel.Table, panel.LoadingLabel),
 		),
 	)
@@ -265,15 +282,15 @@ func (p *ObjectListPanel) applyFilters() {
 		// 2. Фільтрація для відображення в таблиці
 		statusMatch := true
 		switch currentFilter {
-		case "Тривога":
+		case "Є тривоги":
 			if obj.Status != models.StatusFire && obj.Status != models.StatusFault {
 				statusMatch = false
 			}
-		case "Без зв'язку":
+		case "Нема зв'язку":
 			if !(obj.IsConnState == 0 && obj.GuardState != 0) {
 				statusMatch = false
 			}
-		case "Знято зі спостереження":
+		case "Знято з охорони":
 			if obj.GuardState != 0 {
 				statusMatch = false
 			}
@@ -296,9 +313,9 @@ func (p *ObjectListPanel) applyFilters() {
 		// Оновлюємо назви фільтрів з кількістю
 		p.FilterSelect.Options = []string{
 			fmt.Sprintf("Всі (%d)", countAll),
-			fmt.Sprintf("Тривога (%d)", countAlarm),
-			fmt.Sprintf("Без зв'язку (%d)", countOffline),
-			fmt.Sprintf("Знято зі спостереження (%d)", countDisarmed),
+			fmt.Sprintf("Є тривоги (%d)", countAlarm),
+			fmt.Sprintf("Нема зв'язку (%d)", countOffline),
+			fmt.Sprintf("Знято з охорони (%d)", countDisarmed),
 		}
 
 		// Знаходимо поточний вибраний фільтр в оновленому списку, щоб він не зникав
@@ -309,6 +326,11 @@ func (p *ObjectListPanel) applyFilters() {
 			}
 		}
 		p.FilterSelect.Refresh()
+
+		if p.TitleText != nil {
+			p.TitleText.Text = fmt.Sprintf("ОБ'ЄКТИ (%d)", countAll)
+			p.TitleText.Refresh()
+		}
 
 		if p.LoadingLabel != nil {
 			p.LoadingLabel.Hide()
@@ -322,9 +344,10 @@ func (p *ObjectListPanel) applyFilters() {
 
 // objectListTableLayout для динамічного ресайзу колонок "Назва" та "Адреса"
 type objectListTableLayout struct {
-	table          *widget.Table
-	lastNameWidth  float32
-	lastAddrWidth  float32
+	panel         *ObjectListPanel
+	table         *widget.Table
+	lastNameWidth float32
+	lastAddrWidth float32
 }
 
 func (l *objectListTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
@@ -354,11 +377,23 @@ func (l *objectListTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Si
 	if l.lastNameWidth != nameWidth {
 		l.table.SetColumnWidth(1, nameWidth)
 		l.lastNameWidth = nameWidth
+		if l.panel != nil {
+			l.panel.colNameWidth = nameWidth
+			if l.panel.ColumnHeader != nil {
+				l.panel.ColumnHeader.Refresh()
+			}
+		}
 		needRefresh = true
 	}
 	if l.lastAddrWidth != addrWidth {
 		l.table.SetColumnWidth(2, addrWidth)
 		l.lastAddrWidth = addrWidth
+		if l.panel != nil {
+			l.panel.colAddrWidth = addrWidth
+			if l.panel.ColumnHeader != nil {
+				l.panel.ColumnHeader.Refresh()
+			}
+		}
 		needRefresh = true
 	}
 	if needRefresh {
@@ -373,6 +408,52 @@ func (l *objectListTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Si
 
 func (l *objectListTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return fyne.NewSize(450, 200)
+}
+
+// objectListHeaderLayout вирівнює заголовки колонок так само, як таблицю.
+type objectListHeaderLayout struct {
+	panel *ObjectListPanel
+}
+
+func (l *objectListHeaderLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if l.panel == nil || len(objects) < 4 {
+		for _, o := range objects {
+			o.Resize(size)
+			o.Move(fyne.NewPos(0, 0))
+		}
+		return
+	}
+
+	w0 := float32(50)
+	w3 := float32(80)
+	w1 := l.panel.colNameWidth
+	w2 := l.panel.colAddrWidth
+	if w1 <= 0 {
+		w1 = 200
+	}
+	if w2 <= 0 {
+		w2 = 250
+	}
+
+	x := float32(0)
+	objects[0].Resize(fyne.NewSize(w0, size.Height))
+	objects[0].Move(fyne.NewPos(x, 0))
+	x += w0
+
+	objects[1].Resize(fyne.NewSize(w1, size.Height))
+	objects[1].Move(fyne.NewPos(x, 0))
+	x += w1
+
+	objects[2].Resize(fyne.NewSize(w2, size.Height))
+	objects[2].Move(fyne.NewPos(x, 0))
+	x += w2
+
+	objects[3].Resize(fyne.NewSize(w3, size.Height))
+	objects[3].Move(fyne.NewPos(x, 0))
+}
+
+func (l *objectListHeaderLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(450, 24)
 }
 
 func (p *ObjectListPanel) Refresh() {

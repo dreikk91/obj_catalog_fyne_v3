@@ -223,6 +223,7 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 				btn.OnTapped = func() {
 					copyText := fmt.Sprintf("Зона %d: %s (%s)", zone.Number, zone.Name, w.CurrentObject.Name)
 					w.Window.Clipboard().SetContent(copyText)
+					ShowToast(w.Window, "Скопійовано зону")
 				}
 				return
 			}
@@ -231,7 +232,10 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 			label.Show()
 			if id.Col == 1 {
 				btn.Show()
-				btn.OnTapped = func() { w.Window.Clipboard().SetContent(zone.Name) }
+				btn.OnTapped = func() {
+					w.Window.Clipboard().SetContent(zone.Name)
+					ShowToast(w.Window, "Скопійовано назву зони")
+				}
 			} else {
 				btn.Hide()
 			}
@@ -276,13 +280,19 @@ func (w *WorkAreaPanel) createContactsTab() fyne.CanvasObject {
 			nameLabel := nameRow.Objects[0].(*widget.Label)
 			nameBtn := nameRow.Objects[1].(*widget.Button)
 			nameLabel.SetText(fmt.Sprintf("👤 %s (%s)", contact.Name, contact.Position))
-			nameBtn.OnTapped = func() { w.Window.Clipboard().SetContent(contact.Name) }
+			nameBtn.OnTapped = func() {
+				w.Window.Clipboard().SetContent(contact.Name)
+				ShowToast(w.Window, "Скопійовано ім'я")
+			}
 
 			phoneRow := vbox.Objects[1].(*fyne.Container)
 			phoneLabel := phoneRow.Objects[0].(*widget.Label)
 			phoneBtn := phoneRow.Objects[1].(*widget.Button)
 			phoneLabel.SetText("📞 " + contact.Phone)
-			phoneBtn.OnTapped = func() { w.Window.Clipboard().SetContent(contact.Phone) }
+			phoneBtn.OnTapped = func() {
+				w.Window.Clipboard().SetContent(contact.Phone)
+				ShowToast(w.Window, "Скопійовано телефон")
+			}
 		},
 	)
 	return w.ContactsList
@@ -354,8 +364,14 @@ func (w *WorkAreaPanel) SetObject(object models.Object) {
 	w.HeaderStatus.Refresh()
 
 	// Налаштовуємо дії копіювання
-	w.CopyNameBtn.OnTapped = func() { w.Window.Clipboard().SetContent(object.Name) }
-	w.CopyAddressBtn.OnTapped = func() { w.Window.Clipboard().SetContent(object.Address) }
+	w.CopyNameBtn.OnTapped = func() {
+		w.Window.Clipboard().SetContent(object.Name)
+		ShowToast(w.Window, "Скопійовано назву об'єкта")
+	}
+	w.CopyAddressBtn.OnTapped = func() {
+		w.Window.Clipboard().SetContent(object.Address)
+		ShowToast(w.Window, "Скопійовано адресу")
+	}
 
 	// Очищуємо старі деталі та показуємо завантаження
 	w.Zones = nil
@@ -442,7 +458,10 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 		copyText += " / " + obj.SIM2
 	}
 	w.SIMLabel.SetText("📱 " + simText)
-	w.CopySimBtn.OnTapped = func() { w.Window.Clipboard().SetContent(copyText) }
+	w.CopySimBtn.OnTapped = func() {
+		w.Window.Clipboard().SetContent(copyText)
+		ShowToast(w.Window, "Скопійовано SIM")
+	}
 
 	w.AutoTestLabel.SetText(fmt.Sprintf("⏱️ Автотест: кожні %d год", obj.AutoTestHours))
 
@@ -502,13 +521,22 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 	}
 
 	w.PhoneLabel.SetText("☎️ Тел. об'єкта: " + obj.Phones1)
-	w.CopyPhonesBtn.OnTapped = func() { w.Window.Clipboard().SetContent(obj.Phones1) }
+	w.CopyPhonesBtn.OnTapped = func() {
+		w.Window.Clipboard().SetContent(obj.Phones1)
+		ShowToast(w.Window, "Скопійовано телефон(и)")
+	}
 
 	w.Notes1Label.SetText(obj.Notes1)
-	w.CopyNotesBtn.OnTapped = func() { w.Window.Clipboard().SetContent(obj.Notes1) }
+	w.CopyNotesBtn.OnTapped = func() {
+		w.Window.Clipboard().SetContent(obj.Notes1)
+		ShowToast(w.Window, "Скопійовано примітку")
+	}
 
 	w.Location1Label.SetText(obj.Location1)
-	w.CopyLocationBtn.OnTapped = func() { w.Window.Clipboard().SetContent(obj.Location1) }
+	w.CopyLocationBtn.OnTapped = func() {
+		w.Window.Clipboard().SetContent(obj.Location1)
+		ShowToast(w.Window, "Скопійовано розташування")
+	}
 
 	guardText := "🔒 ПІД ОХОРОНОЮ"
 	if !obj.IsUnderGuard {

@@ -5,10 +5,12 @@ import (
 	"image/color"
 	"obj_catalog_fyne_v3/pkg/config"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -24,14 +26,18 @@ type EventLogPanel struct {
 	Data            data.EventProvider
 	IsPaused        bool
 	PauseBtn        *widget.Button
+	RangeSelect     *widget.Select
+	ImportantOnly   *widget.Check
 	OnEventSelected func(models.Event)
+	OnCountChanged  func(count int)
 
 	// Кеш даних
-	CurrentEvents []models.Event
-	mutex         sync.RWMutex
-	isRefreshing  bool
-	TitleText     *canvas.Text
-	lastFontSize  float32
+	AllEvents      []models.Event
+	FilteredEvents []models.Event
+	mutex          sync.RWMutex
+	isRefreshing   bool
+	TitleText      *canvas.Text
+	lastFontSize   float32
 }
 
 // NewEventLogPanel створює панель журналу подій
@@ -57,11 +63,22 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 		}
 	})
 
-	header := container.NewBorder(
-		nil, nil,
+	panel.RangeSelect = widget.NewSelect([]string{"Остання година", "Сьогодні", "Всі"}, func(string) {
+		panel.applyFilters()
+	})
+	panel.RangeSelect.SetSelected("Остання година")
+	panel.RangeSelect.PlaceHolder = "Період"
+
+	panel.ImportantOnly = widget.NewCheck("Тільки важливі", func(bool) {
+		panel.applyFilters()
+	})
+
+	header := container.NewHBox(
 		container.NewPadded(panel.TitleText),
+		layout.NewSpacer(),
+		panel.RangeSelect,
+		panel.ImportantOnly,
 		panel.PauseBtn,
-		nil,
 	)
 
 	// Список подій (тепер використовує кеш)
@@ -69,7 +86,7 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 		func() int {
 			panel.mutex.RLock()
 			defer panel.mutex.RUnlock()
-			return len(panel.CurrentEvents)
+			return len(panel.FilteredEvents)
 		},
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
@@ -81,13 +98,13 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 			panel.mutex.RLock()
 			defer panel.mutex.RUnlock()
 
-			if id < len(panel.CurrentEvents) {
+			if id < len(panel.FilteredEvents) {
 				stack := obj.(*fyne.Container)
 				bg := stack.Objects[0].(*canvas.Rectangle)
 				txtContainer := stack.Objects[1].(*fyne.Container)
 				txt := txtContainer.Objects[0].(*canvas.Text)
 
-				event := panel.CurrentEvents[id]
+				event := panel.FilteredEvents[id]
 
 				// Вибираємо палітру кольорів залежно від теми
 				var textColor, rowColor color.NRGBA
@@ -102,13 +119,12 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 
 				txt.Color = textColor
 
-				// icon := getEventIcon(event.Type)
-				// text := icon + " " + event.GetDateTimeDisplay() + " | №" + itoa(event.ObjectID)
-				text :=  event.GetDateTimeDisplay() + " | №" + itoa(event.ObjectID)
+				// Для непідготовленого користувача: стабільний читабельний формат рядка.
+				// [дата/час] — №[об'єкт] [назва] — [тип] — [зона/деталі]
+				text := event.GetDateTimeDisplay() + " — №" + itoa(event.ObjectID) + " " + event.ObjectName + " — " + event.GetTypeDisplay()
 				if event.ZoneNumber > 0 {
-					text += "-" + itoa(event.ZoneNumber)
+					text += " — Зона " + itoa(event.ZoneNumber)
 				}
-				text += " " + event.ObjectName + " | " + event.GetTypeDisplay()
 				if event.Details != "" {
 					text += " — " + event.Details
 				}
@@ -126,8 +142,8 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 	panel.List.OnSelected = func(id widget.ListItemID) {
 		panel.mutex.RLock()
 		defer panel.mutex.RUnlock()
-		if id < len(panel.CurrentEvents) && panel.OnEventSelected != nil {
-			panel.OnEventSelected(panel.CurrentEvents[id])
+		if id < len(panel.FilteredEvents) && panel.OnEventSelected != nil {
+			panel.OnEventSelected(panel.FilteredEvents[id])
 		}
 		panel.List.Unselect(id)
 	}
@@ -171,11 +187,71 @@ func (p *EventLogPanel) Refresh() {
 
 	// Оновлюємо кеш
 	p.mutex.Lock()
-	p.CurrentEvents = events
+	p.AllEvents = events
 	p.mutex.Unlock()
+
+	// Фільтруємо для відображення
+	p.applyFilters()
 
 	// Оновлюємо UI у головному вікні
 	fyne.Do(func() {
+		if p.List != nil {
+			p.List.Refresh()
+		}
+	})
+}
+
+func (p *EventLogPanel) applyFilters() {
+	p.mutex.RLock()
+	all := p.AllEvents
+	p.mutex.RUnlock()
+
+	period := ""
+	if p.RangeSelect != nil {
+		period = p.RangeSelect.Selected
+	}
+	importantOnly := false
+	if p.ImportantOnly != nil {
+		importantOnly = p.ImportantOnly.Checked
+	}
+
+	now := time.Now()
+	year, month, day := now.Date()
+
+	filtered := make([]models.Event, 0, len(all))
+	for _, e := range all {
+
+		// Період
+		switch period {
+		case "Остання година":
+			if now.Sub(e.Time) > time.Hour {
+				// Події відсортовані від нових до старих — можемо зупинятись.
+				goto done
+			}
+		case "Сьогодні":
+			y, m, d := e.Time.Date()
+			if y != year || m != month || d != day {
+				goto done
+			}
+		}
+
+		// Важливість
+		if importantOnly && !(e.IsCritical() || e.IsWarning()) {
+			continue
+		}
+
+		filtered = append(filtered, e)
+	}
+done:
+
+	p.mutex.Lock()
+	p.FilteredEvents = filtered
+	p.mutex.Unlock()
+
+	fyne.Do(func() {
+		if p.OnCountChanged != nil {
+			p.OnCountChanged(len(filtered))
+		}
 		if p.List != nil {
 			p.List.Refresh()
 		}
@@ -208,6 +284,12 @@ func (p *EventLogPanel) OnThemeChanged(fontSize float32) {
 	}
 	if p.List != nil {
 		p.List.Refresh()
+	}
+	if p.RangeSelect != nil {
+		p.RangeSelect.Refresh()
+	}
+	if p.ImportantOnly != nil {
+		p.ImportantOnly.Refresh()
 	}
 }
 

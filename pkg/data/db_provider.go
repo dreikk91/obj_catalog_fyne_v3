@@ -534,7 +534,7 @@ func mapEventRowToModel(row database.EventRow, objID int) models.Event {
 	if row.EvTime1 != nil {
 		e.Time = *row.EvTime1
 	} else {
-		e.Time = time.Now()
+		e.Time = time.Time{}
 	}
 
 	if row.Zonen != nil {
@@ -598,7 +598,7 @@ func ptrToInt(p *int) int {
 
 func ptrToTime(p *time.Time) time.Time {
 	if p == nil {
-		return time.Now()
+		return time.Time{}
 	}
 	return *p
 }

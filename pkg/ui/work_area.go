@@ -32,7 +32,7 @@ type WorkAreaPanel struct {
 	IsLoading bool
 
 	// UI елементи
-	HeaderName    *canvas.Text
+	HeaderName    *widget.Label
 	HeaderAddress *widget.Label
 	HeaderStatus  *canvas.Text
 	Tabs          *container.AppTabs
@@ -80,11 +80,16 @@ func NewWorkAreaPanel(provider data.DataProvider, window fyne.Window) *WorkAreaP
 
 	// Шапка
 	themeSize := fyne.CurrentApp().Settings().Theme().Size(fyneTheme.SizeNameText)
-	panel.HeaderName = canvas.NewText("← Оберіть об'єкт зі списку", nil)
-	panel.HeaderName.TextSize = themeSize + 5
-	panel.HeaderName.TextStyle = fyne.TextStyle{Bold: true}
 
+	// Назва об'єкта: використовуємо Label з перенесенням рядків,
+	// щоб довгі назви (до ~200 символів) коректно відображались у межах правої вкладки.
+	panel.HeaderName = widget.NewLabel("← Оберіть об'єкт зі списку")
+	panel.HeaderName.TextStyle = fyne.TextStyle{Bold: true}
+	panel.HeaderName.Wrapping = fyne.TextWrapWord
+
+	// Адреса об'єкта також може бути довгою — вмикаємо перенесення.
 	panel.HeaderAddress = widget.NewLabel("")
+	panel.HeaderAddress.Wrapping = fyne.TextWrapWord
 	panel.HeaderStatus = canvas.NewText("", appTheme.ColorNormal)
 	panel.HeaderStatus.TextSize = themeSize + 1
 	panel.HeaderStatus.TextStyle = fyne.TextStyle{Bold: true}
@@ -356,9 +361,12 @@ func (w *WorkAreaPanel) SetObject(object models.Object) {
 	w.CurrentObject = &object
 
 	// Оновлюємо базову інфу
-	w.HeaderName.Text = fmt.Sprintf("%s (№%d)", object.Name, object.ID)
-	w.HeaderName.Refresh()
-	w.HeaderAddress.SetText(fmt.Sprintf("📍 %s | 📄 %s", object.Address, object.ContractNum))
+	if w.HeaderName != nil {
+		w.HeaderName.SetText(fmt.Sprintf("%s (№%d)", object.Name, object.ID))
+	}
+	if w.HeaderAddress != nil {
+		w.HeaderAddress.SetText(fmt.Sprintf("📍 %s | 📄 %s", object.Address, object.ContractNum))
+	}
 	w.HeaderStatus.Text = object.GetStatusDisplay()
 	w.HeaderStatus.Color = GetStatusColor(object.Status)
 	w.HeaderStatus.Refresh()
@@ -550,12 +558,8 @@ func (w *WorkAreaPanel) showTestMessages(objectID string) {
 }
 
 func (w *WorkAreaPanel) OnThemeChanged(fontSize float32) {
-	if w.HeaderName != nil {
-		w.HeaderName.TextSize = fontSize + 5
-		w.HeaderName.Refresh()
-	}
 	if w.HeaderStatus != nil {
-		w.HeaderStatus.TextSize = fontSize + 1
+		w.HeaderStatus.TextSize = fontSize + 3
 		w.HeaderStatus.Refresh()
 	}
 	// Віджети (Labels, Tables) оновляться автоматично через Refresh

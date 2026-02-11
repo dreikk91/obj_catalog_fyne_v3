@@ -4,6 +4,7 @@ package ui
 import (
 	"image/color"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -28,10 +29,15 @@ type AlarmPanelWidget struct {
 	mutex         sync.RWMutex
 	isRefreshing  bool
 	selectedIndex int
+	lastClickTime time.Time
 	processBtn    *widget.Button
 	lastKnownIDs  map[int]struct{}
 
-	OnAlarmSelected    func(alarm models.Alarm)
+	// OnAlarmSelected викликається при кожному кліку по тривозі (одинарному).
+	OnAlarmSelected func(alarm models.Alarm)
+	// OnAlarmActivated викликається тільки при подвійному кліку по одній і тій самій тривозі.
+	OnAlarmActivated func(alarm models.Alarm)
+
 	OnProcessAlarm     func(alarm models.Alarm)
 	OnCountsChanged    func(total int, fire int)
 	OnNewCriticalAlarm func(alarm models.Alarm)
@@ -88,11 +94,17 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 					textColor, rowColor = utils.SelectColorNRGBA(alarm.SC1)
 				}
 
-				bg.FillColor = rowColor
+				// Базовий колір рядка
+				rowBg := rowColor
+				// Якщо рядок вибраний — робимо підсвічування трохи яскравішим/темнішим,
+				// щоб користувач чітко бачив поточний вибір.
+				if int(id) == panel.selectedIndex {
+					rowBg = adjustAlarmRowColor(rowColor)
+				}
+				bg.FillColor = rowBg
 				bg.Refresh()
 
 				txt.Color = textColor
-				// txt.TextStyle.Bold = true
 
 				// Для непідготовленого користувача: стабільний читабельний формат рядка.
 				// [час] — [тип] — №[об'єкт] [назва] — [зона/деталі]
@@ -122,23 +134,41 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 	)
 
 	panel.List.OnSelected = func(id widget.ListItemID) {
-		panel.mutex.RLock()
-		valid := id < len(panel.CurrentAlarms)
-		var selected models.Alarm
-		if valid {
-			selected = panel.CurrentAlarms[id]
+		panel.mutex.Lock()
+		valid := int(id) < len(panel.CurrentAlarms)
+		if !valid {
+			panel.mutex.Unlock()
+			return
 		}
-		panel.mutex.RUnlock()
 
-		if valid && panel.OnAlarmSelected != nil {
+		now := time.Now()
+		prevIndex := panel.selectedIndex
+		prevTime := panel.lastClickTime
+
+		panel.selectedIndex = int(id)
+		panel.lastClickTime = now
+		selected := panel.CurrentAlarms[id]
+		panel.mutex.Unlock()
+
+		// Оновлюємо стан кнопки обробки та підсвічування рядка.
+		if panel.processBtn != nil {
+			panel.processBtn.Enable()
+		}
+		if panel.List != nil {
+			panel.List.Refresh()
+		}
+
+		// Одинарний клік: вибираємо об'єкт (оновлюємо картку/контекст без зміни вкладки).
+		if panel.OnAlarmSelected != nil {
 			panel.OnAlarmSelected(selected)
 		}
 
-		panel.mutex.Lock()
-		panel.selectedIndex = id
-		panel.mutex.Unlock()
-		if panel.processBtn != nil {
-			panel.processBtn.Enable()
+		// Подвійний клік по тому самому елементу в межах інтервалу
+		// додатково викликає "активацію" (відкриття деталей).
+		if prevIndex == int(id) && !prevTime.IsZero() && now.Sub(prevTime) < 600*time.Millisecond {
+			if panel.OnAlarmActivated != nil {
+				panel.OnAlarmActivated(selected)
+			}
 		}
 	}
 
@@ -240,5 +270,25 @@ func (p *AlarmPanelWidget) OnThemeChanged(fontSize float32) {
 	}
 	if p.List != nil {
 		p.List.Refresh()
+	}
+}
+
+// adjustAlarmRowColor трохи змінює яскравість кольору рядка,
+// щоб підсвітити вибраний елемент у списку тривог.
+func adjustAlarmRowColor(c color.NRGBA) color.NRGBA {
+	const factor = 1.15 // 15% яскравіше
+	scale := func(v uint8) uint8 {
+		f := float32(v) * factor
+		if f > 255 {
+			f = 255
+		}
+		return uint8(f)
+	}
+
+	return color.NRGBA{
+		R: scale(c.R),
+		G: scale(c.G),
+		B: scale(c.B),
+		A: c.A,
 	}
 }

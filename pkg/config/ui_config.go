@@ -10,6 +10,8 @@ const (
 	PrefFontSizeEvents  = "ui.font_size_events"
 	PrefFontSizeAlarms  = "ui.font_size_alarms"
 
+	// MinFontSize - мінімальний дозволений розмір шрифту
+	MinFontSize = 8.0
 	// MaxFontSize - максимальний дозволений розмір шрифту
 	MaxFontSize = 30.0
 )
@@ -23,9 +25,13 @@ type UIConfig struct {
 
 // clampFontSize обмежує значення шрифту зверху MaxFontSize
 func clampFontSize(v float32) float32 {
+	if v < float32(MinFontSize) {
+		return float32(MinFontSize)
+	}
 	if v > float32(MaxFontSize) {
 		return float32(MaxFontSize)
 	}
+
 	return v
 }
 

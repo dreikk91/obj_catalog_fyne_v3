@@ -38,6 +38,11 @@ type EventLogPanel struct {
 	isRefreshing   bool
 	TitleText      *canvas.Text
 	lastFontSize   float32
+
+	// Поточний об'єкт для контекстного відображення подій
+	currentObject *models.Object
+	// Перемикач режиму: всі події чи тільки по вибраному об'єкту
+	showForCurrentOnly bool
 }
 
 // NewEventLogPanel створює панель журналу подій
@@ -73,9 +78,16 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 		panel.applyFilters()
 	})
 
+	// Перемикач контексту: всі події / по вибраному об'єкту
+	contextToggle := widget.NewCheck("Тільки по вибраному об'єкту", func(checked bool) {
+		panel.showForCurrentOnly = checked
+		panel.applyFilters()
+	})
+
 	header := container.NewHBox(
 		container.NewPadded(panel.TitleText),
 		layout.NewSpacer(),
+		contextToggle,
 		panel.RangeSelect,
 		panel.ImportantOnly,
 		panel.PauseBtn,
@@ -140,12 +152,22 @@ func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
 	)
 
 	panel.List.OnSelected = func(id widget.ListItemID) {
+		// Забираємо подію під read-lock, а колбек викликаємо вже без блокування,
+		// щоб уникнути дедлоку при SetCurrentObject (який використовує write-lock).
 		panel.mutex.RLock()
-		defer panel.mutex.RUnlock()
-		if id < len(panel.FilteredEvents) && panel.OnEventSelected != nil {
-			panel.OnEventSelected(panel.FilteredEvents[id])
+		var ev models.Event
+		valid := int(id) < len(panel.FilteredEvents)
+		if valid {
+			ev = panel.FilteredEvents[id]
 		}
-		panel.List.Unselect(id)
+		panel.mutex.RUnlock()
+
+		if valid && panel.OnEventSelected != nil {
+			panel.OnEventSelected(ev)
+		}
+		if panel.List != nil {
+			panel.List.Unselect(id)
+		}
 	}
 
 	panel.Container = container.NewBorder(
@@ -204,6 +226,8 @@ func (p *EventLogPanel) Refresh() {
 func (p *EventLogPanel) applyFilters() {
 	p.mutex.RLock()
 	all := p.AllEvents
+	currentObj := p.currentObject
+	showForCurrentOnly := p.showForCurrentOnly
 	p.mutex.RUnlock()
 
 	period := ""
@@ -237,6 +261,11 @@ func (p *EventLogPanel) applyFilters() {
 
 		// Важливість
 		if importantOnly && !(e.IsCritical() || e.IsWarning()) {
+			continue
+		}
+
+		// Контекст: події лише по вибраному об'єкту (якщо ввімкнено)
+		if showForCurrentOnly && currentObj != nil && e.ObjectID != currentObj.ID {
 			continue
 		}
 
@@ -291,6 +320,15 @@ func (p *EventLogPanel) OnThemeChanged(fontSize float32) {
 	if p.ImportantOnly != nil {
 		p.ImportantOnly.Refresh()
 	}
+}
+
+// SetCurrentObject встановлює поточний об'єкт для контекстного журналу.
+// При зміні об'єкта фільтрація перераховується автоматично.
+func (p *EventLogPanel) SetCurrentObject(obj *models.Object) {
+	p.mutex.Lock()
+	p.currentObject = obj
+	p.mutex.Unlock()
+	p.applyFilters()
 }
 
 func getEventImportance(event models.Event) widget.Importance {

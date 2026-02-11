@@ -35,6 +35,11 @@ type Application struct {
 	db             *sqlx.DB
 	dbHealthCancel context.CancelFunc
 
+	// Поточний вибраний об'єкт (для заголовка, контекстних фільтрів тощо)
+	currentObject *models.Object
+	// Поточна кількість активних тривог (для заголовка)
+	currentAlarmsTotal int
+
 	// Сховище даних (інтерфейс)
 	dataProvider data.DataProvider
 	// Пряме посилання на MockData ТІЛЬКИ для симуляції
@@ -46,10 +51,30 @@ type Application struct {
 	workArea   *ui.WorkAreaPanel
 	eventLog   *ui.EventLogPanel
 
+	// Праві вкладки (картка об'єкта / журнал / тривоги)
+	rightTabs *container.AppTabs
+
 	// Поточна тема
 	isDarkTheme bool
 
 	statusLabel *widget.Label
+}
+
+// updateWindowTitle оновлює заголовок вікна з урахуванням
+// вибраного об'єкта та кількості активних тривог.
+func (a *Application) updateWindowTitle() {
+	base := "Каталог об'єктів"
+
+	if a.currentObject != nil {
+		base = fmt.Sprintf("Каталог об'єктів — %s (№%d)", a.currentObject.Name, a.currentObject.ID)
+	}
+	if a.currentAlarmsTotal > 0 {
+		base = fmt.Sprintf("%s — Тривоги: %d", base, a.currentAlarmsTotal)
+	}
+
+	if a.mainWindow != nil {
+		a.mainWindow.SetTitle(base)
+	}
 }
 
 const (
@@ -195,14 +220,39 @@ func (a *Application) buildUI() {
 	// Налаштовуємо callbacks
 	a.objectList.OnObjectSelected = func(object models.Object) {
 		log.Debug().Int("objectID", object.ID).Str("objectName", object.Name).Msg("Об'єкт вибраний з списку")
+		// Зберігаємо поточний об'єкт для заголовка та контекстних фільтрів
+		a.currentObject = &object
+		a.updateWindowTitle()
 		a.workArea.SetObject(object)
+		// Синхронізуємо глобальний журнал подій з вибраним об'єктом
+		if a.eventLog != nil {
+			a.eventLog.SetCurrentObject(&object)
+		}
+		// Для адміністратора при виборі об'єкта завжди показуємо його картку
+		if a.rightTabs != nil {
+			a.rightTabs.SelectIndex(0)
+		}
 	}
 
 	a.alarmPanel.OnAlarmSelected = func(alarm models.Alarm) {
-		log.Debug().Int("alarmID", alarm.ID).Int("objectID", alarm.ObjectID).Msg("Тривога вибрана")
+		log.Debug().Int("alarmID", alarm.ID).Int("objectID", alarm.ObjectID).Msg("Тривога вибрана (одинарний клік)")
 		obj := a.dataProvider.GetObjectByID(fmt.Sprintf("%d", alarm.ObjectID))
 		if obj != nil {
+			// Оновлюємо контекст вибраного об'єкта, але залишаємо вкладку "Тривоги" відкритою.
+			a.currentObject = obj
+			a.updateWindowTitle()
 			a.workArea.SetObject(*obj)
+			if a.eventLog != nil {
+				a.eventLog.SetCurrentObject(obj)
+			}
+		}
+	}
+
+	a.alarmPanel.OnAlarmActivated = func(alarm models.Alarm) {
+		log.Debug().Int("alarmID", alarm.ID).Int("objectID", alarm.ObjectID).Msg("Тривога активована (подвійний клік)")
+		// Подвійний клік: відкриваємо вкладку деталей для вже вибраного об'єкта.
+		if a.rightTabs != nil {
+			a.rightTabs.SelectIndex(0)
 		}
 	}
 
@@ -210,7 +260,16 @@ func (a *Application) buildUI() {
 		log.Debug().Int("eventID", event.ID).Int("objectID", event.ObjectID).Msg("Подія вибрана")
 		obj := a.dataProvider.GetObjectByID(fmt.Sprintf("%d", event.ObjectID))
 		if obj != nil {
+			// Оновлюємо контекст вибраного об'єкта
+			a.currentObject = obj
+			a.updateWindowTitle()
 			a.workArea.SetObject(*obj)
+			if a.eventLog != nil {
+				a.eventLog.SetCurrentObject(obj)
+			}
+			if a.rightTabs != nil {
+				a.rightTabs.SelectIndex(0)
+			}
 		}
 	}
 
@@ -280,11 +339,14 @@ func (a *Application) buildUI() {
 	toolbar := container.NewHBox(title, layout.NewSpacer(), themeBtn, colorsBtn, settingsBtn)
 
 	// Таби: показуємо найважливіше першим (тривоги), додаємо лічильники.
-	alarmsTab := container.NewTabItem("АКТИВНІ ТРИВОГИ", a.alarmPanel.Container)
-	detailsTab := container.NewTabItem("ДЕТАЛІ", a.workArea.Container)
+	detailsTab := container.NewTabItem("КАРТКА ОБ'ЄКТА", a.workArea.Container)
 	eventsTab := container.NewTabItem("ЖУРНАЛ ПОДІЙ", a.eventLog.Container)
-
+	alarmsTab := container.NewTabItem("ТРИВОГИ", a.alarmPanel.Container)
 	rightTabs := container.NewAppTabs(detailsTab, eventsTab, alarmsTab)
+	// Зберігаємо посилання на вкладки для подальшого керування
+	a.rightTabs = rightTabs
+	// Для адміністративного сценарію за замовчуванням показуємо картку об'єкта
+	rightTabs.Select(detailsTab)
 
 	// Хелпер для badge-оновлення табів.
 	lastAlarmsCount := 0
@@ -316,6 +378,9 @@ func (a *Application) buildUI() {
 		eventsTab.Text = eventsTitle
 
 		rightTabs.Refresh()
+		// Оновлюємо заголовок вікна з урахуванням кількості тривог
+		a.currentAlarmsTotal = lastAlarmsCount
+		a.updateWindowTitle()
 	}
 
 	// Синхронізуємо лічильники з панелями (викличеться після їх Refresh()).
@@ -323,15 +388,10 @@ func (a *Application) buildUI() {
 		a.alarmPanel.OnCountsChanged = func(total int, fire int) {
 			// eventsCount тут не знаємо — не чіпаємо.
 			updateTabBadges(total, fire, -1)
-			if total > 0 {
-				a.mainWindow.SetTitle(fmt.Sprintf("Каталог об'єктів — Тривоги: %d", total))
-			} else {
-				a.mainWindow.SetTitle("Каталог об'єктів")
-			}
 		}
 		a.alarmPanel.OnNewCriticalAlarm = func(alarm models.Alarm) {
-			// Для непідготовленого користувача: показати вкладку тривог.
-			rightTabs.SelectIndex(0)
+			// Для адміністратора не перемикаємо вкладку автоматично,
+			// а лише м'яко сповіщаємо про нову тривогу.
 			ui.ShowToast(a.mainWindow, fmt.Sprintf("Нова тривога: №%d %s", alarm.ObjectID, alarm.GetTypeDisplay()))
 		}
 	}

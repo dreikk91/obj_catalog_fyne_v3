@@ -69,7 +69,7 @@ func ShowColorPaletteDialog(win fyne.Window, isDark bool, onChanged func()) {
 				},
 				win,
 			)
-
+			picker.Advanced = true
 			picker.SetColor(currentRow)
 			picker.Show()
 		})
@@ -107,4 +107,3 @@ func ShowColorPaletteDialog(win fyne.Window, isDark bool, onChanged func()) {
 	d.Resize(fyne.NewSize(520, 420))
 	d.Show()
 }
-

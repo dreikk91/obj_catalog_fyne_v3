@@ -54,6 +54,7 @@ type Application struct {
 
 const (
 	prefKeyObjectListSplitOffset = "ui.objectList.splitOffset"
+	prefKeyDarkTheme             = "ui.theme.dark"
 )
 
 func main() {
@@ -90,6 +91,9 @@ func NewApplication() *Application {
 	fyneApp := app.NewWithID("com.most.obj_catalog_fyne_v3")
 	log.Debug().Str("appID", "com.most.obj_catalog_fyne_v3").Msg("Fyne додаток створено")
 
+	// Завантажуємо збережену тему (за замовчуванням - темна)
+	isDark := fyneApp.Preferences().BoolWithFallback(prefKeyDarkTheme, true)
+
 	// Створюємо головне вікно
 	log.Debug().Msg("Створення головного вікна...")
 	mainWindow := fyneApp.NewWindow("Каталог об'єктів")
@@ -123,15 +127,15 @@ func NewApplication() *Application {
 		db:             db,
 		dbHealthCancel: healthCancel,
 		dataProvider:   dataProvider,
-		// mockData:     mockData,
-		isDarkTheme: true,
+		// mockData:   mockData,
+		isDarkTheme: isDark,
 	}
 	log.Debug().Msg("Структура додатку готова")
 
 	// Встановлюємо тему
 	log.Debug().Msg("Встановлення теми...")
-	application.setTheme(true)
-	log.Debug().Bool("darkTheme", true).Msg("Тема встановлена")
+	application.setTheme(isDark)
+	log.Debug().Bool("darkTheme", isDark).Msg("Тема встановлена")
 
 	// Будуємо інтерфейс (це тепер швидко, бо все асинхронно)
 	log.Info().Msg("Побудова UI компонентів...")
@@ -151,6 +155,9 @@ func NewApplication() *Application {
 // setTheme встановлює тему (темну або світлу)
 func (a *Application) setTheme(dark bool) {
 	a.isDarkTheme = dark
+	// Зберігаємо вибір теми в налаштуваннях
+	a.fyneApp.Preferences().SetBool(prefKeyDarkTheme, dark)
+
 	uiCfg := config.LoadUIConfig(a.fyneApp.Preferences())
 	if dark {
 		log.Debug().Msg("Застосування темної теми...")
@@ -223,15 +230,15 @@ func (a *Application) buildUI() {
 	themeBtn := widget.NewButtonWithIcon("", fyneTheme.ColorPaletteIcon(), nil)
 	updateThemeButton := func() {
 		if a.isDarkTheme {
-			themeBtn.SetText("Світла тема")
+			themeBtn.SetText("Світла")
 		} else {
-			themeBtn.SetText("Темна тема")
+			themeBtn.SetText("Темна")
 		}
 	}
 	themeBtn.OnTapped = func() {
-		a.isDarkTheme = !a.isDarkTheme
-		log.Debug().Bool("darkTheme", a.isDarkTheme).Msg("Перемикання теми...")
-		a.setTheme(a.isDarkTheme)
+		newDark := !a.isDarkTheme
+		log.Debug().Bool("darkTheme", newDark).Msg("Перемикання теми...")
+		a.setTheme(newDark)
 		updateThemeButton()
 		// Оновлюємо панелі, щоб застосувати нові кольори
 		a.objectList.Refresh()
@@ -272,11 +279,67 @@ func (a *Application) buildUI() {
 	title := widget.NewLabel("Каталог об'єктів")
 	toolbar := container.NewHBox(title, layout.NewSpacer(), themeBtn, colorsBtn, settingsBtn)
 
-	rightTabs := container.NewAppTabs(
-		container.NewTabItem("ДЕТАЛІ", a.workArea.Container),
-		container.NewTabItem("ЖУРНАЛ ПОДІЙ", a.eventLog.Container),
-		container.NewTabItem("АКТИВНІ ТРИВОГИ", a.alarmPanel.Container),
-	)
+	// Таби: показуємо найважливіше першим (тривоги), додаємо лічильники.
+	alarmsTab := container.NewTabItem("АКТИВНІ ТРИВОГИ", a.alarmPanel.Container)
+	detailsTab := container.NewTabItem("ДЕТАЛІ", a.workArea.Container)
+	eventsTab := container.NewTabItem("ЖУРНАЛ ПОДІЙ", a.eventLog.Container)
+
+	rightTabs := container.NewAppTabs(detailsTab, eventsTab, alarmsTab)
+
+	// Хелпер для badge-оновлення табів.
+	lastAlarmsCount := 0
+	lastFireCount := 0
+	lastEventsCount := 0
+	updateTabBadges := func(alarmsCount int, fireCount int, eventsCount int) {
+		if alarmsCount >= 0 {
+			lastAlarmsCount = alarmsCount
+			lastFireCount = fireCount
+		}
+		if eventsCount >= 0 {
+			lastEventsCount = eventsCount
+		}
+
+		// Алгоритм простий: показуємо тільки те, що реально важливо користувачу.
+		alarmTitle := "АКТИВНІ ТРИВОГИ"
+		if lastAlarmsCount > 0 {
+			alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d)", lastAlarmsCount)
+			if lastFireCount > 0 {
+				alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d, ПОЖЕЖА: %d)", lastAlarmsCount, lastFireCount)
+			}
+		}
+		alarmsTab.Text = alarmTitle
+
+		eventsTitle := "ЖУРНАЛ ПОДІЙ"
+		if lastEventsCount > 0 {
+			eventsTitle = fmt.Sprintf("ЖУРНАЛ ПОДІЙ (%d)", lastEventsCount)
+		}
+		eventsTab.Text = eventsTitle
+
+		rightTabs.Refresh()
+	}
+
+	// Синхронізуємо лічильники з панелями (викличеться після їх Refresh()).
+	if a.alarmPanel != nil {
+		a.alarmPanel.OnCountsChanged = func(total int, fire int) {
+			// eventsCount тут не знаємо — не чіпаємо.
+			updateTabBadges(total, fire, -1)
+			if total > 0 {
+				a.mainWindow.SetTitle(fmt.Sprintf("Каталог об'єктів — Тривоги: %d", total))
+			} else {
+				a.mainWindow.SetTitle("Каталог об'єктів")
+			}
+		}
+		a.alarmPanel.OnNewCriticalAlarm = func(alarm models.Alarm) {
+			// Для непідготовленого користувача: показати вкладку тривог.
+			rightTabs.SelectIndex(0)
+			ui.ShowToast(a.mainWindow, fmt.Sprintf("Нова тривога: №%d %s", alarm.ObjectID, alarm.GetTypeDisplay()))
+		}
+	}
+	if a.eventLog != nil {
+		a.eventLog.OnCountChanged = func(count int) {
+			updateTabBadges(-1, 0, count)
+		}
+	}
 
 	log.Debug().Msg("Компонування макета...")
 
@@ -290,7 +353,7 @@ func (a *Application) buildUI() {
 	rootSplit.SetOffset(savedOffset)
 
 	a.statusLabel = widget.NewLabel("БД : підключено")
-	shortcutsLabel := widget.NewLabel("Ctrl+1..3: вкладки | Ctrl+T: тема")
+	shortcutsLabel := widget.NewLabel("Ctrl+1..3: вкладки | Ctrl+T: тема | Ctrl+F: пошук")
 	statusBar := container.NewVBox(
 		widget.NewSeparator(),
 		container.NewHBox(a.statusLabel, layout.NewSpacer(), shortcutsLabel),
@@ -314,6 +377,11 @@ func (a *Application) buildUI() {
 	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyT, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
 		if themeBtn.OnTapped != nil {
 			themeBtn.OnTapped()
+		}
+	})
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyF, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		if a.objectList != nil && a.objectList.SearchEntry != nil {
+			a.mainWindow.Canvas().Focus(a.objectList.SearchEntry)
 		}
 	})
 	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key1, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {

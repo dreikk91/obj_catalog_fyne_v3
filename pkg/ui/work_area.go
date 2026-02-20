@@ -253,7 +253,36 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 	w.ZonesTable.SetColumnWidth(3, 100)
 	w.ZonesTable.SetColumnWidth(4, 40)
 
-	return container.NewBorder(nil, nil, nil, nil, w.ZonesTable)
+	return container.NewBorder(nil, nil, nil, nil, container.New(&zonesTableLayout{table: w.ZonesTable}, w.ZonesTable))
+}
+
+type zonesTableLayout struct {
+	table         *widget.Table
+	lastNameWidth float32
+}
+
+func (l *zonesTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	// Fixed columns: ID(50) + Type(100) + Status(100) + Copy(40) = 290
+	fixedWidth := float32(290)
+	available := size.Width - fixedWidth - 10
+	if available < 150 {
+		available = 150
+	}
+
+	if l.lastNameWidth != available {
+		l.table.SetColumnWidth(1, available)
+		l.lastNameWidth = available
+		l.table.Refresh()
+	}
+
+	for _, o := range objects {
+		o.Resize(size)
+		o.Move(fyne.NewPos(0, 0))
+	}
+}
+
+func (l *zonesTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(450, 200)
 }
 
 func (w *WorkAreaPanel) createContactsTab() fyne.CanvasObject {

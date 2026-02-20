@@ -276,7 +276,7 @@ func (p *AlarmPanelWidget) OnThemeChanged(fontSize float32) {
 // adjustAlarmRowColor трохи змінює яскравість кольору рядка,
 // щоб підсвітити вибраний елемент у списку тривог.
 func adjustAlarmRowColor(c color.NRGBA) color.NRGBA {
-	const factor = 1.15 // 15% яскравіше
+	const factor = 0.8 // 15% яскравіше
 	scale := func(v uint8) uint8 {
 		f := float32(v) * factor
 		if f > 255 {

@@ -93,10 +93,11 @@ func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 		Status:      mapStateToStatus(row.AlarmState1, row.IsConnState1),
 		StatusText:  mapStateToStatusText(row.AlarmState1, row.TechAlarmState1, row.IsConnState1),
 
-		ObjChan:   ptrToInt(row.ObjChan),
-		Phones1:   ptrToString(row.Phones1),
-		Notes1:    ptrToString(row.Notes1),
-		Location1: ptrToString(row.Location1),
+		ObjChan:    ptrToInt(row.ObjChan),
+		Phones1:    ptrToString(row.Phones1),
+		Notes1:     ptrToString(row.Notes1),
+		Location1:  ptrToString(row.Location1),
+		LaunchDate: ptrToString(row.ReservText),
 
 		AkbState:      ptrToInt64(row.AkbState),
 		PowerFault:    ptrToInt64(row.PowerFault),
@@ -221,10 +222,11 @@ func (p *DBDataProvider) GetEvents() []models.Event {
 		// Об'єднуємо: спочатку нові, потім старі
 		p.cachedEvents = append(newEvents, p.cachedEvents...)
 
-		// Обмежуємо розміри журналу
-		if len(p.cachedEvents) > 2000 {
-			log.Debug().Int("cachedEventsBefore", len(p.cachedEvents)).Msg("Кеш подій перевищує 2000, обрізаємо...")
-			p.cachedEvents = p.cachedEvents[:2000]
+		// Технічне обмеження кешу, щоб не роздувати пам'ять.
+		const maxCachedEvents = 100000
+		if len(p.cachedEvents) > maxCachedEvents {
+			log.Debug().Int("cachedEventsBefore", len(p.cachedEvents)).Int("maxCachedEvents", maxCachedEvents).Msg("Кеш подій перевищує ліміт, обрізаємо...")
+			p.cachedEvents = p.cachedEvents[:maxCachedEvents]
 			log.Debug().Int("cachedEventsAfter", len(p.cachedEvents)).Msg("Кеш обрізаний")
 		}
 	}

@@ -89,7 +89,7 @@ func GetGlobalEvents(ctx context.Context, db *sqlx.DB, lastID int64) ([]EventRow
 			FROM EVLOG
 			WHERE ID > ?
 			ORDER BY ID
-			ROWS 2000
+			ROWS 100000
 		) e
 		JOIN OBJECTS_INFO oi ON oi.OBJUIN = e.OBJUIN
 		JOIN MESSLIST m ON m.UIN = e.EVUIN

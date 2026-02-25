@@ -4,14 +4,18 @@ package ui
 import (
 	"fmt"
 	"image/color"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	fyneTheme "fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/data"
+	objexport "obj_catalog_fyne_v3/pkg/export"
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
@@ -35,6 +39,9 @@ type WorkAreaPanel struct {
 	HeaderName    *widget.Label
 	HeaderAddress *widget.Label
 	HeaderStatus  *canvas.Text
+	ExportPDFBtn  *widget.Button
+	ExportXLSXBtn *widget.Button
+	CopyExcelBtn  *widget.Button
 	Tabs          *container.AppTabs
 
 	// Лейбли інформації про прилад
@@ -96,11 +103,29 @@ func NewWorkAreaPanel(provider data.DataProvider, window fyne.Window) *WorkAreaP
 
 	panel.CopyNameBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
 	panel.CopyAddressBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
+	panel.initExportButtons()
+	panel.CopyExcelBtn = widget.NewButton("Копіювати рядок для Excel", func() {
+		if panel.CurrentObject == nil {
+			ShowToast(panel.Window, "Спочатку оберіть об'єкт")
+			return
+		}
+
+		row := panel.buildExcelRowTSV(*panel.CurrentObject)
+		panel.Window.Clipboard().SetContent(row)
+		ShowToast(panel.Window, "Рядок для Excel скопійовано")
+	})
+	panel.CopyExcelBtn.Disable()
 
 	header := container.NewVBox(
 		container.NewBorder(nil, nil, nil, panel.CopyNameBtn, panel.HeaderName),
 		container.NewBorder(nil, nil, nil, panel.CopyAddressBtn, panel.HeaderAddress),
 		panel.HeaderStatus,
+		container.NewHBox(
+			widget.NewLabel("Експорт:"),
+			panel.ExportPDFBtn,
+			panel.ExportXLSXBtn,
+			panel.CopyExcelBtn,
+		),
 		widget.NewSeparator(),
 	)
 
@@ -119,6 +144,17 @@ func NewWorkAreaPanel(provider data.DataProvider, window fyne.Window) *WorkAreaP
 	)
 
 	return panel
+}
+
+func (w *WorkAreaPanel) initExportButtons() {
+	w.ExportPDFBtn = widget.NewButton("PDF", func() {
+		w.exportSelectedObject("pdf")
+	})
+	w.ExportXLSXBtn = widget.NewButton("XLSX", func() {
+		w.exportSelectedObject("xlsx")
+	})
+	w.ExportPDFBtn.Disable()
+	w.ExportXLSXBtn.Disable()
 }
 
 func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
@@ -177,7 +213,7 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 			),
 		),
 		widget.NewSeparator(),
-		widget.NewLabel("📍 РОЗТАШУВАННЯ:"),
+		widget.NewLabel("📌 РОЗТАШУВАННЯ:"),
 		container.NewBorder(nil, nil, nil, w.CopyLocationBtn, locationScroll),
 		widget.NewLabel("📝 ДОДАТКОВА ІНФОРМАЦІЯ:"),
 		container.NewBorder(nil, nil, nil, w.CopyNotesBtn, notesScroll),
@@ -388,13 +424,22 @@ func (w *WorkAreaPanel) createEventsTab() fyne.CanvasObject {
 // SetObject встановлює об'єкт та запускає фонове завантаження деталей
 func (w *WorkAreaPanel) SetObject(object models.Object) {
 	w.CurrentObject = &object
+	if w.ExportPDFBtn != nil {
+		w.ExportPDFBtn.Enable()
+	}
+	if w.ExportXLSXBtn != nil {
+		w.ExportXLSXBtn.Enable()
+	}
+	if w.CopyExcelBtn != nil {
+		w.CopyExcelBtn.Enable()
+	}
 
 	// Оновлюємо базову інфу
 	if w.HeaderName != nil {
 		w.HeaderName.SetText(fmt.Sprintf("%s (№%d)", object.Name, object.ID))
 	}
 	if w.HeaderAddress != nil {
-		w.HeaderAddress.SetText(fmt.Sprintf("📍 %s | 📄 %s", object.Address, object.ContractNum))
+		w.HeaderAddress.SetText(fmt.Sprintf("📌 %s | 📄 %s", object.Address, object.ContractNum))
 	}
 	w.HeaderStatus.Text = object.GetStatusDisplay()
 	w.HeaderStatus.Color = GetStatusColor(object.Status)
@@ -422,6 +467,221 @@ func (w *WorkAreaPanel) SetObject(object models.Object) {
 	go w.loadObjectDetails(object.ID)
 }
 
+func (w *WorkAreaPanel) exportSelectedObject(format string) {
+	if w.CurrentObject == nil {
+		ShowToast(w.Window, "Спочатку оберіть об'єкт")
+		return
+	}
+
+	obj := *w.CurrentObject
+	zones := append([]models.Zone(nil), w.Zones...)
+	contacts := append([]models.Contact(nil), w.Contacts...)
+	events := append([]models.Event(nil), w.Events...)
+
+	if w.ExportPDFBtn != nil {
+		w.ExportPDFBtn.Disable()
+	}
+	if w.ExportXLSXBtn != nil {
+		w.ExportXLSXBtn.Disable()
+	}
+
+	go func() {
+		exportData := w.buildObjectExportData(obj, zones, contacts, events)
+		uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+		exportDir := uiCfg.ExportDir
+
+		var (
+			filePath string
+			err      error
+		)
+
+		switch strings.ToLower(format) {
+		case "pdf":
+			filePath, err = objexport.ExportObjectToPDF(exportData, exportDir)
+		case "xlsx":
+			filePath, err = objexport.ExportObjectToXLSX(exportData, exportDir)
+		default:
+			err = fmt.Errorf("unsupported export format: %s", format)
+		}
+
+		fyne.Do(func() {
+			if w.ExportPDFBtn != nil {
+				w.ExportPDFBtn.Enable()
+			}
+			if w.ExportXLSXBtn != nil {
+				w.ExportXLSXBtn.Enable()
+			}
+
+			if err != nil {
+				dialog.ShowError(err, w.Window)
+				return
+			}
+
+			ShowToast(w.Window, "Експорт завершено")
+			dialogs.ShowInfoDialog(w.Window, "Експорт виконано", "Файл створено:\n"+filePath)
+		})
+	}()
+}
+
+func (w *WorkAreaPanel) buildObjectExportData(
+	obj models.Object,
+	zones []models.Zone,
+	contacts []models.Contact,
+	events []models.Event,
+) objexport.ObjectExportData {
+	lastEventText := "Немає"
+	if len(events) > 0 {
+		latest := events[0]
+		eventTime := "Немає дати"
+		if !latest.Time.IsZero() {
+			eventTime = latest.Time.Format("02.01.2006 15:04:05")
+		}
+		lastEventText = fmt.Sprintf("%s | %s", eventTime, latest.GetTypeDisplay())
+		if latest.ZoneNumber > 0 {
+			lastEventText += fmt.Sprintf(" | Зона %d", latest.ZoneNumber)
+		}
+		if strings.TrimSpace(latest.Details) != "" {
+			lastEventText += " | " + strings.TrimSpace(latest.Details)
+		}
+	}
+
+	signal, testMsg, lastTestTime, _ := w.Data.GetExternalData(itoa(obj.ID))
+	lastTestText := "Немає"
+	if !lastTestTime.IsZero() {
+		lastTestText = lastTestTime.Format("02.01.2006 15:04:05")
+	}
+	if strings.TrimSpace(testMsg) != "" && strings.TrimSpace(testMsg) != "—" {
+		if lastTestText == "Немає" {
+			lastTestText = strings.TrimSpace(testMsg)
+		} else {
+			lastTestText += " | " + strings.TrimSpace(testMsg)
+		}
+	}
+
+	_ = signal // currently not requested in export file body
+
+	zoneRows := make([]objexport.ZoneExportRow, 0, len(zones))
+	for _, z := range zones {
+		zoneRows = append(zoneRows, objexport.ZoneExportRow{
+			Number: fmt.Sprintf("%d", z.Number),
+			Name:   emptyFallback(z.Name),
+			Type:   emptyFallback(z.SensorType),
+			Status: emptyFallback(z.GetStatusDisplay()),
+		})
+	}
+
+	responsibleRows := make([]objexport.ResponsibleExportRow, 0, len(contacts))
+	for _, c := range contacts {
+		responsibleRows = append(responsibleRows, objexport.ResponsibleExportRow{
+			Name:  emptyFallback(c.Name),
+			Phone: emptyFallback(c.Phone),
+			Note:  emptyFallback(c.Position),
+		})
+	}
+
+	return objexport.ObjectExportData{
+		Number:         obj.ID,
+		Name:           emptyFallback(obj.Name),
+		Address:        emptyFallback(obj.Address),
+		ContractNumber: emptyFallback(obj.ContractNum),
+		LaunchDate:     emptyFallback(obj.LaunchDate),
+		SimCard:        buildSimValue(obj),
+		DeviceType:     emptyFallback(obj.DeviceType),
+		TestPeriod:     buildTestPeriod(obj),
+		LastEvent:      lastEventText,
+		LastTest:       lastTestText,
+		Channel:        channelText(obj.ObjChan),
+		ObjectPhone:    emptyFallback(obj.Phones1),
+		Location:       emptyFallback(obj.Location1),
+		AdditionalInfo: emptyFallback(obj.Notes1),
+		Zones:          zoneRows,
+		Responsibles:   responsibleRows,
+	}
+}
+
+func (w *WorkAreaPanel) buildExcelRowTSV(obj models.Object) string {
+	managerName := ""
+	managerPhone := ""
+	if len(w.Contacts) > 0 {
+		managerName = strings.TrimSpace(w.Contacts[0].Name)
+		managerPhone = strings.TrimSpace(w.Contacts[0].Phone)
+	} else if len(obj.Contacts) > 0 {
+		managerName = strings.TrimSpace(obj.Contacts[0].Name)
+		managerPhone = strings.TrimSpace(obj.Contacts[0].Phone)
+	}
+
+	fields := []string{
+		itoa(obj.ID),                          // собсс
+		cleanTSV(obj.LaunchDate),              // Дата підключен. до ПЦС
+		cleanTSV(obj.ContractNum),             // Дата угоди (за поточними даними: номер/ідентифікатор угоди)
+		"",                                    // Юридична назва, згідно угоди
+		"",                                    // Юридична адреса, згідно угоди
+		cleanTSV(obj.Name),                    // Фізична назва об’єкту по вивісці
+		cleanTSV(obj.Address),                 // Фізична адреса об’єкту
+		cleanTSV(obj.DeviceType),              // ПКП
+		cleanTSV(obj.PanelMark),               // СЦС
+		cleanTSV(strings.TrimSpace(obj.SIM1)), // Основний канал зв’язку / телефон підключення
+		cleanTSV(strings.TrimSpace(obj.SIM2)), // Резервний канал зв’язку / телефон підключення
+		"",                                    // Місячна оплата
+		"",                                    // Електронна пошта об’єкту
+		cleanTSV(managerName),                 // Керівник об’єкту
+		cleanTSV(managerPhone),                // Контакт керівника
+		cleanTSV(obj.Notes1),                  // Примітки
+	}
+
+	return strings.Join(fields, "\t")
+}
+
+func cleanTSV(s string) string {
+	s = strings.ReplaceAll(s, "\t", " ")
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	return strings.TrimSpace(s)
+}
+
+func buildSimValue(obj models.Object) string {
+	sim1 := strings.TrimSpace(obj.SIM1)
+	sim2 := strings.TrimSpace(obj.SIM2)
+	if sim1 == "" && sim2 == "" {
+		return "Немає"
+	}
+	if sim2 == "" {
+		return sim1
+	}
+	if sim1 == "" {
+		return sim2
+	}
+	return sim1 + " / " + sim2
+}
+
+func buildTestPeriod(obj models.Object) string {
+	if obj.AutoTestHours > 0 {
+		return fmt.Sprintf("Кожні %d год", obj.AutoTestHours)
+	}
+	if obj.TestTime > 0 {
+		return fmt.Sprintf("Кожні %d хв", obj.TestTime)
+	}
+	return "Немає"
+}
+
+func channelText(chanID int) string {
+	switch chanID {
+	case 1:
+		return "Автододзвон"
+	case 5:
+		return "GPRS"
+	default:
+		return "Інший канал"
+	}
+}
+
+func emptyFallback(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return "Немає"
+	}
+	return strings.TrimSpace(v)
+}
+
 func (w *WorkAreaPanel) loadObjectDetails(id int) {
 	idStr := itoa(id)
 
@@ -436,6 +696,10 @@ func (w *WorkAreaPanel) loadObjectDetails(id int) {
 
 	// Події
 	events := w.Data.GetObjectEvents(idStr)
+	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+	if uiCfg.ObjectLogLimit > 0 && len(events) > uiCfg.ObjectLogLimit {
+		events = events[:uiCfg.ObjectLogLimit]
+	}
 
 	fyne.Do(func() {
 		// Перевіряємо, чи користувач досі на цьому ж об'єкті

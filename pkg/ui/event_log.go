@@ -241,6 +241,8 @@ func (p *EventLogPanel) applyFilters() {
 
 	now := time.Now()
 	year, month, day := now.Date()
+	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+	maxEvents := uiCfg.EventLogLimit
 
 	filtered := make([]models.Event, 0, len(all))
 	for _, e := range all {
@@ -272,6 +274,9 @@ func (p *EventLogPanel) applyFilters() {
 		filtered = append(filtered, e)
 	}
 done:
+	if maxEvents > 0 && len(filtered) > maxEvents {
+		filtered = filtered[:maxEvents]
+	}
 
 	p.mutex.Lock()
 	p.FilteredEvents = filtered

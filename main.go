@@ -305,38 +305,38 @@ func (a *Application) buildUI() {
 	}
 	updateThemeButton()
 
-	// Кнопка налаштування кольорів подій/об'єктів
-	colorsBtn := widget.NewButtonWithIcon("Кольори", fyneTheme.ColorPaletteIcon(), func() {
-		log.Debug().Bool("darkTheme", a.isDarkTheme).Msg("Відкриття діалогу кольорів...")
-		dialogs.ShowColorPaletteDialog(a.mainWindow, a.isDarkTheme, func() {
-			// Після зміни кольорів оновлюємо всі панелі, які їх використовують
-			if a.alarmPanel != nil {
-				a.alarmPanel.Refresh()
-			}
-			if a.eventLog != nil {
-				a.eventLog.Refresh()
-			}
-			if a.objectList != nil {
-				a.objectList.Refresh()
-			}
-			if a.workArea != nil && a.workArea.EventsList != nil {
-				a.workArea.EventsList.Refresh()
-			}
-		})
-	})
-
 	// Кнопка налаштувань
 	settingsBtn := widget.NewButtonWithIcon("Налаштування", fyneTheme.SettingsIcon(), func() {
 		log.Debug().Msg("Відкриття діалогу налаштувань...")
-		dialogs.ShowSettingsDialog(a.mainWindow, a.fyneApp.Preferences(), func(dbCfg config.DBConfig, uiCfg config.UIConfig) {
-			log.Info().Str("host", dbCfg.Host).Msg("Параметри в діалозі налаштувань змінено")
-			a.Reconnect(dbCfg)
-			a.RefreshUI(uiCfg)
-		})
+		dialogs.ShowSettingsDialog(
+			a.mainWindow,
+			a.fyneApp.Preferences(),
+			a.isDarkTheme,
+			func(dbCfg config.DBConfig, uiCfg config.UIConfig) {
+				log.Info().Str("host", dbCfg.Host).Msg("Параметри в діалозі налаштувань змінено")
+				a.Reconnect(dbCfg)
+				a.RefreshUI(uiCfg)
+			},
+			func() {
+				// Після зміни кольорів оновлюємо всі панелі, які їх використовують
+				if a.alarmPanel != nil {
+					a.alarmPanel.Refresh()
+				}
+				if a.eventLog != nil {
+					a.eventLog.Refresh()
+				}
+				if a.objectList != nil {
+					a.objectList.Refresh()
+				}
+				if a.workArea != nil && a.workArea.EventsList != nil {
+					a.workArea.EventsList.Refresh()
+				}
+			},
+		)
 	})
 
 	title := widget.NewLabel("Каталог об'єктів")
-	toolbar := container.NewHBox(title, layout.NewSpacer(), themeBtn, colorsBtn, settingsBtn)
+	toolbar := container.NewHBox(title, layout.NewSpacer(), themeBtn, settingsBtn)
 
 	// Таби: показуємо найважливіше першим (тривоги), додаємо лічильники.
 	detailsTab := container.NewTabItem("КАРТКА ОБ'ЄКТА", a.workArea.Container)

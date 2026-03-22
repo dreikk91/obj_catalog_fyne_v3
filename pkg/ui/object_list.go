@@ -41,6 +41,11 @@ type ObjectListPanel struct {
 	lastFontSize  float32
 	colNameWidth  float32
 	colAddrWidth  float32
+	// Останній об'єкт, про який повідомили через OnObjectSelected.
+	// Потрібно, щоб при авто-виборі гарантовано підвантажувати картку,
+	// але не викликати завантаження повторно без зміни вибору.
+	lastNotifiedSelectedID int
+	hasNotifiedSelection   bool
 
 	// Callback при виборі об'єкта
 	OnObjectSelected func(object models.Object)
@@ -167,6 +172,8 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 
 		panel.SelectedRow = id.Row
 		selectedObj := panel.FilteredItems[id.Row]
+		panel.lastNotifiedSelectedID = selectedObj.ID
+		panel.hasNotifiedSelection = true
 		panel.mutex.Unlock()
 
 		if panel.OnObjectSelected != nil {
@@ -242,6 +249,14 @@ func (p *ObjectListPanel) applyFilters() {
 
 	p.mutex.RLock()
 	all := p.AllObjects
+	prevSelectedID := 0
+	hadPrevSelection := false
+	lastNotifiedID := p.lastNotifiedSelectedID
+	hasNotifiedSelection := p.hasNotifiedSelection
+	if p.SelectedRow >= 0 && p.SelectedRow < len(p.FilteredItems) {
+		prevSelectedID = p.FilteredItems[p.SelectedRow].ID
+		hadPrevSelection = true
+	}
 	p.mutex.RUnlock()
 
 	var filtered []models.Object
@@ -301,9 +316,39 @@ func (p *ObjectListPanel) applyFilters() {
 		}
 	}
 
+	// Підтримуємо стабільний вибір:
+	// 1) залишаємо поточний об'єкт, якщо він є після фільтрації;
+	// 2) якщо вибору немає, автоматично вибираємо перший рядок.
+	newSelectedRow := -1
+	if hadPrevSelection {
+		for i := range filtered {
+			if filtered[i].ID == prevSelectedID {
+				newSelectedRow = i
+				break
+			}
+		}
+	}
+	if newSelectedRow == -1 && len(filtered) > 0 {
+		newSelectedRow = 0
+	}
+
+	var selectedObj models.Object
+	shouldNotifySelection := false
+	if newSelectedRow >= 0 {
+		selectedObj = filtered[newSelectedRow]
+		if !hasNotifiedSelection || selectedObj.ID != lastNotifiedID || (!hadPrevSelection || selectedObj.ID != prevSelectedID) {
+			shouldNotifySelection = true
+		}
+	}
+
 	// Оновлюємо список і UI
 	p.mutex.Lock()
 	p.FilteredItems = filtered
+	p.SelectedRow = newSelectedRow
+	if newSelectedRow < 0 {
+		p.hasNotifiedSelection = false
+		p.lastNotifiedSelectedID = 0
+	}
 	p.mutex.Unlock()
 
 	fyne.Do(func() {
@@ -338,6 +383,14 @@ func (p *ObjectListPanel) applyFilters() {
 		if p.Table != nil {
 			p.Table.Show()
 			p.Table.Refresh()
+		}
+
+		if shouldNotifySelection && p.OnObjectSelected != nil {
+			p.OnObjectSelected(selectedObj)
+			p.mutex.Lock()
+			p.lastNotifiedSelectedID = selectedObj.ID
+			p.hasNotifiedSelection = true
+			p.mutex.Unlock()
 		}
 	})
 }

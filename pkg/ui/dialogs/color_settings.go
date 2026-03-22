@@ -51,15 +51,13 @@ func ShowColorPaletteDialog(win fyne.Window, isDark bool, onChanged func()) {
 			// Поточний колір фону беремо з першого коду категорії
 			currentRow := utils.GetEventRowColor(category.Codes[0], isDark)
 
-			picker := dialog.NewColorPicker(
+			showEventColorPicker(
+				win,
 				"Вибір кольору: "+category.Name,
 				"Оберіть колір ФОНУ рядка для цієї категорії.\n"+
 					"Текст буде автоматично підібраний із стандартної палітри.",
-				func(c color.Color) {
-					if c == nil {
-						return
-					}
-					nrgba := color.NRGBAModel.Convert(c).(color.NRGBA)
+				currentRow,
+				func(nrgba color.NRGBA) {
 					for _, code := range category.Codes {
 						utils.SetEventRowColor(code, isDark, nrgba)
 					}
@@ -67,11 +65,7 @@ func ShowColorPaletteDialog(win fyne.Window, isDark bool, onChanged func()) {
 						onChanged()
 					}
 				},
-				win,
 			)
-			picker.Advanced = true
-			picker.SetColor(currentRow)
-			picker.Show()
 		})
 
 		buttons = append(buttons, btn)

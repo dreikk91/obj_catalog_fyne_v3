@@ -20,7 +20,7 @@ func GetObjectsList(ctx context.Context, db *sqlx.DB) ([]ObjectInfoRow, error) {
 		JOIN OBJECTS_LA ol ON ol.OBJN = oi.OBJN
 		JOIN OBJECTS_STATE os ON os.OBJN = oi.OBJN
 		WHERE oi.OBJTYPEID <> 1
-		ORDER BY oi.OBJN
+		ORDER BY CAST(oi.OBJN AS VARCHAR(20))
 	`
 
 	err := db.SelectContext(ctx, &results, db.Rebind(query))

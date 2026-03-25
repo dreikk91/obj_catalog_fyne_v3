@@ -3,6 +3,7 @@ package dialogs
 import (
 	"fmt"
 	"obj_catalog_fyne_v3/pkg/data"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -28,7 +29,7 @@ func ShowTestMessagesDialog(parent fyne.Window, provider data.DataProvider, obje
 				return
 			}
 
-			table := widget.NewTable(
+			tableView := uiwidgets.NewQTableViewWithCallbacks(
 				func() (int, int) {
 					return len(messages), 3
 				},
@@ -48,6 +49,7 @@ func ShowTestMessagesDialog(parent fyne.Window, provider data.DataProvider, obje
 					}
 				},
 			)
+			table := tableView.Widget()
 
 			table.SetColumnWidth(0, 150)
 			table.SetColumnWidth(1, 250)

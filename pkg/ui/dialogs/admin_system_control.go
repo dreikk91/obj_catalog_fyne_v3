@@ -16,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/data"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 )
 
 func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvider) {
@@ -58,58 +59,43 @@ func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvide
 		return out
 	}
 
-	issueTable := widget.NewTable(
-		func() (int, int) { return len(filteredIssues()) + 1, 4 },
-		func() fyne.CanvasObject { return widget.NewLabel("cell") },
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			lbl := obj.(*widget.Label)
-			if id.Row == 0 {
-				switch id.Col {
-				case 0:
-					lbl.SetText("Рівень")
-				case 1:
-					lbl.SetText("Код")
-				case 2:
-					lbl.SetText("№пр.")
-				default:
-					lbl.SetText("Опис")
-				}
-				return
-			}
+	issueTableView := uiwidgets.NewQTableViewWithHeaders(
+		[]string{"Рівень", "Код", "№пр.", "Опис"},
+		func() int { return len(filteredIssues()) },
+		func(row, col int) string {
 			rows := filteredIssues()
-			idx := id.Row - 1
-			if idx < 0 || idx >= len(rows) {
-				lbl.SetText("")
-				return
+			if row < 0 || row >= len(rows) {
+				return ""
 			}
-			it := rows[idx]
-			switch id.Col {
+			it := rows[row]
+			switch col {
 			case 0:
 				switch strings.ToLower(strings.TrimSpace(it.Severity)) {
 				case "error":
-					lbl.SetText("Помилка")
+					return "Помилка"
 				case "warn":
-					lbl.SetText("Попередження")
+					return "Попередження"
 				default:
-					lbl.SetText(strings.TrimSpace(it.Severity))
+					return strings.TrimSpace(it.Severity)
 				}
 			case 1:
-				lbl.SetText(strings.TrimSpace(it.Code))
+				return strings.TrimSpace(it.Code)
 			case 2:
 				if it.ObjN > 0 {
-					lbl.SetText(strconv.FormatInt(it.ObjN, 10))
-				} else {
-					lbl.SetText("—")
+					return strconv.FormatInt(it.ObjN, 10)
 				}
+				return "—"
 			default:
-				lbl.SetText(strings.TrimSpace(it.Details))
+				return strings.TrimSpace(it.Details)
 			}
 		},
 	)
-	issueTable.SetColumnWidth(0, 130)
-	issueTable.SetColumnWidth(1, 170)
-	issueTable.SetColumnWidth(2, 90)
-	issueTable.SetColumnWidth(3, 680)
+	issueTableView.SetSortingEnabled(true)
+	issueTable := issueTableView.Widget()
+	issueTableView.SetColumnWidth(0, 130)
+	issueTableView.SetColumnWidth(1, 170)
+	issueTableView.SetColumnWidth(2, 90)
+	issueTableView.SetColumnWidth(3, 680)
 
 	logSourceSelect := widget.NewSelect([]string{
 		"log/app.log",
@@ -328,6 +314,9 @@ func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvide
 		}
 		reloadChecks()
 	})
+	fitColumnsBtn := widget.NewButton("Автоширина", func() {
+		issueTableView.ResizeColumnsToContents()
+	})
 	exportBtn := widget.NewButton("Експорт", func() {
 		active := "checks"
 		if tabs.SelectedIndex() == 1 {
@@ -338,7 +327,7 @@ func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvide
 	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
 
 	content := container.NewBorder(
-		container.NewHBox(exportBtn, refreshBtn, layout.NewSpacer(), widget.NewLabel(time.Now().Format("02.01.2006"))),
+		container.NewHBox(exportBtn, refreshBtn, fitColumnsBtn, layout.NewSpacer(), widget.NewLabel(time.Now().Format("02.01.2006"))),
 		container.NewHBox(statusLabel, layout.NewSpacer(), closeBtn),
 		nil, nil,
 		tabs,

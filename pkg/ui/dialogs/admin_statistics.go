@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/data"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 )
 
 func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
@@ -164,28 +165,18 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		}
 	}
 
-	table := widget.NewTable(
-		func() (int, int) { return len(rows) + 1, len(columns) },
-		func() fyne.CanvasObject {
-			lbl := widget.NewLabel("cell")
-			lbl.Truncation = fyne.TextTruncateClip
-			return lbl
-		},
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			lbl := obj.(*widget.Label)
-			if id.Row == 0 {
-				lbl.SetText(columns[id.Col])
-				return
+	tableView := uiwidgets.NewQTableViewWithHeaders(
+		columns,
+		func() int { return len(rows) },
+		func(row, col int) string {
+			if row < 0 || row >= len(rows) {
+				return ""
 			}
-			idx := id.Row - 1
-			if idx < 0 || idx >= len(rows) {
-				lbl.SetText("")
-				return
-			}
-			lbl.SetText(getCell(rows[idx], id.Col))
+			return getCell(rows[row], col)
 		},
 	)
-	table.StickyRowCount = 1
+	tableView.SetSortingEnabled(true)
+	table := tableView.Widget()
 
 	columnWidths := []float32{
 		80, 220, 260, 240, 180,
@@ -195,7 +186,7 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		80, 80, 140, 200, 180, 70, 90,
 	}
 	for i := range columns {
-		table.SetColumnWidth(i, columnWidths[i])
+		tableView.SetColumnWidth(i, int(columnWidths[i]))
 	}
 
 	sortRows := func() {
@@ -388,6 +379,9 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 
 	executeBtn := widget.NewButton("Виконати", reload)
 	refreshBtn := widget.NewButton("Оновити", reload)
+	fitColumnsBtn := widget.NewButton("Автоширина", func() {
+		tableView.ResizeColumnsToContents()
+	})
 	exportBtn := widget.NewButton("Експорт CSV", func() {
 		dialog.NewFileSave(func(uc fyne.URIWriteCloser, err error) {
 			if err != nil {
@@ -456,6 +450,7 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 			container.NewGridWrap(fyne.NewSize(180, 36), sortSelect),
 			executeBtn,
 			refreshBtn,
+			fitColumnsBtn,
 			exportBtn,
 		),
 		widget.NewSeparator(),

@@ -17,16 +17,17 @@ import (
 	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
+	"obj_catalog_fyne_v3/pkg/ui/widgets"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 type ObjectListPanel struct {
 	Container    *fyne.Container
 	Table        *widget.Table
+	TableView    *widgets.QTableView
 	SearchEntry  *widget.Entry
 	FilterSelect *widget.Select
 	Data         data.ObjectProvider
-	ColumnHeader *fyne.Container
 
 	// Кеш усіх об'єктів
 	AllObjects    []models.Object
@@ -41,6 +42,8 @@ type ObjectListPanel struct {
 	lastFontSize  float32
 	colNameWidth  float32
 	colAddrWidth  float32
+	rowHeight     int
+
 	// Останній об'єкт, про який повідомили через OnObjectSelected.
 	// Потрібно, щоб при авто-виборі гарантовано підвантажувати картку,
 	// але не викликати завантаження повторно без зміни вибору.
@@ -49,6 +52,74 @@ type ObjectListPanel struct {
 
 	// Callback при виборі об'єкта
 	OnObjectSelected func(object models.Object)
+}
+
+const (
+	minObjectListRowHeight = 20
+	objectListRowDelta     = 8
+)
+
+type objectListTableModel struct {
+	panel *ObjectListPanel
+}
+
+func (m *objectListTableModel) RowCount() int {
+	if m == nil || m.panel == nil {
+		return 0
+	}
+	m.panel.mutex.RLock()
+	defer m.panel.mutex.RUnlock()
+	return len(m.panel.FilteredItems)
+}
+
+func (m *objectListTableModel) ColumnCount() int {
+	return 4
+}
+
+func (m *objectListTableModel) HeaderData(column int) string {
+	switch column {
+	case 0:
+		return "№"
+	case 1:
+		return "Об'єкт"
+	case 2:
+		return "Адреса"
+	case 3:
+		return "Договір"
+	default:
+		return ""
+	}
+}
+
+func (m *objectListTableModel) Data(row, column int) string {
+	if m == nil || m.panel == nil {
+		return ""
+	}
+	item, ok := m.panel.getFilteredObject(row)
+	if !ok {
+		return ""
+	}
+	switch column {
+	case 0:
+		return itoa(item.ID)
+	case 1:
+		return item.Name
+	case 2:
+		return item.Address
+	case 3:
+		return item.ContractNum
+	default:
+		return ""
+	}
+}
+
+func (p *ObjectListPanel) getFilteredObject(row int) (models.Object, bool) {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+	if row < 0 || row >= len(p.FilteredItems) {
+		return models.Object{}, false
+	}
+	return p.FilteredItems[row], true
 }
 
 // NewObjectListPanel створює панель списку об'єктів
@@ -71,7 +142,6 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 	panel.SearchEntry = widget.NewEntry()
 	panel.SearchEntry.SetPlaceHolder("🔍 Пошук (№, Назва, Адреса, SIM, Тел...)")
 	panel.SearchEntry.OnChanged = func(text string) {
-		// Дебоунсинг або просто асинхронний виклик
 		go panel.applyFilters()
 	}
 
@@ -80,7 +150,6 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 		if panel.isUpdating {
 			return
 		}
-		// Видаляємо кількість з назви фільтра перед збереженням
 		cleanFilter := selected
 		if idx := strings.Index(selected, " ("); idx != -1 {
 			cleanFilter = selected[:idx]
@@ -94,42 +163,63 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 	panel.LoadingLabel = widget.NewLabel("Завантаження даних...")
 	panel.LoadingLabel.Alignment = fyne.TextAlignCenter
 
-	// Таблиця об'єктів (використовує FilteredItems)
-	panel.Table = widget.NewTable(
-		func() (int, int) {
-			panel.mutex.RLock()
-			defer panel.mutex.RUnlock()
-			return len(panel.FilteredItems), 4
-		},
+	// Таблиця об'єктів на QTableView
+	model := &objectListTableModel{panel: panel}
+	panel.TableView = widgets.NewQTableView(model)
+	panel.Table = panel.TableView.Widget()
+	panel.TableView.SetHeaderVisible(true, false)
+	panel.TableView.SetSortingEnabled(true)
+	panel.TableView.SetSelectionBehavior(widgets.SelectRows)
+	panel.TableView.SetCornerButtonEnabled(true)
+	panel.TableView.SetGridStyle(widgets.PenSolid)
+	panel.TableView.SetShowGrid(true)
+	panel.TableView.SetWordWrap(false)
+	panel.TableView.SetCellRenderer(
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
-			txt := canvas.NewText("Cell Data", color.White)
-			// Буде оновлено в UpdateCell
+			txt := canvas.NewText("", color.White)
+			txt.TextStyle.Monospace = true
 			return container.NewStack(bg, container.NewPadded(txt))
 		},
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			panel.mutex.RLock()
-			defer panel.mutex.RUnlock()
-
-			stack := obj.(*fyne.Container)
-			bg := stack.Objects[0].(*canvas.Rectangle)
-			txtContainer := stack.Objects[1].(*fyne.Container)
-			txt := txtContainer.Objects[0].(*canvas.Text)
-			txt.TextStyle.Monospace = true
-
-			if id.Row >= len(panel.FilteredItems) {
-				txt.Text = ""
-				txt.Refresh()
-				bg.Hide()
-				bg.Refresh()
+		func(index widgets.ModelIndex, _ string, _ bool, obj fyne.CanvasObject) {
+			stack, ok := obj.(*fyne.Container)
+			if !ok || len(stack.Objects) < 2 {
 				return
 			}
-			item := panel.FilteredItems[id.Row]
+			bg, ok := stack.Objects[0].(*canvas.Rectangle)
+			if !ok {
+				return
+			}
+			padded, ok := stack.Objects[1].(*fyne.Container)
+			if !ok || len(padded.Objects) == 0 {
+				return
+			}
+			txt, ok := padded.Objects[0].(*canvas.Text)
+			if !ok {
+				return
+			}
+
+			if !index.IsValid() {
+				txt.Text = ""
+				bg.Hide()
+				bg.Refresh()
+				txt.Refresh()
+				return
+			}
+
+			item, exists := panel.getFilteredObject(index.Row)
+			if !exists {
+				txt.Text = ""
+				bg.Hide()
+				bg.Refresh()
+				txt.Refresh()
+				return
+			}
 
 			// Визначаємо кольори на основі комбінації статусів
 			textColor, rowColor := utils.ChangeItemColorNRGBA(item.AlarmState, item.GuardState, item.TechAlarmState, item.IsConnState, IsDarkMode())
 			if item.BlockedArmedOnOff == 1 {
-				// Тимчасово знято із спостереження (документація: фіолетовий)
+				// Тимчасово знято із спостереження
 				if IsDarkMode() {
 					textColor = color.NRGBA{R: 230, G: 220, B: 245, A: 255}
 					rowColor = color.NRGBA{R: 98, G: 52, B: 125, A: 255}
@@ -138,7 +228,7 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 					rowColor = color.NRGBA{R: 144, G: 64, B: 196, A: 255}
 				}
 			} else if item.BlockedArmedOnOff == 2 {
-				// Режим налагодження (документація: оливковий)
+				// Режим налагодження
 				if IsDarkMode() {
 					textColor = color.NRGBA{R: 238, G: 236, B: 195, A: 255}
 					rowColor = color.NRGBA{R: 95, G: 96, B: 42, A: 255}
@@ -147,42 +237,38 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 					rowColor = color.NRGBA{R: 128, G: 128, B: 0, A: 255}
 				}
 			}
+
 			missingSubServer := strings.TrimSpace(item.SubServerA) == "" && strings.TrimSpace(item.SubServerB) == ""
 			if missingSubServer {
-				// Якщо підсервер не задано - явно підсвічуємо проблемний рядок.
 				textColor = color.NRGBA{R: 210, G: 0, B: 0, A: 255}
 				rowColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 			}
 
 			if missingSubServer {
 				bg.FillColor = rowColor
-				bg.Show()
 				txt.Color = textColor
-			} else if id.Row == panel.SelectedRow {
+			} else if index.Row == panel.SelectedRow {
 				bg.FillColor = appTheme.ColorSelection
-				bg.Show()
-				txt.Color = color.White // Білий для виділеного
+				txt.Color = color.White
 			} else {
-				// Застосовуємо колір рядка та тексту
 				bg.FillColor = rowColor
-				bg.Show()
 				txt.Color = textColor
 			}
+			bg.Show()
 			bg.Refresh()
 
-			var cellText string
-			switch id.Col {
+			switch index.Col {
 			case 0:
-				cellText = itoa(item.ID)
+				txt.Text = itoa(item.ID)
 			case 1:
-				// cellText = getStatusIcon(item.Status) + " " + item.Name
-				cellText = item.Name
+				txt.Text = item.Name
 			case 2:
-				cellText = item.Address
+				txt.Text = item.Address
 			case 3:
-				cellText = item.ContractNum
+				txt.Text = item.ContractNum
+			default:
+				txt.Text = ""
 			}
-			txt.Text = cellText
 			if panel.lastFontSize > 0 {
 				txt.TextSize = panel.lastFontSize
 			} else {
@@ -191,16 +277,15 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 			txt.Refresh()
 		},
 	)
-
-	panel.Table.OnSelected = func(id widget.TableCellID) {
+	panel.initRowHeight()
+	panel.TableView.OnSelected = func(index widgets.ModelIndex) {
 		panel.mutex.Lock()
-		if id.Row >= len(panel.FilteredItems) {
+		if index.Row < 0 || index.Row >= len(panel.FilteredItems) {
 			panel.mutex.Unlock()
 			return
 		}
-
-		panel.SelectedRow = id.Row
-		selectedObj := panel.FilteredItems[id.Row]
+		panel.SelectedRow = index.Row
+		selectedObj := panel.FilteredItems[index.Row]
 		panel.lastNotifiedSelectedID = selectedObj.ID
 		panel.hasNotifiedSelection = true
 		panel.mutex.Unlock()
@@ -208,33 +293,20 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 		if panel.OnObjectSelected != nil {
 			panel.OnObjectSelected(selectedObj)
 		}
-		panel.Table.Refresh()
+		panel.TableView.Refresh()
 	}
 
 	// Ширина колонок (початкова)
-	panel.Table.SetColumnWidth(0, 50)  // ID (фіксована)
-	panel.Table.SetColumnWidth(1, 200) // Назва (стартове значення, далі динамічна)
-	panel.Table.SetColumnWidth(2, 250) // Адреса (стартове значення, далі динамічна)
-	panel.Table.SetColumnWidth(3, 80)  // Контракт (фіксована)
-
-	// Заголовки колонок для читабельності таблиці.
-	hID := widget.NewLabel("№")
-	hName := widget.NewLabel("Об'єкт")
-	hAddr := widget.NewLabel("Адреса")
-	hContract := widget.NewLabel("Договір")
-	for _, l := range []*widget.Label{hID, hName, hAddr, hContract} {
-		l.TextStyle = fyne.TextStyle{Bold: true}
-	}
-	headerRow := container.New(&objectListHeaderLayout{panel: panel}, hID, hName, hAddr, hContract)
-	headerBg := canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 25})
-	panel.ColumnHeader = container.NewStack(headerBg, container.NewPadded(headerRow))
+	panel.TableView.SetColumnWidth(0, 50)
+	panel.TableView.SetColumnWidth(1, 200)
+	panel.TableView.SetColumnWidth(2, 250)
+	panel.TableView.SetColumnWidth(3, 80)
 
 	// Збираємо все разом
 	header := container.NewVBox(
 		container.NewPadded(panel.TitleText),
 		panel.SearchEntry,
 		panel.FilterSelect,
-		panel.ColumnHeader,
 	)
 
 	panel.Container = container.NewBorder(
@@ -256,19 +328,17 @@ func (p *ObjectListPanel) RefreshData() {
 	if p.Data == nil {
 		return
 	}
-	// Отримуємо ВСІ об'єкти один раз
 	objects := p.Data.GetObjects()
 
 	p.mutex.Lock()
 	p.AllObjects = objects
 	p.mutex.Unlock()
 
-	// Оновлюємо фільтри асинхронно
-	p.applyFilters()
+	go p.applyFilters()
 }
 
 func (p *ObjectListPanel) applyFilters() {
-	if p.Table == nil {
+	if p.TableView == nil {
 		return
 	}
 
@@ -295,7 +365,6 @@ func (p *ObjectListPanel) applyFilters() {
 	countDisarmed := 0
 
 	for _, obj := range all {
-		// 1. Пошук (має працювати для всіх підрахунків)
 		matchSearch := true
 		if query != "" {
 			matchSearch = strings.Contains(strings.ToLower(itoa(obj.ID)), query) ||
@@ -306,12 +375,10 @@ func (p *ObjectListPanel) applyFilters() {
 				strings.Contains(strings.ToLower(obj.SIM2), query) ||
 				strings.Contains(strings.ToLower(obj.Phone), query)
 		}
-
 		if !matchSearch {
 			continue
 		}
 
-		// Підраховуємо статистику (з урахуванням пошуку)
 		countAll++
 		if obj.Status == models.StatusFire || obj.Status == models.StatusFault {
 			countAlarm++
@@ -323,7 +390,6 @@ func (p *ObjectListPanel) applyFilters() {
 			countDisarmed++
 		}
 
-		// 2. Фільтрація для відображення в таблиці
 		statusMatch := true
 		switch currentFilter {
 		case "Є тривоги":
@@ -370,7 +436,6 @@ func (p *ObjectListPanel) applyFilters() {
 		}
 	}
 
-	// Оновлюємо список і UI
 	p.mutex.Lock()
 	p.FilteredItems = filtered
 	p.SelectedRow = newSelectedRow
@@ -384,15 +449,12 @@ func (p *ObjectListPanel) applyFilters() {
 		p.isUpdating = true
 		defer func() { p.isUpdating = false }()
 
-		// Оновлюємо назви фільтрів з кількістю
 		p.FilterSelect.Options = []string{
 			fmt.Sprintf("Всі (%d)", countAll),
 			fmt.Sprintf("Є тривоги (%d)", countAlarm),
 			fmt.Sprintf("Нема зв'язку (%d)", countOffline),
 			fmt.Sprintf("Знято з охорони (%d)", countDisarmed),
 		}
-
-		// Знаходимо поточний вибраний фільтр в оновленому списку, щоб він не зникав
 		for _, opt := range p.FilterSelect.Options {
 			if strings.HasPrefix(opt, currentFilter+" (") || opt == currentFilter {
 				p.FilterSelect.SetSelected(opt)
@@ -411,7 +473,10 @@ func (p *ObjectListPanel) applyFilters() {
 		}
 		if p.Table != nil {
 			p.Table.Show()
-			p.Table.Refresh()
+		}
+		if p.TableView != nil {
+			p.applyCompactRowHeights(len(filtered))
+			p.TableView.Refresh()
 		}
 
 		if shouldNotifySelection && p.OnObjectSelected != nil {
@@ -422,6 +487,27 @@ func (p *ObjectListPanel) applyFilters() {
 			p.mutex.Unlock()
 		}
 	})
+}
+
+func (p *ObjectListPanel) initRowHeight() {
+	if p == nil || p.TableView == nil || p.rowHeight > 0 {
+		return
+	}
+	compact := p.TableView.RowHeight(0) - objectListRowDelta
+	if compact < minObjectListRowHeight {
+		compact = minObjectListRowHeight
+	}
+	p.rowHeight = compact
+}
+
+func (p *ObjectListPanel) applyCompactRowHeights(rowCount int) {
+	if p == nil || p.TableView == nil || rowCount <= 0 {
+		return
+	}
+	p.initRowHeight()
+	for row := 0; row < rowCount; row++ {
+		p.TableView.SetRowHeight(row, p.rowHeight)
+	}
 }
 
 // objectListTableLayout для динамічного ресайзу колонок "Назва" та "Адреса"
@@ -454,32 +540,37 @@ func (l *objectListTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Si
 		addrWidth = 160
 	}
 
-	// Оновлюємо ширини колонок тільки при зміні значень
 	needRefresh := false
 	if l.lastNameWidth != nameWidth {
-		l.table.SetColumnWidth(1, nameWidth)
+		if l.panel != nil && l.panel.TableView != nil {
+			l.panel.TableView.SetColumnWidth(1, int(nameWidth))
+		} else if l.table != nil {
+			l.table.SetColumnWidth(1, nameWidth)
+		}
 		l.lastNameWidth = nameWidth
 		if l.panel != nil {
 			l.panel.colNameWidth = nameWidth
-			if l.panel.ColumnHeader != nil {
-				l.panel.ColumnHeader.Refresh()
-			}
 		}
 		needRefresh = true
 	}
 	if l.lastAddrWidth != addrWidth {
-		l.table.SetColumnWidth(2, addrWidth)
+		if l.panel != nil && l.panel.TableView != nil {
+			l.panel.TableView.SetColumnWidth(2, int(addrWidth))
+		} else if l.table != nil {
+			l.table.SetColumnWidth(2, addrWidth)
+		}
 		l.lastAddrWidth = addrWidth
 		if l.panel != nil {
 			l.panel.colAddrWidth = addrWidth
-			if l.panel.ColumnHeader != nil {
-				l.panel.ColumnHeader.Refresh()
-			}
 		}
 		needRefresh = true
 	}
 	if needRefresh {
-		l.table.Refresh()
+		if l.panel != nil && l.panel.TableView != nil {
+			l.panel.TableView.Refresh()
+		} else if l.table != nil {
+			l.table.Refresh()
+		}
 	}
 
 	for _, o := range objects {
@@ -490,52 +581,6 @@ func (l *objectListTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Si
 
 func (l *objectListTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return fyne.NewSize(450, 200)
-}
-
-// objectListHeaderLayout вирівнює заголовки колонок так само, як таблицю.
-type objectListHeaderLayout struct {
-	panel *ObjectListPanel
-}
-
-func (l *objectListHeaderLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	if l.panel == nil || len(objects) < 4 {
-		for _, o := range objects {
-			o.Resize(size)
-			o.Move(fyne.NewPos(0, 0))
-		}
-		return
-	}
-
-	w0 := float32(50)
-	w3 := float32(80)
-	w1 := l.panel.colNameWidth
-	w2 := l.panel.colAddrWidth
-	if w1 <= 0 {
-		w1 = 200
-	}
-	if w2 <= 0 {
-		w2 = 250
-	}
-
-	x := float32(0)
-	objects[0].Resize(fyne.NewSize(w0, size.Height))
-	objects[0].Move(fyne.NewPos(x, 0))
-	x += w0
-
-	objects[1].Resize(fyne.NewSize(w1, size.Height))
-	objects[1].Move(fyne.NewPos(x, 0))
-	x += w1
-
-	objects[2].Resize(fyne.NewSize(w2, size.Height))
-	objects[2].Move(fyne.NewPos(x, 0))
-	x += w2
-
-	objects[3].Resize(fyne.NewSize(w3, size.Height))
-	objects[3].Move(fyne.NewPos(x, 0))
-}
-
-func (l *objectListHeaderLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
-	return fyne.NewSize(450, 24)
 }
 
 func (p *ObjectListPanel) Refresh() {
@@ -550,7 +595,7 @@ func (p *ObjectListPanel) OnThemeChanged(fontSize float32) {
 		p.TitleText.TextSize = fontSize + 1
 		p.TitleText.Refresh()
 	}
-	if p.Table != nil {
-		p.Table.Refresh()
+	if p.TableView != nil {
+		p.TableView.Refresh()
 	}
 }

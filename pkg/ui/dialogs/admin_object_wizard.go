@@ -15,6 +15,7 @@ import (
 	xwidget "fyne.io/x/fyne/widget"
 
 	"obj_catalog_fyne_v3/pkg/data"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 )
 
 func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, onSaved func(objn int64)) {
@@ -488,7 +489,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 		return maxVal + 1
 	}
 
-	personalTable := widget.NewTable(
+	personalTableView := uiwidgets.NewQTableViewWithCallbacks(
 		func() (int, int) { return len(pendingPersonals) + 1, 6 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
@@ -536,6 +537,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 			}
 		},
 	)
+	personalTable := personalTableView.Widget()
 	personalTable.SetColumnWidth(0, 60)
 	personalTable.SetColumnWidth(1, 270)
 	personalTable.SetColumnWidth(2, 180)
@@ -675,7 +677,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 		return nil
 	}
 
-	zoneTable := widget.NewTable(
+	zoneTableView := uiwidgets.NewQTableViewWithCallbacks(
 		func() (int, int) { return len(pendingZones) + 1, 3 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
@@ -707,6 +709,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 			}
 		},
 	)
+	zoneTable := zoneTableView.Widget()
 	zoneTable.StickyRowCount = 1
 	zoneTable.StickyColumnCount = 1
 	applyZoneTableLayout := func() {

@@ -19,6 +19,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
@@ -224,7 +225,7 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 }
 
 func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
-	w.ZonesTable = widget.NewTable(
+	zonesTableView := uiwidgets.NewQTableViewWithCallbacks(
 		func() (int, int) {
 			return len(w.Zones), 5
 		},
@@ -282,6 +283,7 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 			}
 		},
 	)
+	w.ZonesTable = zonesTableView.Widget()
 
 	w.ZonesTable.SetColumnWidth(0, 50)
 	w.ZonesTable.SetColumnWidth(1, 200)

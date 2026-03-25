@@ -18,6 +18,7 @@ import (
 	xwidget "fyne.io/x/fyne/widget"
 
 	"obj_catalog_fyne_v3/pkg/data"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 )
 
 const (
@@ -57,7 +58,7 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 		return strings.Join(filtered, " ")
 	}
 
-	table := widget.NewTable(
+	tableView := uiwidgets.NewQTableViewWithCallbacks(
 		func() (int, int) { return len(items) + 1, 6 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
@@ -105,6 +106,7 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 			}
 		},
 	)
+	table := tableView.Widget()
 	const (
 		personalColWNum   = float32(60)
 		personalColWName  = float32(280)
@@ -235,7 +237,7 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 		return int64(idx) + 1
 	}
 
-	table := widget.NewTable(
+	tableView := uiwidgets.NewQTableViewWithCallbacks(
 		func() (int, int) { return len(items) + 1, 3 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
@@ -268,6 +270,7 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 			}
 		},
 	)
+	table := tableView.Widget()
 	const (
 		zoneColWNum  = float32(120)
 		zoneColWType = float32(120)

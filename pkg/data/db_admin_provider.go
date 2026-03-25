@@ -670,7 +670,7 @@ func (p *DBDataProvider) ListSubServerObjects(filter string) ([]AdminSubServerOb
 			SBSA,
 			SBSB
 		FROM OBJECTS_INFO
-		WHERE OBJN > 0
+		WHERE OBJN > 36
 	`
 	if filter != "" {
 		query += `
@@ -2760,7 +2760,7 @@ func (p *DBDataProvider) ListDisplayBlockObjects(filter string) ([]DisplayBlockO
 		JOIN OBJECTS_LA ol ON ol.OBJUIN = oi.OBJUIN
 		JOIN OBJECTS_STATE os ON os.OBJUIN = oi.OBJUIN
 		WHERE oi.OBJTYPEID <> 1
-		  AND oi.OBJN > 1000
+		  AND oi.OBJN > 36
 	`
 
 	args := make([]interface{}, 0, 3)
@@ -3835,7 +3835,7 @@ func (p *DBDataProvider) CollectObjectStatistics(filter AdminStatisticsFilter, l
 		LEFT JOIN OBJECTS_STATE os ON os.OBJUIN = oi.OBJUIN
 		LEFT JOIN OBJTYPES ot ON ot.ID = oi.OBJTYPEID
 		LEFT JOIN OBJREGS rg ON rg.ID = oi.OBJREGID
-		WHERE oi.OBJN > 0
+		WHERE oi.OBJN > 36
 	`, limit)
 
 	conditions := make([]string, 0, 8)

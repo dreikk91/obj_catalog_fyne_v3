@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/data"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 )
 
 func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, onEmulated func()) {
@@ -19,11 +20,10 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 	win.Resize(fyne.NewSize(1120, 680))
 
 	var (
-		objects            []data.DisplayBlockObject
-		messages           []data.AdminMessage
-		selectedMessageID  int64
-		selectedMessageRow = -1
-		protocolOptionID   = map[string]int64{}
+		objects           []data.DisplayBlockObject
+		messages          []data.AdminMessage
+		selectedMessageID int64
+		protocolOptionID  = map[string]int64{}
 	)
 
 	statusLabel := widget.NewLabel("Готово")
@@ -70,17 +70,43 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 		statusLabel.SetText(fmt.Sprintf("Обрано об'єкт №%d", objects[id].ObjN))
 	}
 
-	messageTable := widget.NewTable(
-		func() (int, int) { return len(messages), 4 },
+	messageTableView := uiwidgets.NewQTableViewWithHeaders(
+		[]string{"Код", "Повідомлення", "Тип", "Прот."},
+		func() int { return len(messages) },
+		func(row, col int) string {
+			if row < 0 || row >= len(messages) {
+				return ""
+			}
+			m := messages[row]
+			switch col {
+			case 0:
+				if m.MessageID != nil {
+					return strconv.FormatInt(*m.MessageID, 10)
+				}
+				return strconv.FormatInt(m.UIN, 10)
+			case 1:
+				return strings.TrimSpace(m.Text)
+			case 2:
+				return messageTypeLabel(m.SC1)
+			default:
+				if m.ProtocolID != nil {
+					return protocolDisplayName(*m.ProtocolID)
+				}
+				return "—"
+			}
+		},
+	)
+	messageTableView.SetSelectionBehavior(uiwidgets.SelectRows)
+	messageTableView.SetCellRenderer(
 		func() fyne.CanvasObject { return newColoredTableCell() },
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			if id.Row < 0 || id.Row >= len(messages) {
+		func(index uiwidgets.ModelIndex, _ string, selected bool, obj fyne.CanvasObject) {
+			if !index.IsValid() || index.Row < 0 || index.Row >= len(messages) {
 				updateColoredMessageCell(obj, "", nil, false)
 				return
 			}
-			m := messages[id.Row]
+			m := messages[index.Row]
 			cellText := ""
-			switch id.Col {
+			switch index.Col {
 			case 0:
 				if m.MessageID != nil {
 					cellText = strconv.FormatInt(*m.MessageID, 10)
@@ -98,19 +124,19 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 					cellText = "—"
 				}
 			}
-			updateColoredMessageCell(obj, cellText, m.SC1, id.Row == selectedMessageRow)
+			updateColoredMessageCell(obj, cellText, m.SC1, selected)
 		},
 	)
-	messageTable.SetColumnWidth(0, 90)
-	messageTable.SetColumnWidth(1, 620)
-	messageTable.SetColumnWidth(2, 170)
-	messageTable.SetColumnWidth(3, 100)
-	messageTable.OnSelected = func(id widget.TableCellID) {
-		if id.Row < 0 || id.Row >= len(messages) {
+	messageTable := messageTableView.Widget()
+	messageTableView.SetColumnWidth(0, 90)
+	messageTableView.SetColumnWidth(1, 620)
+	messageTableView.SetColumnWidth(2, 170)
+	messageTableView.SetColumnWidth(3, 100)
+	messageTableView.OnSelected = func(index uiwidgets.ModelIndex) {
+		if index.Row < 0 || index.Row >= len(messages) {
 			return
 		}
-		selectedMessageID = messages[id.Row].UIN
-		selectedMessageRow = id.Row
+		selectedMessageID = messages[index.Row].UIN
 		messageTable.Refresh()
 		statusLabel.SetText(fmt.Sprintf("Обрано повідомлення UIN=%d", selectedMessageID))
 	}
@@ -178,7 +204,6 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 		}
 		messages = filtered
 		selectedMessageID = 0
-		selectedMessageRow = -1
 		messageTable.UnselectAll()
 		messageTable.Refresh()
 		statusLabel.SetText(fmt.Sprintf("Повідомлень для емуляції: %d", len(messages)))
@@ -260,13 +285,6 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 		objectList,
 	)
 
-	headers := container.NewGridWithColumns(
-		4,
-		widget.NewLabel("Код"),
-		widget.NewLabel("Повідомлення"),
-		widget.NewLabel("Тип"),
-		widget.NewLabel("Прот."),
-	)
 	right := container.NewBorder(
 		container.NewVBox(
 			container.NewHBox(
@@ -278,8 +296,6 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 			container.NewHBox(
 				chAlarm, chTech, chRestore, chTest, chInfo,
 			),
-			widget.NewSeparator(),
-			headers,
 		),
 		nil, nil, nil,
 		messageTable,

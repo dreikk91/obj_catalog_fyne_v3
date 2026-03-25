@@ -24,6 +24,12 @@ const (
 	SortDescending
 )
 
+const (
+	defaultContentColumnWidth = float32(96)
+	minContentColumnWidth     = 24
+	minContentRowHeight       = 20
+)
+
 // PenStyle is a compatibility enum similar to Qt grid pen style.
 // Fyne currently supports only show/hide separators, so style is stored as metadata.
 type PenStyle int
@@ -76,6 +82,82 @@ type spanData struct {
 	cols int
 }
 
+// SelectionBehavior controls how selection is interpreted.
+type SelectionBehavior int
+
+const (
+	// SelectItems selects individual cells.
+	SelectItems SelectionBehavior = iota
+	// SelectRows treats any cell selection as selection of the whole row.
+	SelectRows
+)
+
+type callbackTableModel struct {
+	length    func() (rows int, cols int)
+	data      func(row, column int) string
+	header    func(column int) string
+	rowHeader func(row int) string
+}
+
+func (m *callbackTableModel) RowCount() int {
+	if m == nil || m.length == nil {
+		return 0
+	}
+	rows, _ := m.length()
+	if rows < 0 {
+		return 0
+	}
+	return rows
+}
+
+func (m *callbackTableModel) ColumnCount() int {
+	if m == nil || m.length == nil {
+		return 0
+	}
+	_, cols := m.length()
+	if cols < 0 {
+		return 0
+	}
+	return cols
+}
+
+func (m *callbackTableModel) Data(row, column int) string {
+	if m == nil || m.data == nil {
+		return ""
+	}
+	if row < 0 || row >= m.RowCount() || column < 0 || column >= m.ColumnCount() {
+		return ""
+	}
+	return m.data(row, column)
+}
+
+func (m *callbackTableModel) HeaderData(column int) string {
+	if m == nil || m.header == nil {
+		return ""
+	}
+	if column < 0 || column >= m.ColumnCount() {
+		return ""
+	}
+	return m.header(column)
+}
+
+func (m *callbackTableModel) RowHeaderData(row int) string {
+	if m == nil || m.rowHeader == nil {
+		return ""
+	}
+	if row < 0 || row >= m.RowCount() {
+		return ""
+	}
+	return m.rowHeader(row)
+}
+
+// CellCreateFunc creates one reusable cell template object.
+type CellCreateFunc func() fyne.CanvasObject
+
+// CellUpdateFunc updates one cell object for model index/value.
+// If index is invalid, it will be {-1,-1} and value will be empty.
+type CellUpdateFunc func(index ModelIndex, value string, selected bool, obj fyne.CanvasObject)
+
 // QTableView is a Qt-inspired table view wrapper over Fyne's widget.Table.
 // It provides common operations (hide/show rows/columns, sorting, sizing, selection)
 // and exposes a Go-friendly API with close semantic mapping to QTableView.
@@ -94,6 +176,7 @@ type QTableView struct {
 	gridStyle           PenStyle
 	sortColumn          int
 	sortOrder           SortOrder
+	selectionBehavior   SelectionBehavior
 
 	columnHidden map[int]bool
 	rowHidden    map[int]bool
@@ -110,6 +193,11 @@ type QTableView struct {
 	covered map[cellKey]cellKey
 
 	defaultCellSize fyne.Size
+
+	cellCreate CellCreateFunc
+	cellUpdate CellUpdateFunc
+
+	internalSelect bool
 }
 
 // NewQTableView creates a new table view with model/view callbacks.
@@ -122,6 +210,7 @@ func NewQTableView(model TableModel) *QTableView {
 		gridStyle:           PenSolid,
 		sortColumn:          -1,
 		sortOrder:           SortAscending,
+		selectionBehavior:   SelectItems,
 		columnHidden:        make(map[int]bool),
 		rowHidden:           make(map[int]bool),
 		columnWidths:        make(map[int]float32),
@@ -132,7 +221,7 @@ func NewQTableView(model TableModel) *QTableView {
 
 	cellTemplate := view.createCellTemplate()
 	headerTemplate := view.createHeaderTemplate()
-	view.defaultCellSize = cellTemplate.MinSize().Max(headerTemplate.MinSize())
+	view.defaultCellSize = view.inferDefaultCellSize(cellTemplate.MinSize(), headerTemplate.MinSize())
 
 	table := widget.NewTableWithHeaders(
 		func() (int, int) { return view.length() },
@@ -143,11 +232,33 @@ func NewQTableView(model TableModel) *QTableView {
 	table.UpdateHeader = func(id widget.TableCellID, o fyne.CanvasObject) { view.updateHeader(id, o) }
 	table.HideSeparators = false
 	table.OnSelected = func(id widget.TableCellID) {
+		if id.Row < 0 {
+			if !view.sortingEnabled || id.Col < 0 || id.Col >= len(view.visibleCols) {
+				return
+			}
+			modelCol := view.visibleCols[id.Col]
+			order := SortAscending
+			if view.sortColumn == modelCol {
+				if view.sortOrder == SortAscending {
+					order = SortDescending
+				} else {
+					order = SortAscending
+				}
+			}
+			view.SortByColumn(modelCol, order)
+			return
+		}
 		idx, ok := view.toModelIndex(id)
 		if !ok {
 			return
 		}
+		if view.selectionBehavior == SelectRows && !view.internalSelect {
+			view.internalSelect = true
+			view.Table.Select(widget.TableCellID{Row: id.Row, Col: 0})
+			view.internalSelect = false
+		}
 		view.selectedIndex = &idx
+		view.Table.Refresh()
 		if view.OnSelected != nil {
 			view.OnSelected(idx)
 		}
@@ -158,6 +269,7 @@ func NewQTableView(model TableModel) *QTableView {
 			return
 		}
 		view.selectedIndex = nil
+		view.Table.Refresh()
 		if view.OnUnselected != nil {
 			view.OnUnselected(idx)
 		}
@@ -169,14 +281,138 @@ func NewQTableView(model TableModel) *QTableView {
 	return view
 }
 
+func (v *QTableView) inferDefaultCellSize(cellSize fyne.Size, headerSize fyne.Size) fyne.Size {
+	fontSize := theme.DefaultTheme().Size(theme.SizeNameText)
+	style := fyne.TextStyle{}
+	padding := theme.DefaultTheme().Size(theme.SizeNamePadding) * 2
+
+	minWidth := fyne.MeasureText("0000000000", fontSize, style).Width + padding
+	if minWidth < defaultContentColumnWidth {
+		minWidth = defaultContentColumnWidth
+	}
+	minHeight := fyne.MeasureText("Wg", fontSize, style).Height + padding
+	if minHeight < minContentRowHeight {
+		minHeight = minContentRowHeight
+	}
+
+	return cellSize.Max(headerSize).Max(fyne.NewSize(minWidth, minHeight))
+}
+
+// NewQTableViewWithCallbacks creates a QTableView using classic widget.Table callbacks.
+// This helper simplifies migration from widget.NewTable to QTableView.
+func NewQTableViewWithCallbacks(
+	length func() (rows int, cols int),
+	create func() fyne.CanvasObject,
+	update func(id widget.TableCellID, obj fyne.CanvasObject),
+) *QTableView {
+	model := &callbackTableModel{length: length}
+	view := NewQTableView(model)
+	view.Table.ShowHeaderRow = false
+	view.Table.ShowHeaderColumn = false
+	if create == nil {
+		create = func() fyne.CanvasObject { return widget.NewLabel("") }
+	}
+	if update == nil {
+		update = func(widget.TableCellID, fyne.CanvasObject) {}
+	}
+	view.SetCellRenderer(create, func(index ModelIndex, _ string, _ bool, obj fyne.CanvasObject) {
+		if !index.IsValid() {
+			update(widget.TableCellID{Row: -1, Col: -1}, obj)
+			return
+		}
+		update(widget.TableCellID{Row: index.Row, Col: index.Col}, obj)
+	})
+	return view
+}
+
+// NewQTableViewWithTextCallbacks creates a text-only QTableView with real headers.
+// This is useful for admin grids that previously emulated headers via row 0.
+func NewQTableViewWithTextCallbacks(
+	length func() (rows int, cols int),
+	headerData func(column int) string,
+	data func(row, column int) string,
+) *QTableView {
+	model := &callbackTableModel{
+		length: length,
+		header: headerData,
+		data:   data,
+	}
+	view := NewQTableView(model)
+	view.SetHeaderVisible(true, false)
+	view.SetWordWrap(false)
+	return view
+}
+
+// NewQTableViewWithHeaders creates a text-only QTableView using a static header list.
+func NewQTableViewWithHeaders(
+	headers []string,
+	rowCount func() int,
+	data func(row, column int) string,
+) *QTableView {
+	headerCopy := append([]string(nil), headers...)
+	length := func() (rows int, cols int) {
+		cols = len(headerCopy)
+		if rowCount != nil {
+			rows = rowCount()
+		}
+		if rows < 0 {
+			rows = 0
+		}
+		return rows, cols
+	}
+	headerData := func(column int) string {
+		if column < 0 || column >= len(headerCopy) {
+			return ""
+		}
+		return headerCopy[column]
+	}
+	return NewQTableViewWithTextCallbacks(length, headerData, data)
+}
+
 func (v *QTableView) length() (int, int) {
+	v.ensureMappings()
 	if v.model == nil {
 		return 0, 0
 	}
 	return len(v.visibleRows), len(v.visibleCols)
 }
 
+func (v *QTableView) ensureMappings() {
+	if v.model == nil {
+		return
+	}
+
+	rows := v.model.RowCount()
+	cols := v.model.ColumnCount()
+
+	needRebuild := len(v.rowOrder) != rows
+	if !needRebuild {
+		expectedCols := 0
+		for c := 0; c < cols; c++ {
+			if v.columnHidden[c] {
+				continue
+			}
+			expectedCols++
+		}
+		if len(v.visibleCols) != expectedCols {
+			needRebuild = true
+		}
+	}
+
+	if !needRebuild && rows > 0 && len(v.visibleRows) == 0 {
+		needRebuild = true
+	}
+
+	if needRebuild {
+		v.rebuildMappings()
+		v.applySizes()
+	}
+}
+
 func (v *QTableView) createCellTemplate() fyne.CanvasObject {
+	if v.cellCreate != nil {
+		return v.cellCreate()
+	}
 	bg := canvas.NewRectangle(color.Transparent)
 	txt := widget.NewLabel("")
 	txt.Wrapping = fyne.TextWrapWord
@@ -192,6 +428,24 @@ func (v *QTableView) createHeaderTemplate() fyne.CanvasObject {
 }
 
 func (v *QTableView) updateCell(id widget.TableCellID, o fyne.CanvasObject) {
+	idx, valid := v.toModelIndex(id)
+	selected := false
+	if v.selectedIndex != nil && valid {
+		if v.selectionBehavior == SelectRows {
+			selected = v.selectedIndex.Row == idx.Row
+		} else {
+			selected = v.selectedIndex.Row == idx.Row && v.selectedIndex.Col == idx.Col
+		}
+	}
+	if v.cellUpdate != nil {
+		if !valid || v.isCovered(idx.Row, idx.Col) {
+			v.cellUpdate(ModelIndex{Row: -1, Col: -1}, "", selected, o)
+			return
+		}
+		v.cellUpdate(idx, v.safeData(idx.Row, idx.Col), selected, o)
+		return
+	}
+
 	stack, ok := o.(*fyne.Container)
 	if !ok || len(stack.Objects) < 2 {
 		return
@@ -212,7 +466,6 @@ func (v *QTableView) updateCell(id widget.TableCellID, o fyne.CanvasObject) {
 	bg.FillColor = color.Transparent
 	bg.Refresh()
 
-	idx, valid := v.toModelIndex(id)
 	if !valid {
 		lbl.SetText("")
 		return
@@ -231,6 +484,46 @@ func (v *QTableView) updateCell(id widget.TableCellID, o fyne.CanvasObject) {
 	lbl.SetText(v.safeData(idx.Row, idx.Col))
 }
 
+// SetCellRenderer overrides cell template/update logic.
+// Pass nil arguments to restore default renderer behavior.
+func (v *QTableView) SetCellRenderer(create CellCreateFunc, update CellUpdateFunc) {
+	v.cellCreate = create
+	v.cellUpdate = update
+	if v.Table == nil {
+		return
+	}
+	if create == nil {
+		v.Table.CreateCell = func() fyne.CanvasObject { return v.createCellTemplate() }
+	} else {
+		v.Table.CreateCell = create
+	}
+	v.Table.UpdateCell = func(id widget.TableCellID, o fyne.CanvasObject) { v.updateCell(id, o) }
+	v.Table.Refresh()
+}
+
+// SetHeaderVisible toggles horizontal and vertical headers.
+func (v *QTableView) SetHeaderVisible(horizontal bool, vertical bool) {
+	if v.Table == nil {
+		return
+	}
+	v.Table.ShowHeaderRow = horizontal
+	v.Table.ShowHeaderColumn = vertical
+	v.Table.Refresh()
+}
+
+// SetSelectionBehavior changes row/cell selection behavior.
+func (v *QTableView) SetSelectionBehavior(behavior SelectionBehavior) {
+	v.selectionBehavior = behavior
+	if v.Table != nil {
+		v.Table.Refresh()
+	}
+}
+
+// SelectionBehavior returns current selection behavior.
+func (v *QTableView) SelectionBehavior() SelectionBehavior {
+	return v.selectionBehavior
+}
+
 func (v *QTableView) updateHeader(id widget.TableCellID, o fyne.CanvasObject) {
 	lbl, ok := o.(*widget.Label)
 	if !ok {
@@ -244,7 +537,15 @@ func (v *QTableView) updateHeader(id widget.TableCellID, o fyne.CanvasObject) {
 			return
 		}
 		col := v.visibleCols[id.Col]
-		lbl.SetText(v.model.HeaderData(col))
+		text := v.model.HeaderData(col)
+		if v.sortingEnabled && v.sortColumn == col {
+			if v.sortOrder == SortDescending {
+				text += " ▼"
+			} else {
+				text += " ▲"
+			}
+		}
+		lbl.SetText(text)
 	case id.Col < 0 && id.Row >= 0:
 		if id.Row >= len(v.visibleRows) {
 			lbl.SetText("")
@@ -272,6 +573,7 @@ func (v *QTableView) safeData(row, col int) string {
 }
 
 func (v *QTableView) toModelIndex(id widget.TableCellID) (ModelIndex, bool) {
+	v.ensureMappings()
 	if id.Row < 0 || id.Col < 0 {
 		return ModelIndex{}, false
 	}
@@ -646,8 +948,8 @@ func (v *QTableView) RowHeight(row int) int {
 
 // SetColumnWidth sets width for model column.
 func (v *QTableView) SetColumnWidth(column int, width int) {
-	if width < 1 {
-		width = 1
+	if width < minContentColumnWidth {
+		width = minContentColumnWidth
 	}
 	fw := float32(width)
 	v.columnWidths[column] = fw
@@ -658,8 +960,8 @@ func (v *QTableView) SetColumnWidth(column int, width int) {
 
 // SetRowHeight sets height for model row.
 func (v *QTableView) SetRowHeight(row int, height int) {
-	if height < 1 {
-		height = 1
+	if height < minContentRowHeight {
+		height = minContentRowHeight
 	}
 	fh := float32(height)
 	v.rowHeights[row] = fh

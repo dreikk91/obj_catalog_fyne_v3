@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/data"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 )
 
 func ShowEventOverrideDialog(parent fyne.Window, provider data.AdminProvider) {
@@ -38,17 +39,48 @@ func ShowEventOverrideDialog(parent fyne.Window, provider data.AdminProvider) {
 	categorySelect.SetSelected("Інше / без категорії")
 	adminOnlyCheck := widget.NewCheck("Для адміністратора", nil)
 
-	messageTable := widget.NewTable(
-		func() (int, int) { return len(messages), 5 },
+	messageTableView := uiwidgets.NewQTableViewWithHeaders(
+		[]string{"Код", "Hex", "Повідомлення", "Категорія", "Адмін"},
+		func() int { return len(messages) },
+		func(row, col int) string {
+			if row < 0 || row >= len(messages) {
+				return ""
+			}
+			m := messages[row]
+			switch col {
+			case 0:
+				if m.MessageID != nil {
+					return strconv.FormatInt(*m.MessageID, 10)
+				}
+				return strconv.FormatInt(m.UIN, 10)
+			case 1:
+				if strings.TrimSpace(m.MessageHex) != "" {
+					return m.MessageHex
+				}
+				return "—"
+			case 2:
+				return strings.TrimSpace(m.Text)
+			case 3:
+				return categoryLabelFromSC1(m.SC1)
+			default:
+				if m.ForAdminOnly {
+					return "так"
+				}
+				return "ні"
+			}
+		},
+	)
+	messageTableView.SetSelectionBehavior(uiwidgets.SelectRows)
+	messageTableView.SetCellRenderer(
 		func() fyne.CanvasObject { return newColoredTableCell() },
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			if id.Row < 0 || id.Row >= len(messages) {
+		func(index uiwidgets.ModelIndex, _ string, selected bool, obj fyne.CanvasObject) {
+			if !index.IsValid() || index.Row < 0 || index.Row >= len(messages) {
 				updateColoredMessageCell(obj, "", nil, false)
 				return
 			}
-			m := messages[id.Row]
+			m := messages[index.Row]
 			cellText := ""
-			switch id.Col {
+			switch index.Col {
 			case 0:
 				if m.MessageID != nil {
 					cellText = strconv.FormatInt(*m.MessageID, 10)
@@ -72,22 +104,23 @@ func ShowEventOverrideDialog(parent fyne.Window, provider data.AdminProvider) {
 					cellText = "ні"
 				}
 			}
-			updateColoredMessageCell(obj, cellText, m.SC1, id.Row == selectedRowIdx)
+			updateColoredMessageCell(obj, cellText, m.SC1, selected)
 		},
 	)
-	messageTable.SetColumnWidth(0, 85)
-	messageTable.SetColumnWidth(1, 120)
-	messageTable.SetColumnWidth(2, 590)
-	messageTable.SetColumnWidth(3, 210)
-	messageTable.SetColumnWidth(4, 95)
-	messageTable.OnSelected = func(id widget.TableCellID) {
-		if id.Row < 0 || id.Row >= len(messages) {
+	messageTable := messageTableView.Widget()
+	messageTableView.SetColumnWidth(0, 85)
+	messageTableView.SetColumnWidth(1, 120)
+	messageTableView.SetColumnWidth(2, 590)
+	messageTableView.SetColumnWidth(3, 210)
+	messageTableView.SetColumnWidth(4, 95)
+	messageTableView.OnSelected = func(index uiwidgets.ModelIndex) {
+		if index.Row < 0 || index.Row >= len(messages) {
 			return
 		}
-		selectedRowIdx = id.Row
-		selectedUIN = messages[id.Row].UIN
-		categorySelect.SetSelected(categoryLabelFromSC1(messages[id.Row].SC1))
-		adminOnlyCheck.SetChecked(messages[id.Row].ForAdminOnly)
+		selectedRowIdx = index.Row
+		selectedUIN = messages[index.Row].UIN
+		categorySelect.SetSelected(categoryLabelFromSC1(messages[index.Row].SC1))
+		adminOnlyCheck.SetChecked(messages[index.Row].ForAdminOnly)
 		messageTable.Refresh()
 		statusLabel.SetText(fmt.Sprintf("Вибрано повідомлення UIN=%d", selectedUIN))
 	}
@@ -195,17 +228,8 @@ func ShowEventOverrideDialog(parent fyne.Window, provider data.AdminProvider) {
 		openAdminMessagesBtn,
 	)
 
-	header := container.NewGridWithColumns(
-		5,
-		widget.NewLabel("Код"),
-		widget.NewLabel("Hex"),
-		widget.NewLabel("Повідомлення"),
-		widget.NewLabel("Категорія"),
-		widget.NewLabel("Адмін"),
-	)
-
 	left := container.NewBorder(
-		container.NewVBox(top, widget.NewSeparator(), header),
+		container.NewVBox(top, widget.NewSeparator()),
 		nil, nil, nil,
 		messageTable,
 	)

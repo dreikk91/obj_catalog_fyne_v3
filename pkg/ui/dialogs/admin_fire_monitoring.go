@@ -16,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/data"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 )
 
 func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider data.AdminProvider) {
@@ -56,45 +57,44 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider data.AdminPro
 	serverInfoEntry.SetPlaceHolder("Опис (напр. ДСНС)")
 	serverEnabledCheck := widget.NewCheck("Активний сервер", nil)
 
-	serverTable := widget.NewTable(
-		func() (int, int) { return len(servers), 5 },
-		func() fyne.CanvasObject { return widget.NewLabel("cell") },
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			label := obj.(*widget.Label)
-			if id.Row < 0 || id.Row >= len(servers) {
-				label.SetText("")
-				return
+	serverTableView := uiwidgets.NewQTableViewWithHeaders(
+		[]string{"№", "Сервер", "Порт", "Інфо", "Статус"},
+		func() int { return len(servers) },
+		func(row, col int) string {
+			if row < 0 || row >= len(servers) {
+				return ""
 			}
 			serversMu.RLock()
-			s := servers[id.Row]
+			s := servers[row]
 			status := ""
-			if id.Row >= 0 && id.Row < len(serverStatus) {
-				status = serverStatus[id.Row]
+			if row >= 0 && row < len(serverStatus) {
+				status = serverStatus[row]
 			}
 			serversMu.RUnlock()
-			switch id.Col {
+			switch col {
 			case 0:
-				label.SetText(strconv.Itoa(id.Row + 1))
+				return strconv.Itoa(row + 1)
 			case 1:
-				label.SetText(strings.TrimSpace(s.Host))
+				return strings.TrimSpace(s.Host)
 			case 2:
 				if s.Port > 0 {
-					label.SetText(strconv.FormatInt(s.Port, 10))
-				} else {
-					label.SetText("")
+					return strconv.FormatInt(s.Port, 10)
 				}
+				return ""
 			case 3:
-				label.SetText(strings.TrimSpace(s.Info))
+				return strings.TrimSpace(s.Info)
 			default:
-				label.SetText(status)
+				return status
 			}
 		},
 	)
-	serverTable.SetColumnWidth(0, 60)
-	serverTable.SetColumnWidth(1, 320)
-	serverTable.SetColumnWidth(2, 110)
-	serverTable.SetColumnWidth(3, 330)
-	serverTable.SetColumnWidth(4, 90)
+	serverTableView.SetSelectionBehavior(uiwidgets.SelectRows)
+	serverTable := serverTableView.Widget()
+	serverTableView.SetColumnWidth(0, 60)
+	serverTableView.SetColumnWidth(1, 320)
+	serverTableView.SetColumnWidth(2, 110)
+	serverTableView.SetColumnWidth(3, 330)
+	serverTableView.SetColumnWidth(4, 90)
 
 	updateServerEditor := func() {
 		serversMu.RLock()
@@ -117,11 +117,11 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider data.AdminPro
 		serverEnabledCheck.SetChecked(s.Enabled)
 	}
 
-	serverTable.OnSelected = func(id widget.TableCellID) {
-		if id.Row < 0 || id.Row >= len(servers) {
+	serverTableView.OnSelected = func(index uiwidgets.ModelIndex) {
+		if index.Row < 0 || index.Row >= len(servers) {
 			return
 		}
-		selectedRow = id.Row
+		selectedRow = index.Row
 		updateServerEditor()
 		statusLabel.SetText(fmt.Sprintf("Вибрано сервер №%d", selectedRow+1))
 	}
@@ -353,15 +353,6 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider data.AdminPro
 	refreshBtn := widget.NewButton("Оновити", func() { load() })
 	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
 
-	header := container.NewGridWithColumns(
-		5,
-		widget.NewLabel("№"),
-		widget.NewLabel("Сервер"),
-		widget.NewLabel("Порт"),
-		widget.NewLabel("Інфо"),
-		widget.NewLabel("Статус"),
-	)
-
 	top := container.NewVBox(
 		container.NewHBox(
 			enabledCheck,
@@ -394,7 +385,7 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider data.AdminPro
 		container.NewHBox(statusLabel, layout.NewSpacer(), checkNowBtn, refreshBtn, saveBtn, closeBtn),
 		nil, nil,
 		container.NewBorder(
-			container.NewVBox(header, widget.NewSeparator()),
+			nil,
 			serverEditor,
 			nil, nil,
 			serverTable,

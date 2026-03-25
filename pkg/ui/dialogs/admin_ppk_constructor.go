@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/data"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 )
 
 func ShowPPKConstructorDialog(parent fyne.Window, provider data.AdminProvider) {
@@ -60,40 +61,40 @@ func ShowPPKConstructorDialog(parent fyne.Window, provider data.AdminProvider) {
 		zoneCountEntry.SetText("4")
 	}
 
-	table := widget.NewTable(
-		func() (int, int) { return len(items), 4 },
-		func() fyne.CanvasObject { return widget.NewLabel("cell") },
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			lbl := obj.(*widget.Label)
-			if id.Row < 0 || id.Row >= len(items) {
-				lbl.SetText("")
-				return
+	tableView := uiwidgets.NewQTableViewWithHeaders(
+		[]string{"ID", "Назва ППК", "Канал", "ШС"},
+		func() int { return len(items) },
+		func(row, col int) string {
+			if row < 0 || row >= len(items) {
+				return ""
 			}
-			it := items[id.Row]
-			switch id.Col {
+			it := items[row]
+			switch col {
 			case 0:
-				lbl.SetText(strconv.FormatInt(it.ID, 10))
+				return strconv.FormatInt(it.ID, 10)
 			case 1:
-				lbl.SetText(strings.TrimSpace(it.Name))
+				return strings.TrimSpace(it.Name)
 			case 2:
-				lbl.SetText(strconv.FormatInt(it.Channel, 10))
+				return strconv.FormatInt(it.Channel, 10)
 			default:
-				lbl.SetText(strconv.FormatInt(it.ZoneCount, 10))
+				return strconv.FormatInt(it.ZoneCount, 10)
 			}
 		},
 	)
-	table.SetColumnWidth(0, 80)
-	table.SetColumnWidth(1, 500)
-	table.SetColumnWidth(2, 120)
-	table.SetColumnWidth(3, 140)
+	tableView.SetSelectionBehavior(uiwidgets.SelectRows)
+	table := tableView.Widget()
+	tableView.SetColumnWidth(0, 80)
+	tableView.SetColumnWidth(1, 500)
+	tableView.SetColumnWidth(2, 120)
+	tableView.SetColumnWidth(3, 140)
 
-	table.OnSelected = func(id widget.TableCellID) {
-		if id.Row < 0 || id.Row >= len(items) {
+	tableView.OnSelected = func(index uiwidgets.ModelIndex) {
+		if index.Row < 0 || index.Row >= len(items) {
 			return
 		}
-		selectedRow = id.Row
-		selectedID = items[id.Row].ID
-		fillEditor(items[id.Row])
+		selectedRow = index.Row
+		selectedID = items[index.Row].ID
+		fillEditor(items[index.Row])
 		if mode != "add" {
 			setMode("view")
 		}
@@ -246,14 +247,6 @@ func ShowPPKConstructorDialog(parent fyne.Window, provider data.AdminProvider) {
 	refreshBtn := widget.NewButton("Оновити", func() { reload(selectedID) })
 	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
 
-	headers := container.NewGridWithColumns(
-		4,
-		widget.NewLabel("ID"),
-		widget.NewLabel("Назва ППК"),
-		widget.NewLabel("Канал"),
-		widget.NewLabel("ШС"),
-	)
-
 	editor := widget.NewForm(
 		widget.NewFormItem("Назва:", nameEntry),
 		widget.NewFormItem("Код каналу:", channelEntry),
@@ -264,7 +257,6 @@ func ShowPPKConstructorDialog(parent fyne.Window, provider data.AdminProvider) {
 		container.NewVBox(
 			container.NewHBox(addBtn, editBtn, deleteBtn, layout.NewSpacer(), refreshBtn),
 			widget.NewSeparator(),
-			headers,
 		),
 		container.NewVBox(
 			widget.NewSeparator(),

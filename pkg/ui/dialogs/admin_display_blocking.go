@@ -15,6 +15,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/data"
+	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
@@ -23,8 +24,7 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 	win.Resize(fyne.NewSize(1020, 620))
 
 	var (
-		objects     []data.DisplayBlockObject
-		selectedRow = -1
+		objects []data.DisplayBlockObject
 	)
 
 	blockModeText := func(mode data.DisplayBlockMode) string {
@@ -101,22 +101,38 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 		return textColor, rowColor
 	}
 
-	table := widget.NewTable(
-		func() (int, int) {
-			return len(objects), 3
+	tableView := uiwidgets.NewQTableViewWithHeaders(
+		[]string{"№пр.", "Об'єкт", "Блокування"},
+		func() int { return len(objects) },
+		func(row, col int) string {
+			if row < 0 || row >= len(objects) {
+				return ""
+			}
+			item := objects[row]
+			switch col {
+			case 0:
+				return strconv.FormatInt(item.ObjN, 10)
+			case 1:
+				return item.Name
+			default:
+				return blockModeText(item.BlockMode)
+			}
 		},
+	)
+	tableView.SetSelectionBehavior(uiwidgets.SelectRows)
+	tableView.SetCellRenderer(
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
 			txt := canvas.NewText("", color.Black)
 			return container.NewStack(bg, container.NewPadded(txt))
 		},
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
+		func(index uiwidgets.ModelIndex, _ string, selected bool, obj fyne.CanvasObject) {
 			stack := obj.(*fyne.Container)
 			bg := stack.Objects[0].(*canvas.Rectangle)
 			txtWrap := stack.Objects[1].(*fyne.Container)
 			txt := txtWrap.Objects[0].(*canvas.Text)
 
-			if id.Row < 0 || id.Row >= len(objects) {
+			if !index.IsValid() || index.Row < 0 || index.Row >= len(objects) {
 				txt.Text = ""
 				txt.Refresh()
 				bg.FillColor = color.Transparent
@@ -124,10 +140,9 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 				return
 			}
 
-			item := objects[id.Row]
+			item := objects[index.Row]
 			textColor, rowColor := calcObjectColors(item)
-
-			if id.Row == selectedRow {
+			if selected {
 				bg.FillColor = color.NRGBA{R: 33, G: 112, B: 214, A: 255}
 				txt.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 			} else {
@@ -136,7 +151,7 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 			}
 			bg.Refresh()
 
-			switch id.Col {
+			switch index.Col {
 			case 0:
 				txt.Text = strconv.FormatInt(item.ObjN, 10)
 			case 1:
@@ -147,16 +162,16 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 			txt.Refresh()
 		},
 	)
-	table.SetColumnWidth(0, 100)
-	table.SetColumnWidth(1, 530)
-	table.SetColumnWidth(2, 340)
+	table := tableView.Widget()
+	tableView.SetColumnWidth(0, 100)
+	tableView.SetColumnWidth(1, 530)
+	tableView.SetColumnWidth(2, 340)
 
-	table.OnSelected = func(id widget.TableCellID) {
-		if id.Row < 0 || id.Row >= len(objects) {
+	tableView.OnSelected = func(index uiwidgets.ModelIndex) {
+		if index.Row < 0 || index.Row >= len(objects) {
 			return
 		}
-		selectedRow = id.Row
-		object := objects[id.Row]
+		object := objects[index.Row]
 		objectNumberEntry.SetText(strconv.FormatInt(object.ObjN, 10))
 		modeRadio.SetSelected(blockModeText(object.BlockMode))
 		statusLabel.SetText(fmt.Sprintf("Вибрано об'єкт №%d", object.ObjN))
@@ -172,7 +187,6 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 		}
 
 		objects = loaded
-		selectedRow = -1
 		table.Refresh()
 		table.UnselectAll()
 
@@ -221,13 +235,6 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
 	filterEntry.OnSubmitted = func(_ string) { reload(0) }
 
-	headers := container.NewGridWithColumns(
-		3,
-		widget.NewLabel("№пр."),
-		widget.NewLabel("Об'єкт"),
-		widget.NewLabel("Блокування"),
-	)
-
 	top := container.NewVBox(
 		container.NewHBox(
 			widget.NewLabel("№пр.:"),
@@ -249,7 +256,7 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 		top,
 		container.NewHBox(statusLabel, layout.NewSpacer(), closeBtn),
 		nil, nil,
-		container.NewBorder(headers, nil, nil, nil, table),
+		table,
 	)
 
 	win.SetContent(content)

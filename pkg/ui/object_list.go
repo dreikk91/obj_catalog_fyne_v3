@@ -128,8 +128,37 @@ func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
 
 			// Визначаємо кольори на основі комбінації статусів
 			textColor, rowColor := utils.ChangeItemColorNRGBA(item.AlarmState, item.GuardState, item.TechAlarmState, item.IsConnState, IsDarkMode())
+			if item.BlockedArmedOnOff == 1 {
+				// Тимчасово знято із спостереження (документація: фіолетовий)
+				if IsDarkMode() {
+					textColor = color.NRGBA{R: 230, G: 220, B: 245, A: 255}
+					rowColor = color.NRGBA{R: 98, G: 52, B: 125, A: 255}
+				} else {
+					textColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+					rowColor = color.NRGBA{R: 144, G: 64, B: 196, A: 255}
+				}
+			} else if item.BlockedArmedOnOff == 2 {
+				// Режим налагодження (документація: оливковий)
+				if IsDarkMode() {
+					textColor = color.NRGBA{R: 238, G: 236, B: 195, A: 255}
+					rowColor = color.NRGBA{R: 95, G: 96, B: 42, A: 255}
+				} else {
+					textColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+					rowColor = color.NRGBA{R: 128, G: 128, B: 0, A: 255}
+				}
+			}
+			missingSubServer := strings.TrimSpace(item.SubServerA) == "" && strings.TrimSpace(item.SubServerB) == ""
+			if missingSubServer {
+				// Якщо підсервер не задано - явно підсвічуємо проблемний рядок.
+				textColor = color.NRGBA{R: 210, G: 0, B: 0, A: 255}
+				rowColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+			}
 
-			if id.Row == panel.SelectedRow {
+			if missingSubServer {
+				bg.FillColor = rowColor
+				bg.Show()
+				txt.Color = textColor
+			} else if id.Row == panel.SelectedRow {
 				bg.FillColor = appTheme.ColorSelection
 				bg.Show()
 				txt.Color = color.White // Білий для виділеного

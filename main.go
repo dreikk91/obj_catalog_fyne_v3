@@ -5,11 +5,14 @@ import (
 	"fmt"
 	// "math/rand"
 	"runtime/debug"
+	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	fyneTheme "fyne.io/fyne/v2/theme"
@@ -285,6 +288,9 @@ func (a *Application) buildUI() {
 
 	log.Debug().Msg("Callbacks налаштовані")
 
+	// Головне меню (в т.ч. адмінський функціонал з документації)
+	a.mainWindow.SetMainMenu(a.buildMainMenu())
+
 	// Кнопка перемикання теми
 	themeBtn := widget.NewButtonWithIcon("", fyneTheme.ColorPaletteIcon(), nil)
 	updateThemeButton := func() {
@@ -444,6 +450,113 @@ func (a *Application) buildUI() {
 			a.mainWindow.Canvas().Focus(a.objectList.SearchEntry)
 		}
 	})
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyN, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		adminProvider, ok := a.dataProvider.(data.AdminProvider)
+		if !ok {
+			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
+			return
+		}
+		dialogs.ShowNewObjectDialog(a.mainWindow, adminProvider, func(objn int64) {
+			if a.objectList != nil {
+				a.objectList.Refresh()
+			}
+			if a.alarmPanel != nil {
+				a.alarmPanel.Refresh()
+			}
+			if a.eventLog != nil {
+				a.eventLog.Refresh()
+			}
+			if obj := a.dataProvider.GetObjectByID(strconv.FormatInt(objn, 10)); obj != nil {
+				a.currentObject = obj
+				a.updateWindowTitle()
+				if a.workArea != nil {
+					a.workArea.SetObject(*obj)
+				}
+				if a.eventLog != nil {
+					a.eventLog.SetCurrentObject(obj)
+				}
+				if a.rightTabs != nil {
+					a.rightTabs.SelectIndex(0)
+				}
+			}
+		})
+	})
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyE, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		adminProvider, ok := a.dataProvider.(data.AdminProvider)
+		if !ok {
+			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
+			return
+		}
+		if a.currentObject == nil || a.currentObject.ID <= 0 {
+			dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
+			return
+		}
+		dialogs.ShowEditObjectDialog(a.mainWindow, adminProvider, int64(a.currentObject.ID), func(objn int64) {
+			if a.objectList != nil {
+				a.objectList.Refresh()
+			}
+			if a.alarmPanel != nil {
+				a.alarmPanel.Refresh()
+			}
+			if a.eventLog != nil {
+				a.eventLog.Refresh()
+			}
+			if obj := a.dataProvider.GetObjectByID(strconv.FormatInt(objn, 10)); obj != nil {
+				a.currentObject = obj
+				a.updateWindowTitle()
+				if a.workArea != nil {
+					a.workArea.SetObject(*obj)
+				}
+				if a.eventLog != nil {
+					a.eventLog.SetCurrentObject(obj)
+				}
+				if a.rightTabs != nil {
+					a.rightTabs.SelectIndex(0)
+				}
+			}
+		})
+	})
+	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyX, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		adminProvider, ok := a.dataProvider.(data.AdminProvider)
+		if !ok {
+			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
+			return
+		}
+		if a.currentObject == nil || a.currentObject.ID <= 0 {
+			dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
+			return
+		}
+
+		objID := a.currentObject.ID
+		objName := a.currentObject.Name
+		dialog.ShowConfirm(
+			"Підтвердження видалення",
+			fmt.Sprintf("Видалити об'єкт №%d \"%s\"?", objID, objName),
+			func(ok bool) {
+				if !ok {
+					return
+				}
+				if err := adminProvider.DeleteObject(int64(objID)); err != nil {
+					dialogs.ShowErrorDialog(a.mainWindow, "Помилка видалення об'єкта", err)
+					return
+				}
+				a.currentObject = nil
+				a.updateWindowTitle()
+				if a.objectList != nil {
+					a.objectList.Refresh()
+				}
+				if a.alarmPanel != nil {
+					a.alarmPanel.Refresh()
+				}
+				if a.eventLog != nil {
+					a.eventLog.Refresh()
+					a.eventLog.SetCurrentObject(nil)
+				}
+				dialogs.ShowInfoDialog(a.mainWindow, "Готово", "Об'єкт видалено")
+			},
+			a.mainWindow,
+		)
+	})
 	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key1, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
 		rightTabs.SelectIndex(0)
 	})
@@ -453,6 +566,193 @@ func (a *Application) buildUI() {
 	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key3, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
 		rightTabs.SelectIndex(2)
 	})
+}
+
+func (a *Application) buildMainMenu() *fyne.MainMenu {
+	withAdminProvider := func(onReady func(data.AdminProvider)) func() {
+		return func() {
+			adminProvider, ok := a.dataProvider.(data.AdminProvider)
+			if !ok {
+				dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
+				return
+			}
+			access, err := adminProvider.GetAdminAccessStatus()
+			if err != nil {
+				dialogs.ShowErrorDialog(a.mainWindow, "Помилка перевірки прав доступу", err)
+				return
+			}
+			if !access.HasFullAccess {
+				userLabel := strings.TrimSpace(access.CurrentUser)
+				if userLabel == "" {
+					userLabel = "невизначений користувач"
+				}
+				msg := fmt.Sprintf(
+					"Користувач \"%s\" не має повного доступу до адмін-функцій.\n\nПотрібно, щоб у таблиці PERSONAL був запис користувача з ACCESS1=1.\nАдмін-записів у PERSONAL: %d.",
+					userLabel,
+					access.AdminUsersCount,
+				)
+				dialogs.ShowInfoDialog(a.mainWindow, "Доступ обмежено", msg)
+				return
+			}
+			onReady(adminProvider)
+		}
+	}
+
+	refreshAfterObjectSave := func(objn int64) {
+		if a.objectList != nil {
+			a.objectList.Refresh()
+		}
+		if a.alarmPanel != nil {
+			a.alarmPanel.Refresh()
+		}
+		if a.eventLog != nil {
+			a.eventLog.Refresh()
+		}
+		if obj := a.dataProvider.GetObjectByID(strconv.FormatInt(objn, 10)); obj != nil {
+			a.currentObject = obj
+			a.updateWindowTitle()
+			if a.workArea != nil {
+				a.workArea.SetObject(*obj)
+			}
+			if a.eventLog != nil {
+				a.eventLog.SetCurrentObject(obj)
+			}
+			if a.rightTabs != nil {
+				a.rightTabs.SelectIndex(0)
+			}
+		}
+	}
+
+	adminMenu := fyne.NewMenu("Адмін",
+		fyne.NewMenuItem("Блокування відображення інформації", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowDisplayBlockingDialog(a.mainWindow, admin, func() {
+				if a.objectList != nil {
+					a.objectList.Refresh()
+				}
+			})
+		})),
+		fyne.NewMenuItem("Емуляція подій", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowEventEmulationDialog(a.mainWindow, admin, func() {
+				if a.eventLog != nil {
+					a.eventLog.Refresh()
+				}
+				if a.alarmPanel != nil {
+					a.alarmPanel.Refresh()
+				}
+				if a.objectList != nil {
+					a.objectList.Refresh()
+				}
+			})
+		})),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("Об'єкти", nil),
+		fyne.NewMenuItem("Налаштування", nil),
+		fyne.NewMenuItem("Моніторинг", nil),
+	)
+
+	adminObjects := fyne.NewMenu("Об'єкти",
+		fyne.NewMenuItem("Новий об'єкт", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowNewObjectDialog(a.mainWindow, admin, refreshAfterObjectSave)
+		})),
+		fyne.NewMenuItem("Змінити поточний", withAdminProvider(func(admin data.AdminProvider) {
+			if a.currentObject == nil || a.currentObject.ID <= 0 {
+				dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
+				return
+			}
+			dialogs.ShowEditObjectDialog(a.mainWindow, admin, int64(a.currentObject.ID), refreshAfterObjectSave)
+		})),
+		fyne.NewMenuItem("Видалити поточний", withAdminProvider(func(admin data.AdminProvider) {
+			if a.currentObject == nil || a.currentObject.ID <= 0 {
+				dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
+				return
+			}
+
+			objID := a.currentObject.ID
+			objName := a.currentObject.Name
+			dialog.ShowConfirm(
+				"Підтвердження видалення",
+				fmt.Sprintf("Видалити об'єкт №%d \"%s\"?", objID, objName),
+				func(ok bool) {
+					if !ok {
+						return
+					}
+					if err := admin.DeleteObject(int64(objID)); err != nil {
+						dialogs.ShowErrorDialog(a.mainWindow, "Помилка видалення об'єкта", err)
+						return
+					}
+					a.currentObject = nil
+					a.updateWindowTitle()
+					if a.objectList != nil {
+						a.objectList.Refresh()
+					}
+					if a.alarmPanel != nil {
+						a.alarmPanel.Refresh()
+					}
+					if a.eventLog != nil {
+						a.eventLog.Refresh()
+						a.eventLog.SetCurrentObject(nil)
+					}
+					dialogs.ShowInfoDialog(a.mainWindow, "Готово", "Об'єкт видалено")
+				},
+				a.mainWindow,
+			)
+		})),
+	)
+
+	adminSettings := fyne.NewMenu("Налаштування",
+		fyne.NewMenuItem("Перевизначення подій", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowEventOverrideDialog(a.mainWindow, admin)
+		})),
+		fyne.NewMenuItem("Управління повідомленнями адміністратора", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowAdminMessagesDialog(a.mainWindow, admin)
+		})),
+		fyne.NewMenuItem("Контроль системи (БД/логи)", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowAdminSystemControlDialog(a.mainWindow, admin)
+		})),
+		fyne.NewMenuItem("Налаштування пожежного моніторингу", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowFireMonitoringSettingsDialog(a.mainWindow, admin)
+		})),
+		fyne.NewMenuItem("Керування об'єктами підсерверів", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowSubServerObjectsDialog(a.mainWindow, admin, func() {
+				if a.objectList != nil {
+					a.objectList.Refresh()
+				}
+				if a.alarmPanel != nil {
+					a.alarmPanel.Refresh()
+				}
+			})
+		})),
+	)
+
+	adminMonitoring := fyne.NewMenu("Моніторинг",
+		fyne.NewMenuItem("Збір статистики", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowStatisticsDialog(a.mainWindow, admin)
+		})),
+	)
+
+	adminDirectories := fyne.NewMenu("Довідники",
+		fyne.NewMenuItem("Конструктор ППК", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowPPKConstructorDialog(a.mainWindow, admin)
+		})),
+		fyne.NewMenuItem("Типи об'єктів", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowObjectTypesDictionaryDialog(a.mainWindow, admin)
+		})),
+		fyne.NewMenuItem("Регіони", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowRegionsDictionaryDialog(a.mainWindow, admin)
+		})),
+		fyne.NewMenuItem("Причини тривог", withAdminProvider(func(admin data.AdminProvider) {
+			dialogs.ShowAlarmReasonsDictionaryDialog(a.mainWindow, admin)
+		})),
+	)
+
+	// В Fyne вкладений пункт меню задається через ChildMenu.
+	adminMenu.Items[3].ChildMenu = adminObjects
+	adminMenu.Items[4].ChildMenu = adminSettings
+	adminMenu.Items[5].ChildMenu = adminMonitoring
+	adminMenu.Items = append(adminMenu.Items, fyne.NewMenuItem("Довідники", nil))
+	adminMenu.Items[len(adminMenu.Items)-1].ChildMenu = adminDirectories
+
+	return fyne.NewMainMenu(adminMenu)
 }
 
 // startGettingEvents запускає симуляцію подій

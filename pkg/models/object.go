@@ -33,10 +33,11 @@ type Object struct {
 	StatusText  string
 
 	// Р”РµС‚Р°Р»СЊРЅС– СЃС‚Р°РЅРё РґР»СЏ РІС–РґРѕР±СЂР°Р¶РµРЅРЅСЏ РІ СЃРїРёСЃРєСѓ
-	AlarmState     int64
-	GuardState     int64
-	TechAlarmState int64
-	IsConnState    int64
+	AlarmState        int64
+	GuardState        int64
+	TechAlarmState    int64
+	IsConnState       int64
+	BlockedArmedOnOff int16
 
 	// Р†РЅС„РѕСЂРјР°С†С–СЏ РїСЂРѕ РїСЂРёР»Р°Рґ
 	DeviceType      string      // РўРёРї РїСЂРёР»Р°РґСѓ (РЅР°РїСЂ. "РўС–СЂР°СЃ-16Рџ")
@@ -50,6 +51,8 @@ type Object struct {
 
 	SIM1        string // РќРѕРјРµСЂ SIM 1
 	SIM2        string // РќРѕРјРµСЂ SIM 2
+	SubServerA  string // Підсервер A (SBSA)
+	SubServerB  string // Підсервер B (SBSB)
 	ObjChan     int    // РљР°РЅР°Р» Р·РІ'СЏР·РєСѓ (1=РђРІС‚РѕРґРѕРґР·РІРѕРЅ, 5=GPRS, С–РЅС€Рµ=Р†РЅС€РёР№)
 	AkbState    int64  // РЎС‚Р°РЅ РђРљР‘
 	PowerFault  int64  // РќРµСЃРїСЂР°РІРЅС–СЃС‚СЊ 220Р’ (0=РћРљ, >0=РўСЂРёРІРѕРіР°)

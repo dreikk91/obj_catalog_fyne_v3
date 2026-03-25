@@ -488,6 +488,24 @@ func (p *DBDataProvider) GetTestMessages(objectID string) []models.TestMessage {
 
 // Допоміжні функції для мапінгу
 func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
+	blockMode := int16(0)
+	guardState := ptrToInt64(row.GuardState1)
+	subServerA := strings.TrimSpace(ptrToString(row.SBSA))
+	subServerB := strings.TrimSpace(ptrToString(row.SBSB))
+	// "Тимчасово знято із спостереження" визначається по GUARDSTATE1 = 0.
+	if guardState == 0 {
+		blockMode = 1
+	} else if ptrToInt64(row.Eng1) != 0 {
+		// Режим налагодження в цій БД визначається через OBJECTS_INFO.ENG1.
+		blockMode = 2
+	} else {
+		// Fallback для сумісності зі старими БД/клієнтами.
+		raw := ptrToInt16(row.BlockedArmedOnOff)
+		if raw == 1 || raw == 2 {
+			blockMode = raw
+		}
+	}
+
 	return models.Object{
 		ID:          int(row.Objn),
 		Name:        ptrToString(row.ObjShortName1),
@@ -497,11 +515,14 @@ func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
 		Status:      mapStateToStatus(row.AlarmState1, row.IsConnState1),
 		StatusText:  mapStateToStatusText(row.AlarmState1, row.TechAlarmState1, row.IsConnState1),
 		GSMLevel:    0,
+		SubServerA:  subServerA,
+		SubServerB:  subServerB,
 
-		AlarmState:     ptrToInt64(row.AlarmState1),
-		GuardState:     ptrToInt64(row.GuardState1),
-		TechAlarmState: ptrToInt64(row.TechAlarmState1),
-		IsConnState:    ptrToInt64(row.IsConnState1),
+		AlarmState:        ptrToInt64(row.AlarmState1),
+		GuardState:        guardState,
+		TechAlarmState:    ptrToInt64(row.TechAlarmState1),
+		IsConnState:       ptrToInt64(row.IsConnState1),
+		BlockedArmedOnOff: blockMode,
 	}
 }
 

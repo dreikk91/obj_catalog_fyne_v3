@@ -10,13 +10,18 @@ type ObjectInfoRow struct {
 	ObjShortName1 *string `db:"OBJSHORTNAME1"`
 	Address1      *string `db:"ADDRESS1"`
 	Contract1     *string `db:"CONTRACT1"`
+	Eng1          *int64  `db:"ENG1"`
 	GsmPhone      *string `db:"GSMPHONE"`
 	GsmPhone2     *string `db:"GSMPHONE2"`
+	ReservLong2   *int64  `db:"RESERVLONG2"`
+	SBSA          *string `db:"SBSA"`
+	SBSB          *string `db:"SBSB"`
 
 	// Поля з OBJECTS_STATE
-	AlarmState1     *int64 `db:"ALARMSTATE1"`
-	GuardState1     *int64 `db:"GUARDSTATE1"`
-	TechAlarmState1 *int64 `db:"TECHALARMSTATE1"`
+	AlarmState1       *int64 `db:"ALARMSTATE1"`
+	GuardState1       *int64 `db:"GUARDSTATE1"`
+	TechAlarmState1   *int64 `db:"TECHALARMSTATE1"`
+	BlockedArmedOnOff *int16 `db:"BLOCKEDARMED_ON_OFF"`
 
 	// Поля з OBJECTS_LA
 	IsConnState1 *int64 `db:"ISCONNSTATE1"`

@@ -7,7 +7,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
@@ -500,13 +499,7 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 			win.Canvas().Focus(filterEntry)
 		}
 	})
-	win.Canvas().AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyA,
-		Modifier: fyne.KeyModifierControl,
-	}, func(fyne.Shortcut) {
-		if win.Canvas().Focused() == filterEntry {
-			return
-		}
+	win.Canvas().AddShortcut(&fyne.ShortcutSelectAll{}, func(fyne.Shortcut) {
 		selectAllVisibleObjects()
 	})
 

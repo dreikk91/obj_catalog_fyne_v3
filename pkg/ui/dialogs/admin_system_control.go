@@ -15,16 +15,16 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowAdminSystemControlDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Контроль системи")
 	win.Resize(fyne.NewSize(1120, 720))
 
 	var (
-		issues       []data.AdminDataCheckIssue
-		accessStatus data.AdminAccessStatus
+		issues       []contracts.AdminDataCheckIssue
+		accessStatus contracts.AdminAccessStatus
 	)
 
 	statusLabel := widget.NewLabel("Готово")
@@ -34,12 +34,12 @@ func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvide
 	issueFilterEntry := widget.NewEntry()
 	issueFilterEntry.SetPlaceHolder("Фільтр перевірок: код / № об'єкта / текст")
 
-	filteredIssues := func() []data.AdminDataCheckIssue {
+	filteredIssues := func() []contracts.AdminDataCheckIssue {
 		filter := strings.ToLower(strings.TrimSpace(issueFilterEntry.Text))
 		if filter == "" {
 			return issues
 		}
-		out := make([]data.AdminDataCheckIssue, 0, len(issues))
+		out := make([]contracts.AdminDataCheckIssue, 0, len(issues))
 		for _, it := range issues {
 			objnText := ""
 			if it.ObjN > 0 {

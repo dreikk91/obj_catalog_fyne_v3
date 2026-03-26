@@ -13,7 +13,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/config"
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
@@ -22,7 +22,7 @@ import (
 type AlarmPanelWidget struct {
 	Container *fyne.Container
 	List      *widget.List
-	Data      data.AlarmProvider
+	Data      contracts.AlarmProvider
 
 	// Кеш даних
 	CurrentAlarms []models.Alarm
@@ -46,7 +46,7 @@ type AlarmPanelWidget struct {
 }
 
 // NewAlarmPanelWidget створює панель тривог
-func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
+func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 	panel := &AlarmPanelWidget{
 		Data:          provider,
 		selectedIndex: -1,

@@ -14,19 +14,19 @@ import (
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, onSaved func(objn int64)) {
+func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminProvider, onSaved func(objn int64)) {
 	win := fyne.CurrentApp().NewWindow("Майстер створення об'єкта")
 	win.Resize(fyne.NewSize(980, 760))
 
 	statusLabel := widget.NewLabel("Крок 1/6: дані об'єкта")
 
 	var (
-		pendingPersonals []data.AdminObjectPersonal
+		pendingPersonals []contracts.AdminObjectPersonal
 		selectedPersonal = -1
-		pendingZones     []data.AdminObjectZone
+		pendingZones     []contracts.AdminObjectZone
 		selectedZone     = -1
 	)
 
@@ -86,7 +86,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 	typeLabelToID := map[string]int64{}
 	regionLabelToID := map[string]int64{}
 	ppkLabelToID := map[string]int64{}
-	allPPKItems := make([]data.PPKConstructorItem, 0)
+	allPPKItems := make([]contracts.PPKConstructorItem, 0)
 	subServerLabelToBind := map[string]string{}
 
 	autoUpdatingFullName := false
@@ -163,7 +163,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 		refreshPPKOptionsByChannel(selectedPPKID)
 	}
 
-	formatSIMUsageList := func(usages []data.AdminSIMPhoneUsage) string {
+	formatSIMUsageList := func(usages []contracts.AdminSIMPhoneUsage) string {
 		if len(usages) == 0 {
 			return ""
 		}
@@ -338,8 +338,8 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 		selectedZone = -1
 	}
 
-	buildCardFromUI := func() (data.AdminObjectCard, error) {
-		var card data.AdminObjectCard
+	buildCardFromUI := func() (contracts.AdminObjectCard, error) {
+		var card contracts.AdminObjectCard
 
 		objnRaw := strings.TrimSpace(objnEntry.Text)
 		objn, err := strconv.ParseInt(objnRaw, 10, 64)
@@ -460,7 +460,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 		return nil
 	}
 
-	personalFullName := func(item data.AdminObjectPersonal) string {
+	personalFullName := func(item contracts.AdminObjectPersonal) string {
 		parts := []string{
 			strings.TrimSpace(item.Surname),
 			strings.TrimSpace(item.Name),
@@ -556,10 +556,10 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 	}
 
 	addPersonalBtn := widget.NewButton("Додати", func() {
-		showObjectPersonalEditor(win, provider, "Додати В/О", data.AdminObjectPersonal{
+		showObjectPersonalEditor(win, provider, "Додати В/О", contracts.AdminObjectPersonal{
 			Number: nextPersonalNumber(),
 			IsRang: true,
-		}, func(item data.AdminObjectPersonal) error {
+		}, func(item contracts.AdminObjectPersonal) error {
 			if item.Number <= 0 {
 				item.Number = nextPersonalNumber()
 			}
@@ -577,7 +577,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 			return
 		}
 		initial := pendingPersonals[selectedPersonal]
-		showObjectPersonalEditor(win, provider, "Редагування В/О", initial, func(item data.AdminObjectPersonal) error {
+		showObjectPersonalEditor(win, provider, "Редагування В/О", initial, func(item contracts.AdminObjectPersonal) error {
 			if item.Number <= 0 {
 				item.Number = initial.Number
 			}
@@ -665,7 +665,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 		if desc == "" {
 			desc = fmt.Sprintf("Шлейф %d", zoneNumber)
 		}
-		pendingZones = append(pendingZones, data.AdminObjectZone{
+		pendingZones = append(pendingZones, contracts.AdminObjectZone{
 			ZoneNumber:    zoneNumber,
 			ZoneType:      1,
 			Description:   desc,
@@ -1179,7 +1179,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 				warnings = append(warnings, fmt.Sprintf("Зона #%d не додана: %v", idx+1, err))
 			}
 		}
-		coords := data.AdminObjectCoordinates{
+		coords := contracts.AdminObjectCoordinates{
 			Latitude:  strings.TrimSpace(latitudeEntry.Text),
 			Longitude: strings.TrimSpace(longitudeEntry.Text),
 		}

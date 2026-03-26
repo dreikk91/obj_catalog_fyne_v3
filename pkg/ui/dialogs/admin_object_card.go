@@ -13,18 +13,18 @@ import (
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowNewObjectDialog(parent fyne.Window, provider data.AdminProvider, onSaved func(objn int64)) {
+func ShowNewObjectDialog(parent fyne.Window, provider contracts.AdminProvider, onSaved func(objn int64)) {
 	ShowNewObjectWizardDialog(parent, provider, onSaved)
 }
 
-func ShowEditObjectDialog(parent fyne.Window, provider data.AdminProvider, objn int64, onSaved func(objn int64)) {
+func ShowEditObjectDialog(parent fyne.Window, provider contracts.AdminProvider, objn int64, onSaved func(objn int64)) {
 	showObjectCardDialog(parent, provider, &objn, onSaved)
 }
 
-func showObjectCardDialog(parent fyne.Window, provider data.AdminProvider, editObjN *int64, onSaved func(objn int64)) {
+func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, editObjN *int64, onSaved func(objn int64)) {
 	isEdit := editObjN != nil && *editObjN > 0
 	title := "Новий об'єкт"
 	if isEdit {
@@ -90,7 +90,7 @@ func showObjectCardDialog(parent fyne.Window, provider data.AdminProvider, editO
 	typeLabelToID := map[string]int64{}
 	regionLabelToID := map[string]int64{}
 	ppkLabelToID := map[string]int64{}
-	allPPKItems := make([]data.PPKConstructorItem, 0)
+	allPPKItems := make([]contracts.PPKConstructorItem, 0)
 	subServerLabelToBind := map[string]string{}
 
 	autoUpdatingFullName := false
@@ -167,7 +167,7 @@ func showObjectCardDialog(parent fyne.Window, provider data.AdminProvider, editO
 		refreshPPKOptionsByChannel(selectedPPKID)
 	}
 
-	formatSIMUsageList := func(usages []data.AdminSIMPhoneUsage) string {
+	formatSIMUsageList := func(usages []contracts.AdminSIMPhoneUsage) string {
 		if len(usages) == 0 {
 			return ""
 		}
@@ -398,8 +398,8 @@ func showObjectCardDialog(parent fyne.Window, provider data.AdminProvider, editO
 		return nil
 	}
 
-	buildCardFromUI := func() (data.AdminObjectCard, error) {
-		var card data.AdminObjectCard
+	buildCardFromUI := func() (contracts.AdminObjectCard, error) {
+		var card contracts.AdminObjectCard
 
 		objnRaw := strings.TrimSpace(objnEntry.Text)
 		objn, err := strconv.ParseInt(objnRaw, 10, 64)

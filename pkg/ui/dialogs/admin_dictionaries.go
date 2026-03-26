@@ -11,7 +11,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 type dictionaryDialogConfig struct {
@@ -21,14 +21,14 @@ type dictionaryDialogConfig struct {
 	CodeLabel   string
 	SupportMove bool
 
-	List   func() ([]data.DictionaryItem, error)
+	List   func() ([]contracts.DictionaryItem, error)
 	Add    func(name string, code *int64) error
 	Update func(id int64, name string, code *int64) error
 	Delete func(id int64) error
 	Move   func(id int64, direction int) error
 }
 
-func ShowObjectTypesDictionaryDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowObjectTypesDictionaryDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	showDictionaryDialog(parent, dictionaryDialogConfig{
 		Title:     "Типи об'єктів",
 		NameLabel: "Тип об'єкта:",
@@ -39,7 +39,7 @@ func ShowObjectTypesDictionaryDialog(parent fyne.Window, provider data.AdminProv
 	})
 }
 
-func ShowRegionsDictionaryDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowRegionsDictionaryDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	showDictionaryDialog(parent, dictionaryDialogConfig{
 		Title:     "Регіони",
 		NameLabel: "Назва регіону:",
@@ -52,7 +52,7 @@ func ShowRegionsDictionaryDialog(parent fyne.Window, provider data.AdminProvider
 	})
 }
 
-func ShowAlarmReasonsDictionaryDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowAlarmReasonsDictionaryDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	showDictionaryDialog(parent, dictionaryDialogConfig{
 		Title:       "Причини тривог",
 		NameLabel:   "Причина тривоги:",
@@ -70,7 +70,7 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 	win.Resize(fyne.NewSize(780, 520))
 
 	var (
-		items         []data.DictionaryItem
+		items         []contracts.DictionaryItem
 		selectedIndex = -1
 		selectedID    int64
 		mode          = "view" // view | add | edit
@@ -98,7 +98,7 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		}
 	}
 
-	formatItem := func(item data.DictionaryItem) string {
+	formatItem := func(item contracts.DictionaryItem) string {
 		if cfg.ShowCode && item.Code != nil {
 			return fmt.Sprintf("%s [%d]", item.Name, *item.Code)
 		}

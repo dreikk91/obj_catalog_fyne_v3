@@ -14,7 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/config"
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	objexport "obj_catalog_fyne_v3/pkg/export"
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
@@ -25,7 +25,7 @@ import (
 // WorkAreaPanel - структура робочої області
 type WorkAreaPanel struct {
 	Container     *fyne.Container
-	Data          data.DataProvider
+	Data          contracts.DataProvider
 	CurrentObject *models.Object
 	Window        fyne.Window
 
@@ -79,7 +79,7 @@ type WorkAreaPanel struct {
 }
 
 // NewWorkAreaPanel створює робочу область
-func NewWorkAreaPanel(provider data.DataProvider, window fyne.Window) *WorkAreaPanel {
+func NewWorkAreaPanel(provider contracts.DataProvider, window fyne.Window) *WorkAreaPanel {
 	panel := &WorkAreaPanel{
 		Data:   provider,
 		Window: window,

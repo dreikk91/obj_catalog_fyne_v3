@@ -2,7 +2,7 @@ package dialogs
 
 import (
 	"fmt"
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -10,7 +10,7 @@ import (
 )
 
 // ShowTestMessagesDialog відкриває вікно з тестовими повідомленнями об'єкта
-func ShowTestMessagesDialog(parent fyne.Window, provider data.DataProvider, objectID string) {
+func ShowTestMessagesDialog(parent fyne.Window, provider contracts.DataProvider, objectID string) {
 	win := fyne.CurrentApp().NewWindow("Тестові повідомлення: " + objectID)
 	win.Resize(fyne.NewSize(700, 400))
 

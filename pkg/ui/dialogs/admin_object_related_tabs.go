@@ -17,7 +17,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 const (
@@ -33,13 +33,13 @@ const (
 	mapCenterModeLast   = "last"
 )
 
-func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
+func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
 	var (
-		items       []data.AdminObjectPersonal
+		items       []contracts.AdminObjectPersonal
 		selectedRow = -1
 	)
 
-	fullName := func(item data.AdminObjectPersonal) string {
+	fullName := func(item contracts.AdminObjectPersonal) string {
 		parts := []string{
 			strings.TrimSpace(item.Surname),
 			strings.TrimSpace(item.Name),
@@ -147,7 +147,7 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 	}
 
 	addBtn := widget.NewButton("Додати", func() {
-		showObjectPersonalEditor(parent, provider, "Додати В/О", data.AdminObjectPersonal{}, func(item data.AdminObjectPersonal) error {
+		showObjectPersonalEditor(parent, provider, "Додати В/О", contracts.AdminObjectPersonal{}, func(item contracts.AdminObjectPersonal) error {
 			return provider.AddObjectPersonal(objn, item)
 		}, statusLabel, func() {
 			reload()
@@ -161,7 +161,7 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 			return
 		}
 		initial := items[selectedRow]
-		showObjectPersonalEditor(parent, provider, "Редагування В/О", initial, func(item data.AdminObjectPersonal) error {
+		showObjectPersonalEditor(parent, provider, "Редагування В/О", initial, func(item contracts.AdminObjectPersonal) error {
 			item.ID = initial.ID
 			if strings.TrimSpace(item.CreatedAt) == "" {
 				item.CreatedAt = initial.CreatedAt
@@ -215,9 +215,9 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 	return content
 }
 
-func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
+func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
 	var (
-		items       []data.AdminObjectZone
+		items       []contracts.AdminObjectZone
 		selectedRow = -1
 	)
 
@@ -313,7 +313,7 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 		if desc == "" {
 			desc = fmt.Sprintf("Шлейф %d", zoneNumber)
 		}
-		return provider.AddObjectZone(objn, data.AdminObjectZone{
+		return provider.AddObjectZone(objn, contracts.AdminObjectZone{
 			ZoneNumber:    zoneNumber,
 			ZoneType:      1,
 			Description:   desc,
@@ -555,7 +555,7 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 	return content
 }
 
-func buildObjectAdditionalTab(parent fyne.Window, provider data.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
+func buildObjectAdditionalTab(parent fyne.Window, provider contracts.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
 	latitudeEntry := widget.NewEntry()
 	latitudeEntry.SetPlaceHolder("Широта (LATITUDE)")
 
@@ -575,7 +575,7 @@ func buildObjectAdditionalTab(parent fyne.Window, provider data.AdminProvider, o
 	}
 
 	save := func() {
-		coords := data.AdminObjectCoordinates{
+		coords := contracts.AdminObjectCoordinates{
 			Latitude:  strings.TrimSpace(latitudeEntry.Text),
 			Longitude: strings.TrimSpace(longitudeEntry.Text),
 		}
@@ -629,10 +629,10 @@ func buildObjectAdditionalTab(parent fyne.Window, provider data.AdminProvider, o
 
 func showObjectPersonalEditor(
 	parent fyne.Window,
-	provider data.AdminProvider,
+	provider contracts.AdminProvider,
 	title string,
-	initial data.AdminObjectPersonal,
-	onSave func(item data.AdminObjectPersonal) error,
+	initial contracts.AdminObjectPersonal,
+	onSave func(item contracts.AdminObjectPersonal) error,
 	statusLabel *widget.Label,
 	onDone func(),
 ) {
@@ -687,7 +687,7 @@ func showObjectPersonalEditor(
 		return cnt
 	}
 
-	applyPersonalLookup := func(found *data.AdminObjectPersonal) {
+	applyPersonalLookup := func(found *contracts.AdminObjectPersonal) {
 		if found == nil {
 			return
 		}
@@ -786,7 +786,7 @@ func showObjectPersonalEditor(
 			number = n
 		}
 
-		item := data.AdminObjectPersonal{
+		item := contracts.AdminObjectPersonal{
 			Number:      number,
 			Surname:     strings.TrimSpace(surnameEntry.Text),
 			Name:        strings.TrimSpace(nameEntry.Text),
@@ -815,8 +815,8 @@ func showObjectPersonalEditor(
 func showObjectZoneEditor(
 	parent fyne.Window,
 	title string,
-	initial data.AdminObjectZone,
-	onSave func(zone data.AdminObjectZone) error,
+	initial contracts.AdminObjectZone,
+	onSave func(zone contracts.AdminObjectZone) error,
 	statusLabel *widget.Label,
 	onDone func(),
 ) {
@@ -846,7 +846,7 @@ func showObjectZoneEditor(
 			return
 		}
 
-		zone := data.AdminObjectZone{
+		zone := contracts.AdminObjectZone{
 			ZoneNumber:    zoneNumber,
 			ZoneType:      1,
 			Description:   strings.TrimSpace(descriptionEntry.Text),
@@ -888,7 +888,7 @@ func showZoneFillDialog(parent fyne.Window, defaultCount int64, onApply func(cou
 	dlg.Show()
 }
 
-func suggestZoneFillCount(provider data.AdminProvider, objn int64, current []data.AdminObjectZone) int64 {
+func suggestZoneFillCount(provider contracts.AdminProvider, objn int64, current []contracts.AdminObjectZone) int64 {
 	maxZone := int64(0)
 	for _, z := range current {
 		if z.ZoneNumber > maxZone {

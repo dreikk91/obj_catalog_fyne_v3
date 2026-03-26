@@ -14,7 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/config"
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/utils"
@@ -25,7 +25,7 @@ type ObjectListPanel struct {
 	Table        *widget.Table
 	SearchEntry  *widget.Entry
 	FilterSelect *widget.Select
-	Data         data.ObjectProvider
+	Data         contracts.ObjectProvider
 	ColumnHeader *fyne.Container
 
 	// Кеш усіх об'єктів
@@ -52,7 +52,7 @@ type ObjectListPanel struct {
 }
 
 // NewObjectListPanel створює панель списку об'єктів
-func NewObjectListPanel(provider data.ObjectProvider) *ObjectListPanel {
+func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	panel := &ObjectListPanel{
 		Data:          provider,
 		CurrentFilter: "Всі",

@@ -14,38 +14,38 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
-func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, onUpdated func()) {
+func ShowDisplayBlockingDialog(parent fyne.Window, provider contracts.AdminProvider, onUpdated func()) {
 	win := fyne.CurrentApp().NewWindow("Блокування відображення інформації")
 	win.Resize(fyne.NewSize(1020, 620))
 
 	var (
-		objects     []data.DisplayBlockObject
+		objects     []contracts.DisplayBlockObject
 		selectedRow = -1
 	)
 
-	blockModeText := func(mode data.DisplayBlockMode) string {
+	blockModeText := func(mode contracts.DisplayBlockMode) string {
 		switch mode {
-		case data.DisplayBlockTemporaryOff:
+		case contracts.DisplayBlockTemporaryOff:
 			return "Тимчасово зняти із спостереження"
-		case data.DisplayBlockDebug:
+		case contracts.DisplayBlockDebug:
 			return "Ввести об'єкт в режим налагодження"
 		default:
 			return "Немає"
 		}
 	}
 
-	parseBlockMode := func(label string) data.DisplayBlockMode {
+	parseBlockMode := func(label string) contracts.DisplayBlockMode {
 		switch label {
 		case "Тимчасово зняти із спостереження":
-			return data.DisplayBlockTemporaryOff
+			return contracts.DisplayBlockTemporaryOff
 		case "Ввести об'єкт в режим налагодження":
-			return data.DisplayBlockDebug
+			return contracts.DisplayBlockDebug
 		default:
-			return data.DisplayBlockNone
+			return contracts.DisplayBlockNone
 		}
 	}
 
@@ -70,7 +70,7 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 		return fyne.CurrentApp().Settings().ThemeVariant() == theme.VariantDark
 	}
 
-	calcObjectColors := func(item data.DisplayBlockObject) (color.NRGBA, color.NRGBA) {
+	calcObjectColors := func(item contracts.DisplayBlockObject) (color.NRGBA, color.NRGBA) {
 		textColor, rowColor := utils.ChangeItemColorNRGBA(
 			item.AlarmState,
 			item.GuardState,
@@ -79,7 +79,7 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 			isDarkMode(),
 		)
 		switch item.BlockMode {
-		case data.DisplayBlockTemporaryOff:
+		case contracts.DisplayBlockTemporaryOff:
 			// Тимчасово знято із спостереження -> фіолетовий.
 			if isDarkMode() {
 				textColor = color.NRGBA{R: 230, G: 220, B: 245, A: 255}
@@ -88,7 +88,7 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider data.AdminProvider, 
 				textColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 				rowColor = color.NRGBA{R: 144, G: 64, B: 196, A: 255}
 			}
-		case data.DisplayBlockDebug:
+		case contracts.DisplayBlockDebug:
 			// Режим налагодження -> оливковий.
 			if isDarkMode() {
 				textColor = color.NRGBA{R: 238, G: 236, B: 195, A: 255}

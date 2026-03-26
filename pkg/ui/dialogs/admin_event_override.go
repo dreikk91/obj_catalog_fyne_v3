@@ -11,15 +11,15 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowEventOverrideDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowEventOverrideDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Глобальне перевизначення подій")
 	win.Resize(fyne.NewSize(1160, 700))
 
 	var (
-		messages       []data.AdminMessage
+		messages       []contracts.AdminMessage
 		selectedUIN    int64
 		selectedRowIdx = -1
 	)

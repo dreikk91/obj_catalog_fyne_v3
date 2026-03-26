@@ -13,10 +13,10 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowStatisticsDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Збір статистики")
 	win.Resize(fyne.NewSize(1440, 820))
 
@@ -78,15 +78,15 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 
 	typeLabelToID := map[string]int64{"Всі типи": 0}
 	regionLabelToID := map[string]int64{"Всі райони": 0}
-	channelLabelToProtocol := map[string]data.AdminStatisticsProtocolFilter{
-		"Всі протоколи": data.StatsProtocolAll,
-		"Автододзвон":   data.StatsProtocolAutodial,
-		"Мост":          data.StatsProtocolMost,
-		"Нова":          data.StatsProtocolNova,
+	channelLabelToProtocol := map[string]contracts.AdminStatisticsProtocolFilter{
+		"Всі протоколи": contracts.StatsProtocolAll,
+		"Автододзвон":   contracts.StatsProtocolAutodial,
+		"Мост":          contracts.StatsProtocolMost,
+		"Нова":          contracts.StatsProtocolNova,
 	}
 
 	var (
-		rows []data.AdminStatisticsRow
+		rows []contracts.AdminStatisticsRow
 	)
 
 	columns := []string{
@@ -97,7 +97,7 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		"Тривога", "Тех", "Блок.", "Тип", "Район", "GRPN", "OBJUIN",
 	}
 
-	getCell := func(item data.AdminStatisticsRow, col int) string {
+	getCell := func(item contracts.AdminStatisticsRow, col int) string {
 		switch col {
 		case 0:
 			return strconv.FormatInt(item.ObjN, 10)
@@ -258,7 +258,7 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 			if it.TechAlarmState > 0 {
 				tech++
 			}
-			if it.BlockMode != data.DisplayBlockNone {
+			if it.BlockMode != contracts.DisplayBlockNone {
 				blocked++
 			}
 		}
@@ -283,16 +283,16 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		return n
 	}
 
-	buildFilter := func() data.AdminStatisticsFilter {
-		filter := data.AdminStatisticsFilter{
-			ConnectionMode: data.StatsConnectionAll,
+	buildFilter := func() contracts.AdminStatisticsFilter {
+		filter := contracts.AdminStatisticsFilter{
+			ConnectionMode: contracts.StatsConnectionAll,
 			Search:         strings.TrimSpace(searchEntry.Text),
 		}
 		switch connectionRadio.Selected {
 		case "Зв'язок норма":
-			filter.ConnectionMode = data.StatsConnectionOnline
+			filter.ConnectionMode = contracts.StatsConnectionOnline
 		case "Без зв'язку":
-			filter.ConnectionMode = data.StatsConnectionOffline
+			filter.ConnectionMode = contracts.StatsConnectionOffline
 		}
 
 		if protocol, ok := channelLabelToProtocol[channelSelect.Selected]; ok {
@@ -324,10 +324,10 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 
 		switch blockSelect.Selected {
 		case "Тимчасово зняті з нагляду":
-			v := data.DisplayBlockTemporaryOff
+			v := contracts.DisplayBlockTemporaryOff
 			filter.BlockMode = &v
 		case "В режимі налагодження":
-			v := data.DisplayBlockDebug
+			v := contracts.DisplayBlockDebug
 			filter.BlockMode = &v
 		}
 
@@ -520,11 +520,11 @@ func binaryCaption(v int64) string {
 	return "0"
 }
 
-func blockModeCaption(mode data.DisplayBlockMode) string {
+func blockModeCaption(mode contracts.DisplayBlockMode) string {
 	switch mode {
-	case data.DisplayBlockTemporaryOff:
+	case contracts.DisplayBlockTemporaryOff:
 		return "блок. постановки"
-	case data.DisplayBlockDebug:
+	case contracts.DisplayBlockDebug:
 		return "налагодження"
 	default:
 		return "немає"

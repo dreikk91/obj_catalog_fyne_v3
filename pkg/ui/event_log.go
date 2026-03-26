@@ -14,7 +14,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
@@ -23,7 +23,7 @@ import (
 type EventLogPanel struct {
 	Container       *fyne.Container
 	List            *widget.List
-	Data            data.EventProvider
+	Data            contracts.EventProvider
 	IsPaused        bool
 	PauseBtn        *widget.Button
 	RangeSelect     *widget.Select
@@ -46,7 +46,7 @@ type EventLogPanel struct {
 }
 
 // NewEventLogPanel створює панель журналу подій
-func NewEventLogPanel(provider data.EventProvider) *EventLogPanel {
+func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	panel := &EventLogPanel{
 		Data:     provider,
 		IsPaused: false,

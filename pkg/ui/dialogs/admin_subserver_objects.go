@@ -10,16 +10,16 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider, onUpdated func()) {
+func ShowSubServerObjectsDialog(parent fyne.Window, provider contracts.AdminProvider, onUpdated func()) {
 	win := fyne.CurrentApp().NewWindow("Керування об'єктами підсерверів")
 	win.Resize(fyne.NewSize(1040, 640))
 
 	var (
-		objects         []data.AdminSubServerObject
-		subservers      []data.AdminSubServer
+		objects         []contracts.AdminSubServerObject
+		subservers      []contracts.AdminSubServer
 		selectedObject  = -1
 		selectedServer  = -1
 		selectedObjNSet = map[int64]struct{}{}
@@ -65,7 +65,7 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 		return "—"
 	}
 
-	serverTypeLabel := func(s data.AdminSubServer) string {
+	serverTypeLabel := func(s contracts.AdminSubServer) string {
 		switch s.Type {
 		case 2:
 			return "GPRS"
@@ -79,11 +79,11 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 		}
 	}
 
-	currentObjects := func() []data.AdminSubServerObject {
+	currentObjects := func() []contracts.AdminSubServerObject {
 		if !onlyUnboundCheck.Checked {
 			return objects
 		}
-		filtered := make([]data.AdminSubServerObject, 0, len(objects))
+		filtered := make([]contracts.AdminSubServerObject, 0, len(objects))
 		for _, obj := range objects {
 			if strings.TrimSpace(obj.SubServerA) == "" && strings.TrimSpace(obj.SubServerB) == "" {
 				filtered = append(filtered, obj)
@@ -93,9 +93,9 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 	}
 	var objectTable *widget.Table
 
-	getSelectedObjects := func() []data.AdminSubServerObject {
+	getSelectedObjects := func() []contracts.AdminSubServerObject {
 		rows := currentObjects()
-		selected := make([]data.AdminSubServerObject, 0, len(selectedObjNSet))
+		selected := make([]contracts.AdminSubServerObject, 0, len(selectedObjNSet))
 		for _, obj := range rows {
 			if _, ok := selectedObjNSet[obj.ObjN]; ok {
 				selected = append(selected, obj)

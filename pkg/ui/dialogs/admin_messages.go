@@ -11,16 +11,16 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowAdminMessagesDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowAdminMessagesDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Управління повідомленнями адміністратора")
 	win.Resize(fyne.NewSize(1100, 640))
 
 	var (
-		regularMessages []data.AdminMessage
-		adminMessages   []data.AdminMessage
+		regularMessages []contracts.AdminMessage
+		adminMessages   []contracts.AdminMessage
 		selectedLeft    = -1
 		selectedRight   = -1
 	)
@@ -33,7 +33,7 @@ func ShowAdminMessagesDialog(parent fyne.Window, provider data.AdminProvider) {
 	filterEntry := widget.NewEntry()
 	filterEntry.SetPlaceHolder("Фільтр (текст / hex / код)")
 
-	messageDisplay := func(m data.AdminMessage) string {
+	messageDisplay := func(m contracts.AdminMessage) string {
 		idText := "?"
 		if m.MessageID != nil {
 			idText = strconv.FormatInt(*m.MessageID, 10)

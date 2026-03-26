@@ -14,7 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/config"
-	"obj_catalog_fyne_v3/pkg/data"
+	data "obj_catalog_fyne_v3/pkg/contracts"
 	objexport "obj_catalog_fyne_v3/pkg/export"
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"

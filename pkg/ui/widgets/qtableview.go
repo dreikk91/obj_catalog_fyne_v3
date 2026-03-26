@@ -26,8 +26,8 @@ const (
 
 const (
 	defaultContentColumnWidth = float32(96)
-	minContentColumnWidth     = 24
-	minContentRowHeight       = 20
+	minContentColumnWidth     = 16
+	minContentRowHeight       = 16
 )
 
 // PenStyle is a compatibility enum similar to Qt grid pen style.

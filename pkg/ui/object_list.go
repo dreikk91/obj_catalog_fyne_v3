@@ -14,7 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/config"
-	"obj_catalog_fyne_v3/pkg/data"
+	data "obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui/widgets"
@@ -55,8 +55,8 @@ type ObjectListPanel struct {
 }
 
 const (
-	minObjectListRowHeight = 20
-	objectListRowDelta     = 8
+	minObjectListRowHeight = 0
+	objectListRowDelta     = 0
 )
 
 type objectListTableModel struct {

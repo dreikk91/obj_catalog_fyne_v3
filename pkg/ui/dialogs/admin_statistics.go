@@ -13,7 +13,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/data"
+	data "obj_catalog_fyne_v3/pkg/contracts"
 	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
 )
 
@@ -87,7 +87,8 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 	}
 
 	var (
-		rows []data.AdminStatisticsRow
+		rows    []data.AdminStatisticsRow
+		loading bool
 	)
 
 	columns := []string{
@@ -189,11 +190,10 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		tableView.SetColumnWidth(i, int(columnWidths[i]))
 	}
 
-	sortRows := func() {
-		sortMode := sortSelect.Selected
-		sort.SliceStable(rows, func(i, j int) bool {
-			left := rows[i]
-			right := rows[j]
+	sortRowsByMode := func(items []data.AdminStatisticsRow, sortMode string) {
+		sort.SliceStable(items, func(i, j int) bool {
+			left := items[i]
+			right := items[j]
 			switch sortMode {
 			case "№ об'єкта ↓":
 				return left.ObjN > right.ObjN
@@ -230,14 +230,18 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		})
 	}
 
-	updateSummary := func() {
-		total := len(rows)
+	sortRows := func() {
+		sortRowsByMode(rows, sortSelect.Selected)
+	}
+
+	buildSummaryText := func(items []data.AdminStatisticsRow) string {
+		total := len(items)
 		online := 0
 		offline := 0
 		alarm := 0
 		tech := 0
 		blocked := 0
-		for _, it := range rows {
+		for _, it := range items {
 			if it.IsConnState > 0 {
 				online++
 			} else {
@@ -253,10 +257,10 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 				blocked++
 			}
 		}
-		summaryLabel.SetText(fmt.Sprintf(
+		return fmt.Sprintf(
 			"Всього: %d | Зв'язок: %d | Без зв'язку: %d | Тривога: %d | Тех: %d | Блоковані: %d",
 			total, online, offline, alarm, tech, blocked,
-		))
+		)
 	}
 
 	parseLimit := func() int {
@@ -325,18 +329,81 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		return filter
 	}
 
+	var executeBtn *widget.Button
+	var refreshBtn *widget.Button
+	var fitColumnsBtn *widget.Button
+	var exportBtn *widget.Button
+	setLoading := func(on bool) {
+		if executeBtn != nil {
+			if on {
+				executeBtn.Disable()
+			} else {
+				executeBtn.Enable()
+			}
+		}
+		if refreshBtn != nil {
+			if on {
+				refreshBtn.Disable()
+			} else {
+				refreshBtn.Enable()
+			}
+		}
+		if fitColumnsBtn != nil {
+			if on {
+				fitColumnsBtn.Disable()
+			} else {
+				fitColumnsBtn.Enable()
+			}
+		}
+		if exportBtn != nil {
+			if on {
+				exportBtn.Disable()
+			} else {
+				exportBtn.Enable()
+			}
+		}
+	}
+
 	reload := func() {
-		loaded, err := provider.CollectObjectStatistics(buildFilter(), parseLimit())
-		if err != nil {
-			dialog.ShowError(err, win)
-			statusLabel.SetText("Не вдалося зібрати статистику")
+		if loading {
 			return
 		}
-		rows = loaded
-		sortRows()
-		table.Refresh()
-		updateSummary()
-		statusLabel.SetText(fmt.Sprintf("Завантажено записів: %d", len(rows)))
+
+		filter := buildFilter()
+		limit := parseLimit()
+		sortMode := sortSelect.Selected
+
+		loading = true
+		setLoading(true)
+		statusLabel.SetText("Виконується збір статистики...")
+		summaryLabel.SetText("Зачекайте, виконується запит до БД")
+
+		go func() {
+			loaded, err := provider.CollectObjectStatistics(filter, limit)
+			if err == nil {
+				sortRowsByMode(loaded, sortMode)
+			}
+			summaryText := ""
+			if err == nil {
+				summaryText = buildSummaryText(loaded)
+			}
+
+			fyne.Do(func() {
+				loading = false
+				setLoading(false)
+
+				if err != nil {
+					dialog.ShowError(err, win)
+					statusLabel.SetText("Не вдалося зібрати статистику")
+					return
+				}
+
+				rows = loaded
+				table.Refresh()
+				summaryLabel.SetText(summaryText)
+				statusLabel.SetText(fmt.Sprintf("Завантажено записів: %d", len(rows)))
+			})
+		}()
 	}
 
 	loadReferenceOptions := func() {
@@ -377,12 +444,12 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		}
 	}
 
-	executeBtn := widget.NewButton("Виконати", reload)
-	refreshBtn := widget.NewButton("Оновити", reload)
-	fitColumnsBtn := widget.NewButton("Автоширина", func() {
+	executeBtn = widget.NewButton("Виконати", reload)
+	refreshBtn = widget.NewButton("Оновити", reload)
+	fitColumnsBtn = widget.NewButton("Автоширина", func() {
 		tableView.ResizeColumnsToContents()
 	})
-	exportBtn := widget.NewButton("Експорт CSV", func() {
+	exportBtn = widget.NewButton("Експорт CSV", func() {
 		dialog.NewFileSave(func(uc fyne.URIWriteCloser, err error) {
 			if err != nil {
 				dialog.ShowError(err, win)
@@ -416,6 +483,9 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
 
 	sortSelect.OnChanged = func(string) {
+		if loading {
+			return
+		}
 		sortRows()
 		table.Refresh()
 	}

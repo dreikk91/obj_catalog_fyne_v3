@@ -140,6 +140,8 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		}
 	}
 
+	var postReload func() // called after each reload; set later once countLabel exists
+
 	reload := func(reselectID int64) {
 		loaded, err := cfg.List()
 		if err != nil {
@@ -149,6 +151,9 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		}
 		items = loaded
 		list.Refresh()
+		if postReload != nil {
+			postReload()
+		}
 
 		selectedIndex = -1
 		selectedID = 0
@@ -176,7 +181,35 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		codeEntry.SetText("")
 	}
 
-	addBtn := widget.NewButton("Додати", func() {
+	countLabel := widget.NewLabel("")
+	updateCountLabel := func() {
+		countLabel.SetText(fmt.Sprintf("Записів: %d", len(items)))
+	}
+
+	// Editor card with dynamic title
+	editorCard := widget.NewCard("", "", widget.NewLabel(""))
+	updateEditorCardTitle := func() {
+		switch mode {
+		case "add":
+			editorCard.SetTitle("Новий запис")
+		case "edit":
+			name := strings.TrimSpace(nameEntry.Text)
+			if name == "" {
+				name = "..."
+			}
+			editorCard.SetTitle("Редагування: " + name)
+		default:
+			editorCard.SetTitle("Перегляд")
+		}
+	}
+	origSetMode := setMode
+	setMode = func(next string) {
+		origSetMode(next)
+		updateEditorCardTitle()
+	}
+	postReload = updateCountLabel // wire up now that countLabel/updateCountLabel exist
+
+	addBtn := makeIconButton("Додати", iconAdd(), widget.MediumImportance, func() {
 		selectedIndex = -1
 		selectedID = 0
 		clearEditor()
@@ -185,7 +218,7 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		statusLabel.SetText("Режим додавання")
 	})
 
-	editBtn := widget.NewButton("Змінити", func() {
+	editBtn := makeIconButton("Змінити", iconEdit(), widget.MediumImportance, func() {
 		if selectedID == 0 {
 			statusLabel.SetText("Спочатку виберіть запис")
 			return
@@ -194,7 +227,7 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		statusLabel.SetText("Режим редагування")
 	})
 
-	deleteBtn := widget.NewButton("Видалити", func() {
+	deleteBtn := makeDangerButton("Видалити", func() {
 		if selectedID == 0 {
 			statusLabel.SetText("Спочатку виберіть запис")
 			return
@@ -219,8 +252,9 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 			win,
 		)
 	})
+	deleteBtn.Importance = widget.DangerImportance
 
-	applyBtn := widget.NewButton("Застосувати", func() {
+	applyBtn := makePrimaryButton("Застосувати", func() {
 		name := strings.TrimSpace(nameEntry.Text)
 		if name == "" {
 			statusLabel.SetText("Поле назви не може бути порожнім")
@@ -268,7 +302,7 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		reload(selectedID)
 	})
 
-	cancelBtn := widget.NewButton("Відміна", func() {
+	cancelBtn := makeLowButton("Відміна", func() {
 		setMode("view")
 		if selectedIndex >= 0 && selectedIndex < len(items) {
 			nameEntry.SetText(items[selectedIndex].Name)
@@ -285,7 +319,7 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		statusLabel.SetText("Зміни скасовано")
 	})
 
-	moveUpBtn := widget.NewButton("Підвищити", func() {
+	moveUpBtn := makeIconButton("Підвищити", iconUp(), widget.LowImportance, func() {
 		if !cfg.SupportMove || cfg.Move == nil {
 			return
 		}
@@ -302,7 +336,7 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		statusLabel.SetText("Запис переміщено вище")
 	})
 
-	moveDownBtn := widget.NewButton("Понизити", func() {
+	moveDownBtn := makeIconButton("Понизити", iconDown(), widget.LowImportance, func() {
 		if !cfg.SupportMove || cfg.Move == nil {
 			return
 		}
@@ -319,11 +353,12 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		statusLabel.SetText("Запис переміщено нижче")
 	})
 
-	closeBtn := widget.NewButton("Закрити", func() {
+	closeBtn := makeIconButton("Закрити", iconClose(), widget.LowImportance, func() {
 		win.Close()
 	})
 
 	controls := []fyne.CanvasObject{
+		makeSectionHeader("Дії"),
 		addBtn,
 		editBtn,
 		deleteBtn,
@@ -341,31 +376,48 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		formItems = append(formItems, widget.NewFormItem(cfg.CodeLabel, codeEntry))
 	}
 	editorForm := widget.NewForm(formItems...)
+	editorCard.Content = container.NewVBox(
+		editorForm,
+		container.NewHBox(applyBtn, cancelBtn),
+	)
 
 	listFrame := container.NewBorder(
-		widget.NewLabel("Список:"),
+		container.NewHBox(widget.NewLabel("Список:"), countLabel),
 		nil, nil, nil,
 		list,
 	)
 
 	main := container.NewHSplit(listFrame, rightPanel)
-	main.SetOffset(0.78)
-
-	bottom := container.NewBorder(
-		nil, nil, nil,
-		container.NewHBox(applyBtn, cancelBtn),
-		editorForm,
-	)
+	main.SetOffset(0.70)
 
 	content := container.NewBorder(
 		nil,
-		container.NewVBox(widget.NewSeparator(), bottom, widget.NewSeparator(), statusLabel),
+		container.NewVBox(
+			widget.NewSeparator(),
+			editorCard,
+			widget.NewSeparator(),
+			makeStatusLabel(""),
+		),
+		nil, nil,
+		main,
+	)
+	// replace the plain statusLabel in the bottom with the actual statusLabel
+	_ = statusLabel // kept for backward compat; reuse via closure
+	content = container.NewBorder(
+		nil,
+		container.NewVBox(
+			widget.NewSeparator(),
+			editorCard,
+			widget.NewSeparator(),
+			statusLabel,
+		),
 		nil, nil,
 		main,
 	)
 
 	win.SetContent(content)
 	setMode("view")
+	updateCountLabel()
 	reload(0)
 	win.Show()
 }

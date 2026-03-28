@@ -59,7 +59,7 @@ func ShowSettingsDialog(
 	exportDirEntry.SetText(uiCfg.ExportDir)
 	exportDirEntry.SetPlaceHolder("Папка запуску програми")
 
-	browseExportDirBtn := widget.NewButton("Обрати...", func() {
+	browseExportDirBtn := makeIconButton("Обрати...", iconFolder(), widget.MediumImportance, func() {
 		dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil {
 				dialog.ShowError(err, win)
@@ -72,7 +72,7 @@ func ShowSettingsDialog(
 		}, win).Show()
 	})
 
-	clearExportDirBtn := widget.NewButton("Очистити", func() {
+	clearExportDirBtn := makeIconButton("Очистити", iconClear(), widget.LowImportance, func() {
 		exportDirEntry.SetText("")
 	})
 
@@ -84,7 +84,7 @@ func ShowSettingsDialog(
 		exportDirEntry,
 	)
 
-	colorsBtn := widget.NewButton("Налаштувати кольори...", func() {
+	colorsBtn := makeIconButton("Налаштувати кольори...", iconSearch(), widget.LowImportance, func() {
 		ShowColorPaletteDialog(win, isDarkTheme, onColorsChanged)
 	})
 

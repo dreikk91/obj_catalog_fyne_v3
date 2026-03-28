@@ -174,9 +174,11 @@ func ShowStatisticsDialog(parent fyne.Window, provider contracts.AdminProvider) 
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			lbl := obj.(*widget.Label)
 			if id.Row == 0 {
+				lbl.TextStyle = fyne.TextStyle{Bold: true}
 				lbl.SetText(columns[id.Col])
 				return
 			}
+			lbl.TextStyle = fyne.TextStyle{}
 			idx := id.Row - 1
 			if idx < 0 || idx >= len(rows) {
 				lbl.SetText("")
@@ -386,9 +388,9 @@ func ShowStatisticsDialog(parent fyne.Window, provider contracts.AdminProvider) 
 		}
 	}
 
-	executeBtn := widget.NewButton("Виконати", reload)
-	refreshBtn := widget.NewButton("Оновити", reload)
-	exportBtn := widget.NewButton("Експорт CSV", func() {
+	executeBtn := makePrimaryButton("Виконати", reload)
+	refreshBtn := makeIconButton("Оновити", iconRefresh(), widget.MediumImportance, reload)
+	exportBtn := makeIconButton("Експорт CSV", iconExport(), widget.LowImportance, func() {
 		dialog.NewFileSave(func(uc fyne.URIWriteCloser, err error) {
 			if err != nil {
 				dialog.ShowError(err, win)
@@ -419,7 +421,7 @@ func ShowStatisticsDialog(parent fyne.Window, provider contracts.AdminProvider) 
 			statusLabel.SetText(fmt.Sprintf("Експортовано: %s", uriPathToLocalPath(uc.URI().Path())))
 		}, win).Show()
 	})
-	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
+	closeBtn := makeIconButton("Закрити", iconClose(), widget.LowImportance, func() { win.Close() })
 
 	sortSelect.OnChanged = func(string) {
 		sortRows()
@@ -428,7 +430,7 @@ func ShowStatisticsDialog(parent fyne.Window, provider contracts.AdminProvider) 
 	searchEntry.OnSubmitted = func(string) { reload() }
 	limitEntry.OnSubmitted = func(string) { reload() }
 
-	filters := container.NewVBox(
+	filtersCard := widget.NewCard("Фільтри", "", container.NewVBox(
 		container.NewHBox(
 			widget.NewLabel("Підключення:"),
 			connectionRadio,
@@ -462,12 +464,11 @@ func ShowStatisticsDialog(parent fyne.Window, provider contracts.AdminProvider) 
 			),
 			searchEntry,
 		),
-		widget.NewSeparator(),
-		summaryLabel,
-	)
+	))
+	summaryCard := widget.NewCard("Зведення", "", summaryLabel)
 
 	content := container.NewBorder(
-		filters,
+		container.NewVBox(filtersCard, summaryCard),
 		container.NewHBox(statusLabel, layout.NewSpacer(), widget.NewLabel(time.Now().Format("02.01.2006")), closeBtn),
 		nil, nil,
 		table,

@@ -1262,6 +1262,7 @@ func (p *DBDataProvider) CollectObjectStatistics(filter AdminStatisticsFilter, l
 		Notes1            *string `db:"NOTES1"`
 		ObjChan           *int64  `db:"OBJCHAN"`
 		PpkID             *int64  `db:"PPKID"`
+		PpkName           *string `db:"PPK_NAME"`
 		GsmPhone1         *string `db:"GSMPHONE"`
 		GsmPhone2         *string `db:"GSMPHONE2"`
 		GsmHiddenN        *int64  `db:"GSMHIDENINT"`
@@ -1296,6 +1297,7 @@ func (p *DBDataProvider) CollectObjectStatistics(filter AdminStatisticsFilter, l
 			COALESCE(oi.NOTES1, '') AS NOTES1,
 			COALESCE(os.OBJCHAN, oi.OBJCHAN, 0) AS OBJCHAN,
 			COALESCE(oi.PPKID, 0) AS PPKID,
+			COALESCE(TRIM(ppk.PANELMARK1), '') AS PPK_NAME,
 			COALESCE(oi.GSMPHONE, '') AS GSMPHONE,
 			COALESCE(oi.GSMPHONE2, '') AS GSMPHONE2,
 			COALESCE(oi.GSMHIDENINT, 0) AS GSMHIDENINT,
@@ -1317,6 +1319,7 @@ func (p *DBDataProvider) CollectObjectStatistics(filter AdminStatisticsFilter, l
 		LEFT JOIN OBJECTS_STATE os ON os.OBJUIN = oi.OBJUIN
 		LEFT JOIN OBJTYPES ot ON ot.ID = oi.OBJTYPEID
 		LEFT JOIN OBJREGS rg ON rg.ID = oi.OBJREGID
+		LEFT JOIN PPK ppk ON ppk.ID = oi.PPKID - 100
 		WHERE oi.OBJN > 36
 	`, limit)
 
@@ -1414,6 +1417,7 @@ func (p *DBDataProvider) CollectObjectStatistics(filter AdminStatisticsFilter, l
 			Notes:          trimString(r.Notes1),
 			ChannelCode:    ptrToInt64(r.ObjChan),
 			PPKID:          ptrToInt64(r.PpkID),
+			PPKName:        trimString(r.PpkName),
 			GSMPhone1:      trimString(r.GsmPhone1),
 			GSMPhone2:      trimString(r.GsmPhone2),
 			GSMHiddenN:     ptrToInt64(r.GsmHiddenN),

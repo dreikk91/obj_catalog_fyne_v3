@@ -42,6 +42,7 @@ type AdminStatisticsRow struct {
 	Notes          string
 	ChannelCode    int64
 	PPKID          int64
+	PPKName        string
 	GSMPhone1      string
 	GSMPhone2      string
 	GSMHiddenN     int64

@@ -527,7 +527,7 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 	)
 	channelAndPPKRow := container.NewGridWithColumns(2, channelCodeSelect, ppkSelect)
 
-	saveBtn := widget.NewButton("Зберегти", func() {
+	saveBtn := makePrimaryButton("Зберегти", func() {
 		card, err := buildCardFromUI()
 		if err != nil {
 			statusLabel.SetText(err.Error())
@@ -563,7 +563,7 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 		win.Close()
 	})
 
-	cancelBtn := widget.NewButton("Відміна", func() { win.Close() })
+	cancelBtn := makeLowButton("Відміна", func() { win.Close() })
 
 	mainInfoForm := widget.NewForm(
 		widget.NewFormItem("№ об'єкта:", objnEntry),
@@ -601,6 +601,7 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 	objectTab := container.NewVScroll(container.NewVBox(
 		mainInfoForm,
 		widget.NewSeparator(),
+		makeSectionHeader("Технічні параметри"),
 		ppkParamsRow,
 		widget.NewSeparator(),
 		subserverCard,
@@ -647,7 +648,10 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 
 	content := container.NewBorder(
 		nil,
-		container.NewHBox(statusLabel, layout.NewSpacer(), saveBtn, cancelBtn),
+		container.NewVBox(
+			widget.NewSeparator(),
+			container.NewHBox(statusLabel, layout.NewSpacer(), saveBtn, cancelBtn),
+		),
 		nil, nil,
 		tabs,
 	)

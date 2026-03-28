@@ -34,8 +34,7 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 	}
 
 	win := fyne.CurrentApp().NewWindow(title)
-	// Орієнтуємось на форму frmObjChange.dfm (D:\\most_output).
-	win.Resize(fyne.NewSize(980, 760))
+	win.Resize(fyne.NewSize(800, 600))
 
 	statusLabel := widget.NewLabel("Готово")
 
@@ -72,10 +71,6 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 	sim2UsageLabel.Wrapping = fyne.TextWrapWord
 	hiddenNEntry := widget.NewEntry()
 	hiddenNEntry.SetPlaceHolder("Прихований номер (до 4 цифр)")
-	hiddenNRow := container.NewHBox(
-		widget.NewLabel("Для каналу GPRS (5):"),
-		container.NewGridWrap(fyne.NewSize(140, 36), hiddenNEntry),
-	)
 
 	testControlCheck := widget.NewCheck("Контролювати тестові повідомлення", nil)
 	testIntervalEntry := widget.NewEntry()
@@ -92,8 +87,16 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 	ppkLabelToID := map[string]int64{}
 	allPPKItems := make([]contracts.PPKConstructorItem, 0)
 	subServerLabelToBind := map[string]string{}
+	hiddenNCard := widget.NewCard(
+		"Прихований номер",
+		"",
+		container.NewVBox(
+			widget.NewLabel("Номер (до 4 цифр):"),
+			hiddenNEntry,
+		),
+	)
 
-	autoUpdatingFullName := false
+	autoUpdatingFullName := true
 	fullNameSyncedWithShort := true
 	fullNameEntry.OnChanged = func(text string) {
 		if autoUpdatingFullName {
@@ -125,21 +128,17 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 	updateChannelSpecificControls := func() {
 		channelCode := channelLabelToCode[channelCodeSelect.Selected]
 		if channelCode == 5 {
-			hiddenNRow.Show()
+			hiddenNCard.Show()
 			hiddenNEntry.Enable()
 		} else {
-			hiddenNRow.Hide()
+			hiddenNCard.Hide()
 			hiddenNEntry.Disable()
 		}
 	}
 	refreshPPKOptionsByChannel := func(preferredID int64) {
-		channelCode := channelLabelToCode[channelCodeSelect.Selected]
 		ppkLabelToID = map[string]int64{"—": 0}
 		ppkOptions := []string{"—"}
 		for _, item := range allPPKItems {
-			if channelCode > 0 && item.Channel > 0 && item.Channel != channelCode {
-				continue
-			}
 			label := strings.TrimSpace(item.Name)
 			if label == "" {
 				label = fmt.Sprintf("ППК %d", item.ID)
@@ -151,9 +150,19 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 		ppkSelect.Options = ppkOptions
 		ppkSelect.Refresh()
 
+		preferredIDs := make([]int64, 0, 3)
 		if preferredID > 0 {
+			preferredIDs = append(preferredIDs, preferredID)
+			if preferredID > 100 {
+				preferredIDs = append(preferredIDs, preferredID-100)
+			}
+			if preferredID < 100 {
+				preferredIDs = append(preferredIDs, preferredID+100)
+			}
+		}
+		for _, wantedID := range preferredIDs {
 			for _, opt := range ppkSelect.Options {
-				if ppkLabelToID[opt] == preferredID {
+				if ppkLabelToID[opt] == wantedID {
 					ppkSelect.SetSelected(opt)
 					return
 				}
@@ -346,7 +355,7 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 		refreshPPKOptionsByChannel(0)
 
 		setSelectByID(objectTypeSelect, objectTypeSelect.Options, typeLabelToID, 0)
-		setSelectByID(regionSelect, regionSelect.Options, regionLabelToID, 0)
+		setSelectByID(regionSelect, regionSelect.Options, regionLabelToID, 1)
 		subServerASelect.SetSelected("—")
 		subServerBSelect.SetSelected("—")
 	}
@@ -389,8 +398,16 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 		}
 		enableTestControls(card.TestControlEnabled)
 
-		setSelectByID(objectTypeSelect, objectTypeSelect.Options, typeLabelToID, card.ObjTypeID)
-		setSelectByID(regionSelect, regionSelect.Options, regionLabelToID, card.ObjRegID)
+		objTypeID := card.ObjTypeID
+		if objTypeID <= 0 && len(objectTypeSelect.Options) > 0 {
+			objTypeID = typeLabelToID[objectTypeSelect.Options[0]]
+		}
+		setSelectByID(objectTypeSelect, objectTypeSelect.Options, typeLabelToID, objTypeID)
+		regionID := card.ObjRegID
+		if regionID <= 0 {
+			regionID = 1
+		}
+		setSelectByID(regionSelect, regionSelect.Options, regionLabelToID, regionID)
 		setSubServerByBind(subServerASelect, card.SubServerA)
 		setSubServerByBind(subServerBSelect, card.SubServerB)
 		updateChannelSpecificControls()
@@ -497,6 +514,19 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 	datePickBtn.Importance = widget.LowImportance
 	dateRow := container.NewBorder(nil, nil, nil, datePickBtn, dateEntry)
 
+	objectAndTypeRow := container.NewGridWithColumns(
+		2,
+		shortNameEntry,
+		objectTypeSelect,
+	)
+	phoneContractDateRow := container.NewGridWithColumns(
+		3,
+		phonesEntry,
+		contractEntry,
+		dateRow,
+	)
+	channelAndPPKRow := container.NewGridWithColumns(2, channelCodeSelect, ppkSelect)
+
 	saveBtn := widget.NewButton("Зберегти", func() {
 		card, err := buildCardFromUI()
 		if err != nil {
@@ -535,36 +565,45 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 
 	cancelBtn := widget.NewButton("Відміна", func() { win.Close() })
 
-	formTop := widget.NewForm(
-		widget.NewFormItem("Об'єктовий номер:", objnEntry),
-		widget.NewFormItem("Об'єкт:", shortNameEntry),
+	mainInfoForm := widget.NewForm(
+		widget.NewFormItem("№ об'єкта:", objnEntry),
+		widget.NewFormItem("Об'єкт / Тип:", objectAndTypeRow),
 		widget.NewFormItem("Повна назва:", fullNameEntry),
-		widget.NewFormItem("Тип об'єкта:", objectTypeSelect),
-		widget.NewFormItem("Район:", regionSelect),
+		widget.NewFormItem("Телефони / Договір / Дата:", phoneContractDateRow),
 		widget.NewFormItem("Адреса:", addressEntry),
-		widget.NewFormItem("Телефони:", phonesEntry),
-		widget.NewFormItem("Договір:", contractEntry),
-		widget.NewFormItem("Дата:", dateRow),
-	)
-
-	formBottom := widget.NewForm(
 		widget.NewFormItem("Розташування:", locationEntry),
 		widget.NewFormItem("Інформація:", notesEntry),
-		widget.NewFormItem("Канал:", channelCodeSelect),
-		widget.NewFormItem("ППК:", ppkSelect),
-		widget.NewFormItem("Підсервер A:", subServerASelect),
-		widget.NewFormItem("Підсервер B:", subServerBSelect),
-		widget.NewFormItem("SIM 1:", container.NewVBox(sim1Entry, sim1UsageLabel)),
-		widget.NewFormItem("SIM 2:", container.NewVBox(sim2Entry, sim2UsageLabel)),
-		widget.NewFormItem("Контроль GPRS:", container.NewHBox(testControlCheck, widget.NewLabel("Інтервал (хв.):"), container.NewGridWrap(fyne.NewSize(100, 36), testIntervalEntry))),
+		widget.NewFormItem("Район:", regionSelect),
+		widget.NewFormItem("Канал / ППК:", channelAndPPKRow),
 	)
 
+	testControlForm := widget.NewForm(
+		widget.NewFormItem("Контролювати:", testControlCheck),
+		widget.NewFormItem("Інтервал, хв.:", container.NewGridWrap(fyne.NewSize(90, 36), testIntervalEntry)),
+	)
+	testControlCard := widget.NewCard("Контроль GPRS/тестів", "", testControlForm)
+
+	simPhonesForm := widget.NewForm(
+		widget.NewFormItem("SIM1:", container.NewVBox(sim1Entry, sim1UsageLabel)),
+		widget.NewFormItem("SIM2:", container.NewVBox(sim2Entry, sim2UsageLabel)),
+	)
+	
+	simPhonesCard := widget.NewCard("Телефони", "", simPhonesForm)
+
+	subserverForm := widget.NewForm(
+		widget.NewFormItem("Підсервер A:", subServerASelect),
+		widget.NewFormItem("Підсервер B:", subServerBSelect),
+	)
+	subserverCard := widget.NewCard("Підсервери", "", subserverForm)
+
+	ppkParamsRow := container.NewGridWithColumns(3, testControlCard, simPhonesCard, hiddenNCard)
+
 	objectTab := container.NewVScroll(container.NewVBox(
-		formTop,
+		mainInfoForm,
 		widget.NewSeparator(),
-		formBottom,
+		ppkParamsRow,
 		widget.NewSeparator(),
-		hiddenNRow,
+		subserverCard,
 	))
 
 	placeholderText := "Вкладка буде перенесена за формами з D:\\most_output (frmObjChange.dfm)."
@@ -578,7 +617,24 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminProvider, 
 	if isEdit {
 		personalTab = buildObjectPersonalTab(win, provider, *editObjN, statusLabel)
 		zonesTab = buildObjectZonesTab(win, provider, *editObjN, statusLabel)
-		additionalTab = buildObjectAdditionalTab(win, provider, *editObjN, statusLabel)
+		additionalTab = buildObjectAdditionalTab(
+			win,
+			provider,
+			*editObjN,
+			statusLabel,
+			func() string {
+				return strings.TrimSpace(addressEntry.Text)
+			},
+			func(regionID int64) bool {
+				for _, opt := range regionSelect.Options {
+					if regionLabelToID[opt] == regionID {
+						regionSelect.SetSelected(opt)
+						return true
+					}
+				}
+				return false
+			},
+		)
 	}
 
 	tabs := container.NewAppTabs(

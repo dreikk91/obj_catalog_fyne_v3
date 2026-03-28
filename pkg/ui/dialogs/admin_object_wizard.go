@@ -19,7 +19,7 @@ import (
 
 func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminProvider, onSaved func(objn int64)) {
 	win := fyne.CurrentApp().NewWindow("Майстер створення об'єкта")
-	win.Resize(fyne.NewSize(980, 760))
+	win.Resize(fyne.NewSize(1024, 768))
 
 	statusLabel := widget.NewLabel("Крок 1/6: дані об'єкта")
 
@@ -129,13 +129,9 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminProvi
 		}
 	}
 	refreshPPKOptionsByChannel := func(preferredID int64) {
-		channelCode := channelLabelToCode[channelCodeSelect.Selected]
 		ppkLabelToID = map[string]int64{"—": 0}
 		ppkOptions := []string{"—"}
 		for _, item := range allPPKItems {
-			if channelCode > 0 && item.Channel > 0 && item.Channel != channelCode {
-				continue
-			}
 			label := strings.TrimSpace(item.Name)
 			if label == "" {
 				label = fmt.Sprintf("ППК %d", item.ID)
@@ -147,9 +143,19 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminProvi
 		ppkSelect.Options = ppkOptions
 		ppkSelect.Refresh()
 
+		preferredIDs := make([]int64, 0, 3)
 		if preferredID > 0 {
+			preferredIDs = append(preferredIDs, preferredID)
+			if preferredID > 100 {
+				preferredIDs = append(preferredIDs, preferredID-100)
+			}
+			if preferredID < 100 {
+				preferredIDs = append(preferredIDs, preferredID+100)
+			}
+		}
+		for _, wantedID := range preferredIDs {
 			for _, opt := range ppkSelect.Options {
-				if ppkLabelToID[opt] == preferredID {
+				if ppkLabelToID[opt] == wantedID {
 					ppkSelect.SetSelected(opt)
 					return
 				}
@@ -327,7 +333,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminProvi
 		refreshPPKOptionsByChannel(0)
 
 		setSelectByID(objectTypeSelect, objectTypeSelect.Options, typeLabelToID, 0)
-		setSelectByID(regionSelect, regionSelect.Options, regionLabelToID, 0)
+		setSelectByID(regionSelect, regionSelect.Options, regionLabelToID, 1)
 		subServerASelect.SetSelected("—")
 		subServerBSelect.SetSelected("—")
 		latitudeEntry.SetText("")

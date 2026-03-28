@@ -25,6 +25,7 @@ import (
 	apptheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
+	appversion "obj_catalog_fyne_v3/pkg/version"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
@@ -36,6 +37,7 @@ type Application struct {
 	mainWindow     fyne.Window
 	db             *sqlx.DB
 	dbHealthCancel context.CancelFunc
+	isShuttingDown bool
 
 	// Поточний вибраний об'єкт (для заголовка, контекстних фільтрів тощо)
 	currentObject *models.Object
@@ -60,15 +62,20 @@ type Application struct {
 	isDarkTheme bool
 
 	statusLabel *widget.Label
+	versionInfo appversion.Info
 }
 
 // updateWindowTitle оновлює заголовок вікна з урахуванням
 // вибраного об'єкта та кількості активних тривог.
 func (a *Application) updateWindowTitle() {
+	versionLabel := ""
+	if strings.TrimSpace(a.versionInfo.Label()) != "" {
+		versionLabel = fmt.Sprintf(" [%s]", a.versionInfo.Label())
+	}
 	base := "Каталог об'єктів"
 
 	if a.currentObject != nil {
-		base = fmt.Sprintf("Каталог об'єктів — %s (№%d)", a.currentObject.Name, a.currentObject.ID)
+		base = fmt.Sprintf("Каталог об'єктів%s — %s (№%d)", versionLabel, a.currentObject.Name, a.currentObject.ID)
 	}
 	if a.currentAlarmsTotal > 0 {
 		base = fmt.Sprintf("%s — Тривоги: %d", base, a.currentAlarmsTotal)
@@ -86,6 +93,8 @@ const (
 
 // NewApplication створює новий екземпляр додатку
 func NewApplication() *Application {
+	ver := appversion.Current()
+
 	// Ініціалізація Fyne з унікальним ID для збереження налаштувань
 	log.Info().Msg("Ініціалізація Fyne додатку...")
 	fyneApp := app.NewWithID("com.most.obj_catalog_fyne_v3")
@@ -96,7 +105,7 @@ func NewApplication() *Application {
 
 	// Створюємо головне вікно
 	log.Debug().Msg("Створення головного вікна...")
-	mainWindow := fyneApp.NewWindow("Каталог об'єктів")
+	mainWindow := fyneApp.NewWindow(fmt.Sprintf("Каталог об'єктів [%s]", ver.Label()))
 	mainWindow.Resize(fyne.NewSize(1024, 768))
 	log.Debug().Str("size", "1024x768").Msg("Головне вікно налаштовано")
 
@@ -129,8 +138,10 @@ func NewApplication() *Application {
 		dataProvider:   dataProvider,
 		// mockData:   mockData,
 		isDarkTheme: isDark,
+		versionInfo: ver,
 	}
 	log.Debug().Msg("Структура додатку готова")
+	log.Info().Str("version", ver.String()).Msg("Версія застосунку")
 
 	// Встановлюємо тему
 	log.Debug().Msg("Встановлення теми...")
@@ -313,7 +324,7 @@ func (a *Application) buildUI() {
 		)
 	})
 
-	title := widget.NewLabel("Каталог об'єктів")
+	title := widget.NewLabel(fmt.Sprintf("Каталог об'єктів"))
 	toolbar := container.NewHBox(title, layout.NewSpacer(), themeBtn, settingsBtn)
 
 	// Таби: показуємо найважливіше першим (тривоги), додаємо лічильники.
@@ -408,8 +419,23 @@ func (a *Application) buildUI() {
 	// Запам'ятовуємо ширину (offset) списку об'єктів між запусками.
 	// Split не має callback на drag, тому зберігаємо при закритті вікна.
 	a.mainWindow.SetCloseIntercept(func() {
+		if a.isShuttingDown {
+			return
+		}
+		a.isShuttingDown = true
+
 		a.fyneApp.Preferences().SetFloat(prefKeyObjectListSplitOffset, rootSplit.Offset)
-		a.mainWindow.Close()
+
+		// Закриваємо всі додаткові вікна (адмінські/службові) перед завершенням додатку.
+		otherWindows := append([]fyne.Window(nil), a.fyneApp.Driver().AllWindows()...)
+		for _, w := range otherWindows {
+			if w == nil || w == a.mainWindow {
+				continue
+			}
+			w.Close()
+		}
+
+		a.fyneApp.Quit()
 	})
 
 	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyT, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
@@ -724,7 +750,13 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	adminMenu.Items = append(adminMenu.Items, fyne.NewMenuItem("Довідники", nil))
 	adminMenu.Items[len(adminMenu.Items)-1].ChildMenu = adminDirectories
 
-	return fyne.NewMainMenu(adminMenu)
+	helpMenu := fyne.NewMenu("Довідка",
+		fyne.NewMenuItem("Про версію", func() {
+			dialogs.ShowInfoDialog(a.mainWindow, "Про версію", a.versionInfo.FullText())
+		}),
+	)
+
+	return fyne.NewMainMenu(adminMenu, helpMenu)
 }
 
 // startGettingEvents запускає симуляцію подій

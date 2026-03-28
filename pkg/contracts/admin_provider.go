@@ -23,6 +23,8 @@ type AdminProvider interface {
 	ListMessages(protocolID *int64, filter string) ([]AdminMessage, error)
 	SetMessageAdminOnly(uin int64, adminOnly bool) error
 	SetMessageCategory(uin int64, sc1 *int64) error
+	List220VMessageBuckets(protocolIDs []int64, filter string) (Admin220VMessageBuckets, error)
+	SetMessage220VMode(uin int64, mode Admin220VMode) error
 
 	ListDisplayBlockObjects(filter string) ([]DisplayBlockObject, error)
 	SetDisplayBlockMode(objn int64, mode DisplayBlockMode) error

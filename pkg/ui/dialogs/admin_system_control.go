@@ -20,7 +20,7 @@ import (
 
 func ShowAdminSystemControlDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Контроль системи")
-	win.Resize(fyne.NewSize(1120, 720))
+	win.Resize(fyne.NewSize(1024, 768))
 
 	var (
 		issues       []contracts.AdminDataCheckIssue

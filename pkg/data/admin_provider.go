@@ -23,9 +23,17 @@ type AdminObjectCoordinates = contracts.AdminObjectCoordinates
 type AdminSIMPhoneUsage = contracts.AdminSIMPhoneUsage
 type DictionaryItem = contracts.DictionaryItem
 type AdminMessage = contracts.AdminMessage
+type Admin220VMode = contracts.Admin220VMode
+type Admin220VMessageBuckets = contracts.Admin220VMessageBuckets
 type DisplayBlockObject = contracts.DisplayBlockObject
 type AdminAccessStatus = contracts.AdminAccessStatus
 type AdminDataCheckIssue = contracts.AdminDataCheckIssue
+
+const (
+	Admin220VNone    = contracts.Admin220VNone
+	Admin220VAlarm   = contracts.Admin220VAlarm
+	Admin220VRestore = contracts.Admin220VRestore
+)
 
 type AdminStatisticsConnectionMode = contracts.AdminStatisticsConnectionMode
 

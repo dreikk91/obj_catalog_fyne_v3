@@ -15,7 +15,7 @@ import (
 
 func ShowSubServerObjectsDialog(parent fyne.Window, provider contracts.AdminProvider, onUpdated func()) {
 	win := fyne.CurrentApp().NewWindow("Керування об'єктами підсерверів")
-	win.Resize(fyne.NewSize(1040, 640))
+	win.Resize(fyne.NewSize(1024, 768))
 
 	var (
 		objects         []contracts.AdminSubServerObject
@@ -481,6 +481,7 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider contracts.AdminProv
 	attachBtn := widget.NewButton("Під'єднати", attach)
 	attachAllBtn := widget.NewButton("Під'єднати всі (фільтр)", attachAllFiltered)
 	detachAllBtn := widget.NewButton("Очистити всі (фільтр)", clearAllFiltered)
+	searchBtn := widget.NewButton("Пошук", func() { reload(lastSelectedObj, selectedServer) })
 	refreshBtn := widget.NewButton("Оновити", func() { reload(lastSelectedObj, selectedServer) })
 	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
 
@@ -510,11 +511,12 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider contracts.AdminProv
 	mainSplit.Offset = 0.68
 
 	top := container.NewVBox(
-		container.NewHBox(
+		container.NewBorder(
+			nil,
+			nil,
 			widget.NewLabel("Пошук:"),
+			container.NewHBox(searchBtn, refreshBtn),
 			filterEntry,
-			layout.NewSpacer(),
-			refreshBtn,
 		),
 		widget.NewSeparator(),
 	)

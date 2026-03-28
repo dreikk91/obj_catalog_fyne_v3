@@ -16,7 +16,7 @@ import (
 
 func ShowPPKConstructorDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Конструктор ППК")
-	win.Resize(fyne.NewSize(900, 560))
+	win.Resize(fyne.NewSize(1024, 768))
 
 	var (
 		items       []contracts.PPKConstructorItem

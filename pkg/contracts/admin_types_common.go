@@ -45,6 +45,22 @@ type AdminMessage struct {
 	ForAdminOnly bool
 }
 
+// Admin220VMode - режим використання повідомлення для контролю 220В.
+type Admin220VMode int16
+
+const (
+	Admin220VNone    Admin220VMode = 0
+	Admin220VAlarm   Admin220VMode = 1
+	Admin220VRestore Admin220VMode = 2
+)
+
+// Admin220VMessageBuckets - групування повідомлень для конструктора 220В.
+type Admin220VMessageBuckets struct {
+	Free    []AdminMessage
+	Alarm   []AdminMessage
+	Restore []AdminMessage
+}
+
 // DisplayBlockObject - об'єкт зі станом блокування відображення.
 type DisplayBlockObject struct {
 	ObjN           int64

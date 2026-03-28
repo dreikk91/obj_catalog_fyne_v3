@@ -44,6 +44,42 @@ go mod tidy
 go run main.go
 ```
 
+Автоматичне версіонування
+
+- Застосунок автоматично підтягує `commit/time/dirty` з `git` (через `debug.ReadBuildInfo`) і показує це:
+- у заголовку головного вікна;
+- у меню `Довідка -> Про версію`;
+- у стартових логах.
+- Для керованої збірки з явною версією використовуйте:
+
+```powershell
+.\scripts\build_app.ps1 -Output obj_catalog_fyne_v3.exe
+```
+
+- Додатково можна ввімкнути стиснення через UPX:
+
+```powershell
+.\scripts\build_app.ps1 -Output obj_catalog_fyne_v3.exe -UseUPX
+```
+
+- Для пакування через `fyne package` (з авто-версією в `ldflags`) використовуйте:
+
+```powershell
+.\scripts\package_fyne.ps1 -InstallFyne -TargetOS windows -Output obj_catalog_fyne_v3.exe
+```
+
+- Для пакування через `fyne package` + UPX:
+
+```powershell
+.\scripts\package_fyne.ps1 -InstallFyne -TargetOS windows -Output obj_catalog_fyne_v3.exe -UseUPX
+```
+
+- Перевірка версії з консолі:
+
+```powershell
+.\obj_catalog_fyne_v3.exe --version
+```
+
 Пакування/реліз (Fyne)
 
 - Для створення standalone-пакету (збірка через Fyne):

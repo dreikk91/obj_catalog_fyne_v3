@@ -18,7 +18,7 @@ import (
 
 func ShowStatisticsDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Збір статистики")
-	win.Resize(fyne.NewSize(1440, 820))
+	win.Resize(fyne.NewSize(1360, 820))
 
 	statusLabel := widget.NewLabel("Готово")
 	summaryLabel := widget.NewLabel("Поки що немає даних")
@@ -432,31 +432,35 @@ func ShowStatisticsDialog(parent fyne.Window, provider contracts.AdminProvider) 
 		container.NewHBox(
 			widget.NewLabel("Підключення:"),
 			connectionRadio,
-		),
-		container.NewHBox(
+			layout.NewSpacer(),
 			widget.NewLabel("Протокол:"),
 			container.NewGridWrap(fyne.NewSize(220, 36), channelSelect),
 			widget.NewLabel("Режим:"),
-			container.NewGridWrap(fyne.NewSize(180, 36), guardSelect),
+			container.NewGridWrap(fyne.NewSize(190, 36), guardSelect),
+		),
+		container.NewHBox(
 			widget.NewLabel("Тип:"),
-			container.NewGridWrap(fyne.NewSize(260, 36), typeSelect),
-		),
-		container.NewHBox(
+			container.NewGridWrap(fyne.NewSize(300, 36), typeSelect),
 			widget.NewLabel("Район:"),
-			container.NewGridWrap(fyne.NewSize(260, 36), regionSelect),
+			container.NewGridWrap(fyne.NewSize(300, 36), regionSelect),
+			layout.NewSpacer(),
 			widget.NewLabel("Блокування:"),
-			container.NewGridWrap(fyne.NewSize(210, 36), blockSelect),
+			container.NewGridWrap(fyne.NewSize(240, 36), blockSelect),
 			widget.NewLabel("Ліміт:"),
-			container.NewGridWrap(fyne.NewSize(90, 36), limitEntry),
+			container.NewGridWrap(fyne.NewSize(100, 36), limitEntry),
 		),
-		container.NewHBox(
+		container.NewBorder(
+			nil,
+			nil,
 			widget.NewLabel("Пошук:"),
+			container.NewHBox(
+				widget.NewLabel("Сортування:"),
+				container.NewGridWrap(fyne.NewSize(190, 36), sortSelect),
+				executeBtn,
+				refreshBtn,
+				exportBtn,
+			),
 			searchEntry,
-			widget.NewLabel("Сортування:"),
-			container.NewGridWrap(fyne.NewSize(180, 36), sortSelect),
-			executeBtn,
-			refreshBtn,
-			exportBtn,
 		),
 		widget.NewSeparator(),
 		summaryLabel,

@@ -317,14 +317,12 @@ func ShowEventEmulationDialog(parent fyne.Window, provider contracts.AdminProvid
 // мапу з типових протоколів з адмінського мануалу.
 func protocolDisplayName(id int64) string {
 	switch id {
-	case 1:
+	case 18:
 		return "Контакт ID"
-	case 2:
-		return "20BPS"
 	case 3:
-		return "Демко-Експрес"
+		return "20bps / ADEMCO"
 	case 4:
-		return "Мост"
+		return "МОСТ"
 	default:
 		return fmt.Sprintf("Протокол %d", id)
 	}

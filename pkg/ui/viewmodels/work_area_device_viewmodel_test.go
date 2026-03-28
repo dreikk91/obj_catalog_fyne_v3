@@ -1,0 +1,108 @@
+package viewmodels
+
+import (
+	"testing"
+	"time"
+
+	"obj_catalog_fyne_v3/pkg/models"
+)
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		DeviceType:    "Tiras",
+		PanelMark:     "TM-1",
+		PowerSource:   models.PowerBattery,
+		SIM1:          "111",
+		SIM2:          "222",
+		AutoTestHours: 12,
+		ObjChan:       5,
+		AkbState:      1,
+		TestControl:   1,
+		TestTime:      9,
+		Phones1:       "380001",
+		Notes1:        "note",
+		Location1:     "location",
+		IsUnderGuard:  true,
+	})
+
+	if presentation.DeviceTypeText != "🔧 Тип: Tiras" {
+		t.Fatalf("unexpected device type text: %q", presentation.DeviceTypeText)
+	}
+	if presentation.SIMText != "📱 SIM1: 111 | SIM2: 222" {
+		t.Fatalf("unexpected sim text: %q", presentation.SIMText)
+	}
+	if presentation.SIMCopyText != "111 / 222" {
+		t.Fatalf("unexpected sim copy text: %q", presentation.SIMCopyText)
+	}
+	if presentation.ChannelText != "📡 Канал: GPRS" {
+		t.Fatalf("unexpected channel text: %q", presentation.ChannelText)
+	}
+	if presentation.AkbText != "🔋 АКБ: ТРИВОГА (Розряд/Відсутній)" {
+		t.Fatalf("unexpected akb text: %q", presentation.AkbText)
+	}
+	if presentation.GuardText != "🔒 ПІД ОХОРОНОЮ" {
+		t.Fatalf("unexpected guard text: %q", presentation.GuardText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_NoGuard(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ObjChan:      1,
+		IsUnderGuard: false,
+	})
+
+	if presentation.ChannelText != "📡 Канал: Автододзвон" {
+		t.Fatalf("unexpected channel text: %q", presentation.ChannelText)
+	}
+	if presentation.GuardText != "🔓 ЗНЯТО З ОХОРОНИ" {
+		t.Fatalf("unexpected guard text: %q", presentation.GuardText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildExternalPresentation(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+	lastTest := time.Date(2026, 3, 28, 10, 0, 0, 0, time.Local)
+	lastMsg := time.Date(2026, 3, 28, 11, 0, 0, 0, time.Local)
+
+	presentation := vm.BuildExternalPresentation("85%", "Тест ОК", lastTest, lastMsg)
+	if presentation.SignalText != "📶 Рівень: 85%" {
+		t.Fatalf("unexpected signal text: %q", presentation.SignalText)
+	}
+	if presentation.LastTestText != "📝 Тест: Тест ОК" {
+		t.Fatalf("unexpected test text: %q", presentation.LastTestText)
+	}
+	if presentation.LastTestTimeText != "📅 Ост. тест: 28.03.2026 10:00:00" {
+		t.Fatalf("unexpected test time text: %q", presentation.LastTestTimeText)
+	}
+	if presentation.LastMessageTimeText != "📅 Ост. подія: 28.03.2026 11:00:00" {
+		t.Fatalf("unexpected last message time text: %q", presentation.LastMessageTimeText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildExternalPresentation_ZeroTimes(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+	presentation := vm.BuildExternalPresentation("—", "—", time.Time{}, time.Time{})
+
+	if presentation.LastTestTimeText != "📅 Ост. тест: —" {
+		t.Fatalf("unexpected zero test time text: %q", presentation.LastTestTimeText)
+	}
+	if presentation.LastMessageTimeText != "📅 Ост. подія: —" {
+		t.Fatalf("unexpected zero message time text: %q", presentation.LastMessageTimeText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildLoadingExternalPresentation(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+	presentation := vm.BuildLoadingExternalPresentation()
+
+	if presentation.SignalText != "📶 Рівень: ..." {
+		t.Fatalf("unexpected loading signal text: %q", presentation.SignalText)
+	}
+	if presentation.LastTestText != "📝 Тест: ..." {
+		t.Fatalf("unexpected loading test text: %q", presentation.LastTestText)
+	}
+}

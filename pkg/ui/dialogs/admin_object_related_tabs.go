@@ -25,6 +25,7 @@ import (
 	xwidget "fyne.io/x/fyne/widget"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
 const (
@@ -40,32 +41,11 @@ const (
 	mapCenterModeLast   = "last"
 )
 
-func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
-	var (
-		items       []contracts.AdminObjectPersonal
-		selectedRow = -1
-	)
-
-	fullName := func(item contracts.AdminObjectPersonal) string {
-		parts := []string{
-			strings.TrimSpace(item.Surname),
-			strings.TrimSpace(item.Name),
-			strings.TrimSpace(item.SecName),
-		}
-		filtered := make([]string, 0, len(parts))
-		for _, p := range parts {
-			if p != "" {
-				filtered = append(filtered, p)
-			}
-		}
-		if len(filtered) == 0 {
-			return "(без ПІБ)"
-		}
-		return strings.Join(filtered, " ")
-	}
+func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminObjectPersonalTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
+	vm := viewmodels.NewObjectPersonalsTabViewModel()
 
 	table := widget.NewTable(
-		func() (int, int) { return len(items) + 1, 6 },
+		func() (int, int) { return vm.Count() + 1, 6 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			lbl := obj.(*widget.Label)
@@ -87,16 +67,16 @@ func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminProvider
 				return
 			}
 			itemIdx := id.Row - 1
-			if itemIdx < 0 || itemIdx >= len(items) {
+			it, ok := vm.ItemAt(itemIdx)
+			if !ok {
 				lbl.SetText("")
 				return
 			}
-			it := items[itemIdx]
 			switch id.Col {
 			case 0:
 				lbl.SetText(strconv.FormatInt(it.Number, 10))
 			case 1:
-				lbl.SetText(fullName(it))
+				lbl.SetText(vm.FullName(it))
 			case 2:
 				lbl.SetText(strings.TrimSpace(it.Phones))
 			case 3:
@@ -127,16 +107,7 @@ func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminProvider
 	table.SetColumnWidth(4, personalColWRole)
 	table.SetColumnWidth(5, personalColWNote)
 	table.OnSelected = func(id widget.TableCellID) {
-		if id.Row <= 0 {
-			selectedRow = -1
-			return
-		}
-		itemIdx := id.Row - 1
-		if itemIdx < 0 || itemIdx >= len(items) {
-			selectedRow = -1
-			return
-		}
-		selectedRow = itemIdx
+		vm.SelectByTableRow(id.Row)
 	}
 
 	reload := func() {
@@ -146,11 +117,10 @@ func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminProvider
 			statusLabel.SetText("Не вдалося завантажити В/О")
 			return
 		}
-		items = loaded
-		selectedRow = -1
+		vm.SetItems(loaded)
 		table.UnselectAll()
 		table.Refresh()
-		statusLabel.SetText(fmt.Sprintf("В/О: %d запис(ів)", len(items)))
+		statusLabel.SetText(vm.CountStatusText())
 	}
 
 	addBtn := widget.NewButton("Додати", func() {
@@ -163,17 +133,13 @@ func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminProvider
 	})
 
 	editBtn := widget.NewButton("Змінити", func() {
-		if selectedRow < 0 || selectedRow >= len(items) {
+		initial, ok := vm.SelectedItem()
+		if !ok {
 			statusLabel.SetText("Виберіть В/О у таблиці")
 			return
 		}
-		initial := items[selectedRow]
 		showObjectPersonalEditor(parent, provider, "Редагування В/О", initial, func(item contracts.AdminObjectPersonal) error {
-			item.ID = initial.ID
-			if strings.TrimSpace(item.CreatedAt) == "" {
-				item.CreatedAt = initial.CreatedAt
-			}
-			return provider.UpdateObjectPersonal(objn, item)
+			return provider.UpdateObjectPersonal(objn, vm.PrepareUpdatedItem(initial, item))
 		}, statusLabel, func() {
 			reload()
 			statusLabel.SetText("В/О оновлено")
@@ -181,14 +147,14 @@ func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminProvider
 	})
 
 	deleteBtn := widget.NewButton("Видалити", func() {
-		if selectedRow < 0 || selectedRow >= len(items) {
+		target, ok := vm.SelectedItem()
+		if !ok {
 			statusLabel.SetText("Виберіть В/О у таблиці")
 			return
 		}
-		target := items[selectedRow]
 		dialog.ShowConfirm(
 			"Підтвердження",
-			fmt.Sprintf("Видалити запис \"%s\"?", fullName(target)),
+			fmt.Sprintf("Видалити запис \"%s\"?", vm.FullName(target)),
 			func(ok bool) {
 				if !ok {
 					return
@@ -222,28 +188,15 @@ func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminProvider
 	return content
 }
 
-func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
-	var (
-		items       []contracts.AdminObjectZone
-		selectedRow = -1
-	)
+func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminObjectZonesTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
+	vm := viewmodels.NewObjectZonesTabViewModel()
 
 	quickNameEntry := widget.NewEntry()
 	quickNameEntry.SetPlaceHolder("Назва зони (Enter -> наступна зона)")
 	selectedZoneLabel := widget.NewLabel("Зона: —")
 
-	effectiveZoneNumberAt := func(idx int) int64 {
-		if idx < 0 || idx >= len(items) {
-			return 0
-		}
-		if items[idx].ZoneNumber > 0 {
-			return items[idx].ZoneNumber
-		}
-		return int64(idx) + 1
-	}
-
 	table := widget.NewTable(
-		func() (int, int) { return len(items) + 1, 3 },
+		func() (int, int) { return vm.Count() + 1, 3 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			lbl := obj.(*widget.Label)
@@ -259,14 +212,14 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, o
 				return
 			}
 			itemIdx := id.Row - 1
-			if itemIdx < 0 || itemIdx >= len(items) {
+			it, ok := vm.ItemAt(itemIdx)
+			if !ok {
 				lbl.SetText("")
 				return
 			}
-			it := items[itemIdx]
 			switch id.Col {
 			case 0:
-				zonen := effectiveZoneNumberAt(itemIdx)
+				zonen := vm.EffectiveZoneNumberAt(itemIdx)
 				lbl.SetText(strconv.FormatInt(zonen, 10))
 			case 1:
 				lbl.SetText("пож.")
@@ -289,64 +242,32 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, o
 	}
 	applyZoneTableLayout()
 
-	findRowByZoneNumber := func(zoneNumber int64) int {
-		if zoneNumber <= 0 {
-			return -1
-		}
-		for i := range items {
-			if effectiveZoneNumberAt(i) == zoneNumber {
-				return i
-			}
-		}
-		return -1
-	}
-
 	updateSelectedZoneLabel := func() {
-		if selectedRow < 0 || selectedRow >= len(items) {
-			selectedZoneLabel.SetText("Зона: —")
-			return
-		}
-		selectedZoneLabel.SetText(fmt.Sprintf("Зона: #%d", effectiveZoneNumberAt(selectedRow)))
+		selectedZoneLabel.SetText(vm.SelectedZoneLabel())
 	}
 
 	ensureZoneExists := func(zoneNumber int64, defaultDescription string) error {
-		if zoneNumber <= 0 {
-			return fmt.Errorf("invalid zone number")
-		}
-		if findRowByZoneNumber(zoneNumber) >= 0 {
+		if vm.FindRowByZoneNumber(zoneNumber) >= 0 {
 			return nil
 		}
-		desc := strings.TrimSpace(defaultDescription)
-		if desc == "" {
-			desc = fmt.Sprintf("Шлейф %d", zoneNumber)
+		zone, err := vm.BuildZoneForCreate(zoneNumber, defaultDescription)
+		if err != nil {
+			return err
 		}
-		return provider.AddObjectZone(objn, contracts.AdminObjectZone{
-			ZoneNumber:    zoneNumber,
-			ZoneType:      1,
-			Description:   desc,
-			EntryDelaySec: 0,
-		})
+		return provider.AddObjectZone(objn, zone)
 	}
 
 	selectByZoneNumber := func(zoneNumber int64, focusQuickName bool) {
-		if len(items) == 0 {
-			selectedRow = -1
+		if !vm.SelectZoneByNumber(zoneNumber) {
 			table.UnselectAll()
 			quickNameEntry.SetText("")
 			updateSelectedZoneLabel()
 			return
 		}
 
-		targetRow := 0
-		if zoneNumber > 0 {
-			if row := findRowByZoneNumber(zoneNumber); row >= 0 {
-				targetRow = row
-			}
-		}
-
-		selectedRow = targetRow
+		targetRow := vm.SelectedRow()
 		table.Select(widget.TableCellID{Row: targetRow + 1, Col: 0})
-		quickNameEntry.SetText(strings.TrimSpace(items[targetRow].Description))
+		quickNameEntry.SetText(vm.SelectedZoneDescription())
 		updateSelectedZoneLabel()
 		if focusQuickName {
 			focusIfOnCanvas(parent, quickNameEntry)
@@ -360,10 +281,10 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, o
 			statusLabel.SetText("Не вдалося завантажити зони")
 			return
 		}
-		items = loaded
+		vm.SetItems(loaded)
 		table.Refresh()
 		applyZoneTableLayout()
-		statusLabel.SetText(fmt.Sprintf("Зони: %d запис(ів)", len(items)))
+		statusLabel.SetText(vm.CountStatusText())
 		selectByZoneNumber(targetZoneNumber, focusQuickName)
 	}
 
@@ -372,29 +293,20 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, o
 	}
 
 	table.OnSelected = func(id widget.TableCellID) {
-		if id.Row <= 0 {
-			selectedRow = -1
+		if !vm.SelectByTableRow(id.Row) {
 			quickNameEntry.SetText("")
 			updateSelectedZoneLabel()
 			return
 		}
-		itemIdx := id.Row - 1
-		if itemIdx < 0 || itemIdx >= len(items) {
-			selectedRow = -1
-			quickNameEntry.SetText("")
-			updateSelectedZoneLabel()
-			return
-		}
-		selectedRow = itemIdx
-		quickNameEntry.SetText(strings.TrimSpace(items[itemIdx].Description))
+		quickNameEntry.SetText(vm.SelectedZoneDescription())
 		updateSelectedZoneLabel()
 		// Даємо змогу одразу вводити назву наступної/поточної зони.
 		focusIfOnCanvas(parent, quickNameEntry)
 	}
 
 	moveToNextZone := func() {
-		if selectedRow < 0 || selectedRow >= len(items) {
-			if len(items) == 0 {
+		if _, ok := vm.SelectedItem(); !ok {
+			if vm.Count() == 0 {
 				if err := ensureZoneExists(1, strings.TrimSpace(quickNameEntry.Text)); err != nil {
 					dialog.ShowError(err, parent)
 					statusLabel.SetText("Не вдалося додати першу зону")
@@ -404,19 +316,14 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, o
 				statusLabel.SetText("Додано зону #1")
 				return
 			}
-			selectByZoneNumber(effectiveZoneNumberAt(0), true)
+			selectByZoneNumber(0, true)
 		}
-		if selectedRow < 0 || selectedRow >= len(items) {
+
+		current, currentZoneNumber, ok := vm.PrepareSelectedZoneForSave(quickNameEntry.Text)
+		if !ok {
 			statusLabel.SetText("Виберіть зону у таблиці")
 			return
 		}
-
-		current := items[selectedRow]
-		currentZoneNumber := effectiveZoneNumberAt(selectedRow)
-		if current.ZoneNumber <= 0 {
-			current.ZoneNumber = currentZoneNumber
-		}
-		current.Description = strings.TrimSpace(quickNameEntry.Text)
 		if err := provider.UpdateObjectZone(objn, current); err != nil {
 			dialog.ShowError(err, parent)
 			statusLabel.SetText("Не вдалося зберегти назву зони")
@@ -438,15 +345,7 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, o
 	}
 
 	addBtn := widget.NewButton("Додати", func() {
-		nextZoneNumber := int64(1)
-		if selectedRow >= 0 && selectedRow < len(items) {
-			nextZoneNumber = effectiveZoneNumberAt(selectedRow) + 1
-		} else if len(items) > 0 {
-			lastZone := effectiveZoneNumberAt(len(items) - 1)
-			if lastZone > 0 {
-				nextZoneNumber = lastZone + 1
-			}
-		}
+		nextZoneNumber := vm.NextZoneNumberForAdd()
 		if err := ensureZoneExists(nextZoneNumber, ""); err != nil {
 			dialog.ShowError(err, parent)
 			statusLabel.SetText("Не вдалося додати зону")
@@ -457,7 +356,7 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, o
 	})
 
 	editBtn := widget.NewButton("Змінити", func() {
-		if len(items) == 0 {
+		if vm.Count() == 0 {
 			if err := ensureZoneExists(1, ""); err != nil {
 				dialog.ShowError(err, parent)
 				statusLabel.SetText("Не вдалося створити першу зону")
@@ -467,25 +366,34 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, o
 			statusLabel.SetText("Створено зону #1, можна вводити назву")
 			return
 		}
-		if selectedRow < 0 || selectedRow >= len(items) {
-			selectByZoneNumber(effectiveZoneNumberAt(0), true)
+		if _, ok := vm.SelectedItem(); !ok {
+			selectByZoneNumber(0, true)
+			statusLabel.SetText("Виберіть зону і вводьте назву")
+			return
+		}
+		zoneNumber, ok := vm.SelectedZoneNumber()
+		if !ok {
 			statusLabel.SetText("Виберіть зону і вводьте назву")
 			return
 		}
 		updateSelectedZoneLabel()
 		focusIfOnCanvas(parent, quickNameEntry)
-		statusLabel.SetText(fmt.Sprintf("Редагування зони #%d: введіть назву і натисніть Enter", effectiveZoneNumberAt(selectedRow)))
+		statusLabel.SetText(fmt.Sprintf("Редагування зони #%d: введіть назву і натисніть Enter", zoneNumber))
 	})
 
 	deleteBtn := widget.NewButton("Видалити", func() {
-		if selectedRow < 0 || selectedRow >= len(items) {
+		target, ok := vm.SelectedItem()
+		if !ok {
 			statusLabel.SetText("Виберіть зону у таблиці")
 			return
 		}
-		target := items[selectedRow]
+		targetZoneNumber, ok := vm.SelectedZoneNumber()
+		if !ok {
+			targetZoneNumber = target.ZoneNumber
+		}
 		dialog.ShowConfirm(
 			"Підтвердження",
-			fmt.Sprintf("Видалити зону #%d?", target.ZoneNumber),
+			fmt.Sprintf("Видалити зону #%d?", targetZoneNumber),
 			func(ok bool) {
 				if !ok {
 					return
@@ -503,7 +411,7 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, o
 	})
 
 	fillBtn := widget.NewButton("Заповнити", func() {
-		defaultCount := suggestZoneFillCount(provider, objn, items)
+		defaultCount := suggestZoneFillCount(provider, objn, vm.Items())
 		showZoneFillDialog(parent, defaultCount, func(count int64) {
 			if err := provider.FillObjectZones(objn, count); err != nil {
 				dialog.ShowError(err, parent)
@@ -564,12 +472,14 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminProvider, o
 
 func buildObjectAdditionalTab(
 	parent fyne.Window,
-	provider contracts.AdminProvider,
+	provider contracts.AdminObjectAdditionalTabProvider,
 	objn int64,
 	statusLabel *widget.Label,
 	getAddressFromObjectTab func() string,
 	setRegionInObjectTab func(regionID int64) bool,
 ) fyne.CanvasObject {
+	vm := viewmodels.NewObjectAdditionalTabViewModel()
+
 	addressEntry := widget.NewEntry()
 	addressEntry.SetPlaceHolder("Адреса для геопошуку")
 
@@ -579,31 +489,24 @@ func buildObjectAdditionalTab(
 	longitudeEntry := widget.NewEntry()
 	longitudeEntry.SetPlaceHolder("Довгота (LONGITUDE)")
 
-	lastGeoAddress := ""
-	lastGeoDistrictHints := make([]string, 0)
-
 	syncAddressFromObjectTab := func() {
-		if getAddressFromObjectTab == nil {
-			return
-		}
-		address := strings.TrimSpace(getAddressFromObjectTab())
-		if address == "" {
+		address, ok := vm.AddressFromObjectTab(getAddressFromObjectTab)
+		if !ok {
 			return
 		}
 		addressEntry.SetText(address)
 	}
 
 	geoByAddress := func(addressRaw string) (string, string, []string, error) {
-		address := strings.TrimSpace(addressRaw)
-		if address == "" {
-			return "", "", nil, fmt.Errorf("вкажіть адресу")
+		address, err := vm.RequireLookupAddress(addressRaw)
+		if err != nil {
+			return "", "", nil, err
 		}
 		lat, lon, districtHints, err := geocodeAddress(address)
 		if err != nil {
 			return "", "", nil, err
 		}
-		lastGeoAddress = address
-		lastGeoDistrictHints = districtHints
+		vm.RememberGeocode(address, districtHints)
 		return lat, lon, districtHints, nil
 	}
 
@@ -621,10 +524,7 @@ func buildObjectAdditionalTab(
 	}
 
 	save := func() {
-		coords := contracts.AdminObjectCoordinates{
-			Latitude:  strings.TrimSpace(latitudeEntry.Text),
-			Longitude: strings.TrimSpace(longitudeEntry.Text),
-		}
+		coords := vm.BuildCoordinates(latitudeEntry.Text, longitudeEntry.Text)
 		if err := provider.SaveObjectCoordinates(objn, coords); err != nil {
 			dialog.ShowError(err, parent)
 			statusLabel.SetText("Не вдалося зберегти координати")
@@ -667,13 +567,13 @@ func buildObjectAdditionalTab(
 		statusLabel.SetText("Знайдено координати за адресою")
 	})
 	fillDistrictBtn := widget.NewButton("Район з адреси", func() {
-		address := strings.TrimSpace(addressEntry.Text)
-		if address == "" {
-			statusLabel.SetText("Вкажіть адресу для визначення району")
+		address, err := vm.RequireLookupAddress(addressEntry.Text)
+		if err != nil {
+			statusLabel.SetText(err.Error())
 			return
 		}
-		hints := lastGeoDistrictHints
-		if !strings.EqualFold(strings.TrimSpace(lastGeoAddress), address) || len(hints) == 0 {
+		hints, ok := vm.CachedDistrictHintsForAddress(address)
+		if !ok {
 			_, _, resolvedHints, err := geoByAddress(address)
 			if err != nil {
 				dialog.ShowError(err, parent)
@@ -1678,7 +1578,7 @@ func collectDistrictHints(address map[string]string, displayName string) []strin
 	return hints
 }
 
-func resolveRegionByAddressHints(provider contracts.AdminProvider, hints []string) (int64, string, error) {
+func resolveRegionByAddressHints(provider contracts.DistrictReferenceService, hints []string) (int64, string, error) {
 	if len(hints) == 0 {
 		return 0, "", fmt.Errorf("геосервіс не повернув район")
 	}
@@ -1782,7 +1682,7 @@ func normalizeDistrictName(raw string) string {
 
 func showObjectPersonalEditor(
 	parent fyne.Window,
-	provider contracts.AdminProvider,
+	provider contracts.AdminObjectPersonalService,
 	title string,
 	initial contracts.AdminObjectPersonal,
 	onSave func(item contracts.AdminObjectPersonal) error,
@@ -2041,7 +1941,7 @@ func showZoneFillDialog(parent fyne.Window, defaultCount int64, onApply func(cou
 	dlg.Show()
 }
 
-func suggestZoneFillCount(provider contracts.AdminProvider, objn int64, current []contracts.AdminObjectZone) int64 {
+func suggestZoneFillCount(provider contracts.AdminObjectZonesTabProvider, objn int64, current []contracts.AdminObjectZone) int64 {
 	maxZone := int64(0)
 	for _, z := range current {
 		if z.ZoneNumber > maxZone {

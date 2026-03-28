@@ -5,17 +5,19 @@ import (
 	"image/color"
 	"obj_catalog_fyne_v3/pkg/config"
 	"sync"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
+	"obj_catalog_fyne_v3/pkg/usecases"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
@@ -23,7 +25,10 @@ import (
 type EventLogPanel struct {
 	Container       *fyne.Container
 	List            *widget.List
+	listData        binding.UntypedList
 	Data            contracts.EventProvider
+	UseCase         *usecases.EventLogUseCase
+	ViewModel       *viewmodels.EventLogViewModel
 	IsPaused        bool
 	PauseBtn        *widget.Button
 	RangeSelect     *widget.Select
@@ -48,8 +53,11 @@ type EventLogPanel struct {
 // NewEventLogPanel створює панель журналу подій
 func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	panel := &EventLogPanel{
-		Data:     provider,
-		IsPaused: false,
+		Data:      provider,
+		listData:  binding.NewUntypedList(),
+		UseCase:   usecases.NewEventLogUseCase(provider),
+		ViewModel: viewmodels.NewEventLogViewModel(),
+		IsPaused:  false,
 	}
 
 	// Заголовок
@@ -94,60 +102,74 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	)
 
 	// Список подій (тепер використовує кеш)
-	panel.List = widget.NewList(
-		func() int {
-			panel.mutex.RLock()
-			defer panel.mutex.RUnlock()
-			return len(panel.FilteredEvents)
-		},
+	panel.List = widget.NewListWithData(
+		panel.listData,
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
 			txt := canvas.NewText("Подія", color.White)
 			// Буде оновлено в UpdateCell
 			return container.NewStack(bg, container.NewPadded(txt))
 		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			panel.mutex.RLock()
-			defer panel.mutex.RUnlock()
+		func(item binding.DataItem, obj fyne.CanvasObject) {
+			stack := obj.(*fyne.Container)
+			bg := stack.Objects[0].(*canvas.Rectangle)
+			txtContainer := stack.Objects[1].(*fyne.Container)
+			txt := txtContainer.Objects[0].(*canvas.Text)
 
-			if id < len(panel.FilteredEvents) {
-				stack := obj.(*fyne.Container)
-				bg := stack.Objects[0].(*canvas.Rectangle)
-				txtContainer := stack.Objects[1].(*fyne.Container)
-				txt := txtContainer.Objects[0].(*canvas.Text)
-
-				event := panel.FilteredEvents[id]
-
-				// Вибираємо палітру кольорів залежно від теми
-				var textColor, rowColor color.NRGBA
-				if IsDarkMode() {
-					textColor, rowColor = utils.SelectColorNRGBADark(event.SC1)
-				} else {
-					textColor, rowColor = utils.SelectColorNRGBA(event.SC1)
-				}
-
-				bg.FillColor = rowColor
+			data, ok := item.(binding.Untyped)
+			if !ok {
+				txt.Text = ""
+				bg.FillColor = color.Transparent
 				bg.Refresh()
-
-				txt.Color = textColor
-
-				// Для непідготовленого користувача: стабільний читабельний формат рядка.
-				// [дата/час] — №[об'єкт] [назва] — [тип] — [зона/деталі]
-				text := event.GetDateTimeDisplay() + " — №" + itoa(event.ObjectID) + " " + event.ObjectName + " — " + event.GetTypeDisplay()
-				if event.ZoneNumber > 0 {
-					text += " — Зона " + itoa(event.ZoneNumber)
-				}
-				if event.Details != "" {
-					text += " — " + event.Details
-				}
-				txt.Text = text
-				if panel.lastFontSize > 0 {
-					txt.TextSize = panel.lastFontSize
-				} else {
-					txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
-				}
 				txt.Refresh()
+				return
 			}
+			value, err := data.Get()
+			if err != nil {
+				txt.Text = ""
+				bg.FillColor = color.Transparent
+				bg.Refresh()
+				txt.Refresh()
+				return
+			}
+			event, ok := value.(models.Event)
+			if !ok {
+				txt.Text = ""
+				bg.FillColor = color.Transparent
+				bg.Refresh()
+				txt.Refresh()
+				return
+			}
+
+			// Вибираємо палітру кольорів залежно від теми
+			var textColor, rowColor color.NRGBA
+			if IsDarkMode() {
+				textColor, rowColor = utils.SelectColorNRGBADark(event.SC1)
+			} else {
+				textColor, rowColor = utils.SelectColorNRGBA(event.SC1)
+			}
+
+			bg.FillColor = rowColor
+			bg.Refresh()
+
+			txt.Color = textColor
+
+			// Для непідготовленого користувача: стабільний читабельний формат рядка.
+			// [дата/час] — №[об'єкт] [назва] — [тип] — [зона/деталі]
+			text := event.GetDateTimeDisplay() + " — №" + itoa(event.ObjectID) + " " + event.ObjectName + " — " + event.GetTypeDisplay()
+			if event.ZoneNumber > 0 {
+				text += " — Зона " + itoa(event.ZoneNumber)
+			}
+			if event.Details != "" {
+				text += " — " + event.Details
+			}
+			txt.Text = text
+			if panel.lastFontSize > 0 {
+				txt.TextSize = panel.lastFontSize
+			} else {
+				txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
+			}
+			txt.Refresh()
 		},
 	)
 
@@ -204,8 +226,12 @@ func (p *EventLogPanel) Refresh() {
 		p.mutex.Unlock()
 	}()
 
-	// Отримуємо дані з БД (може заблокувати горутину, але не UI)
-	events := p.Data.GetEvents()
+	if p.ViewModel == nil {
+		p.ViewModel = viewmodels.NewEventLogViewModel()
+	}
+	// Джерело даних може змінюватися (наприклад, після Reconnect), тому use case перевизначаємо.
+	p.UseCase = usecases.NewEventLogUseCase(p.Data)
+	events := p.ViewModel.LoadEvents(p.UseCase)
 
 	// Оновлюємо кеш
 	p.mutex.Lock()
@@ -224,6 +250,10 @@ func (p *EventLogPanel) Refresh() {
 }
 
 func (p *EventLogPanel) applyFilters() {
+	if p.ViewModel == nil {
+		p.ViewModel = viewmodels.NewEventLogViewModel()
+	}
+
 	p.mutex.RLock()
 	all := p.AllEvents
 	currentObj := p.currentObject
@@ -239,52 +269,28 @@ func (p *EventLogPanel) applyFilters() {
 		importantOnly = p.ImportantOnly.Checked
 	}
 
-	now := time.Now()
-	year, month, day := now.Date()
 	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
-	maxEvents := uiCfg.EventLogLimit
-
-	filtered := make([]models.Event, 0, len(all))
-	for _, e := range all {
-
-		// Період
-		switch period {
-		case "Остання година":
-			if now.Sub(e.Time) > time.Hour {
-				// Події відсортовані від нових до старих — можемо зупинятись.
-				goto done
-			}
-		case "Сьогодні":
-			y, m, d := e.Time.Date()
-			if y != year || m != month || d != day {
-				goto done
-			}
-		}
-
-		// Важливість
-		if importantOnly && !(e.IsCritical() || e.IsWarning()) {
-			continue
-		}
-
-		// Контекст: події лише по вибраному об'єкту (якщо ввімкнено)
-		if showForCurrentOnly && currentObj != nil && e.ObjectID != currentObj.ID {
-			continue
-		}
-
-		filtered = append(filtered, e)
+	input := viewmodels.EventLogFilterInput{
+		AllEvents:          all,
+		Period:             period,
+		ImportantOnly:      importantOnly,
+		ShowForCurrentOnly: showForCurrentOnly,
+		MaxEvents:          uiCfg.EventLogLimit,
 	}
-done:
-	if maxEvents > 0 && len(filtered) > maxEvents {
-		filtered = filtered[:maxEvents]
+	if currentObj != nil {
+		input.CurrentObjectID = currentObj.ID
+		input.HasCurrentObject = true
 	}
+	out := p.ViewModel.ApplyFilters(input)
 
 	p.mutex.Lock()
-	p.FilteredEvents = filtered
+	p.FilteredEvents = out.Filtered
 	p.mutex.Unlock()
 
 	fyne.Do(func() {
+		_ = SetUntypedList(p.listData, out.Filtered)
 		if p.OnCountChanged != nil {
-			p.OnCountChanged(len(filtered))
+			p.OnCountChanged(out.Count)
 		}
 		if p.List != nil {
 			p.List.Refresh()

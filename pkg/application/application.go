@@ -4,15 +4,11 @@ import (
 	"context"
 	"fmt"
 	// "math/rand"
-	"strconv"
 	"strings"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	fyneTheme "fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -21,6 +17,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/database"
+	"obj_catalog_fyne_v3/pkg/eventbus"
 	"obj_catalog_fyne_v3/pkg/models"
 	apptheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui"
@@ -33,11 +30,12 @@ import (
 
 // Application зберігає стан додатку
 type Application struct {
-	fyneApp        fyne.App
-	mainWindow     fyne.Window
-	db             *sqlx.DB
-	dbHealthCancel context.CancelFunc
-	isShuttingDown bool
+	fyneApp           fyne.App
+	mainWindow        fyne.Window
+	db                *sqlx.DB
+	dbHealthCancel    context.CancelFunc
+	refreshLoopCancel context.CancelFunc
+	isShuttingDown    bool
 
 	// Поточний вибраний об'єкт (для заголовка, контекстних фільтрів тощо)
 	currentObject *models.Object
@@ -46,6 +44,8 @@ type Application struct {
 
 	// Сховище даних (інтерфейс)
 	dataProvider contracts.DataProvider
+	// Внутрішня шина подій для розв'язування UI-компонентів.
+	eventBus *eventbus.Bus
 	// Пряме посилання на MockData ТІЛЬКИ для симуляції
 	// mockData *contracts.MockData
 
@@ -57,6 +57,13 @@ type Application struct {
 
 	// Праві вкладки (картка об'єкта / журнал / тривоги)
 	rightTabs *container.AppTabs
+	eventsTab *container.TabItem
+	alarmsTab *container.TabItem
+
+	// Стан лічильників для бейджів правих вкладок.
+	lastAlarmsCount int
+	lastFireCount   int
+	lastEventsCount int
 
 	// Поточна тема
 	isDarkTheme bool
@@ -136,6 +143,7 @@ func NewApplication() *Application {
 		db:             db,
 		dbHealthCancel: healthCancel,
 		dataProvider:   dataProvider,
+		eventBus:       eventbus.NewBus(),
 		// mockData:   mockData,
 		isDarkTheme: isDark,
 		versionInfo: ver,
@@ -200,63 +208,32 @@ func (a *Application) buildUI() {
 	log.Debug().Msg("Створення EventLogPanel...")
 	a.eventLog = ui.NewEventLogPanel(a.dataProvider)
 	log.Debug().Msg("EventLogPanel створена")
+	a.registerEventBusHandlers()
 
 	log.Debug().Msg("Налаштування callbacks...")
 
 	// Налаштовуємо callbacks
 	a.objectList.OnObjectSelected = func(object models.Object) {
 		log.Debug().Int("objectID", object.ID).Str("objectName", object.Name).Msg("Об'єкт вибраний з списку")
-		// Зберігаємо поточний об'єкт для заголовка та контекстних фільтрів
-		a.currentObject = &object
-		a.updateWindowTitle()
-		a.workArea.SetObject(object)
-		// Синхронізуємо глобальний журнал подій з вибраним об'єктом
-		if a.eventLog != nil {
-			a.eventLog.SetCurrentObject(&object)
-		}
-		// Для адміністратора при виборі об'єкта завжди показуємо його картку
-		if a.rightTabs != nil {
-			a.rightTabs.SelectIndex(0)
-		}
+		// Для адміністратора при виборі об'єкта відкриваємо картку одразу.
+		a.applyObjectContext(&object, true)
 	}
 
 	a.alarmPanel.OnAlarmSelected = func(alarm models.Alarm) {
 		log.Debug().Int("alarmID", alarm.ID).Int("objectID", alarm.ObjectID).Msg("Тривога вибрана (одинарний клік)")
-		obj := a.dataProvider.GetObjectByID(fmt.Sprintf("%d", alarm.ObjectID))
-		if obj != nil {
-			// Оновлюємо контекст вибраного об'єкта, але залишаємо вкладку "Тривоги" відкритою.
-			a.currentObject = obj
-			a.updateWindowTitle()
-			a.workArea.SetObject(*obj)
-			if a.eventLog != nil {
-				a.eventLog.SetCurrentObject(obj)
-			}
-		}
+		// Оновлюємо контекст, але залишаємо відкритою вкладку "Тривоги".
+		a.applyObjectContextByID(int64(alarm.ObjectID), false)
 	}
 
 	a.alarmPanel.OnAlarmActivated = func(alarm models.Alarm) {
 		log.Debug().Int("alarmID", alarm.ID).Int("objectID", alarm.ObjectID).Msg("Тривога активована (подвійний клік)")
 		// Подвійний клік: відкриваємо вкладку деталей для вже вибраного об'єкта.
-		if a.rightTabs != nil {
-			a.rightTabs.SelectIndex(0)
-		}
+		a.selectDetailsTab()
 	}
 
 	a.eventLog.OnEventSelected = func(event models.Event) {
 		log.Debug().Int("eventID", event.ID).Int("objectID", event.ObjectID).Msg("Подія вибрана")
-		obj := a.dataProvider.GetObjectByID(fmt.Sprintf("%d", event.ObjectID))
-		if obj != nil {
-			// Оновлюємо контекст вибраного об'єкта
-			a.currentObject = obj
-			a.updateWindowTitle()
-			a.workArea.SetObject(*obj)
-			if a.eventLog != nil {
-				a.eventLog.SetCurrentObject(obj)
-			}
-			if a.rightTabs != nil {
-				a.rightTabs.SelectIndex(0)
-			}
-		}
+		a.applyObjectContextByID(int64(event.ObjectID), true)
 	}
 
 	a.alarmPanel.OnProcessAlarm = func(alarm models.Alarm) {
@@ -264,7 +241,7 @@ func (a *Application) buildUI() {
 		dialogs.ShowProcessAlarmDialog(a.mainWindow, alarm, func(result dialogs.ProcessAlarmResult) {
 			log.Info().Int("alarmID", alarm.ID).Str("action", result.Action).Str("note", result.Note).Msg("Тривога оброблена")
 			a.dataProvider.ProcessAlarm(fmt.Sprintf("%d", alarm.ID), "Диспетчер", result.Note)
-			a.alarmPanel.Refresh()
+			a.publishDataRefresh(eventbus.DataRefreshEvent{RefreshAlarms: true})
 			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Тривогу оброблено: "+result.Action)
 		})
 	}
@@ -288,9 +265,11 @@ func (a *Application) buildUI() {
 		log.Debug().Bool("darkTheme", newDark).Msg("Перемикання теми...")
 		a.setTheme(newDark)
 		updateThemeButton()
-		// Оновлюємо панелі, щоб застосувати нові кольори
-		a.objectList.Refresh()
-		a.eventLog.Refresh()
+		// Оновлюємо панелі, щоб застосувати нові кольори.
+		a.publishDataRefresh(eventbus.DataRefreshEvent{
+			RefreshObjects: true,
+			RefreshEvents:  true,
+		})
 	}
 	updateThemeButton()
 
@@ -308,15 +287,11 @@ func (a *Application) buildUI() {
 			},
 			func() {
 				// Після зміни кольорів оновлюємо всі панелі, які їх використовують
-				if a.alarmPanel != nil {
-					a.alarmPanel.Refresh()
-				}
-				if a.eventLog != nil {
-					a.eventLog.Refresh()
-				}
-				if a.objectList != nil {
-					a.objectList.Refresh()
-				}
+				a.publishDataRefresh(eventbus.DataRefreshEvent{
+					RefreshObjects: true,
+					RefreshAlarms:  true,
+					RefreshEvents:  true,
+				})
 				if a.workArea != nil && a.workArea.EventsList != nil {
 					a.workArea.EventsList.Refresh()
 				}
@@ -332,51 +307,13 @@ func (a *Application) buildUI() {
 	eventsTab := container.NewTabItem("ЖУРНАЛ ПОДІЙ", a.eventLog.Container)
 	alarmsTab := container.NewTabItem("ТРИВОГИ", a.alarmPanel.Container)
 	rightTabs := container.NewAppTabs(detailsTab, eventsTab, alarmsTab)
-	// Зберігаємо посилання на вкладки для подальшого керування
-	a.rightTabs = rightTabs
-	// Для адміністративного сценарію за замовчуванням показуємо картку об'єкта
-	rightTabs.Select(detailsTab)
-
-	// Хелпер для badge-оновлення табів.
-	lastAlarmsCount := 0
-	lastFireCount := 0
-	lastEventsCount := 0
-	updateTabBadges := func(alarmsCount int, fireCount int, eventsCount int) {
-		if alarmsCount >= 0 {
-			lastAlarmsCount = alarmsCount
-			lastFireCount = fireCount
-		}
-		if eventsCount >= 0 {
-			lastEventsCount = eventsCount
-		}
-
-		// Алгоритм простий: показуємо тільки те, що реально важливо користувачу.
-		alarmTitle := "АКТИВНІ ТРИВОГИ"
-		if lastAlarmsCount > 0 {
-			alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d)", lastAlarmsCount)
-			if lastFireCount > 0 {
-				alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d, ПОЖЕЖА: %d)", lastAlarmsCount, lastFireCount)
-			}
-		}
-		alarmsTab.Text = alarmTitle
-
-		eventsTitle := "ЖУРНАЛ ПОДІЙ"
-		if lastEventsCount > 0 {
-			eventsTitle = fmt.Sprintf("ЖУРНАЛ ПОДІЙ (%d)", lastEventsCount)
-		}
-		eventsTab.Text = eventsTitle
-
-		rightTabs.Refresh()
-		// Оновлюємо заголовок вікна з урахуванням кількості тривог
-		a.currentAlarmsTotal = lastAlarmsCount
-		a.updateWindowTitle()
-	}
+	a.configureTabsState(detailsTab, eventsTab, alarmsTab, rightTabs)
 
 	// Синхронізуємо лічильники з панелями (викличеться після їх Refresh()).
 	if a.alarmPanel != nil {
 		a.alarmPanel.OnCountsChanged = func(total int, fire int) {
 			// eventsCount тут не знаємо — не чіпаємо.
-			updateTabBadges(total, fire, -1)
+			a.updateTabBadges(total, fire, -1)
 		}
 		a.alarmPanel.OnNewCriticalAlarm = func(alarm models.Alarm) {
 			// Для адміністратора не перемикаємо вкладку автоматично,
@@ -386,7 +323,7 @@ func (a *Application) buildUI() {
 	}
 	if a.eventLog != nil {
 		a.eventLog.OnCountChanged = func(count int) {
-			updateTabBadges(-1, 0, count)
+			a.updateTabBadges(-1, 0, count)
 		}
 	}
 
@@ -423,6 +360,10 @@ func (a *Application) buildUI() {
 			return
 		}
 		a.isShuttingDown = true
+		if a.refreshLoopCancel != nil {
+			a.refreshLoopCancel()
+			a.refreshLoopCancel = nil
+		}
 
 		a.fyneApp.Preferences().SetFloat(prefKeyObjectListSplitOffset, rootSplit.Offset)
 
@@ -438,208 +379,23 @@ func (a *Application) buildUI() {
 		a.fyneApp.Quit()
 	})
 
-	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyT, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		if themeBtn.OnTapped != nil {
-			themeBtn.OnTapped()
-		}
-	})
-	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyF, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		if a.objectList != nil && a.objectList.SearchEntry != nil {
-			a.mainWindow.Canvas().Focus(a.objectList.SearchEntry)
-		}
-	})
-	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyN, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		adminProvider, ok := a.dataProvider.(contracts.AdminProvider)
-		if !ok {
-			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
-			return
-		}
-		dialogs.ShowNewObjectDialog(a.mainWindow, adminProvider, func(objn int64) {
-			if a.objectList != nil {
-				a.objectList.Refresh()
-			}
-			if a.alarmPanel != nil {
-				a.alarmPanel.Refresh()
-			}
-			if a.eventLog != nil {
-				a.eventLog.Refresh()
-			}
-			if obj := a.dataProvider.GetObjectByID(strconv.FormatInt(objn, 10)); obj != nil {
-				a.currentObject = obj
-				a.updateWindowTitle()
-				if a.workArea != nil {
-					a.workArea.SetObject(*obj)
-				}
-				if a.eventLog != nil {
-					a.eventLog.SetCurrentObject(obj)
-				}
-				if a.rightTabs != nil {
-					a.rightTabs.SelectIndex(0)
-				}
-			}
-		})
-	})
-	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyE, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		adminProvider, ok := a.dataProvider.(contracts.AdminProvider)
-		if !ok {
-			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
-			return
-		}
-		if a.currentObject == nil || a.currentObject.ID <= 0 {
-			dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
-			return
-		}
-		dialogs.ShowEditObjectDialog(a.mainWindow, adminProvider, int64(a.currentObject.ID), func(objn int64) {
-			if a.objectList != nil {
-				a.objectList.Refresh()
-			}
-			if a.alarmPanel != nil {
-				a.alarmPanel.Refresh()
-			}
-			if a.eventLog != nil {
-				a.eventLog.Refresh()
-			}
-			if obj := a.dataProvider.GetObjectByID(strconv.FormatInt(objn, 10)); obj != nil {
-				a.currentObject = obj
-				a.updateWindowTitle()
-				if a.workArea != nil {
-					a.workArea.SetObject(*obj)
-				}
-				if a.eventLog != nil {
-					a.eventLog.SetCurrentObject(obj)
-				}
-				if a.rightTabs != nil {
-					a.rightTabs.SelectIndex(0)
-				}
-			}
-		})
-	})
-	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyX, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		adminProvider, ok := a.dataProvider.(contracts.AdminProvider)
-		if !ok {
-			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
-			return
-		}
-		if a.currentObject == nil || a.currentObject.ID <= 0 {
-			dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
-			return
-		}
-
-		objID := a.currentObject.ID
-		objName := a.currentObject.Name
-		dialog.ShowConfirm(
-			"Підтвердження видалення",
-			fmt.Sprintf("Видалити об'єкт №%d \"%s\"?", objID, objName),
-			func(ok bool) {
-				if !ok {
-					return
-				}
-				if err := adminProvider.DeleteObject(int64(objID)); err != nil {
-					dialogs.ShowErrorDialog(a.mainWindow, "Помилка видалення об'єкта", err)
-					return
-				}
-				a.currentObject = nil
-				a.updateWindowTitle()
-				if a.objectList != nil {
-					a.objectList.Refresh()
-				}
-				if a.alarmPanel != nil {
-					a.alarmPanel.Refresh()
-				}
-				if a.eventLog != nil {
-					a.eventLog.Refresh()
-					a.eventLog.SetCurrentObject(nil)
-				}
-				dialogs.ShowInfoDialog(a.mainWindow, "Готово", "Об'єкт видалено")
-			},
-			a.mainWindow,
-		)
-	})
-	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key1, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		rightTabs.SelectIndex(0)
-	})
-	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key2, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		rightTabs.SelectIndex(1)
-	})
-	a.mainWindow.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.Key3, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		rightTabs.SelectIndex(2)
-	})
+	a.registerShortcuts(themeBtn)
 }
 
 func (a *Application) buildMainMenu() *fyne.MainMenu {
-	withAdminProvider := func(onReady func(contracts.AdminProvider)) func() {
-		return func() {
-			adminProvider, ok := a.dataProvider.(contracts.AdminProvider)
-			if !ok {
-				dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
-				return
-			}
-			access, err := adminProvider.GetAdminAccessStatus()
-			if err != nil {
-				dialogs.ShowErrorDialog(a.mainWindow, "Помилка перевірки прав доступу", err)
-				return
-			}
-			if !access.HasFullAccess {
-				userLabel := strings.TrimSpace(access.CurrentUser)
-				if userLabel == "" {
-					userLabel = "невизначений користувач"
-				}
-				msg := fmt.Sprintf(
-					"Користувач \"%s\" не має повного доступу до адмін-функцій.\n\nПотрібно, щоб у таблиці PERSONAL був запис користувача з ACCESS1=1.\nАдмін-записів у PERSONAL: %d.",
-					userLabel,
-					access.AdminUsersCount,
-				)
-				dialogs.ShowInfoDialog(a.mainWindow, "Доступ обмежено", msg)
-				return
-			}
-			onReady(adminProvider)
-		}
-	}
-
-	refreshAfterObjectSave := func(objn int64) {
-		if a.objectList != nil {
-			a.objectList.Refresh()
-		}
-		if a.alarmPanel != nil {
-			a.alarmPanel.Refresh()
-		}
-		if a.eventLog != nil {
-			a.eventLog.Refresh()
-		}
-		if obj := a.dataProvider.GetObjectByID(strconv.FormatInt(objn, 10)); obj != nil {
-			a.currentObject = obj
-			a.updateWindowTitle()
-			if a.workArea != nil {
-				a.workArea.SetObject(*obj)
-			}
-			if a.eventLog != nil {
-				a.eventLog.SetCurrentObject(obj)
-			}
-			if a.rightTabs != nil {
-				a.rightTabs.SelectIndex(0)
-			}
-		}
-	}
-
 	adminMenu := fyne.NewMenu("Адмін",
-		fyne.NewMenuItem("Блокування відображення інформації", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Блокування відображення інформації", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowDisplayBlockingDialog(a.mainWindow, admin, func() {
-				if a.objectList != nil {
-					a.objectList.Refresh()
-				}
+				a.publishDataRefresh(eventbus.DataRefreshEvent{RefreshObjects: true})
 			})
 		})),
-		fyne.NewMenuItem("Емуляція подій", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Емуляція подій", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowEventEmulationDialog(a.mainWindow, admin, func() {
-				if a.eventLog != nil {
-					a.eventLog.Refresh()
-				}
-				if a.alarmPanel != nil {
-					a.alarmPanel.Refresh()
-				}
-				if a.objectList != nil {
-					a.objectList.Refresh()
-				}
+				a.publishDataRefresh(eventbus.DataRefreshEvent{
+					RefreshObjects: true,
+					RefreshAlarms:  true,
+					RefreshEvents:  true,
+				})
 			})
 		})),
 		fyne.NewMenuItemSeparator(),
@@ -649,96 +405,57 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	)
 
 	adminObjects := fyne.NewMenu("Об'єкти",
-		fyne.NewMenuItem("Новий об'єкт", withAdminProvider(func(admin contracts.AdminProvider) {
-			dialogs.ShowNewObjectDialog(a.mainWindow, admin, refreshAfterObjectSave)
+		fyne.NewMenuItem("Новий об'єкт", a.withAdminProvider(func(admin contracts.AdminProvider) {
+			a.openNewObjectDialog(admin)
 		})),
-		fyne.NewMenuItem("Змінити поточний", withAdminProvider(func(admin contracts.AdminProvider) {
-			if a.currentObject == nil || a.currentObject.ID <= 0 {
-				dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
-				return
-			}
-			dialogs.ShowEditObjectDialog(a.mainWindow, admin, int64(a.currentObject.ID), refreshAfterObjectSave)
+		fyne.NewMenuItem("Змінити поточний", a.withAdminProvider(func(admin contracts.AdminProvider) {
+			a.openEditCurrentObjectDialog(admin)
 		})),
-		fyne.NewMenuItem("Видалити поточний", withAdminProvider(func(admin contracts.AdminProvider) {
-			if a.currentObject == nil || a.currentObject.ID <= 0 {
-				dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
-				return
-			}
-
-			objID := a.currentObject.ID
-			objName := a.currentObject.Name
-			dialog.ShowConfirm(
-				"Підтвердження видалення",
-				fmt.Sprintf("Видалити об'єкт №%d \"%s\"?", objID, objName),
-				func(ok bool) {
-					if !ok {
-						return
-					}
-					if err := admin.DeleteObject(int64(objID)); err != nil {
-						dialogs.ShowErrorDialog(a.mainWindow, "Помилка видалення об'єкта", err)
-						return
-					}
-					a.currentObject = nil
-					a.updateWindowTitle()
-					if a.objectList != nil {
-						a.objectList.Refresh()
-					}
-					if a.alarmPanel != nil {
-						a.alarmPanel.Refresh()
-					}
-					if a.eventLog != nil {
-						a.eventLog.Refresh()
-						a.eventLog.SetCurrentObject(nil)
-					}
-					dialogs.ShowInfoDialog(a.mainWindow, "Готово", "Об'єкт видалено")
-				},
-				a.mainWindow,
-			)
+		fyne.NewMenuItem("Видалити поточний", a.withAdminProvider(func(admin contracts.AdminProvider) {
+			a.confirmDeleteCurrentObject(admin)
 		})),
 	)
 
 	adminSettings := fyne.NewMenu("Налаштування",
-		fyne.NewMenuItem("Перевизначення подій", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Перевизначення подій", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowEventOverrideDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Управління повідомленнями адміністратора", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Управління повідомленнями адміністратора", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowAdminMessagesDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Контроль системи (БД/логи)", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Контроль системи (БД/логи)", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowAdminSystemControlDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Налаштування пожежного моніторингу", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Налаштування пожежного моніторингу", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowFireMonitoringSettingsDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Керування об'єктами підсерверів", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Керування об'єктами підсерверів", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowSubServerObjectsDialog(a.mainWindow, admin, func() {
-				if a.objectList != nil {
-					a.objectList.Refresh()
-				}
-				if a.alarmPanel != nil {
-					a.alarmPanel.Refresh()
-				}
+				a.publishDataRefresh(eventbus.DataRefreshEvent{
+					RefreshObjects: true,
+					RefreshAlarms:  true,
+				})
 			})
 		})),
 	)
 
 	adminMonitoring := fyne.NewMenu("Моніторинг",
-		fyne.NewMenuItem("Збір статистики", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Збір статистики", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowStatisticsDialog(a.mainWindow, admin)
 		})),
 	)
 
 	adminDirectories := fyne.NewMenu("Довідники",
-		fyne.NewMenuItem("Конструктор ППК", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Конструктор ППК", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowPPKConstructorDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Типи об'єктів", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Типи об'єктів", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowObjectTypesDictionaryDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Регіони", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Регіони", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowRegionsDictionaryDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Причини тривог", withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Причини тривог", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowAlarmReasonsDictionaryDialog(a.mainWindow, admin)
 		})),
 	)
@@ -757,52 +474,6 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	)
 
 	return fyne.NewMainMenu(adminMenu, helpMenu)
-}
-
-// startGettingEvents запускає симуляцію подій
-func (a *Application) startGettingEvents() {
-	go func() {
-		secTicker := time.NewTicker(2 * time.Second) // Трохи повільніше
-		defer secTicker.Stop()
-
-		minTicker := time.NewTicker(60 * time.Second)
-		defer minTicker.Stop()
-
-		for {
-			select {
-			case <-secTicker.C:
-				// Симуляція тільки якщо використовуємо мок-дані або для візуального ефекту
-				// В реальному проекті тут краще робити фонове оновлення через провайдера
-				// if a.mockData != nil && rand.Intn(3) == 0 {
-				// 	a.mockData.SimulateRandomEvent()
-				// 	a.mockData.SimulateNewAlarm()
-				// }
-
-				fyne.Do(func() {
-					if a.alarmPanel != nil {
-						a.alarmPanel.Refresh()
-					}
-					if a.eventLog != nil {
-						a.eventLog.Refresh()
-					}
-					if a.objectList != nil {
-						a.objectList.Refresh()
-					}
-				})
-
-			case <-minTicker.C:
-				// if a.mockData != nil {
-				// 	changedObj := a.mockData.SimulateObjectChange()
-				fyne.Do(func() {
-					a.objectList.Refresh()
-					// if a.workArea.CurrentObject != nil && a.workArea.CurrentObject.ID == changedObj.ID {
-					// 	a.workArea.SetObject(*changedObj)
-					// }
-				})
-				// }
-			}
-		}
-	}()
 }
 
 // Run запускає додаток
@@ -873,9 +544,11 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 
 	// Перезавантажуємо дані
 	log.Debug().Msg("Перезавантаження даних у всіх панелях...")
-	a.alarmPanel.Refresh()
-	a.objectList.Refresh()
-	a.eventLog.Refresh()
+	a.publishDataRefresh(eventbus.DataRefreshEvent{
+		RefreshObjects: true,
+		RefreshAlarms:  true,
+		RefreshEvents:  true,
+	})
 	log.Debug().Msg("✓ Дані перезавантажено")
 
 	log.Info().Msg("✅ Перепідключення до БД завершено успішно")
@@ -895,18 +568,20 @@ func (a *Application) RefreshUI(cfg config.UIConfig) {
 	// Оновлюємо панелі
 	log.Debug().Msg("Оновлення AlarmPanel...")
 	a.alarmPanel.OnThemeChanged(cfg.FontSizeAlarms)
-	a.alarmPanel.Refresh()
 
 	log.Debug().Msg("Оновлення ObjectListPanel...")
 	a.objectList.OnThemeChanged(cfg.FontSizeObjects)
-	a.objectList.Refresh()
 
 	log.Debug().Msg("Оновлення WorkAreaPanel...")
 	a.workArea.OnThemeChanged(cfg.FontSize)
 
 	log.Debug().Msg("Оновлення EventLogPanel...")
 	a.eventLog.OnThemeChanged(cfg.FontSizeEvents)
-	a.eventLog.Refresh()
+	a.publishDataRefresh(eventbus.DataRefreshEvent{
+		RefreshObjects: true,
+		RefreshAlarms:  true,
+		RefreshEvents:  true,
+	})
 
 	log.Info().Msg("✅ Параметри інтерфейсу оновлено")
 }

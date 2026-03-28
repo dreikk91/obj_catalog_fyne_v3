@@ -19,6 +19,26 @@ type DetailProvider interface {
 	GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time)
 }
 
+// WorkAreaDetailsProvider визначає мінімальний набір даних для правої панелі об'єкта.
+type WorkAreaDetailsProvider interface {
+	GetObjectByID(id string) *models.Object
+	GetZones(objectID string) []models.Zone
+	GetEmployees(objectID string) []models.Contact
+	GetObjectEvents(objectID string) []models.Event
+	GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time)
+}
+
+// TestMessageProvider визначає доступ до тестових повідомлень об'єкта.
+type TestMessageProvider interface {
+	GetTestMessages(objectID string) []models.TestMessage
+}
+
+// WorkAreaProvider об'єднує мінімальні залежності WorkArea UI.
+type WorkAreaProvider interface {
+	WorkAreaDetailsProvider
+	TestMessageProvider
+}
+
 // EventProvider визначає інтерфейс для отримання подій
 type EventProvider interface {
 	GetEvents() []models.Event

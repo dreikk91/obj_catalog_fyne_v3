@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -17,6 +18,8 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
+	"obj_catalog_fyne_v3/pkg/usecases"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
@@ -24,8 +27,12 @@ type ObjectListPanel struct {
 	Container    *fyne.Container
 	Table        *widget.Table
 	SearchEntry  *widget.Entry
+	SearchClear  *widget.Button
+	FilteredData binding.UntypedList
 	FilterSelect *widget.Select
 	Data         contracts.ObjectProvider
+	UseCase      *usecases.ObjectListUseCase
+	ViewModel    *viewmodels.ObjectListViewModel
 	ColumnHeader *fyne.Container
 
 	// Кеш усіх об'єктів
@@ -55,6 +62,9 @@ type ObjectListPanel struct {
 func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	panel := &ObjectListPanel{
 		Data:          provider,
+		UseCase:       usecases.NewObjectListUseCase(provider),
+		ViewModel:     viewmodels.NewObjectListViewModel(),
+		FilteredData:  binding.NewUntypedList(),
 		CurrentFilter: "Всі",
 		SelectedRow:   -1,
 		colNameWidth:  200,
@@ -70,7 +80,24 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	// Поле пошуку
 	panel.SearchEntry = widget.NewEntry()
 	panel.SearchEntry.SetPlaceHolder("🔍 Пошук (№, Назва, Адреса, SIM, Тел...)")
+	panel.SearchClear = widget.NewButtonWithIcon("", theme.ContentClearIcon(), func() {
+		if panel.SearchEntry == nil {
+			return
+		}
+		panel.SearchEntry.SetText("")
+		if panel.Table != nil {
+			panel.Table.UnselectAll()
+		}
+	})
+	panel.SearchClear.Disable()
 	panel.SearchEntry.OnChanged = func(text string) {
+		if panel.SearchClear != nil {
+			if strings.TrimSpace(text) == "" {
+				panel.SearchClear.Disable()
+			} else {
+				panel.SearchClear.Enable()
+			}
+		}
 		// Дебоунсинг або просто асинхронний виклик
 		go panel.applyFilters()
 	}
@@ -80,12 +107,7 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 		if panel.isUpdating {
 			return
 		}
-		// Видаляємо кількість з назви фільтра перед збереженням
-		cleanFilter := selected
-		if idx := strings.Index(selected, " ("); idx != -1 {
-			cleanFilter = selected[:idx]
-		}
-		panel.CurrentFilter = cleanFilter
+		panel.CurrentFilter = panel.ViewModel.NormalizeFilter(selected)
 		go panel.applyFilters()
 	})
 	panel.FilterSelect.PlaceHolder = "Фільтр"
@@ -97,9 +119,10 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	// Таблиця об'єктів (використовує FilteredItems)
 	panel.Table = widget.NewTable(
 		func() (int, int) {
-			panel.mutex.RLock()
-			defer panel.mutex.RUnlock()
-			return len(panel.FilteredItems), 4
+			if panel.FilteredData != nil {
+				return panel.FilteredData.Length(), 4
+			}
+			return 0, 4
 		},
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
@@ -108,23 +131,20 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 			return container.NewStack(bg, container.NewPadded(txt))
 		},
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			panel.mutex.RLock()
-			defer panel.mutex.RUnlock()
-
 			stack := obj.(*fyne.Container)
 			bg := stack.Objects[0].(*canvas.Rectangle)
 			txtContainer := stack.Objects[1].(*fyne.Container)
 			txt := txtContainer.Objects[0].(*canvas.Text)
 			txt.TextStyle.Monospace = true
 
-			if id.Row >= len(panel.FilteredItems) {
+			item, ok := panel.objectByRow(id.Row)
+			if !ok {
 				txt.Text = ""
 				txt.Refresh()
 				bg.Hide()
 				bg.Refresh()
 				return
 			}
-			item := panel.FilteredItems[id.Row]
 
 			// Визначаємо кольори на основі комбінації статусів
 			textColor, rowColor := utils.ChangeItemColorNRGBA(item.AlarmState, item.GuardState, item.TechAlarmState, item.IsConnState, IsDarkMode())
@@ -154,11 +174,14 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 				rowColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 			}
 
+			panel.mutex.RLock()
+			selectedRow := panel.SelectedRow
+			panel.mutex.RUnlock()
 			if missingSubServer {
 				bg.FillColor = rowColor
 				bg.Show()
 				txt.Color = textColor
-			} else if id.Row == panel.SelectedRow {
+			} else if id.Row == selectedRow {
 				bg.FillColor = appTheme.ColorSelection
 				bg.Show()
 				txt.Color = color.White // Білий для виділеного
@@ -193,14 +216,13 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	)
 
 	panel.Table.OnSelected = func(id widget.TableCellID) {
-		panel.mutex.Lock()
-		if id.Row >= len(panel.FilteredItems) {
-			panel.mutex.Unlock()
+		selectedObj, ok := panel.objectByRow(id.Row)
+		if !ok {
 			return
 		}
 
+		panel.mutex.Lock()
 		panel.SelectedRow = id.Row
-		selectedObj := panel.FilteredItems[id.Row]
 		panel.lastNotifiedSelectedID = selectedObj.ID
 		panel.hasNotifiedSelection = true
 		panel.mutex.Unlock()
@@ -232,7 +254,7 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	// Збираємо все разом
 	header := container.NewVBox(
 		container.NewPadded(panel.TitleText),
-		panel.SearchEntry,
+		container.NewBorder(nil, nil, nil, panel.SearchClear, panel.SearchEntry),
 		panel.FilterSelect,
 		panel.ColumnHeader,
 	)
@@ -256,8 +278,12 @@ func (p *ObjectListPanel) RefreshData() {
 	if p.Data == nil {
 		return
 	}
-	// Отримуємо ВСІ об'єкти один раз
-	objects := p.Data.GetObjects()
+	if p.ViewModel == nil {
+		p.ViewModel = viewmodels.NewObjectListViewModel()
+	}
+	// Джерело даних може змінюватися (наприклад, після Reconnect), тому use case перевизначаємо.
+	p.UseCase = usecases.NewObjectListUseCase(p.Data)
+	objects := p.ViewModel.LoadObjects(p.UseCase)
 
 	p.mutex.Lock()
 	p.AllObjects = objects
@@ -270,6 +296,9 @@ func (p *ObjectListPanel) RefreshData() {
 func (p *ObjectListPanel) applyFilters() {
 	if p.Table == nil {
 		return
+	}
+	if p.ViewModel == nil {
+		p.ViewModel = viewmodels.NewObjectListViewModel()
 	}
 
 	// Виконуємо фільтрацію в фоні
@@ -288,93 +317,21 @@ func (p *ObjectListPanel) applyFilters() {
 	}
 	p.mutex.RUnlock()
 
-	var filtered []models.Object
-	countAll := 0
-	countAlarm := 0
-	countOffline := 0
-	countDisarmed := 0
-
-	for _, obj := range all {
-		// 1. Пошук (має працювати для всіх підрахунків)
-		matchSearch := true
-		if query != "" {
-			matchSearch = strings.Contains(strings.ToLower(itoa(obj.ID)), query) ||
-				strings.Contains(strings.ToLower(obj.Name), query) ||
-				strings.Contains(strings.ToLower(obj.Address), query) ||
-				strings.Contains(strings.ToLower(obj.ContractNum), query) ||
-				strings.Contains(strings.ToLower(obj.SIM1), query) ||
-				strings.Contains(strings.ToLower(obj.SIM2), query) ||
-				strings.Contains(strings.ToLower(obj.Phone), query)
-		}
-
-		if !matchSearch {
-			continue
-		}
-
-		// Підраховуємо статистику (з урахуванням пошуку)
-		countAll++
-		if obj.Status == models.StatusFire || obj.Status == models.StatusFault {
-			countAlarm++
-		}
-		if obj.IsConnState == 0 && obj.GuardState != 0 {
-			countOffline++
-		}
-		if obj.GuardState == 0 {
-			countDisarmed++
-		}
-
-		// 2. Фільтрація для відображення в таблиці
-		statusMatch := true
-		switch currentFilter {
-		case "Є тривоги":
-			if obj.Status != models.StatusFire && obj.Status != models.StatusFault {
-				statusMatch = false
-			}
-		case "Нема зв'язку":
-			if !(obj.IsConnState == 0 && obj.GuardState != 0) {
-				statusMatch = false
-			}
-		case "Знято з охорони":
-			if obj.GuardState != 0 {
-				statusMatch = false
-			}
-		}
-
-		if statusMatch {
-			filtered = append(filtered, obj)
-		}
-	}
-
-	// Підтримуємо стабільний вибір:
-	// 1) залишаємо поточний об'єкт, якщо він є після фільтрації;
-	// 2) якщо вибору немає, автоматично вибираємо перший рядок.
-	newSelectedRow := -1
-	if hadPrevSelection {
-		for i := range filtered {
-			if filtered[i].ID == prevSelectedID {
-				newSelectedRow = i
-				break
-			}
-		}
-	}
-	if newSelectedRow == -1 && len(filtered) > 0 {
-		newSelectedRow = 0
-	}
-
-	var selectedObj models.Object
-	shouldNotifySelection := false
-	if newSelectedRow >= 0 {
-		selectedObj = filtered[newSelectedRow]
-		if !hasNotifiedSelection || selectedObj.ID != lastNotifiedID || (!hadPrevSelection || selectedObj.ID != prevSelectedID) {
-			shouldNotifySelection = true
-		}
-	}
+	result := p.ViewModel.ApplyFilters(viewmodels.ObjectListFilterInput{
+		AllObjects:           all,
+		Query:                query,
+		CurrentFilter:        currentFilter,
+		PreviousSelectedID:   prevSelectedID,
+		HadPreviousSelection: hadPrevSelection,
+		LastNotifiedID:       lastNotifiedID,
+		HasNotifiedSelection: hasNotifiedSelection,
+	})
 
 	// Оновлюємо список і UI
 	p.mutex.Lock()
-	p.FilteredItems = filtered
-	p.SelectedRow = newSelectedRow
-	if newSelectedRow < 0 {
+	p.FilteredItems = result.Filtered
+	p.SelectedRow = result.NewSelectedRow
+	if result.NewSelectedRow < 0 {
 		p.hasNotifiedSelection = false
 		p.lastNotifiedSelectedID = 0
 	}
@@ -385,12 +342,12 @@ func (p *ObjectListPanel) applyFilters() {
 		defer func() { p.isUpdating = false }()
 
 		// Оновлюємо назви фільтрів з кількістю
-		p.FilterSelect.Options = []string{
-			fmt.Sprintf("Всі (%d)", countAll),
-			fmt.Sprintf("Є тривоги (%d)", countAlarm),
-			fmt.Sprintf("Нема зв'язку (%d)", countOffline),
-			fmt.Sprintf("Знято з охорони (%d)", countDisarmed),
-		}
+		p.FilterSelect.Options = p.ViewModel.BuildFilterOptions(
+			result.CountAll,
+			result.CountAlarm,
+			result.CountOffline,
+			result.CountDisarmed,
+		)
 
 		// Знаходимо поточний вибраний фільтр в оновленому списку, щоб він не зникав
 		for _, opt := range p.FilterSelect.Options {
@@ -402,7 +359,7 @@ func (p *ObjectListPanel) applyFilters() {
 		p.FilterSelect.Refresh()
 
 		if p.TitleText != nil {
-			p.TitleText.Text = fmt.Sprintf("ОБ'ЄКТИ (%d)", countAll)
+			p.TitleText.Text = fmt.Sprintf("ОБ'ЄКТИ (%d)", result.CountAll)
 			p.TitleText.Refresh()
 		}
 
@@ -411,17 +368,30 @@ func (p *ObjectListPanel) applyFilters() {
 		}
 		if p.Table != nil {
 			p.Table.Show()
+			_ = SetUntypedList(p.FilteredData, result.Filtered)
 			p.Table.Refresh()
 		}
 
-		if shouldNotifySelection && p.OnObjectSelected != nil {
-			p.OnObjectSelected(selectedObj)
+		if result.ShouldNotifySelection && result.HasSelectedObject && p.OnObjectSelected != nil {
+			p.OnObjectSelected(result.SelectedObject)
 			p.mutex.Lock()
-			p.lastNotifiedSelectedID = selectedObj.ID
+			p.lastNotifiedSelectedID = result.SelectedObject.ID
 			p.hasNotifiedSelection = true
 			p.mutex.Unlock()
 		}
 	})
+}
+
+func (p *ObjectListPanel) objectByRow(row int) (models.Object, bool) {
+	if p == nil || p.FilteredData == nil || row < 0 || row >= p.FilteredData.Length() {
+		return models.Object{}, false
+	}
+	value, err := p.FilteredData.GetValue(row)
+	if err != nil {
+		return models.Object{}, false
+	}
+	obj, ok := value.(models.Object)
+	return obj, ok
 }
 
 // objectListTableLayout для динамічного ресайзу колонок "Назва" та "Адреса"

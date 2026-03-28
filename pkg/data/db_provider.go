@@ -3,6 +3,7 @@ package data
 
 import (
 	"context"
+	"fmt"
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/models"
 	"strconv"
@@ -233,6 +234,18 @@ func (p *DBDataProvider) GetEvents() []models.Event {
 
 	log.Debug().Int("totalCachedEvents", len(p.cachedEvents)).Msg("Події завантажено")
 	return p.cachedEvents
+}
+
+// GetLatestEventID повертає ID останньої події для легкого probe-перевіряння змін.
+func (p *DBDataProvider) GetLatestEventID() (int64, error) {
+	if p.db == nil {
+		return 0, fmt.Errorf("database connection is not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	return database.GetLastEventID(ctx, p.db)
 }
 
 // GetObjectEvents отримує події конкретного об'єкта

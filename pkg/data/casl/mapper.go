@@ -1,8 +1,11 @@
 package casl
 
 import (
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"obj_catalog_fyne_v3/pkg/models"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -154,6 +157,7 @@ func (m *Mapper) ToZones(record GrdObject, device *Device) []models.Zone {
 				Status:     models.ZoneNormal,
 			})
 		}
+		sort.SliceStable(zones, func(i, j int) bool { return zones[i].Number < zones[j].Number })
 		return zones
 	}
 
@@ -180,6 +184,7 @@ func (m *Mapper) ToZones(record GrdObject, device *Device) []models.Zone {
 
 		zones = append(zones, models.Zone{Number: number, Name: name, SensorType: sensorType, Status: models.ZoneNormal})
 	}
+	sort.SliceStable(zones, func(i, j int) bool { return zones[i].Number < zones[j].Number })
 	return zones
 }
 
@@ -210,8 +215,344 @@ func (m *Mapper) ToContacts(record GrdObject, users map[string]User) []models.Co
 }
 
 func (m *Mapper) MapObjectGroups(rawGroups any, rooms []Room) []models.ObjectGroup {
-	// Migration of mapCASLDeviceGroupsToObjectGroups logic
-	return nil
+	candidates := collectGroupCandidates(rawGroups)
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	roomNames := make(map[string]string, len(rooms))
+	for _, room := range rooms {
+		roomID := strings.TrimSpace(room.RoomID)
+		roomName := strings.TrimSpace(room.Name)
+		if roomID != "" && roomName != "" {
+			roomNames[roomID] = roomName
+		}
+	}
+
+	groups := make([]models.ObjectGroup, 0, len(candidates))
+	for idx, candidate := range candidates {
+		group := models.ObjectGroup{
+			Number: parseCASLID(candidate.key),
+		}
+		if group.Number <= 0 {
+			group.Number = extractGroupNumber(candidate.value, idx+1)
+		}
+
+		applyGroupValue(&group, candidate.value)
+		if group.StateText == "" {
+			if group.Armed {
+				group.StateText = "ПІД ОХОРОНОЮ"
+			} else {
+				group.StateText = "ЗНЯТО"
+			}
+		}
+
+		if group.RoomName == "" {
+			group.RoomName = roomNames[group.RoomID]
+		}
+		groups = append(groups, group)
+	}
+
+	sort.SliceStable(groups, func(i, j int) bool {
+		if groups[i].Number == groups[j].Number {
+			return groups[i].RoomName < groups[j].RoomName
+		}
+		return groups[i].Number < groups[j].Number
+	})
+
+	return groups
+}
+
+// Internal recursive helpers for groups
+
+type groupCandidate struct {
+	key   string
+	value any
+}
+
+func collectGroupCandidates(raw any) []groupCandidate {
+	result := make([]groupCandidate, 0, 8)
+	collectGroupCandidatesRecursive("", raw, 0, &result)
+	return result
+}
+
+func collectGroupCandidatesRecursive(keyHint string, raw any, depth int, out *[]groupCandidate) {
+	if out == nil || depth > 8 || raw == nil {
+		return
+	}
+
+	switch typed := raw.(type) {
+	case map[string]any:
+		if len(typed) == 0 {
+			return
+		}
+
+		if isGroupPayloadMap(typed) {
+			*out = append(*out, groupCandidate{key: keyHint, value: typed})
+			return
+		}
+
+		hasNumericChildren := false
+		for key, value := range typed {
+			if parseCASLID(key) > 0 {
+				hasNumericChildren = true
+				collectGroupCandidatesRecursive(key, value, depth+1, out)
+			}
+		}
+		if hasNumericChildren {
+			return
+		}
+
+		for _, wrapperKey := range []string{"groups", "group", "items", "list", "data", "result", "values"} {
+			if nested, ok := typed[wrapperKey]; ok {
+				collectGroupCandidatesRecursive(keyHint, nested, depth+1, out)
+				return
+			}
+		}
+
+		hasNested := false
+		for key, value := range typed {
+			switch value.(type) {
+			case map[string]any, []any:
+				hasNested = true
+				collectGroupCandidatesRecursive(key, value, depth+1, out)
+			}
+		}
+		if hasNested {
+			return
+		}
+
+		*out = append(*out, groupCandidate{key: keyHint, value: typed})
+	case []any:
+		for idx, item := range typed {
+			collectGroupCandidatesRecursive(strconv.Itoa(idx+1), item, depth+1, out)
+		}
+	default:
+		if strings.TrimSpace(keyHint) == "" {
+			return
+		}
+		*out = append(*out, groupCandidate{key: keyHint, value: raw})
+	}
+}
+
+func isGroupPayloadMap(payload map[string]any) bool {
+	if len(payload) == 0 {
+		return false
+	}
+
+	for _, key := range []string{
+		"group", "group_id", "group_number", "number", "id", "state", "status", "group_state", "groupStatus",
+		"is_on", "is_armed", "armed", "guard", "on", "group_on", "room", "room_id", "room_name", "name_room",
+	} {
+		if _, ok := payload[key]; ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+func applyGroupValue(group *models.ObjectGroup, value any) {
+	if group == nil {
+		return
+	}
+
+	switch typed := value.(type) {
+	case bool:
+		group.Armed = typed
+	case string:
+		setGroupStateFromString(group, typed)
+	case float64:
+		setGroupStateFromInt(group, int64(typed))
+	case int:
+		setGroupStateFromInt(group, int64(typed))
+	case int64:
+		setGroupStateFromInt(group, typed)
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			setGroupStateFromInt(group, parsed)
+		} else if parsedF, errF := typed.Float64(); errF == nil {
+			setGroupStateFromInt(group, int64(parsedF))
+		}
+	case map[string]any:
+		applyGroupMap(group, typed)
+	case []any:
+		if len(typed) > 0 {
+			applyGroupValue(group, typed[0])
+		}
+	default:
+		group.StateText = strings.TrimSpace(asString(typed))
+	}
+}
+
+func applyGroupMap(group *models.ObjectGroup, payload map[string]any) {
+	if group == nil {
+		return
+	}
+
+	if n := extractGroupNumber(payload, group.Number); n > 0 {
+		group.Number = n
+	}
+
+	if roomName := strings.TrimSpace(asString(payload["room_name"])); roomName != "" {
+		group.RoomName = roomName
+	}
+	if roomName := strings.TrimSpace(asString(payload["name_room"])); roomName != "" {
+		group.RoomName = roomName
+	}
+	if roomID := strings.TrimSpace(asString(payload["room_id"])); roomID != "" {
+		group.RoomID = roomID
+	}
+	if roomID := strings.TrimSpace(asString(payload["roomId"])); roomID != "" {
+		group.RoomID = roomID
+	}
+
+	if room, ok := payload["room"].(map[string]any); ok {
+		if roomName := strings.TrimSpace(asString(room["name"])); roomName != "" {
+			group.RoomName = roomName
+		}
+		if roomID := strings.TrimSpace(asString(room["room_id"])); roomID != "" {
+			group.RoomID = roomID
+		}
+		if roomID := strings.TrimSpace(asString(room["id"])); roomID != "" && group.RoomID == "" {
+			group.RoomID = roomID
+		}
+	}
+
+	for _, key := range []string{"is_on", "is_armed", "armed", "guard", "on", "group_on"} {
+		if raw, ok := payload[key]; ok {
+			if armed, known := boolFromAny(raw); known {
+				group.Armed = armed
+				if armed {
+					group.StateText = "ПІД ОХОРОНОЮ"
+				} else {
+					group.StateText = "ЗНЯТО"
+				}
+				return
+			}
+		}
+	}
+
+	for _, key := range []string{"state", "status", "group_state", "groupStatus"} {
+		if raw, ok := payload[key]; ok {
+			switch v := raw.(type) {
+			case string:
+				setGroupStateFromString(group, v)
+				return
+			case map[string]any:
+				applyGroupMap(group, v)
+				return
+			default:
+				if armed, known := boolFromAny(v); known {
+					group.Armed = armed
+					if armed {
+						group.StateText = "ПІД ОХОРОНОЮ"
+					} else {
+						group.StateText = "ЗНЯТО"
+					}
+					return
+				}
+			}
+		}
+	}
+}
+
+func setGroupStateFromInt(group *models.ObjectGroup, value int64) {
+	if group == nil {
+		return
+	}
+	group.Armed = value > 0
+	if group.Armed {
+		group.StateText = "ПІД ОХОРОНОЮ"
+	} else {
+		group.StateText = "ЗНЯТО"
+	}
+}
+
+func setGroupStateFromString(group *models.ObjectGroup, raw string) {
+	if group == nil {
+		return
+	}
+
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return
+	}
+
+	lower := strings.ToLower(value)
+	switch {
+	case strings.Contains(lower, "on"), strings.Contains(lower, "group_on"), strings.Contains(lower, "guard"), strings.Contains(lower, "arm"), strings.Contains(lower, "взят"), strings.Contains(lower, "включ"), strings.Contains(lower, "під охор"):
+		group.Armed = true
+		group.StateText = "ПІД ОХОРОНОЮ"
+	case strings.Contains(lower, "off"), strings.Contains(lower, "group_off"), strings.Contains(lower, "disarm"), strings.Contains(lower, "знят"), strings.Contains(lower, "виключ"):
+		group.Armed = false
+		group.StateText = "ЗНЯТО"
+	default:
+		group.StateText = value
+	}
+}
+
+func extractGroupNumber(value any, fallback int) int {
+	switch typed := value.(type) {
+	case int:
+		if typed > 0 {
+			return typed
+		}
+	case int64:
+		if typed > 0 {
+			return int(typed)
+		}
+	case float64:
+		if typed > 0 {
+			return int(typed)
+		}
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil && parsed > 0 {
+			return int(parsed)
+		}
+	case map[string]any:
+		for _, key := range []string{"number", "group_number", "group", "id", "group_id", "groupId", "groupNum"} {
+			if raw, ok := typed[key]; ok {
+				if parsed := parseCASLID(asString(raw)); parsed > 0 {
+					return parsed
+				}
+			}
+		}
+	case string:
+		if parsed := parseCASLID(typed); parsed > 0 {
+			return parsed
+		}
+	}
+
+	if fallback > 0 {
+		return fallback
+	}
+	return 1
+}
+
+func boolFromAny(value any) (bool, bool) {
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case int:
+		return typed > 0, true
+	case int64:
+		return typed > 0, true
+	case float64:
+		return typed > 0, true
+	case string:
+		raw := strings.TrimSpace(strings.ToLower(typed))
+		switch raw {
+		case "1", "true", "on", "armed", "guard", "group_on", "взято":
+			return true, true
+		case "0", "false", "off", "disarmed", "not_guard", "group_off", "знято":
+			return false, true
+		default:
+			return false, false
+		}
+	default:
+		return false, false
+	}
 }
 
 // Utility functions
@@ -339,11 +680,50 @@ func normalizeContactIDs(inCharge []string, managerID string) []string {
 func MapObjectID(parts ...string) int {
 	base := 0
 	if len(parts) > 0 {
-		base, _ = strconv.Atoi(strings.TrimSpace(parts[0]))
+		base = parseCASLID(parts[0])
 	}
 	if base == 0 {
-		// Simplified for now, original used fnv hash.
-		// base = stableID(parts...)
+		base = stableID(parts...)
 	}
 	return ObjectIDNamespaceStart + (base % int(ObjectIDNamespaceSize))
+}
+
+func stableID(parts ...string) int {
+	h := fnv.New32a()
+	for _, part := range parts {
+		_, _ = h.Write([]byte(strings.TrimSpace(part)))
+		_, _ = h.Write([]byte{0})
+	}
+	id := int(h.Sum32() & 0x7fffffff)
+	if id == 0 {
+		return 1
+	}
+	return id
+}
+
+func parseCASLID(raw string) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || parsed < 0 {
+		return 0
+	}
+	return parsed
+}
+
+func asString(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case fmt.Stringer:
+		return strings.TrimSpace(v.String())
+	case int:
+		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case float64:
+		return strconv.FormatInt(int64(v), 10)
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", value))
+	}
 }

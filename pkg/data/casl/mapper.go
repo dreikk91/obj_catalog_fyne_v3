@@ -299,15 +299,19 @@ func (m *Mapper) BuildLineNameIndex(lines []DeviceLine) map[int]string {
 
 func (m *Mapper) NormalizeObjectRecord(record *GrdObject, device Device) {
 	if record == nil { return }
-	if record.ManagerID == "" {
-		record.ManagerID = strings.TrimSpace(record.Manager.UserID)
+
+	managerID := strings.TrimSpace(record.ManagerID)
+	if managerID == "" {
+		managerID = strings.TrimSpace(record.Manager.UserID)
 	}
-	if record.ObjID == "" {
-		record.ObjID = device.ObjID.String()
+	record.ManagerID = managerID
+
+	if strings.TrimSpace(record.ObjID) == "" {
+		record.ObjID = strings.TrimSpace(device.ObjID.String())
 	}
 	if record.DeviceID.Int64() <= 0 {
-		if i, err := strconv.ParseInt(device.DeviceID.String(), 10, 64); err == nil {
-			record.DeviceID = Int64(i)
+		if parsed, _ := strconv.ParseInt(device.DeviceID.String(), 10, 64); parsed > 0 {
+			record.DeviceID = Int64(parsed)
 		}
 	}
 }

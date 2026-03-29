@@ -72,17 +72,8 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 
 	records, err := p.loadObjects(ctx)
 	if err != nil {
-		log.Warn().Err(err).Msg("CASL: read_grd_object недоступний, fallback на read_pult")
-		pults, pErr := p.client.ReadPults(ctx, 0, casl.ReadLimit)
-		if pErr != nil {
-			log.Error().Err(pErr).Msg("CASL: не вдалося завантажити об'єкти")
-			return nil
-		}
-		objects := make([]models.Object, 0, len(pults))
-		for _, item := range pults {
-			objects = append(objects, p.mapper.ToPultObject(item))
-		}
-		return objects
+		log.Warn().Err(err).Msg("CASL: не вдалося завантажити об'єкти")
+		return nil
 	}
 
 	_, _ = p.loadDevices(ctx)
@@ -133,17 +124,13 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 
 func (p *CASLCloudProvider) GetZones(objectID string) []models.Zone {
 	internalID, err := strconv.Atoi(objectID)
-	if err != nil {
-		return nil
-	}
+	if err != nil { return nil }
 
 	ctx, cancel := context.WithTimeout(context.Background(), casl.HTTPTimeout)
 	defer cancel()
 
 	record, found, err := p.resolveObjectRecord(ctx, internalID)
-	if err != nil || !found {
-		return nil
-	}
+	if err != nil || !found { return nil }
 
 	_, _ = p.loadDevices(ctx)
 	device, _ := p.resolveDeviceForObject(record)
@@ -153,17 +140,13 @@ func (p *CASLCloudProvider) GetZones(objectID string) []models.Zone {
 
 func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 	internalID, err := strconv.Atoi(objectID)
-	if err != nil {
-		return nil
-	}
+	if err != nil { return nil }
 
 	ctx, cancel := context.WithTimeout(context.Background(), casl.HTTPTimeout)
 	defer cancel()
 
 	record, found, err := p.resolveObjectRecord(ctx, internalID)
-	if err != nil || !found {
-		return nil
-	}
+	if err != nil || !found { return nil }
 
 	users, _ := p.loadUsers(ctx)
 	return p.mapper.ToContacts(record, users)
@@ -171,9 +154,15 @@ func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 
 func (p *CASLCloudProvider) GetEvents() []models.Event {
 	p.realtime.Start(context.Background())
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return append([]models.Event(nil), p.cachedEvents...)
+	p.mu.Lock()
+	if len(p.cachedEvents) == 0 {
+		p.mu.Unlock()
+		p.loadHistoricalEvents()
+		p.mu.Lock()
+	}
+	res := append([]models.Event(nil), p.cachedEvents...)
+	p.mu.Unlock()
+	return res
 }
 
 func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
@@ -188,8 +177,10 @@ func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
 
 	var resp casl.ReadEventsByIDResponse
 	payload := map[string]any{
-		"type": "read_events_by_id",
-		"objIds": []string{record.ObjID},
+		"type":          "read_events_by_id",
+		"objIds":         []string{record.ObjID},
+		"deviceIds":     []string{strconv.FormatInt(record.DeviceID.Int64(), 10)},
+		"deviceNumbers": []int64{record.DeviceNumber.Int64()},
 	}
 	if err := p.client.PostCommand(ctx, payload, &resp, true); err != nil {
 		return nil
@@ -212,13 +203,18 @@ func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
 
 func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 	p.realtime.Start(context.Background())
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.mu.Lock()
+	if len(p.cachedEvents) == 0 && len(p.realtimeAlarmByObjID) == 0 {
+		p.mu.Unlock()
+		p.loadHistoricalEvents()
+		p.mu.Lock()
+	}
 
 	alarms := make([]models.Alarm, 0, len(p.realtimeAlarmByObjID))
 	for _, alarm := range p.realtimeAlarmByObjID {
 		alarms = append(alarms, alarm)
 	}
+	p.mu.Unlock()
 	return alarms
 }
 
@@ -279,12 +275,40 @@ func (p *CASLCloudProvider) GetLatestEventID() (int64, error) {
 	return revision, nil
 }
 
+func (p *CASLCloudProvider) loadHistoricalEvents() {
+	ctx, cancel := context.WithTimeout(context.Background(), casl.HTTPTimeout)
+	defer cancel()
+
+	now := time.Now().UnixMilli()
+	start := now - (int64(72 * time.Hour / time.Millisecond))
+
+	payload := map[string]any{
+		"type":      "read_events",
+		"timeStart": start,
+		"timeEnd":   now,
+	}
+
+	var resp casl.ReadEventsByIDResponse
+	if err := p.client.PostCommand(ctx, payload, &resp, true); err != nil {
+		return
+	}
+
+	rows := resp.Data
+	if len(rows) == 0 {
+		rows = resp.Events
+	}
+	if len(rows) == 0 {
+		return
+	}
+
+	p.handleRealtimeEvents(rows)
+}
+
 func (p *CASLCloudProvider) handleRealtimeEvents(rows []casl.ObjectEvent) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	for _, row := range rows {
-		// Resolve device type for decoding
 		deviceType := ""
 		if dev, ok := p.deviceByObjectID[row.ObjID.String()]; ok {
 			deviceType = dev.Type.String()
@@ -315,7 +339,6 @@ func (p *CASLCloudProvider) handleRealtimeEvents(rows []casl.ObjectEvent) {
 
 func (p *CASLCloudProvider) mapRowToEvent(row casl.ObjectEvent, deviceType string) models.Event {
 	eventType := protocol.ClassifyEventTypeWithContext(row.Code.String(), row.ContactID.String(), row.Type, row.ObjName.String())
-
 	dict := p.loadDictionaryMap(context.Background())
 	trans := p.loadTranslatorMap(context.Background(), deviceType)
 
@@ -380,21 +403,40 @@ func (p *CASLCloudProvider) loadObjects(ctx context.Context) ([]casl.GrdObject, 
 	p.mu.RUnlock()
 
 	records, err := p.client.ReadGuardObjects(ctx, 0, casl.ReadLimit)
-	if err != nil {
-		return nil, err
+	if err == nil && len(records) > 0 {
+		p.applySnapshot(records, nil, nil)
+		return records, nil
 	}
 
-	p.mu.Lock()
-	p.cachedObjects = records
-	p.cachedObjectsAt = time.Now()
-	for i := range records {
-		p.mapper.NormalizeObjectRecord(&records[i], casl.Device{})
-		internalID := casl.MapObjectID(records[i].ObjID, records[i].Name, strconv.FormatInt(records[i].DeviceNumber.Int64(), 10))
-		p.objectByInternalID[internalID] = records[i]
+	connRecords, err := p.client.ReadConnections(ctx, 0, casl.ReadLimit)
+	if err == nil && len(connRecords) > 0 {
+		objs := make([]casl.GrdObject, 0, len(connRecords))
+		devs := make([]casl.Device, 0, len(connRecords))
+		for _, r := range connRecords {
+			objs = append(objs, r.GuardedObject)
+			devs = append(devs, r.Device)
+		}
+		p.applySnapshot(objs, devs, nil)
+		return objs, nil
 	}
-	p.mu.Unlock()
 
-	return records, nil
+	pults, pultErr := p.client.ReadPults(ctx, 0, casl.ReadLimit)
+	if pultErr == nil && len(pults) > 0 {
+		objs := make([]casl.GrdObject, 0, len(pults))
+		for _, pult := range pults {
+			objs = append(objs, casl.GrdObject{
+				ObjID:   pult.PultID,
+				Name:    pult.Name,
+				Lat:     strconv.FormatFloat(pult.Lat, 'f', 6, 64),
+				Long:    strconv.FormatFloat(pult.Lng, 'f', 6, 64),
+				Address: pult.Nickname,
+			})
+		}
+		p.applySnapshot(objs, nil, nil)
+		return objs, nil
+	}
+
+	return nil, err
 }
 
 func (p *CASLCloudProvider) loadDevices(ctx context.Context) ([]casl.Device, error) {
@@ -410,20 +452,37 @@ func (p *CASLCloudProvider) loadDevices(ctx context.Context) ([]casl.Device, err
 	p.mu.RUnlock()
 
 	devices, err := p.client.ReadDevices(ctx, 0, casl.ReadLimit)
-	if err != nil {
-		return nil, err
+	if err == nil && len(devices) > 0 {
+		p.applySnapshot(nil, devices, nil)
+		return devices, nil
 	}
 
+	return nil, err
+}
+
+func (p *CASLCloudProvider) applySnapshot(objects []casl.GrdObject, devices []casl.Device, users []casl.User) {
 	p.mu.Lock()
-	for _, device := range devices {
-		p.deviceByDeviceID[device.DeviceID.String()] = device
-		p.deviceByObjectID[device.ObjID.String()] = device
-		p.deviceByNumber[device.Number.Int64()] = device
-	}
-	p.cachedDevicesAt = time.Now()
-	p.mu.Unlock()
+	defer p.mu.Unlock()
+	now := time.Now()
 
-	return devices, nil
+	if len(objects) > 0 {
+		p.cachedObjects = objects
+		p.cachedObjectsAt = now
+		for i := range objects {
+			p.mapper.NormalizeObjectRecord(&objects[i], casl.Device{})
+			internalID := casl.MapObjectID(objects[i].ObjID, objects[i].Name, strconv.FormatInt(objects[i].DeviceNumber.Int64(), 10))
+			p.objectByInternalID[internalID] = objects[i]
+		}
+	}
+
+	if len(devices) > 0 {
+		for _, d := range devices {
+			p.deviceByDeviceID[d.DeviceID.String()] = d
+			p.deviceByObjectID[d.ObjID.String()] = d
+			p.deviceByNumber[d.Number.Int64()] = d
+		}
+		p.cachedDevicesAt = now
+	}
 }
 
 func (p *CASLCloudProvider) resolveDeviceForObject(record casl.GrdObject) (casl.Device, bool) {

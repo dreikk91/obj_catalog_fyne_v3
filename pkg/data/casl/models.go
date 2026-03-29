@@ -237,7 +237,7 @@ func decodeDeviceLines(raw json.RawMessage) []DeviceLine {
 		return nil
 	}
 
-	var source map[string]any
+	var source map[string]json.RawMessage
 	if err := json.Unmarshal(body, &source); err != nil {
 		return nil
 	}
@@ -245,9 +245,22 @@ func decodeDeviceLines(raw json.RawMessage) []DeviceLine {
 		return nil
 	}
 
-	// Logic for decoding map of lines would go here if needed,
-	// but keeping it simple for now to see if we can just use the slice.
-	return nil
+	lines := make([]DeviceLine, 0, len(source))
+	for key, val := range source {
+		var line DeviceLine
+		if err := json.Unmarshal(val, &line); err == nil {
+			if line.ID.Int64() == 0 {
+				if parsed, err := strconv.ParseInt(key, 10, 64); err == nil && parsed > 0 {
+					line.ID = Int64(parsed)
+				}
+			}
+			if line.Number.Int64() == 0 {
+				line.Number = line.ID
+			}
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 type PhoneNumber struct {

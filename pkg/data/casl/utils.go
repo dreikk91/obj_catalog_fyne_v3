@@ -22,11 +22,17 @@ func StableEventID(objID string, ts int64, code string, index int) int {
 
 func FlattenDictionaryMap(dict map[string]any) map[string]string {
 	base := flattenStringMap(dict)
+	uk := extractDictionaryLanguageMap(dict, "uk")
+	for k, v := range uk {
+		if k != "" && v != "" { base[k] = v }
+	}
+	return base
+}
 
-	// Localization "translate" -> "uk" extraction
-	langCandidates := []string{"uk", "uk-UA", "uk_ua", "ua", "UA"}
+func extractDictionaryLanguageMap(dict map[string]any, lang string) map[string]string {
+	langCandidates := []string{lang, strings.ToUpper(lang), "uk-UA", "uk_ua", "ua", "UA"}
 
-	extractLang := func(node any) map[string]string {
+	resolve := func(node any) map[string]string {
 		root, ok := node.(map[string]any)
 		if !ok { return nil }
 		for _, key := range langCandidates {
@@ -38,15 +44,23 @@ func FlattenDictionaryMap(dict map[string]any) map[string]string {
 	}
 
 	if nested, ok := dict["translate"]; ok {
-		uk := extractLang(nested)
-		for k, v := range uk { base[k] = v }
+		if out := resolve(nested); len(out) > 0 { return out }
 	}
-
-	return base
+	if nested, ok := dict["dictionary"].(map[string]any); ok {
+		if tr, ok := nested["translate"]; ok {
+			if out := resolve(tr); len(out) > 0 { return out }
+		}
+	}
+	return nil
 }
 
 func FlattenTranslatorMap(value any) map[string]string {
 	result := make(map[string]string)
+
+	setIfEmpty := func(k, v string) {
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if k != "" && v != "" && result[k] == "" { result[k] = v }
+	}
 
 	var walk func(v any)
 	walk = func(v any) {
@@ -55,11 +69,16 @@ func FlattenTranslatorMap(value any) map[string]string {
 			codes := extractTranslatorCodes(typed)
 			text := extractTranslatorText(typed)
 			if len(codes) > 0 && text != "" {
-				for _, code := range codes { result[code] = text }
+				for _, code := range codes { setIfEmpty(code, text) }
 			}
-			for _, nested := range typed { walk(nested) }
+			for k, nested := range typed {
+				if looksLikeCode(k) {
+					if t := extractTranslatorText(nested); t != "" { setIfEmpty(k, t) }
+				}
+				walk(nested)
+			}
 		case []any:
-			for _, nested := range typed { walk(nested) }
+			for _, item := range typed { walk(item) }
 		}
 	}
 
@@ -105,7 +124,7 @@ func extractTranslatorText(value any) string {
 	switch typed := value.(type) {
 	case string: return strings.TrimSpace(typed)
 	case map[string]any:
-		priority := []string{"msg", "message", "text", "description", "name", "uk"}
+		priority := []string{"msg", "message", "text", "description", "title", "uk"}
 		for _, key := range priority {
 			if v, ok := typed[key]; ok {
 				if s := extractTranslatorText(v); s != "" { return s }
@@ -113,4 +132,11 @@ func extractTranslatorText(value any) string {
 		}
 	}
 	return ""
+}
+
+func looksLikeCode(key string) bool {
+	key = strings.TrimSpace(key)
+	if key == "" { return false }
+	if strings.HasPrefix(key, "TYPE_") { return false }
+	return true
 }

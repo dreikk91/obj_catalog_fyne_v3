@@ -308,6 +308,33 @@ func (c *APIClient) ReadDevices(ctx context.Context, skip int, limit int) ([]Dev
 	return resp.Data, nil
 }
 
+func (c *APIClient) ReadConnections(ctx context.Context, skip int, limit int) ([]ConnectionRecord, error) {
+	payload := map[string]any{"type": "read_connections", "skip": skip, "limit": limit}
+	var resp struct {
+		Status string             `json:"status"`
+		Data   json.RawMessage    `json:"data"`
+		Error  string             `json:"error"`
+	}
+	if err := c.PostCommand(ctx, payload, &resp, true); err != nil {
+		return nil, err
+	}
+	if len(resp.Data) == 0 || string(resp.Data) == "null" {
+		return nil, nil
+	}
+
+	var rows []ConnectionRecord
+	if err := json.Unmarshal(resp.Data, &rows); err == nil {
+		return rows, nil
+	}
+
+	var single ConnectionRecord
+	if err := json.Unmarshal(resp.Data, &single); err == nil {
+		return []ConnectionRecord{single}, nil
+	}
+
+	return nil, fmt.Errorf("casl read_connections: unsupported payload format")
+}
+
 func (c *APIClient) ReadBasketCount(ctx context.Context) (int, error) {
 	payload := map[string]any{"type": "read_count_in_basket"}
 	var resp BasketResponse

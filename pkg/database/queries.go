@@ -21,7 +21,6 @@ func GetObjectsList(ctx context.Context, db *sqlx.DB) ([]ObjectInfoRow, error) {
 		JOIN OBJECTS_LA ol ON ol.OBJUIN = oi.OBJUIN
 		JOIN OBJECTS_STATE os ON os.OBJUIN = oi.OBJUIN
 		WHERE oi.OBJTYPEID <> 1
-		  AND oi.OBJN > 36
 		ORDER BY CAST(oi.OBJN AS VARCHAR(20))
 	`
 

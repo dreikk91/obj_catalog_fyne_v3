@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -64,7 +65,11 @@ func Setup(config *Config) error {
 			Compress:   config.Compress,
 			LocalTime:  true,
 		}
-		writers = append(writers, fileWriter)
+		appWriter := io.Writer(fileWriter)
+		if config.PrettyConsole {
+			appWriter = newConsoleWriter(fileWriter, true)
+		}
+		writers = append(writers, appWriter)
 		fmt.Printf("  Файловий логер налаштовано (app.log)\n")
 
 		// Окремий файл для помилок
@@ -88,29 +93,12 @@ func Setup(config *Config) error {
 
 	// Налаштування консольного виводу
 	if config.EnableConsole {
-		var consoleWriter io.Writer
-
 		if config.PrettyConsole {
 			fmt.Printf("  Увімкнено красивий формат консолі\n")
-			consoleWriter = zerolog.ConsoleWriter{
-				Out:        os.Stdout,
-				TimeFormat: "15:04:05",
-				NoColor:    false,
-				FormatLevel: func(i interface{}) string {
-					return fmt.Sprintf("| %-6s|", i)
-				},
-				FormatMessage: func(i interface{}) string {
-					return fmt.Sprintf("%-50s", i)
-				},
-				FormatFieldName: func(i interface{}) string {
-					return fmt.Sprintf("%s=", i)
-				},
-			}
+			writers = append(writers, newConsoleWriter(os.Stdout, false))
 		} else {
-			consoleWriter = os.Stdout
+			writers = append(writers, os.Stdout)
 		}
-
-		writers = append(writers, consoleWriter)
 		fmt.Printf("  Консолень логер налаштовано\n")
 	}
 
@@ -126,6 +114,7 @@ func Setup(config *Config) error {
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 
 	// Налаштування рівня логування
+	config.LogLevel = NormalizeLogLevel(config.LogLevel)
 	level, err := zerolog.ParseLevel(config.LogLevel)
 	if err != nil {
 		level = zerolog.InfoLevel
@@ -162,6 +151,46 @@ func Setup(config *Config) error {
 		Msg("Логер успішно ініціалізовано")
 
 	return nil
+}
+
+func newConsoleWriter(out io.Writer, noColor bool) zerolog.ConsoleWriter {
+	return zerolog.ConsoleWriter{
+		Out:        out,
+		TimeFormat: "15:04:05",
+		NoColor:    noColor,
+		FormatLevel: func(i interface{}) string {
+			return fmt.Sprintf("| %-6s|", i)
+		},
+		FormatMessage: func(i interface{}) string {
+			return fmt.Sprintf("%-50s", i)
+		},
+		FormatFieldName: func(i interface{}) string {
+			return fmt.Sprintf("%s=", i)
+		},
+	}
+}
+
+// NormalizeLogLevel повертає валідний рівень zerolog.
+func NormalizeLogLevel(level string) string {
+	switch l := strings.ToLower(strings.TrimSpace(level)); l {
+	case "trace", "debug", "info", "warn", "error":
+		return l
+	default:
+		return "info"
+	}
+}
+
+// SetLogLevel змінює глобальний рівень логування на льоту.
+func SetLogLevel(level string) string {
+	normalized := NormalizeLogLevel(level)
+	parsed, err := zerolog.ParseLevel(normalized)
+	if err != nil {
+		parsed = zerolog.InfoLevel
+		normalized = "info"
+	}
+	zerolog.SetGlobalLevel(parsed)
+	log.Info().Str("log_level", normalized).Msg("Рівень логування оновлено")
+	return normalized
 }
 
 // LevelFilterWriter фільтрує логи за мінімальним рівнем

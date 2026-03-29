@@ -9,26 +9,36 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	fyneTheme "fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/config"
-	data "obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	objexport "obj_catalog_fyne_v3/pkg/export"
 	"obj_catalog_fyne_v3/pkg/models"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
-	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 // WorkAreaPanel - структура робочої області
 type WorkAreaPanel struct {
 	Container     *fyne.Container
-	Data          data.DataProvider
+	Data          contracts.WorkAreaProvider
+	ViewModel     *viewmodels.WorkAreaViewModel
+	HeaderVM      *viewmodels.WorkAreaHeaderViewModel
+	DeviceVM      *viewmodels.WorkAreaDeviceViewModel
+	ExportVM      *viewmodels.WorkAreaExportViewModel
+	DeviceStateVM *viewmodels.WorkAreaDeviceStateViewModel
+	ExternalVM    *viewmodels.WorkAreaExternalStateViewModel
 	CurrentObject *models.Object
 	Window        fyne.Window
+	ZonesData     binding.UntypedList
+	ContactsData  binding.UntypedList
+	EventsData    binding.UntypedList
 
 	// Стан завантаження
 	Zones     []models.Zone
@@ -48,6 +58,7 @@ type WorkAreaPanel struct {
 	// Лейбли інформації про прилад
 	DeviceTypeLabel      *widget.Label
 	PanelMarkLabel       *widget.Label // Added PanelMarkLabel
+	GroupsLabel          *widget.Label
 	GSMLabel             *widget.Label
 	PowerLabel           *widget.Label
 	SIMLabel             *widget.Label
@@ -80,10 +91,19 @@ type WorkAreaPanel struct {
 }
 
 // NewWorkAreaPanel створює робочу область
-func NewWorkAreaPanel(provider data.DataProvider, window fyne.Window) *WorkAreaPanel {
+func NewWorkAreaPanel(provider contracts.WorkAreaProvider, window fyne.Window) *WorkAreaPanel {
 	panel := &WorkAreaPanel{
-		Data:   provider,
-		Window: window,
+		Data:          provider,
+		ViewModel:     viewmodels.NewWorkAreaViewModel(),
+		HeaderVM:      viewmodels.NewWorkAreaHeaderViewModel(),
+		DeviceVM:      viewmodels.NewWorkAreaDeviceViewModel(),
+		ExportVM:      viewmodels.NewWorkAreaExportViewModel(),
+		DeviceStateVM: viewmodels.NewWorkAreaDeviceStateViewModel(),
+		ExternalVM:    viewmodels.NewWorkAreaExternalStateViewModel(),
+		Window:        window,
+		ZonesData:     binding.NewUntypedList(),
+		ContactsData:  binding.NewUntypedList(),
+		EventsData:    binding.NewUntypedList(),
 	}
 
 	// Шапка
@@ -91,12 +111,12 @@ func NewWorkAreaPanel(provider data.DataProvider, window fyne.Window) *WorkAreaP
 
 	// Назва об'єкта: використовуємо Label з перенесенням рядків,
 	// щоб довгі назви (до ~200 символів) коректно відображались у межах правої вкладки.
-	panel.HeaderName = widget.NewLabel("← Оберіть об'єкт зі списку")
+	panel.HeaderName = widget.NewLabelWithData(panel.HeaderVM.HeaderNameBinding())
 	panel.HeaderName.TextStyle = fyne.TextStyle{Bold: true}
 	panel.HeaderName.Wrapping = fyne.TextWrapWord
 
 	// Адреса об'єкта також може бути довгою — вмикаємо перенесення.
-	panel.HeaderAddress = widget.NewLabel("")
+	panel.HeaderAddress = widget.NewLabelWithData(panel.HeaderVM.HeaderAddressBinding())
 	panel.HeaderAddress.Wrapping = fyne.TextWrapWord
 	panel.HeaderStatus = canvas.NewText("", appTheme.ColorNormal)
 	panel.HeaderStatus.TextSize = themeSize + 1
@@ -111,7 +131,7 @@ func NewWorkAreaPanel(provider data.DataProvider, window fyne.Window) *WorkAreaP
 			return
 		}
 
-		row := panel.buildExcelRowTSV(*panel.CurrentObject)
+		row := panel.ExportVM.BuildExcelRowTSV(*panel.CurrentObject, panel.Contacts)
 		panel.Window.Clipboard().SetContent(row)
 		ShowToast(panel.Window, "Рядок для Excel скопійовано")
 	})
@@ -159,31 +179,33 @@ func (w *WorkAreaPanel) initExportButtons() {
 }
 
 func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
-	w.DeviceTypeLabel = widget.NewLabel("🔧 Тип: —")
-	w.PanelMarkLabel = widget.NewLabel("🏷️ Марка: —") // Initialized PanelMarkLabel
+	w.DeviceTypeLabel = widget.NewLabelWithData(w.DeviceStateVM.DeviceTypeBinding())
+	w.PanelMarkLabel = widget.NewLabelWithData(w.DeviceStateVM.PanelMarkBinding()) // Initialized PanelMarkLabel
+	w.GroupsLabel = widget.NewLabelWithData(w.DeviceStateVM.GroupsBinding())
+	w.GroupsLabel.Wrapping = fyne.TextWrapWord
 	// w.GSMLabel = widget.NewLabel("📶 GSM: —")
-	w.PowerLabel = widget.NewLabel("🔌 Живлення: —")
-	w.SIMLabel = widget.NewLabel("📱 SIM: —")
-	w.AutoTestLabel = widget.NewLabel("⏱️ Автотест: —")
-	w.GuardLabel = widget.NewLabel("🔒 Стан: —")
+	w.PowerLabel = widget.NewLabelWithData(w.DeviceStateVM.PowerBinding())
+	w.SIMLabel = widget.NewLabelWithData(w.DeviceStateVM.SIMBinding())
+	w.AutoTestLabel = widget.NewLabelWithData(w.DeviceStateVM.AutoTestBinding())
+	w.GuardLabel = widget.NewLabelWithData(w.DeviceStateVM.GuardBinding())
 	w.GuardLabel.TextStyle = fyne.TextStyle{Bold: true}
 	w.CopySimBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
-	w.ChanLabel = widget.NewLabel("📡 Канал: —")
-	w.PhoneLabel = widget.NewLabel("☎️ Тел. об'єкта: —")
+	w.ChanLabel = widget.NewLabelWithData(w.DeviceStateVM.ChannelBinding())
+	w.PhoneLabel = widget.NewLabelWithData(w.DeviceStateVM.PhoneBinding())
 	w.CopyPhonesBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
-	w.AkbLabel = widget.NewLabel("🔋 АКБ: —")
-	w.TestControlLabel = widget.NewLabel("⏲️ Контроль тесту: —")
-	w.SignalLabel = widget.NewLabel("📶 Рівень: —")
-	w.LastTestLabel = widget.NewLabel("📝 Тест: —")
-	w.LastTestTimeLabel = widget.NewLabel("📅 Ост. тест: —")
-	w.LastMessageTimeLabel = widget.NewLabel("📅 Ост. подія: —")
+	w.AkbLabel = widget.NewLabelWithData(w.DeviceStateVM.AkbBinding())
+	w.TestControlLabel = widget.NewLabelWithData(w.DeviceStateVM.TestControlBinding())
+	w.SignalLabel = widget.NewLabelWithData(w.ExternalVM.SignalBinding())
+	w.LastTestLabel = widget.NewLabelWithData(w.ExternalVM.LastTestBinding())
+	w.LastTestTimeLabel = widget.NewLabelWithData(w.ExternalVM.LastTestTimeBinding())
+	w.LastMessageTimeLabel = widget.NewLabelWithData(w.ExternalVM.LastMessageTimeBinding())
 	w.TestLogsBtn = widget.NewButtonWithIcon("Тестові повідомлення", fyneTheme.HistoryIcon(), nil)
 
-	w.Notes1Label = widget.NewLabel("")
+	w.Notes1Label = widget.NewLabelWithData(w.DeviceStateVM.NotesBinding())
 	w.Notes1Label.Wrapping = fyne.TextWrapWord
 	w.CopyNotesBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
 
-	w.Location1Label = widget.NewLabel("")
+	w.Location1Label = widget.NewLabelWithData(w.DeviceStateVM.LocationBinding())
 	w.Location1Label.Wrapping = fyne.TextWrapWord
 	w.CopyLocationBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
 
@@ -209,6 +231,7 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 				w.LastTestTimeLabel,
 				w.LastMessageTimeLabel,
 				w.GuardLabel,
+				w.GroupsLabel,
 				widget.NewSeparator(),
 				w.TestLogsBtn,
 			),
@@ -225,9 +248,12 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 }
 
 func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
-	zonesTableView := uiwidgets.NewQTableViewWithCallbacks(
+	w.ZonesTable = widget.NewTable(
 		func() (int, int) {
-			return len(w.Zones), 5
+			if w.ZonesData != nil {
+				return w.ZonesData.Length(), 5
+			}
+			return 0, 5
 		},
 		func() fyne.CanvasObject {
 			label := widget.NewLabel("Data")
@@ -241,12 +267,12 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 			label := container.Objects[0].(*widget.Label)
 			btn := container.Objects[1].(*widget.Button)
 
-			if id.Row >= len(w.Zones) {
+			zone, ok := w.zoneByRow(id.Row)
+			if !ok {
 				label.SetText("")
 				btn.Hide()
 				return
 			}
-			zone := w.Zones[id.Row]
 
 			var text string
 			switch id.Col {
@@ -283,7 +309,6 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 			}
 		},
 	)
-	w.ZonesTable = zonesTableView.Widget()
 
 	w.ZonesTable.SetColumnWidth(0, 50)
 	w.ZonesTable.SetColumnWidth(1, 200)
@@ -324,10 +349,8 @@ func (l *zonesTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 }
 
 func (w *WorkAreaPanel) createContactsTab() fyne.CanvasObject {
-	w.ContactsList = widget.NewList(
-		func() int {
-			return len(w.Contacts)
-		},
+	w.ContactsList = widget.NewListWithData(
+		w.ContactsData,
 		func() fyne.CanvasObject {
 			nameLabel := widget.NewLabel("Name")
 			nameLabel.TextStyle = fyne.TextStyle{Bold: true}
@@ -341,11 +364,19 @@ func (w *WorkAreaPanel) createContactsTab() fyne.CanvasObject {
 				widget.NewSeparator(),
 			)
 		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			if id >= len(w.Contacts) {
+		func(item binding.DataItem, obj fyne.CanvasObject) {
+			data, ok := item.(binding.Untyped)
+			if !ok {
 				return
 			}
-			contact := w.Contacts[id]
+			value, err := data.Get()
+			if err != nil {
+				return
+			}
+			contact, ok := value.(models.Contact)
+			if !ok {
+				return
+			}
 			vbox := obj.(*fyne.Container)
 
 			nameRow := vbox.Objects[0].(*fyne.Container)
@@ -371,25 +402,31 @@ func (w *WorkAreaPanel) createContactsTab() fyne.CanvasObject {
 }
 
 func (w *WorkAreaPanel) createEventsTab() fyne.CanvasObject {
-	eventsList := widget.NewList(
-		func() int {
-			return len(w.Events)
-		},
+	eventsList := widget.NewListWithData(
+		w.EventsData,
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
 			txt := canvas.NewText("Подія", color.White)
 			return container.NewStack(bg, container.NewPadded(txt))
 		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			if id >= len(w.Events) {
+		func(item binding.DataItem, obj fyne.CanvasObject) {
+			data, ok := item.(binding.Untyped)
+			if !ok {
 				return
 			}
+			value, err := data.Get()
+			if err != nil {
+				return
+			}
+			event, ok := value.(models.Event)
+			if !ok {
+				return
+			}
+
 			stack := obj.(*fyne.Container)
 			bg := stack.Objects[0].(*canvas.Rectangle)
 			txtContainer := stack.Objects[1].(*fyne.Container)
 			txt := txtContainer.Objects[0].(*canvas.Text)
-
-			event := w.Events[id]
 
 			// Вибираємо палітру кольорів залежно від теми
 			var textColor, rowColor color.NRGBA
@@ -437,12 +474,7 @@ func (w *WorkAreaPanel) SetObject(object models.Object) {
 	}
 
 	// Оновлюємо базову інфу
-	if w.HeaderName != nil {
-		w.HeaderName.SetText(fmt.Sprintf("%s (№%d)", object.Name, object.ID))
-	}
-	if w.HeaderAddress != nil {
-		w.HeaderAddress.SetText(fmt.Sprintf("📌 %s | 📄 %s", object.Address, object.ContractNum))
-	}
+	w.HeaderVM.ApplyObject(object)
 	w.HeaderStatus.Text = object.GetStatusDisplay()
 	w.HeaderStatus.Color = GetStatusColor(object.Status)
 	w.HeaderStatus.Refresh()
@@ -488,7 +520,8 @@ func (w *WorkAreaPanel) exportSelectedObject(format string) {
 	}
 
 	go func() {
-		exportData := w.buildObjectExportData(obj, zones, contacts, events)
+		externalData := w.ViewModel.LoadExternalData(w.Data, obj.ID)
+		exportData := w.ExportVM.BuildObjectExportData(obj, zones, contacts, events, externalData)
 		uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
 		exportDir := uiCfg.ExportDir
 
@@ -525,204 +558,34 @@ func (w *WorkAreaPanel) exportSelectedObject(format string) {
 	}()
 }
 
-func (w *WorkAreaPanel) buildObjectExportData(
-	obj models.Object,
-	zones []models.Zone,
-	contacts []models.Contact,
-	events []models.Event,
-) objexport.ObjectExportData {
-	lastEventText := "Немає"
-	if len(events) > 0 {
-		latest := events[0]
-		eventTime := "Немає дати"
-		if !latest.Time.IsZero() {
-			eventTime = latest.Time.Format("02.01.2006 15:04:05")
-		}
-		lastEventText = fmt.Sprintf("%s | %s", eventTime, latest.GetTypeDisplay())
-		if latest.ZoneNumber > 0 {
-			lastEventText += fmt.Sprintf(" | Зона %d", latest.ZoneNumber)
-		}
-		if strings.TrimSpace(latest.Details) != "" {
-			lastEventText += " | " + strings.TrimSpace(latest.Details)
-		}
-	}
-
-	signal, testMsg, lastTestTime, _ := w.Data.GetExternalData(itoa(obj.ID))
-	lastTestText := "Немає"
-	if !lastTestTime.IsZero() {
-		lastTestText = lastTestTime.Format("02.01.2006 15:04:05")
-	}
-	if strings.TrimSpace(testMsg) != "" && strings.TrimSpace(testMsg) != "—" {
-		if lastTestText == "Немає" {
-			lastTestText = strings.TrimSpace(testMsg)
-		} else {
-			lastTestText += " | " + strings.TrimSpace(testMsg)
-		}
-	}
-
-	_ = signal // currently not requested in export file body
-
-	zoneRows := make([]objexport.ZoneExportRow, 0, len(zones))
-	for _, z := range zones {
-		zoneRows = append(zoneRows, objexport.ZoneExportRow{
-			Number: fmt.Sprintf("%d", z.Number),
-			Name:   emptyFallback(z.Name),
-			Type:   emptyFallback(z.SensorType),
-			Status: emptyFallback(z.GetStatusDisplay()),
-		})
-	}
-
-	responsibleRows := make([]objexport.ResponsibleExportRow, 0, len(contacts))
-	for _, c := range contacts {
-		responsibleRows = append(responsibleRows, objexport.ResponsibleExportRow{
-			Name:  emptyFallback(c.Name),
-			Phone: emptyFallback(c.Phone),
-			Note:  emptyFallback(c.Position),
-		})
-	}
-
-	return objexport.ObjectExportData{
-		Number:         obj.ID,
-		Name:           emptyFallback(obj.Name),
-		Address:        emptyFallback(obj.Address),
-		ContractNumber: emptyFallback(obj.ContractNum),
-		LaunchDate:     emptyFallback(obj.LaunchDate),
-		SimCard:        buildSimValue(obj),
-		DeviceType:     emptyFallback(obj.DeviceType),
-		TestPeriod:     buildTestPeriod(obj),
-		LastEvent:      lastEventText,
-		LastTest:       lastTestText,
-		Channel:        channelText(obj.ObjChan),
-		ObjectPhone:    emptyFallback(obj.Phones1),
-		Location:       emptyFallback(obj.Location1),
-		AdditionalInfo: emptyFallback(obj.Notes1),
-		Zones:          zoneRows,
-		Responsibles:   responsibleRows,
-	}
-}
-
-func (w *WorkAreaPanel) buildExcelRowTSV(obj models.Object) string {
-	managerName := ""
-	managerPhone := ""
-	if len(w.Contacts) > 0 {
-		managerName = strings.TrimSpace(w.Contacts[0].Name)
-		managerPhone = strings.TrimSpace(w.Contacts[0].Phone)
-	} else if len(obj.Contacts) > 0 {
-		managerName = strings.TrimSpace(obj.Contacts[0].Name)
-		managerPhone = strings.TrimSpace(obj.Contacts[0].Phone)
-	}
-
-	fields := []string{
-		itoa(obj.ID),                          // собсс
-		cleanTSV(obj.LaunchDate),              // Дата підключен. до ПЦС
-		cleanTSV(obj.ContractNum),             // Дата угоди (за поточними даними: номер/ідентифікатор угоди)
-		"",                                    // Юридична назва, згідно угоди
-		"",                                    // Юридична адреса, згідно угоди
-		cleanTSV(obj.Name),                    // Фізична назва об’єкту по вивісці
-		cleanTSV(obj.Address),                 // Фізична адреса об’єкту
-		cleanTSV(obj.DeviceType),              // ПКП
-		cleanTSV(obj.PanelMark),               // СЦС
-		cleanTSV(strings.TrimSpace(obj.SIM1)), // Основний канал зв’язку / телефон підключення
-		cleanTSV(strings.TrimSpace(obj.SIM2)), // Резервний канал зв’язку / телефон підключення
-		"",                                    // Місячна оплата
-		"",                                    // Електронна пошта об’єкту
-		cleanTSV(managerName),                 // Керівник об’єкту
-		cleanTSV(managerPhone),                // Контакт керівника
-		cleanTSV(obj.Notes1),                  // Примітки
-	}
-
-	return strings.Join(fields, "\t")
-}
-
-func cleanTSV(s string) string {
-	s = strings.ReplaceAll(s, "\t", " ")
-	s = strings.ReplaceAll(s, "\r\n", " ")
-	s = strings.ReplaceAll(s, "\n", " ")
-	return strings.TrimSpace(s)
-}
-
-func buildSimValue(obj models.Object) string {
-	sim1 := strings.TrimSpace(obj.SIM1)
-	sim2 := strings.TrimSpace(obj.SIM2)
-	if sim1 == "" && sim2 == "" {
-		return "Немає"
-	}
-	if sim2 == "" {
-		return sim1
-	}
-	if sim1 == "" {
-		return sim2
-	}
-	return sim1 + " / " + sim2
-}
-
-func buildTestPeriod(obj models.Object) string {
-	if obj.AutoTestHours > 0 {
-		return fmt.Sprintf("Кожні %d год", obj.AutoTestHours)
-	}
-	if obj.TestTime > 0 {
-		return fmt.Sprintf("Кожні %d хв", obj.TestTime)
-	}
-	return "Немає"
-}
-
-func channelText(chanID int) string {
-	switch chanID {
-	case 1:
-		return "Автододзвон"
-	case 5:
-		return "GPRS"
-	default:
-		return "Інший канал"
-	}
-}
-
-func emptyFallback(v string) string {
-	if strings.TrimSpace(v) == "" {
-		return "Немає"
-	}
-	return strings.TrimSpace(v)
-}
-
 func (w *WorkAreaPanel) loadObjectDetails(id int) {
-	idStr := itoa(id)
-
-	// Отримуємо повні дані (якщо вони були не всі в списку)
-	fullObj := w.Data.GetObjectByID(idStr)
-
-	// Зони
-	zones := w.Data.GetZones(idStr)
-
-	// Контакти
-	contacts := w.Data.GetEmployees(idStr)
-
-	// Події
-	events := w.Data.GetObjectEvents(idStr)
 	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
-	if uiCfg.ObjectLogLimit > 0 && len(events) > uiCfg.ObjectLogLimit {
-		events = events[:uiCfg.ObjectLogLimit]
-	}
+	details := w.ViewModel.LoadObjectDetails(w.Data, id, uiCfg.ObjectLogLimit)
 
 	fyne.Do(func() {
 		// Перевіряємо, чи користувач досі на цьому ж об'єкті
-		if w.CurrentObject == nil || w.CurrentObject.ID != id {
+		if !w.ViewModel.CanApplyDetails(w.CurrentObject, id) {
 			return
 		}
 
-		if fullObj != nil {
-			w.CurrentObject = fullObj
+		if details.FullObject != nil {
+			w.CurrentObject = details.FullObject
 			w.updateDeviceInfo()
 		}
 
-		w.Zones = zones
-		w.Contacts = contacts
-		w.Events = events
+		w.Zones = details.Zones
+		w.Contacts = details.Contacts
+		w.Events = details.Events
 
 		w.refreshTabs()
 	})
 }
 
 func (w *WorkAreaPanel) refreshTabs() {
+	w.syncZonesDataBinding()
+	w.syncContactsDataBinding()
+	w.syncEventsDataBinding()
+
 	if w.ZonesTable != nil {
 		w.ZonesTable.Refresh()
 	}
@@ -734,88 +597,96 @@ func (w *WorkAreaPanel) refreshTabs() {
 	}
 }
 
+func (w *WorkAreaPanel) syncZonesDataBinding() {
+	if w == nil || w.ZonesData == nil {
+		return
+	}
+	_ = SetUntypedList(w.ZonesData, w.Zones)
+}
+
+func (w *WorkAreaPanel) syncContactsDataBinding() {
+	if w == nil || w.ContactsData == nil {
+		return
+	}
+	_ = SetUntypedList(w.ContactsData, w.Contacts)
+}
+
+func (w *WorkAreaPanel) syncEventsDataBinding() {
+	if w == nil || w.EventsData == nil {
+		return
+	}
+	_ = SetUntypedList(w.EventsData, w.Events)
+}
+
+func (w *WorkAreaPanel) zoneByRow(row int) (models.Zone, bool) {
+	if w == nil || w.ZonesData == nil || row < 0 || row >= w.ZonesData.Length() {
+		return models.Zone{}, false
+	}
+	value, err := w.ZonesData.GetValue(row)
+	if err != nil {
+		return models.Zone{}, false
+	}
+	zone, ok := value.(models.Zone)
+	return zone, ok
+}
+
+// RefreshCurrentObjectEvents оновлює тільки журнал подій для поточного об'єкта.
+// Використовується для "онлайн" автооновлення без перезавантаження всіх деталей.
+func (w *WorkAreaPanel) RefreshCurrentObjectEvents() {
+	if w == nil || w.CurrentObject == nil || w.Data == nil || w.ViewModel == nil {
+		return
+	}
+
+	objectID := w.CurrentObject.ID
+	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+	eventLimit := uiCfg.ObjectLogLimit
+
+	go func(id int) {
+		events := w.ViewModel.LoadObjectEvents(w.Data, id, eventLimit)
+		fyne.Do(func() {
+			if !w.ViewModel.CanApplyDetails(w.CurrentObject, id) {
+				return
+			}
+			w.Events = events
+			w.syncEventsDataBinding()
+			if w.EventsList != nil {
+				w.EventsList.Refresh()
+			}
+		})
+	}(objectID)
+}
+
 func (w *WorkAreaPanel) updateDeviceInfo() {
 	if w.CurrentObject == nil {
 		return
 	}
 	obj := w.CurrentObject
 
-	w.DeviceTypeLabel.SetText("🔧 Тип: " + obj.DeviceType)
-	w.PanelMarkLabel.SetText("🏷️ Марка: " + obj.PanelMark) // Updated PanelMarkLabel
-	// gsmIcon := "📶"
-	// if obj.GSMLevel < 30 {
-	// 	gsmIcon = "📵"
-	// }
-	// w.GSMLabel.SetText(fmt.Sprintf("%s GSM: %d%%", gsmIcon, obj.GSMLevel))
-
-	powerText := "220В (мережа)"
-	if obj.PowerSource == models.PowerBattery {
-		powerText = "🔋 АКБ (резерв)"
-	}
-	w.PowerLabel.SetText("🔌 " + powerText)
-
-	simText := "SIM1: " + obj.SIM1
-	copyText := obj.SIM1
-	if obj.SIM2 != "" {
-		simText += " | SIM2: " + obj.SIM2
-		copyText += " / " + obj.SIM2
-	}
-	w.SIMLabel.SetText("📱 " + simText)
+	presentation := w.DeviceVM.BuildObjectPresentation(*obj)
+	w.DeviceStateVM.Apply(presentation)
 	w.CopySimBtn.OnTapped = func() {
-		w.Window.Clipboard().SetContent(copyText)
+		w.Window.Clipboard().SetContent(presentation.SIMCopyText)
 		ShowToast(w.Window, "Скопійовано SIM")
 	}
 
-	w.AutoTestLabel.SetText(fmt.Sprintf("⏱️ Автотест: кожні %d год", obj.AutoTestHours))
-
-	chanText := "Інший канал"
-	switch obj.ObjChan {
-	case 1:
-		chanText = "Автододзвон"
-	case 5:
-		chanText = "GPRS"
-	}
-	w.ChanLabel.SetText("📡 Канал: " + chanText)
-
-	// АКБ
-	akbText := "Норма"
-	if obj.AkbState > 0 {
-		akbText = "ТРИВОГА (Розряд/Відсутній)"
-	}
-	w.AkbLabel.SetText("🔋 АКБ: " + akbText)
-
-	// Тестування
-	testCtrl := "Виключено"
-	if obj.TestControl > 0 {
-		testCtrl = fmt.Sprintf("Активно (кожні %d хв)", obj.TestTime)
-	}
-	w.TestControlLabel.SetText("⏲️ Контроль тесту: " + testCtrl)
-
 	// Скидаємо динамічні дані перед завантаженням нових
-	w.SignalLabel.SetText("📶 Рівень: ...")
-	w.LastTestLabel.SetText("📝 Тест: ...")
-	w.LastTestTimeLabel.SetText("📅 Ост. тест: ...")
-	w.LastMessageTimeLabel.SetText("📅 Ост. подія: ...")
+	loading := w.DeviceVM.BuildLoadingExternalPresentation()
+	w.ExternalVM.Apply(loading)
 
 	// Рівень сигналу та останній тест
 	go func() {
-		signal, lastMsg, lTest, lMsg := w.Data.GetExternalData(itoa(obj.ID))
+		externalData := w.ViewModel.LoadExternalData(w.Data, obj.ID)
 		fyne.Do(func() {
-			w.SignalLabel.SetText("📶 Рівень: " + signal)
-			w.LastTestLabel.SetText("📝 Тест: " + lastMsg)
-
-			timeFormat := "02.01.2006 15:04:05"
-			if !lTest.IsZero() {
-				w.LastTestTimeLabel.SetText("📅 Ост. тест: " + lTest.Format(timeFormat))
-			} else {
-				w.LastTestTimeLabel.SetText("📅 Ост. тест: —")
+			if w.CurrentObject == nil || w.CurrentObject.ID != obj.ID {
+				return
 			}
-
-			if !lMsg.IsZero() {
-				w.LastMessageTimeLabel.SetText("📅 Ост. подія: " + lMsg.Format(timeFormat))
-			} else {
-				w.LastMessageTimeLabel.SetText("📅 Ост. подія: —")
-			}
+			external := w.DeviceVM.BuildExternalPresentation(
+				externalData.Signal,
+				externalData.TestMessage,
+				externalData.LastTest,
+				externalData.LastMessage,
+			)
+			w.ExternalVM.Apply(external)
 		})
 	}()
 
@@ -823,29 +694,20 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 		w.showTestMessages(itoa(obj.ID))
 	}
 
-	w.PhoneLabel.SetText("☎️ Тел. об'єкта: " + obj.Phones1)
 	w.CopyPhonesBtn.OnTapped = func() {
-		w.Window.Clipboard().SetContent(obj.Phones1)
+		w.Window.Clipboard().SetContent(presentation.PhoneCopyText)
 		ShowToast(w.Window, "Скопійовано телефон(и)")
 	}
 
-	w.Notes1Label.SetText(obj.Notes1)
 	w.CopyNotesBtn.OnTapped = func() {
-		w.Window.Clipboard().SetContent(obj.Notes1)
+		w.Window.Clipboard().SetContent(presentation.NotesCopyText)
 		ShowToast(w.Window, "Скопійовано примітку")
 	}
 
-	w.Location1Label.SetText(obj.Location1)
 	w.CopyLocationBtn.OnTapped = func() {
-		w.Window.Clipboard().SetContent(obj.Location1)
+		w.Window.Clipboard().SetContent(presentation.LocationCopyText)
 		ShowToast(w.Window, "Скопійовано розташування")
 	}
-
-	guardText := "🔒 ПІД ОХОРОНОЮ"
-	if !obj.IsUnderGuard {
-		guardText = "🔓 ЗНЯТО З ОХОРОНИ"
-	}
-	w.GuardLabel.SetText(guardText)
 }
 
 func (w *WorkAreaPanel) showTestMessages(objectID string) {

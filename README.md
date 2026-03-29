@@ -14,6 +14,7 @@
 - Обробка тривог через діалоги (вікно обробки тривоги)
 - Параметри підключення до БД та UI (збережені через Fyne Preferences)
 - Фонові оновлення/симуляція подій та моніторинг здоров'я БД
+- Паралельне підключення додаткових пультових систем (multi-source), зокрема CASL Cloud
 
 Структура репозиторію (основні частини):
 
@@ -42,6 +43,42 @@
 ```powershell
 go mod tidy
 go run main.go
+```
+
+Автоматичне версіонування
+
+- Застосунок автоматично підтягує `commit/time/dirty` з `git` (через `debug.ReadBuildInfo`) і показує це:
+- у заголовку головного вікна;
+- у меню `Довідка -> Про версію`;
+- у стартових логах.
+- Для керованої збірки з явною версією використовуйте:
+
+```powershell
+.\scripts\build_app.ps1 -Output obj_catalog_fyne_v3.exe
+```
+
+- Додатково можна ввімкнути стиснення через UPX:
+
+```powershell
+.\scripts\build_app.ps1 -Output obj_catalog_fyne_v3.exe -UseUPX
+```
+
+- Для пакування через `fyne package` (з авто-версією в `ldflags`) використовуйте:
+
+```powershell
+.\scripts\package_fyne.ps1 -InstallFyne -TargetOS windows -Output obj_catalog_fyne_v3.exe
+```
+
+- Для пакування через `fyne package` + UPX:
+
+```powershell
+.\scripts\package_fyne.ps1 -InstallFyne -TargetOS windows -Output obj_catalog_fyne_v3.exe -UseUPX
+```
+
+- Перевірка версії з консолі:
+
+```powershell
+.\obj_catalog_fyne_v3.exe --version
 ```
 
 Пакування/реліз (Fyne)
@@ -82,6 +119,9 @@ fyne package -icon icon.png -app-id com.fyne.objcatalog -release
 
 - Тема зберігається в налаштуваннях додатка і може перемикатися кнопкою "Темна тема" у тулбарі.
 - Налаштування зберігаються автоматично при першому запуску (див. `pkg/config`).
+- Документація інтеграцій пультових систем:
+  - `docs/integrations/README.md`
+  - `docs/integrations/casl_cloud_capabilities.md`
 
 Контакти / Авторство
 

@@ -25,6 +25,12 @@ var (
 
 	// ColorSelection - колір виділеного рядка
 	ColorSelection = color.NRGBA{R: 0, G: 122, B: 255, A: 255} // Напівпрозорий синій
+
+	// Семантичні аліаси для UI-компонентів
+	ColorDanger       = ColorFire   // Деструктивні дії (видалення тощо)
+	ColorSuccess      = ColorNormal // Успіх / норма
+	ColorWarning      = ColorFault  // Попередження / несправність
+	ColorSectionTitle = color.NRGBA{R: 142, G: 142, B: 147, A: 255} // Підзаголовки секцій (#8E8E93)
 )
 
 // ================== ТЕМНА ТЕМА ==================

@@ -15,18 +15,18 @@ func defaultLightColorMapping() map[int]ColorPair {
 	return map[int]ColorPair{
 		1: { // Alarm
 			Text: color.NRGBA{R: 255, G: 255, B: 128, A: 255}, // rgb(255,255,128)
-			Row:  color.NRGBA{R: 183, G: 0, B: 0, A: 255},    // rgb(183,0,0)
+			Row:  color.NRGBA{R: 183, G: 0, B: 0, A: 255},     // rgb(183,0,0)
 		},
 		2: { // Tech alarm
 			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},      // rgb(0,0,0)
 			Row:  color.NRGBA{R: 250, G: 182, B: 69, A: 255}, // rgb(250,182,69)
 		},
 		5: { // Restore
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},        // rgb(0,0,0)
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
 			Row:  color.NRGBA{R: 160, G: 160, B: 164, A: 255}, // rgb(160,160,164)
 		},
 		6: { // Info
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},        // rgb(0,0,0)
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
 			Row:  color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
 		},
 		7: { // PartArmedOn
@@ -38,32 +38,60 @@ func defaultLightColorMapping() map[int]ColorPair {
 			Row:  color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
 		},
 		9: { // Restore
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},        // rgb(0,0,0)
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
 			Row:  color.NRGBA{R: 160, G: 160, B: 164, A: 255}, // rgb(160,160,164)
 		},
 		10: { // ArmedOn
 			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
 			Row:  color.NRGBA{R: 99, G: 156, B: 111, A: 255},  // rgb(99,156,111)
 		},
+		11: { // Disarmed
+			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+			Row:  color.NRGBA{R: 128, G: 128, B: 0, A: 255},
+		},
 		12: { // ConnFailed
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},        // rgb(0,0,0)
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
 			Row:  color.NRGBA{R: 255, G: 255, B: 128, A: 255}, // rgb(255,255,128)
 		},
 		13: { // Restore
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},        // rgb(0,0,0)
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
 			Row:  color.NRGBA{R: 160, G: 160, B: 164, A: 255}, // rgb(160,160,164)
 		},
 		14: { // PartArmedOff
 			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
 			Row:  color.NRGBA{R: 128, G: 128, B: 0, A: 255},   // rgb(128,128,0)
 		},
+		16: { // Test
+			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+			Row:  color.NRGBA{R: 70, G: 120, B: 170, A: 255},
+		},
 		17: { // Restore
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},        // rgb(0,0,0)
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
 			Row:  color.NRGBA{R: 160, G: 160, B: 164, A: 255}, // rgb(160,160,164)
 		},
 		18: { // PartArmedOff
 			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
 			Row:  color.NRGBA{R: 128, G: 128, B: 0, A: 255},   // rgb(128,128,0)
+		},
+		21: { // Panic
+			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+			Row:  color.NRGBA{R: 130, G: 0, B: 130, A: 255},
+		},
+		22: { // Burglary
+			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+			Row:  color.NRGBA{R: 166, G: 20, B: 20, A: 255},
+		},
+		23: { // Medical
+			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+			Row:  color.NRGBA{R: 30, G: 90, B: 170, A: 255},
+		},
+		24: { // Gas
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
+			Row:  color.NRGBA{R: 110, G: 220, B: 210, A: 255},
+		},
+		25: { // Tamper
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
+			Row:  color.NRGBA{R: 255, G: 150, B: 70, A: 255},
 		},
 	}
 }
@@ -103,6 +131,10 @@ func defaultDarkColorMapping() map[int]ColorPair {
 			Text: color.NRGBA{R: 200, G: 255, B: 225, A: 255}, // rgb(200,255,225)
 			Row:  color.NRGBA{R: 25, G: 85, B: 60, A: 255},    // rgb(25,85,60)
 		},
+		11: { // Disarmed
+			Text: color.NRGBA{R: 255, G: 240, B: 180, A: 255},
+			Row:  color.NRGBA{R: 90, G: 85, B: 30, A: 255},
+		},
 		12: { // ConnFailed
 			Text: color.NRGBA{R: 255, G: 245, B: 180, A: 255}, // rgb(255,245,180)
 			Row:  color.NRGBA{R: 85, G: 75, B: 30, A: 255},    // rgb(85,75,30)
@@ -115,6 +147,10 @@ func defaultDarkColorMapping() map[int]ColorPair {
 			Text: color.NRGBA{R: 255, G: 240, B: 180, A: 255}, // rgb(255,240,180)
 			Row:  color.NRGBA{R: 90, G: 85, B: 30, A: 255},    // rgb(90,85,30)
 		},
+		16: { // Test
+			Text: color.NRGBA{R: 210, G: 230, B: 255, A: 255},
+			Row:  color.NRGBA{R: 35, G: 55, B: 80, A: 255},
+		},
 		17: { // Restore
 			Text: color.NRGBA{R: 210, G: 210, B: 215, A: 255}, // rgb(210,210,215)
 			Row:  color.NRGBA{R: 45, G: 45, B: 50, A: 255},    // rgb(45,45,50)
@@ -122,6 +158,26 @@ func defaultDarkColorMapping() map[int]ColorPair {
 		18: { // PartArmedOff
 			Text: color.NRGBA{R: 255, G: 240, B: 180, A: 255}, // rgb(255,240,180)
 			Row:  color.NRGBA{R: 90, G: 85, B: 30, A: 255},    // rgb(90,85,30)
+		},
+		21: { // Panic
+			Text: color.NRGBA{R: 255, G: 220, B: 255, A: 255},
+			Row:  color.NRGBA{R: 75, G: 25, B: 90, A: 255},
+		},
+		22: { // Burglary
+			Text: color.NRGBA{R: 255, G: 220, B: 220, A: 255},
+			Row:  color.NRGBA{R: 95, G: 30, B: 30, A: 255},
+		},
+		23: { // Medical
+			Text: color.NRGBA{R: 210, G: 235, B: 255, A: 255},
+			Row:  color.NRGBA{R: 30, G: 55, B: 85, A: 255},
+		},
+		24: { // Gas
+			Text: color.NRGBA{R: 220, G: 255, B: 245, A: 255},
+			Row:  color.NRGBA{R: 30, G: 80, B: 75, A: 255},
+		},
+		25: { // Tamper
+			Text: color.NRGBA{R: 255, G: 230, B: 190, A: 255},
+			Row:  color.NRGBA{R: 95, G: 60, B: 30, A: 255},
 		},
 	}
 }
@@ -139,7 +195,7 @@ func SelectColorNRGBA(colorValue int) (text, row color.NRGBA) {
 	}
 
 	// default (Delphi 0,0 → чорний текст на білому)
-	return color.NRGBA{R: 0, G: 0, B: 0, A: 255},   // rgb(0,0,0)
+	return color.NRGBA{R: 0, G: 0, B: 0, A: 255}, // rgb(0,0,0)
 		color.NRGBA{R: 255, G: 255, B: 255, A: 255} // rgb(255, 255, 255)
 }
 
@@ -151,7 +207,7 @@ func SelectColorNRGBADark(colorValue int) (text, row color.NRGBA) {
 
 	// default (dark)
 	return color.NRGBA{R: 220, G: 220, B: 220, A: 255}, // rgb(220,220,220)
-		color.NRGBA{R: 30, G: 30, B: 30, A: 255}        // rgb(30,30,30)
+		color.NRGBA{R: 30, G: 30, B: 30, A: 255} // rgb(30,30,30)
 }
 
 // GetEventRowColor повертає поточний колір фону рядка для коду події
@@ -216,4 +272,3 @@ func ResetEventColorsToDefault(isDark bool) {
 		lightColorMapping = defaultLightColorMapping()
 	}
 }
-

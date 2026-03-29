@@ -15,6 +15,20 @@ const (
 	PrefPort     = "db.port"
 	PrefPath     = "db.path"
 	PrefParams   = "db.params"
+
+	PrefBackendMode = "backend.mode"
+	PrefCASLEnabled = "casl.enabled"
+	PrefCASLBaseURL = "casl.base_url"
+	PrefCASLToken   = "casl.token"
+	PrefCASLEmail   = "casl.email"
+	PrefCASLPass    = "casl.password"
+	PrefCASLPultID  = "casl.pult_id"
+	PrefLogLevel    = "log.level"
+)
+
+const (
+	BackendModeFirebird  = "firebird"
+	BackendModeCASLCloud = "casl_cloud"
 )
 
 type DBConfig struct {
@@ -24,10 +38,21 @@ type DBConfig struct {
 	Port     string
 	Path     string
 	Params   string
+
+	CASLEnabled bool
+	Mode        string
+	CASLBaseURL string
+	CASLToken   string
+	CASLEmail   string
+	CASLPass    string
+	CASLPultID  int64
+	LogLevel    string
 }
 
 func LoadDBConfig(p fyne.Preferences) DBConfig {
 	log.Debug().Msg("Завантаження налаштувань БД з преференсів...")
+	legacyMode := normalizeBackendMode(p.StringWithFallback(PrefBackendMode, BackendModeFirebird))
+	caslEnabled := p.BoolWithFallback(PrefCASLEnabled, legacyMode == BackendModeCASLCloud)
 	cfg := DBConfig{
 		User:     p.StringWithFallback(PrefUser, "SYSDBA"),
 		Password: p.StringWithFallback(PrefPassword, "masterkey"),
@@ -35,6 +60,15 @@ func LoadDBConfig(p fyne.Preferences) DBConfig {
 		Port:     p.StringWithFallback(PrefPort, "3050"),
 		Path:     p.StringWithFallback(PrefPath, "C:/MOST.PM/BASE/MOST5.FDB"),
 		Params:   p.StringWithFallback(PrefParams, "charset=WIN1251&auth_plugin_name=Srp"),
+
+		CASLEnabled: caslEnabled,
+		Mode:        legacyMode,
+		CASLBaseURL: p.StringWithFallback(PrefCASLBaseURL, "http://127.0.0.1:50003"),
+		CASLToken:   p.StringWithFallback(PrefCASLToken, ""),
+		CASLEmail:   p.StringWithFallback(PrefCASLEmail, ""),
+		CASLPass:    p.StringWithFallback(PrefCASLPass, ""),
+		CASLPultID:  int64(p.IntWithFallback(PrefCASLPultID, 0)),
+		LogLevel:    normalizeLogLevel(p.StringWithFallback(PrefLogLevel, "info")),
 	}
 
 	log.Debug().
@@ -42,6 +76,8 @@ func LoadDBConfig(p fyne.Preferences) DBConfig {
 		Str("host", cfg.Host).
 		Str("port", cfg.Port).
 		Str("path", cfg.Path).
+		Str("mode", cfg.Mode).
+		Bool("caslEnabled", cfg.CASLEnabled).
 		Msg("Налаштування БД завантажено")
 
 	// Якщо жодного ключа ще немає в преференсах, записуємо дефолтні значення
@@ -63,6 +99,20 @@ func SaveDBConfig(p fyne.Preferences, cfg DBConfig) {
 	p.SetString(PrefPort, cfg.Port)
 	p.SetString(PrefPath, cfg.Path)
 	p.SetString(PrefParams, cfg.Params)
+	p.SetBool(PrefCASLEnabled, cfg.CASLEnabled)
+	mode := normalizeBackendMode(cfg.Mode)
+	if cfg.CASLEnabled {
+		mode = BackendModeCASLCloud
+	} else {
+		mode = BackendModeFirebird
+	}
+	p.SetString(PrefBackendMode, mode)
+	p.SetString(PrefCASLBaseURL, cfg.CASLBaseURL)
+	p.SetString(PrefCASLToken, cfg.CASLToken)
+	p.SetString(PrefCASLEmail, cfg.CASLEmail)
+	p.SetString(PrefCASLPass, cfg.CASLPass)
+	p.SetInt(PrefCASLPultID, int(cfg.CASLPultID))
+	p.SetString(PrefLogLevel, normalizeLogLevel(cfg.LogLevel))
 	log.Debug().Str("host", cfg.Host).Str("port", cfg.Port).Msg("Налаштування БД збережено")
 }
 
@@ -77,4 +127,32 @@ func (c DBConfig) ToDSN() string {
 	}
 	log.Debug().Str("dsn", dsn).Msg("DSN сформовано")
 	return dsn
+}
+
+func (c DBConfig) NormalizedMode() string {
+	return normalizeBackendMode(c.Mode)
+}
+
+func normalizeBackendMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case BackendModeCASLCloud:
+		return BackendModeCASLCloud
+	default:
+		return BackendModeFirebird
+	}
+}
+
+func normalizeLogLevel(level string) string {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "trace":
+		return "trace"
+	case "debug":
+		return "debug"
+	case "warn":
+		return "warn"
+	case "error":
+		return "error"
+	default:
+		return "info"
+	}
 }

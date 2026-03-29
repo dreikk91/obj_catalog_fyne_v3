@@ -3,32 +3,44 @@ package ui
 
 import (
 	"image/color"
+	"strings"
 	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/config"
-	data "obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
+	"obj_catalog_fyne_v3/pkg/usecases"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 // AlarmPanelWidget - структура для панелі тривог
 type AlarmPanelWidget struct {
-	Container *fyne.Container
-	List      *widget.List
-	Data      data.AlarmProvider
+	Container    *fyne.Container
+	List         *widget.List
+	listData     binding.UntypedList
+	SourceSelect *widget.Select
+	Data         contracts.AlarmProvider
+	UseCase      *usecases.AlarmListUseCase
+	ViewModel    *viewmodels.AlarmListViewModel
 
 	// Кеш даних
+	AllAlarms     []models.Alarm
 	CurrentAlarms []models.Alarm
 	mutex         sync.RWMutex
 	isRefreshing  bool
+	currentSource string
 	selectedIndex int
+	selectedID    int
 	lastClickTime time.Time
 	processBtn    *widget.Button
 	lastKnownIDs  map[int]struct{}
@@ -39,16 +51,20 @@ type AlarmPanelWidget struct {
 	OnAlarmActivated func(alarm models.Alarm)
 
 	OnProcessAlarm     func(alarm models.Alarm)
-	OnCountsChanged    func(total int, fire int)
+	OnCountsChanged    func(total int, critical int)
 	OnNewCriticalAlarm func(alarm models.Alarm)
 	TitleText          *canvas.Text
 	lastFontSize       float32
 }
 
 // NewAlarmPanelWidget створює панель тривог
-func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
+func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 	panel := &AlarmPanelWidget{
 		Data:          provider,
+		UseCase:       usecases.NewAlarmListUseCase(provider),
+		ViewModel:     viewmodels.NewAlarmListViewModel(),
+		listData:      binding.NewUntypedList(),
+		currentSource: viewmodels.ObjectSourceAll,
 		selectedIndex: -1,
 		lastKnownIDs:  make(map[int]struct{}),
 	}
@@ -59,77 +75,109 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 	panel.TitleText.TextSize = appTheme.Size(theme.SizeNameText) + 1
 	panel.TitleText.TextStyle = fyne.TextStyle{Bold: true}
 
+	panel.SourceSelect = widget.NewSelect(
+		viewmodels.BuildObjectSourceOptions(0, 0, 0),
+		func(selected string) {
+			panel.mutex.Lock()
+			panel.currentSource = viewmodels.NormalizeObjectSourceFilter(selected)
+			panel.mutex.Unlock()
+			go panel.Refresh()
+		},
+	)
+	panel.SourceSelect.SetSelected(panel.SourceSelect.Options[0])
+	panel.SourceSelect.PlaceHolder = "Джерело"
+
 	titleBg := canvas.NewRectangle(color.NRGBA{R: 100, G: 0, B: 0, A: 255})
 	titleContainer := container.NewStack(titleBg, container.NewPadded(panel.TitleText))
+	header := container.NewHBox(
+		titleContainer,
+		layout.NewSpacer(),
+		panel.SourceSelect,
+	)
 
 	// Список тривог (тепер використовує кеш)
-	panel.List = widget.NewList(
-		func() int {
-			panel.mutex.RLock()
-			defer panel.mutex.RUnlock()
-			return len(panel.CurrentAlarms)
-		},
+	panel.List = widget.NewListWithData(
+		panel.listData,
 		func() fyne.CanvasObject {
 			bg := canvas.NewRectangle(color.Transparent)
 			txt := canvas.NewText("Тривога", color.White)
 			return container.NewStack(bg, container.NewPadded(txt))
 		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			panel.mutex.RLock()
-			defer panel.mutex.RUnlock()
+		func(item binding.DataItem, obj fyne.CanvasObject) {
+			stack := obj.(*fyne.Container)
+			bg := stack.Objects[0].(*canvas.Rectangle)
+			txtContainer := stack.Objects[1].(*fyne.Container)
+			txt := txtContainer.Objects[0].(*canvas.Text)
 
-			if id < len(panel.CurrentAlarms) {
-				stack := obj.(*fyne.Container)
-				bg := stack.Objects[0].(*canvas.Rectangle)
-				txtContainer := stack.Objects[1].(*fyne.Container)
-				txt := txtContainer.Objects[0].(*canvas.Text)
-
-				alarm := panel.CurrentAlarms[id]
-
-				// Вибираємо палітру кольорів залежно від теми
-				var textColor, rowColor color.NRGBA
-				if IsDarkMode() {
-					textColor, rowColor = utils.SelectColorNRGBADark(alarm.SC1)
-				} else {
-					textColor, rowColor = utils.SelectColorNRGBA(alarm.SC1)
-				}
-
-				// Базовий колір рядка
-				rowBg := rowColor
-				// Якщо рядок вибраний — робимо підсвічування трохи яскравішим/темнішим,
-				// щоб користувач чітко бачив поточний вибір.
-				if int(id) == panel.selectedIndex {
-					rowBg = adjustAlarmRowColor(rowColor)
-				}
-				bg.FillColor = rowBg
+			data, ok := item.(binding.Untyped)
+			if !ok {
+				txt.Text = ""
+				bg.FillColor = color.Transparent
 				bg.Refresh()
-
-				txt.Color = textColor
-
-				// Для непідготовленого користувача: стабільний читабельний формат рядка.
-				// [час] — [тип] — №[об'єкт] [назва] — [зона/деталі]
-				if alarm.Type == models.AlarmFire {
-					txt.TextStyle.Bold = true
-				} else {
-					txt.TextStyle.Bold = false
-				}
-				displayText := alarm.GetTimeDisplay() + " — " + alarm.GetTypeDisplay() + " — №" + itoa(alarm.ObjectID)
-				if alarm.ZoneNumber > 0 {
-					displayText += "-" + itoa(alarm.ZoneNumber)
-				}
-				displayText += " " + alarm.ObjectName
-				if alarm.Details != "" {
-					displayText += " — " + alarm.Details
-				}
-				txt.Text = displayText
-
-				if panel.lastFontSize > 0 {
-					txt.TextSize = panel.lastFontSize
-				} else {
-					txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
-				}
 				txt.Refresh()
+				return
 			}
+			value, err := data.Get()
+			if err != nil {
+				txt.Text = ""
+				bg.FillColor = color.Transparent
+				bg.Refresh()
+				txt.Refresh()
+				return
+			}
+			alarm, ok := value.(models.Alarm)
+			if !ok {
+				txt.Text = ""
+				bg.FillColor = color.Transparent
+				bg.Refresh()
+				txt.Refresh()
+				return
+			}
+
+			// Вибираємо палітру кольорів залежно від теми
+			var textColor, rowColor color.NRGBA
+			if IsDarkMode() {
+				textColor, rowColor = utils.SelectColorNRGBADark(alarm.SC1)
+			} else {
+				textColor, rowColor = utils.SelectColorNRGBA(alarm.SC1)
+			}
+
+			// Базовий колір рядка. Для вибраної тривоги додаємо підсвітку.
+			rowBg := rowColor
+			panel.mutex.RLock()
+			isSelected := panel.selectedID > 0 && panel.selectedID == alarm.ID
+			panel.mutex.RUnlock()
+			if isSelected {
+				rowBg = adjustAlarmRowColor(rowColor)
+			}
+			bg.FillColor = rowBg
+			bg.Refresh()
+
+			txt.Color = textColor
+
+			// Для непідготовленого користувача: стабільний читабельний формат рядка.
+			// [час] — [тип] — №[об'єкт] [назва] — [зона/деталі]
+			if alarm.IsCritical() {
+				txt.TextStyle.Bold = true
+			} else {
+				txt.TextStyle.Bold = false
+			}
+			displayText := alarm.GetTimeDisplay() + " — " + alarm.GetTypeDisplay() + " — №" + itoa(alarm.ObjectID)
+			if alarm.ZoneNumber > 0 {
+				displayText += "-" + itoa(alarm.ZoneNumber)
+			}
+			displayText += " " + alarm.ObjectName
+			if alarm.Details != "" {
+				displayText += " — " + alarm.Details
+			}
+			txt.Text = displayText
+
+			if panel.lastFontSize > 0 {
+				txt.TextSize = panel.lastFontSize
+			} else {
+				txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
+			}
+			txt.Refresh()
 		},
 	)
 
@@ -145,9 +193,10 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 		prevIndex := panel.selectedIndex
 		prevTime := panel.lastClickTime
 
-		panel.selectedIndex = int(id)
-		panel.lastClickTime = now
 		selected := panel.CurrentAlarms[id]
+		panel.selectedIndex = int(id)
+		panel.selectedID = selected.ID
+		panel.lastClickTime = now
 		panel.mutex.Unlock()
 
 		// Оновлюємо стан кнопки обробки та підсвічування рядка.
@@ -187,7 +236,7 @@ func NewAlarmPanelWidget(provider data.AlarmProvider) *AlarmPanelWidget {
 	actions := container.NewPadded(container.NewBorder(nil, nil, nil, nil, panel.processBtn))
 
 	panel.Container = container.NewBorder(
-		titleContainer,
+		header,
 		actions, nil, nil,
 		panel.List,
 	)
@@ -205,6 +254,11 @@ func (p *AlarmPanelWidget) Refresh() {
 	if p.Data == nil {
 		return
 	}
+	if p.ViewModel == nil {
+		p.ViewModel = viewmodels.NewAlarmListViewModel()
+	}
+	// Провайдер може змінюватися після Reconnect.
+	p.UseCase = usecases.NewAlarmListUseCase(p.Data)
 
 	p.mutex.Lock()
 	if p.isRefreshing {
@@ -220,44 +274,79 @@ func (p *AlarmPanelWidget) Refresh() {
 		p.mutex.Unlock()
 	}()
 
-	// Отримуємо дані з БД (може бути довго)
-	alarms := p.Data.GetAlarms()
-
-	// Порахуємо лічильники та визначимо "нові критичні" тривоги.
-	total := len(alarms)
-	fireCount := 0
-	var newCritical *models.Alarm
-	for i := range alarms {
-		if alarms[i].Type == models.AlarmFire && !alarms[i].IsProcessed {
-			fireCount++
-		}
-		if _, ok := p.lastKnownIDs[alarms[i].ID]; !ok {
-			// Вважаємо критичною в першу чергу пожежу.
-			if newCritical == nil && alarms[i].Type == models.AlarmFire && !alarms[i].IsProcessed {
-				newCritical = &alarms[i]
-			}
-		}
+	alarms := p.ViewModel.LoadAlarms(p.UseCase)
+	currentSource := viewmodels.ObjectSourceAll
+	p.mutex.RLock()
+	if strings.TrimSpace(p.currentSource) != "" {
+		currentSource = p.currentSource
 	}
+	p.mutex.RUnlock()
+
+	p.mutex.RLock()
+	lastKnown := make(map[int]struct{}, len(p.lastKnownIDs))
+	for id := range p.lastKnownIDs {
+		lastKnown[id] = struct{}{}
+	}
+	p.mutex.RUnlock()
+
+	result := p.ViewModel.BuildRefreshOutput(viewmodels.AlarmRefreshInput{
+		Alarms:         alarms,
+		LastKnownIDs:   lastKnown,
+		SelectedSource: currentSource,
+	})
 
 	// Оновлюємо кеш та UI
 	p.mutex.Lock()
-	p.CurrentAlarms = alarms
-	// Оновлюємо набір відомих ID
-	p.lastKnownIDs = make(map[int]struct{}, len(alarms))
-	for i := range alarms {
-		p.lastKnownIDs[alarms[i].ID] = struct{}{}
+	p.AllAlarms = result.CurrentAlarms
+	p.CurrentAlarms = result.FilteredAlarms
+	p.lastKnownIDs = result.KnownIDs
+	if p.selectedID > 0 {
+		found := -1
+		for i := range p.CurrentAlarms {
+			if p.CurrentAlarms[i].ID == p.selectedID {
+				found = i
+				break
+			}
+		}
+		if found >= 0 {
+			p.selectedIndex = found
+		} else {
+			p.selectedIndex = -1
+			p.selectedID = 0
+		}
 	}
 	p.mutex.Unlock()
 
 	fyne.Do(func() {
+		if p.SourceSelect != nil {
+			options := viewmodels.BuildObjectSourceOptions(result.CountAll, result.CountBridge, result.CountCASL)
+			p.SourceSelect.Options = options
+			target := options[0]
+			for _, option := range options {
+				if strings.HasPrefix(option, currentSource+" (") || option == currentSource {
+					target = option
+					break
+				}
+			}
+			handler := p.SourceSelect.OnChanged
+			p.SourceSelect.OnChanged = nil
+			p.SourceSelect.SetSelected(target)
+			p.SourceSelect.OnChanged = handler
+			p.SourceSelect.Refresh()
+		}
+
+		_ = SetUntypedList(p.listData, result.FilteredAlarms)
 		if p.List != nil {
 			p.List.Refresh()
 		}
-		if p.OnCountsChanged != nil {
-			p.OnCountsChanged(total, fireCount)
+		if p.processBtn != nil && p.selectedIndex < 0 {
+			p.processBtn.Disable()
 		}
-		if newCritical != nil && p.OnNewCriticalAlarm != nil {
-			p.OnNewCriticalAlarm(*newCritical)
+		if p.OnCountsChanged != nil {
+			p.OnCountsChanged(result.Total, result.CriticalCount)
+		}
+		if result.HasNewCritical && p.OnNewCriticalAlarm != nil {
+			p.OnNewCriticalAlarm(result.NewCritical)
 		}
 	})
 }
@@ -270,6 +359,9 @@ func (p *AlarmPanelWidget) OnThemeChanged(fontSize float32) {
 	}
 	if p.List != nil {
 		p.List.Refresh()
+	}
+	if p.SourceSelect != nil {
+		p.SourceSelect.Refresh()
 	}
 }
 

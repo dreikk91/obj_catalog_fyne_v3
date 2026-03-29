@@ -4,25 +4,25 @@ import (
 	"time"
 )
 
-// ObjectStatus РІРёР·РЅР°С‡Р°С” СЃС‚Р°РЅ РѕР±'С”РєС‚Р°
+// ObjectStatus визначає стан об'єкта
 type ObjectStatus int
 
 const (
-	StatusNormal  ObjectStatus = iota // РќРѕСЂРјР° (Р—РµР»РµРЅРёР№)
-	StatusFire                        // РџРѕР¶РµР¶Р° (Р§РµСЂРІРѕРЅРёР№)
-	StatusFault                       // РќРµСЃРїСЂР°РІРЅС–СЃС‚СЊ (Р–РѕРІС‚РёР№)
-	StatusOffline                     // РќРµРјР°С” Р·РІ'СЏР·РєСѓ (РЎС–СЂРёР№)
+	StatusNormal  ObjectStatus = iota // Норма (Зелений)
+	StatusFire                        // Пожежа (Червоний)
+	StatusFault                       // Несправність (Жовтий)
+	StatusOffline                     // Немає зв'язку (Сірий)
 )
 
-// PowerSource РІРёР·РЅР°С‡Р°С” РґР¶РµСЂРµР»Рѕ Р¶РёРІР»РµРЅРЅСЏ
+// PowerSource визначає джерело живлення
 type PowerSource int
 
 const (
-	PowerMains   PowerSource = iota // 220Р’
-	PowerBattery                    // РђРљР‘
+	PowerMains   PowerSource = iota // 220В
+	PowerBattery                    // АКБ
 )
 
-// Object - РѕСЃРЅРѕРІРЅР° СЃС‚СЂСѓРєС‚СѓСЂР° РѕР±'С”РєС‚Р°
+// Object - основна структура об'єкта
 type Object struct {
 	ID          int
 	Name        string
@@ -32,81 +32,92 @@ type Object struct {
 	Status      ObjectStatus
 	StatusText  string
 
-	// Р”РµС‚Р°Р»СЊРЅС– СЃС‚Р°РЅРё РґР»СЏ РІС–РґРѕР±СЂР°Р¶РµРЅРЅСЏ РІ СЃРїРёСЃРєСѓ
+	// Детальні стани для відображення в списку
 	AlarmState        int64
 	GuardState        int64
 	TechAlarmState    int64
 	IsConnState       int64
 	BlockedArmedOnOff int16
 
-	// Р†РЅС„РѕСЂРјР°С†С–СЏ РїСЂРѕ РїСЂРёР»Р°Рґ
-	DeviceType      string      // РўРёРї РїСЂРёР»Р°РґСѓ (РЅР°РїСЂ. "РўС–СЂР°СЃ-16Рџ")
-	PanelMark       string      // РњР°СЂРєР° РџРџРљ (РЅР°РїСЂ. "РўС–СЂР°СЃ-8Рџ")
-	SignalStrength  string      // Р С–РІРµРЅСЊ СЃРёРіРЅР°Р»Сѓ (РЅР°РїСЂ. "[-61 dBm]" Р°Р±Рѕ "AVD")
-	GSMLevel        int         // Р С–РІРµРЅСЊ GSM СЃРёРіРЅР°Р»Сѓ (0-100%)
-	LastTestTime    time.Time   // Р§Р°СЃ РѕСЃС‚Р°РЅРЅСЊРѕРіРѕ С‚РµСЃС‚Сѓ
-	LastMessageTime time.Time   // Р§Р°СЃ РѕСЃС‚Р°РЅРЅСЊРѕС— РїРѕРґС–С—
-	PowerSource     PowerSource // РџРѕС‚РѕС‡РЅРµ РґР¶РµСЂРµР»Рѕ Р¶РёРІР»РµРЅРЅСЏ
-	AutoTestHours   int         // РџРµСЂС–РѕРґ Р°РІС‚РѕС‚РµСЃС‚Сѓ РІ РіРѕРґРёРЅР°С…
+	// Інформація про прилад
+	DeviceType      string    // Тип приладу (напр. "Тірас-16П")
+	PanelMark       string    // Марка ППК (напр. "Тірас-8П")
+	SignalStrength  string    // Рівень сигналу (напр. "[-61 dBm]" або "AVD")
+	GSMLevel        int       // Рівень GSM сигналу (0-100%)
+	LastTestTime    time.Time // Час останнього тесту
+	LastMessageTime time.Time // Час останньої події
+	PowerSource     PowerSource // Поточне джерело живлення
+	AutoTestHours   int       // Період автотесту в годинах
 
-	SIM1        string // РќРѕРјРµСЂ SIM 1
-	SIM2        string // РќРѕРјРµСЂ SIM 2
+	SIM1        string // Номер SIM 1
+	SIM2        string // Номер SIM 2
 	SubServerA  string // Підсервер A (SBSA)
 	SubServerB  string // Підсервер B (SBSB)
-	ObjChan     int    // РљР°РЅР°Р» Р·РІ'СЏР·РєСѓ (1=РђРІС‚РѕРґРѕРґР·РІРѕРЅ, 5=GPRS, С–РЅС€Рµ=Р†РЅС€РёР№)
-	AkbState    int64  // РЎС‚Р°РЅ РђРљР‘
-	PowerFault  int64  // РќРµСЃРїСЂР°РІРЅС–СЃС‚СЊ 220Р’ (0=РћРљ, >0=РўСЂРёРІРѕРіР°)
-	TestControl int64  // РљРѕРЅС‚СЂРѕР»СЊ С‚РµСЃС‚Сѓ
-	TestTime    int64  // Р§Р°СЃ С‚РµСЃС‚Сѓ (РїРµСЂС–РѕРґ)
-	Phones1     string // РўРµР»РµС„РѕРЅ РЅР° РѕР±'С”РєС‚С–
-	Notes1      string // Р”РѕРґР°С‚РєРѕРІР° С–РЅС„РѕСЂРјР°С†С–СЏ
+	ObjChan     int    // Канал зв'язку (1=Автододзвін, 5=GPRS, інше=Інший)
+	AkbState    int64  // Стан АКБ
+	PowerFault  int64  // Несправність 220В (0=ОК, >0=Тривога)
+	TestControl int64  // Контроль тесту
+	TestTime    int64  // Час тесту (період)
+	Phones1     string // Телефон на об'єкті
+	Notes1      string // Додаткова інформація
 	Location1   string // Розташування
 	LaunchDate  string // Дата запуску (OBJECTS_INFO.RESERVTEXT)
 
-	// РўРµС…РЅС–С‡РЅС– СЃС‚Р°РЅРё
+	// Технічні стани
 	IsUnderGuard bool
 	IsConnOK     bool
+	HasAssignment bool
 
-	// РЎРїРёСЃРєРё (РјРѕР¶СѓС‚СЊ Р·Р°РІР°РЅС‚Р°Р¶СѓРІР°С‚РёСЃСЊ Р»С–РЅРёРІРѕ)
+	// Списки (можуть завантажуватись ліниво)
 	Zones    []Zone
 	Contacts []Contact
+	Groups   []ObjectGroup
 }
 
-// GetStatusDisplay РїРѕРІРµСЂС‚Р°С” С‚РµРєСЃС‚РѕРІРёР№ СЃС‚Р°С‚СѓСЃ РѕР±'С”РєС‚Р°
+// ObjectGroup описує стан окремої групи ППК на об'єкті.
+type ObjectGroup struct {
+	Number    int
+	Armed     bool
+	StateText string
+	RoomID    string
+	RoomName  string
+}
+
+// GetStatusDisplay повертає текстовий статус об'єкта
 func (o *Object) GetStatusDisplay() string {
 	if o.StatusText != "" {
 		return o.StatusText
 	}
 	switch o.Status {
 	case StatusNormal:
-		return "РќРћР РњРђ"
+		return "НОРМА"
 	case StatusFire:
-		return "РџРћР–Р•Р–Рђ"
+		return "ПОЖЕЖА"
 	case StatusFault:
-		return "РќР•РЎРџР РђР’РќР†РЎРўР¬"
+		return "НЕСПРАВНІСТЬ"
 	case StatusOffline:
-		return "РќР•РњРђР„ Р—Р’'РЇР—РљРЈ"
+		return "НЕМАЄ ЗВ'ЯЗКУ"
 	default:
-		return "РќР•Р’Р†Р”РћРњРћ"
+		return "НЕВІДОМО"
 	}
 }
 
-// Contact - РІС–РґРїРѕРІС–РґР°Р»СЊРЅР° РѕСЃРѕР±Р°
+// Contact - відповідальна особа
 type Contact struct {
 	Name     string
 	Position string
 	Phone    string
 	Priority int
-	CodeWord string // РљРѕРґРѕРІРµ СЃР»РѕРІРѕ
+	CodeWord string // Кодове слово
 }
 
-// LastEvent Р·Р±РµСЂС–РіР°С” С‡Р°СЃ РѕСЃС‚Р°РЅРЅСЊРѕС— РїРѕРґС–С— РґР»СЏ РІС–РґРѕР±СЂР°Р¶РµРЅРЅСЏ
+// LastEvent зберігає час останньої події для відображення
 type LastEvent struct {
 	Time time.Time
 	Text string
 }
 
-// TestMessage РїСЂРµРґСЃС‚Р°РІР»СЏС” С‚РµСЃС‚РѕРІРµ РїРѕРІС–РґРѕРјР»РµРЅРЅСЏ Р· TRPMSG
+// TestMessage представляє тестове повідомлення з TRPMSG
 type TestMessage struct {
 	Time    time.Time
 	Info    string

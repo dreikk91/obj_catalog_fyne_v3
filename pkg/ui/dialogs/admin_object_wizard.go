@@ -1,543 +1,361 @@
 package dialogs
 
 import (
-	"fmt"
-	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 
-	data "obj_catalog_fyne_v3/pkg/contracts"
-	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
+	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
-func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, onSaved func(objn int64)) {
-	win := fyne.CurrentApp().NewWindow("Майстер створення об'єкта")
-	win.Resize(fyne.NewSize(980, 760))
+type objectWizardDialogState struct {
+	provider      contracts.AdminObjectWizardProvider
+	wizardStateVM *viewmodels.ObjectWizardStateViewModel
+	objectCardVM  *viewmodels.ObjectCardViewModel
+	formVM        *viewmodels.ObjectCardFormViewModel
+	defaultsVM    *viewmodels.ObjectCardDefaultsViewModel
+	refsVM        *viewmodels.ObjectCardReferencesViewModel
+	wizardVM      *viewmodels.ObjectWizardViewModel
+	initVM        *viewmodels.ObjectWizardInitViewModel
+	reviewVM      *viewmodels.ObjectWizardReviewViewModel
+	personalsVM   *viewmodels.ObjectWizardPersonalsTableViewModel
+	personalsFlow *viewmodels.ObjectWizardPersonalsFlowViewModel
+	zonesStepVM   *viewmodels.ObjectWizardZonesStepViewModel
+	zonesFlowVM   *viewmodels.ObjectWizardZonesFlowViewModel
+	coordsFlowVM  *viewmodels.ObjectWizardCoordinatesFlowViewModel
+	channelFlowVM *viewmodels.ObjectChannelFlowViewModel
+	simUsageVM    *viewmodels.SIMPhoneUsageViewModel
+	simStateVM    *viewmodels.ObjectWizardSIMUsageStateViewModel
+	dateVM        *viewmodels.ObjectDateFieldViewModel
 
-	statusLabel := widget.NewLabel("Крок 1/6: дані об'єкта")
+	shortNameBinding binding.String
+	fullNameBinding  binding.String
 
-	var (
-		pendingPersonals []data.AdminObjectPersonal
-		selectedPersonal = -1
-		pendingZones     []data.AdminObjectZone
-		selectedZone     = -1
+	channelLabelToCode map[string]int64
+	channelCodeToLabel map[int64]string
+
+	objnEntry      *widget.Entry
+	shortNameEntry *widget.Entry
+	fullNameEntry  *widget.Entry
+	addressEntry   *widget.Entry
+	phonesEntry    *widget.Entry
+	contractEntry  *widget.Entry
+	dateEntry      *widget.Entry
+	locationEntry  *widget.Entry
+	notesEntry     *widget.Entry
+
+	channelCodeSelect *widget.Select
+	sim1Entry         *widget.Entry
+	sim2Entry         *widget.Entry
+	sim1UsageLabel    *widget.Label
+	sim2UsageLabel    *widget.Label
+	hiddenNEntry      *widget.Entry
+	hiddenNRow        *fyne.Container
+
+	testControlCheck  *widget.Check
+	testIntervalEntry *widget.Entry
+
+	objectTypeSelect *widget.Select
+	regionSelect     *widget.Select
+	ppkSelect        *widget.Select
+	subServerASelect *widget.Select
+	subServerBSelect *widget.Select
+
+	latitudeEntry  *widget.Entry
+	longitudeEntry *widget.Entry
+}
+
+func (s *objectWizardDialogState) onFullNameBindingChanged() {
+	fullName, err := s.fullNameBinding.Get()
+	if err != nil {
+		return
+	}
+	shortName, err := s.shortNameBinding.Get()
+	if err != nil {
+		return
+	}
+	s.objectCardVM.OnFullNameChanged(fullName, shortName)
+}
+
+func (s *objectWizardDialogState) onShortNameBindingChanged() {
+	shortName, err := s.shortNameBinding.Get()
+	if err != nil {
+		return
+	}
+	fullName, shouldApply := s.objectCardVM.OnShortNameChanged(shortName)
+	if !shouldApply {
+		return
+	}
+	_ = s.fullNameBinding.Set(fullName)
+}
+
+func (s *objectWizardDialogState) enableTestControls(enabled bool) {
+	if enabled {
+		s.testIntervalEntry.Enable()
+		return
+	}
+	s.testIntervalEntry.Disable()
+}
+
+func (s *objectWizardDialogState) updateChannelSpecificControls() {
+	if s.objectCardVM.ShouldShowHiddenNumber() {
+		s.hiddenNRow.Show()
+		s.hiddenNEntry.Enable()
+		return
+	}
+	s.hiddenNRow.Hide()
+	s.hiddenNEntry.Disable()
+}
+
+func (s *objectWizardDialogState) refreshPPKOptionsByChannel(preferredID int64) {
+	selected := s.refsVM.RefreshPPKOptions(preferredID)
+	s.ppkSelect.Options = s.refsVM.PPKOptions()
+	s.ppkSelect.Refresh()
+	s.ppkSelect.SetSelected(selected)
+}
+
+func (s *objectWizardDialogState) onChannelChanged() {
+	change := s.channelFlowVM.ResolveChange(
+		s.channelCodeSelect.Selected,
+		s.ppkSelect.Selected,
+		s.channelLabelToCode,
+		s.refsVM.PPKID,
+	)
+	s.objectCardVM.SetChannelCode(change.ChannelCode)
+	s.updateChannelSpecificControls()
+	s.refreshPPKOptionsByChannel(change.PreferredPPKID)
+}
+
+func (s *objectWizardDialogState) checkSIMUsage(rawPhone string, slot int) {
+	text := s.simUsageVM.ResolveUsageText(s.provider, rawPhone, nil)
+	if slot == 2 {
+		s.simStateVM.SetSIM2(text)
+		return
+	}
+	s.simStateVM.SetSIM1(text)
+}
+
+func (s *objectWizardDialogState) loadReferenceData() error {
+	if err := s.refsVM.LoadFromProvider(s.provider); err != nil {
+		return err
+	}
+
+	s.objectTypeSelect.Options = s.refsVM.ObjectTypeOptions()
+	s.objectTypeSelect.Refresh()
+	s.regionSelect.Options = s.refsVM.RegionOptions()
+	s.regionSelect.Refresh()
+	s.refreshPPKOptionsByChannel(s.refsVM.PPKID(s.ppkSelect.Selected))
+	s.subServerASelect.Options = s.refsVM.SubServerOptions()
+	s.subServerASelect.Refresh()
+	s.subServerBSelect.Options = s.refsVM.SubServerOptions()
+	s.subServerBSelect.Refresh()
+	return nil
+}
+
+func (s *objectWizardDialogState) fillDefaults() {
+	defaults := s.formVM.Defaults()
+	presentation := s.defaultsVM.BuildPresentation(
+		defaults,
+		s.refsVM,
+		s.channelCodeToLabel,
+		s.dateVM.FormatForDisplay(time.Now()),
 	)
 
-	objnEntry := widget.NewEntry()
-	shortNameEntry := widget.NewEntry()
-	fullNameEntry := widget.NewEntry()
-	addressEntry := widget.NewEntry()
-	phonesEntry := widget.NewEntry()
-	contractEntry := widget.NewEntry()
-	dateEntry := widget.NewEntry()
-	dateEntry.SetPlaceHolder("дд.мм.рррр")
-	locationEntry := widget.NewMultiLineEntry()
-	locationEntry.SetMinRowsVisible(2)
-	notesEntry := widget.NewMultiLineEntry()
-	notesEntry.SetMinRowsVisible(4)
-	latitudeEntry := widget.NewEntry()
-	latitudeEntry.SetPlaceHolder("Широта (LATITUDE)")
-	longitudeEntry := widget.NewEntry()
-	longitudeEntry.SetPlaceHolder("Довгота (LONGITUDE)")
+	s.objnEntry.SetText(presentation.ObjNText)
+	s.shortNameEntry.SetText(presentation.ShortName)
+	s.fullNameEntry.SetText(presentation.FullName)
+	s.objectCardVM.ResetNameSync(presentation.ShortName, presentation.FullName)
+	s.addressEntry.SetText(presentation.Address)
+	s.phonesEntry.SetText(presentation.Phones)
+	s.contractEntry.SetText(presentation.Contract)
+	s.dateEntry.SetText(presentation.StartDateText)
+	s.locationEntry.SetText(presentation.Location)
+	s.notesEntry.SetText(presentation.Notes)
+	s.channelCodeSelect.SetSelected(presentation.ChannelLabel)
+	s.objectCardVM.SetChannelCode(presentation.ChannelCode)
+	s.sim1Entry.SetText(presentation.GSMPhone1)
+	s.sim2Entry.SetText(presentation.GSMPhone2)
+	s.simStateVM.Clear()
+	s.hiddenNEntry.SetText(presentation.GSMHiddenNText)
+	s.testControlCheck.SetChecked(presentation.TestControlEnabled)
+	s.testIntervalEntry.SetText(presentation.TestIntervalMinText)
+	s.enableTestControls(presentation.TestControlEnabled)
+	s.updateChannelSpecificControls()
+	s.refreshPPKOptionsByChannel(0)
+	s.objectTypeSelect.SetSelected(presentation.ObjectTypeLabel)
+	s.regionSelect.SetSelected(presentation.RegionLabel)
+	s.subServerASelect.SetSelected(presentation.SubServerALabel)
+	s.subServerBSelect.SetSelected(presentation.SubServerBLabel)
+	s.latitudeEntry.SetText("")
+	s.longitudeEntry.SetText("")
+	s.wizardStateVM.ResetPersonals()
+	s.wizardStateVM.ResetZones()
+}
 
-	channelCodeSelect := widget.NewSelect([]string{
-		"1 - Автододзвон",
-		"5 - GPRS",
-	}, nil)
-	channelLabelToCode := map[string]int64{
-		"1 - Автододзвон": 1,
-		"5 - GPRS":        5,
+func (s *objectWizardDialogState) buildCardFromUI() (contracts.AdminObjectCard, error) {
+	input, err := s.formVM.BuildInput(viewmodels.ObjectCardFormSnapshot{
+		ObjNRaw:            s.objnEntry.Text,
+		ShortName:          s.shortNameEntry.Text,
+		FullName:           s.fullNameEntry.Text,
+		Address:            s.addressEntry.Text,
+		Phones:             s.phonesEntry.Text,
+		Contract:           s.contractEntry.Text,
+		StartDate:          s.dateEntry.Text,
+		Location:           s.locationEntry.Text,
+		Notes:              s.notesEntry.Text,
+		GSMPhone1:          s.sim1Entry.Text,
+		GSMPhone2:          s.sim2Entry.Text,
+		GSMHiddenNRaw:      s.hiddenNEntry.Text,
+		ChannelLabel:       s.channelCodeSelect.Selected,
+		TestControlEnabled: s.testControlCheck.Checked,
+		TestIntervalMinRaw: s.testIntervalEntry.Text,
+		ObjectTypeLabel:    s.objectTypeSelect.Selected,
+		RegionLabel:        s.regionSelect.Selected,
+		PPKLabel:           s.ppkSelect.Selected,
+		SubServerALabel:    s.subServerASelect.Selected,
+		SubServerBLabel:    s.subServerBSelect.Selected,
+	}, s.refsVM, s.channelLabelToCode)
+	if err != nil {
+		return contracts.AdminObjectCard{}, err
 	}
-	channelCodeToLabel := map[int64]string{
-		1: "1 - Автододзвон",
-		5: "5 - GPRS",
-	}
+	return s.objectCardVM.ValidateAndBuildCard(input)
+}
 
-	sim1Entry := widget.NewEntry()
-	sim2Entry := widget.NewEntry()
-	sim1UsageLabel := widget.NewLabel("")
-	sim1UsageLabel.Wrapping = fyne.TextWrapWord
-	sim2UsageLabel := widget.NewLabel("")
-	sim2UsageLabel.Wrapping = fyne.TextWrapWord
-	hiddenNEntry := widget.NewEntry()
-	hiddenNEntry.SetPlaceHolder("Прихований номер (до 4 цифр)")
-	hiddenNRow := container.NewHBox(
-		widget.NewLabel("Для каналу GPRS (5):"),
-		container.NewGridWrap(fyne.NewSize(150, 36), hiddenNEntry),
-	)
+func (s *objectWizardDialogState) validateStep(step int) error {
+	_, cardErr := s.buildCardFromUI()
+	return s.wizardVM.ValidateStep(viewmodels.ObjectWizardStepValidationInput{
+		Step:              step,
+		ObjNRaw:           s.objnEntry.Text,
+		ShortName:         s.shortNameEntry.Text,
+		SelectedObjTypeID: s.refsVM.ObjectTypeID(s.objectTypeSelect.Selected),
+		CardBuildErr:      cardErr,
+	})
+}
 
-	testControlCheck := widget.NewCheck("Контролювати тестові повідомлення", nil)
-	testIntervalEntry := widget.NewEntry()
-	testIntervalEntry.SetPlaceHolder("хв.")
+func (s *objectWizardDialogState) buildReviewText() string {
+	_, cardBuildErr := s.buildCardFromUI()
 
-	objectTypeSelect := widget.NewSelect(nil, nil)
-	regionSelect := widget.NewSelect(nil, nil)
-	ppkSelect := widget.NewSelect(nil, nil)
-	subServerASelect := widget.NewSelect(nil, nil)
-	subServerBSelect := widget.NewSelect(nil, nil)
-
-	typeLabelToID := map[string]int64{}
-	regionLabelToID := map[string]int64{}
-	ppkLabelToID := map[string]int64{}
-	allPPKItems := make([]data.PPKConstructorItem, 0)
-	subServerLabelToBind := map[string]string{}
-
-	autoUpdatingFullName := false
-	fullNameSyncedWithShort := true
-	fullNameEntry.OnChanged = func(text string) {
-		if autoUpdatingFullName {
-			return
-		}
-		fullNameSyncedWithShort = strings.TrimSpace(text) == strings.TrimSpace(shortNameEntry.Text)
-	}
-	shortNameEntry.OnChanged = func(text string) {
-		if autoUpdatingFullName {
-			return
-		}
-		if !fullNameSyncedWithShort {
-			return
-		}
-		autoUpdatingFullName = true
-		fullNameEntry.SetText(strings.TrimSpace(text))
-		autoUpdatingFullName = false
-	}
-
-	enableTestControls := func(enabled bool) {
-		if enabled {
-			testIntervalEntry.Enable()
-			return
-		}
-		testIntervalEntry.Disable()
-	}
-	testControlCheck.OnChanged = enableTestControls
-
-	updateChannelSpecificControls := func() {
-		channelCode := channelLabelToCode[channelCodeSelect.Selected]
-		if channelCode == 5 {
-			hiddenNRow.Show()
-			hiddenNEntry.Enable()
-		} else {
-			hiddenNRow.Hide()
-			hiddenNEntry.Disable()
-		}
-	}
-	refreshPPKOptionsByChannel := func(preferredID int64) {
-		channelCode := channelLabelToCode[channelCodeSelect.Selected]
-		ppkLabelToID = map[string]int64{"—": 0}
-		ppkOptions := []string{"—"}
-		for _, item := range allPPKItems {
-			if channelCode > 0 && item.Channel > 0 && item.Channel != channelCode {
-				continue
-			}
-			label := strings.TrimSpace(item.Name)
-			if label == "" {
-				label = fmt.Sprintf("ППК %d", item.ID)
-			}
-			label = fmt.Sprintf("%s [%d]", label, item.ID)
-			ppkOptions = append(ppkOptions, label)
-			ppkLabelToID[label] = item.ID
-		}
-		ppkSelect.Options = ppkOptions
-		ppkSelect.Refresh()
-
-		if preferredID > 0 {
-			for _, opt := range ppkSelect.Options {
-				if ppkLabelToID[opt] == preferredID {
-					ppkSelect.SetSelected(opt)
-					return
-				}
-			}
-		}
-		ppkSelect.SetSelected("—")
-	}
-	channelCodeSelect.OnChanged = func(_ string) {
-		selectedPPKID := ppkLabelToID[ppkSelect.Selected]
-		updateChannelSpecificControls()
-		refreshPPKOptionsByChannel(selectedPPKID)
-	}
-
-	formatSIMUsageList := func(usages []data.AdminSIMPhoneUsage) string {
-		if len(usages) == 0 {
-			return ""
-		}
-		parts := make([]string, 0, len(usages))
-		for _, u := range usages {
-			name := strings.TrimSpace(u.Name)
-			if name != "" {
-				parts = append(parts, fmt.Sprintf("#%d (%s, %s)", u.ObjN, name, u.Slot))
-				continue
-			}
-			parts = append(parts, fmt.Sprintf("#%d (%s)", u.ObjN, u.Slot))
-		}
-		return "Номер вже використовується: " + strings.Join(parts, "; ")
-	}
-
-	checkSIMUsage := func(rawPhone string, targetLabel *widget.Label) {
-		rawPhone = strings.TrimSpace(rawPhone)
-		if rawPhone == "" {
-			targetLabel.SetText("")
-			return
-		}
-		usages, err := provider.FindObjectsBySIMPhone(rawPhone, nil)
-		if err != nil {
-			targetLabel.SetText("Не вдалося перевірити номер у базі")
-			return
-		}
-		targetLabel.SetText(formatSIMUsageList(usages))
-	}
-	sim1Entry.OnChanged = func(text string) {
-		checkSIMUsage(text, sim1UsageLabel)
-	}
-	sim2Entry.OnChanged = func(text string) {
-		checkSIMUsage(text, sim2UsageLabel)
-	}
-
-	loadReferenceData := func() error {
-		typeItems, err := provider.ListObjectTypes()
-		if err != nil {
-			return fmt.Errorf("не вдалося завантажити типи об'єктів: %w", err)
-		}
-		regionItems, err := provider.ListObjectDistricts()
-		if err != nil {
-			return fmt.Errorf("не вдалося завантажити райони: %w", err)
-		}
-		ppkItems, err := provider.ListPPKConstructor()
-		if err != nil {
-			return fmt.Errorf("не вдалося завантажити довідник ППК: %w", err)
-		}
-		subServerItems, err := provider.ListSubServers()
-		if err != nil {
-			return fmt.Errorf("не вдалося завантажити довідник підсерверів: %w", err)
-		}
-
-		typeLabelToID = map[string]int64{}
-		typeOptions := make([]string, 0, len(typeItems))
-		for _, item := range typeItems {
-			label := strings.TrimSpace(item.Name)
-			if label == "" {
-				label = fmt.Sprintf("Тип %d", item.ID)
-			}
-			label = fmt.Sprintf("%s [%d]", label, item.ID)
-			typeOptions = append(typeOptions, label)
-			typeLabelToID[label] = item.ID
-		}
-		objectTypeSelect.Options = typeOptions
-		objectTypeSelect.Refresh()
-
-		regionLabelToID = map[string]int64{}
-		regionOptions := []string{"—"}
-		regionLabelToID["—"] = 0
-		for _, item := range regionItems {
-			label := strings.TrimSpace(item.Name)
-			if label == "" {
-				label = fmt.Sprintf("Район %d", item.ID)
-			}
-			label = fmt.Sprintf("%s [%d]", label, item.ID)
-			regionOptions = append(regionOptions, label)
-			regionLabelToID[label] = item.ID
-		}
-		regionSelect.Options = regionOptions
-		regionSelect.Refresh()
-
-		allPPKItems = ppkItems
-		refreshPPKOptionsByChannel(ppkLabelToID[ppkSelect.Selected])
-
-		subServerLabelToBind = map[string]string{}
-		subServerOptions := []string{"—"}
-		subServerLabelToBind["—"] = ""
-		subServerTypeLabel := func(t int64) string {
-			switch t {
-			case 2:
-				return "GPRS"
-			case 4:
-				return "AVD"
-			default:
-				if t > 0 {
-					return fmt.Sprintf("%d", t)
-				}
-				return "—"
-			}
-		}
-		for _, item := range subServerItems {
-			bind := strings.TrimSpace(item.Bind)
-			if bind == "" {
-				continue
-			}
-			name := strings.TrimSpace(item.Info)
-			if name == "" {
-				name = strings.TrimSpace(item.Host)
-			}
-			if name == "" {
-				name = fmt.Sprintf("Підсервер %d", item.ID)
-			}
-			label := fmt.Sprintf("%s (%s) [%s]", name, subServerTypeLabel(item.Type), bind)
-			subServerOptions = append(subServerOptions, label)
-			subServerLabelToBind[label] = bind
-		}
-		subServerASelect.Options = subServerOptions
-		subServerASelect.Refresh()
-		subServerBSelect.Options = subServerOptions
-		subServerBSelect.Refresh()
-
-		return nil
-	}
-
-	setSelectByID := func(sel *widget.Select, options []string, labelToID map[string]int64, id int64) {
-		for _, opt := range options {
-			if labelToID[opt] == id {
-				sel.SetSelected(opt)
-				return
-			}
-		}
-		if len(options) > 0 {
-			sel.SetSelected(options[0])
-			return
-		}
-		sel.ClearSelected()
-	}
-
-	fillDefaults := func() {
-		objnEntry.SetText("")
-		shortNameEntry.SetText("")
-		fullNameEntry.SetText("")
-		fullNameSyncedWithShort = true
-		addressEntry.SetText("")
-		phonesEntry.SetText("")
-		contractEntry.SetText("")
-		dateEntry.SetText(time.Now().Format("02.01.2006"))
-		locationEntry.SetText("")
-		notesEntry.SetText("")
-		channelCodeSelect.SetSelected(channelCodeToLabel[1])
-		sim1Entry.SetText("")
-		sim2Entry.SetText("")
-		sim1UsageLabel.SetText("")
-		sim2UsageLabel.SetText("")
-		hiddenNEntry.SetText("")
-		testControlCheck.SetChecked(true)
-		testIntervalEntry.SetText("9")
-		enableTestControls(true)
-		updateChannelSpecificControls()
-		refreshPPKOptionsByChannel(0)
-
-		setSelectByID(objectTypeSelect, objectTypeSelect.Options, typeLabelToID, 0)
-		setSelectByID(regionSelect, regionSelect.Options, regionLabelToID, 0)
-		subServerASelect.SetSelected("—")
-		subServerBSelect.SetSelected("—")
-		latitudeEntry.SetText("")
-		longitudeEntry.SetText("")
-		pendingPersonals = nil
-		selectedPersonal = -1
-		pendingZones = nil
-		selectedZone = -1
-	}
-
-	buildCardFromUI := func() (data.AdminObjectCard, error) {
-		var card data.AdminObjectCard
-
-		objnRaw := strings.TrimSpace(objnEntry.Text)
-		objn, err := strconv.ParseInt(objnRaw, 10, 64)
-		if err != nil {
-			return card, fmt.Errorf("некоректний об'єктовий номер")
-		}
-		card.ObjN = objn
-		card.GrpN = 1
-		card.ShortName = strings.TrimSpace(shortNameEntry.Text)
-		card.FullName = strings.TrimSpace(fullNameEntry.Text)
-		card.Address = strings.TrimSpace(addressEntry.Text)
-		card.Phones = strings.TrimSpace(phonesEntry.Text)
-		card.Contract = strings.TrimSpace(contractEntry.Text)
-		card.StartDate = strings.TrimSpace(dateEntry.Text)
-		card.Location = strings.TrimSpace(locationEntry.Text)
-		card.Notes = strings.TrimSpace(notesEntry.Text)
-		card.GSMPhone1 = strings.TrimSpace(sim1Entry.Text)
-		card.GSMPhone2 = strings.TrimSpace(sim2Entry.Text)
-		card.TestControlEnabled = testControlCheck.Checked
-
-		channelCode, ok := channelLabelToCode[channelCodeSelect.Selected]
-		if !ok {
-			return card, fmt.Errorf("виберіть канал зв'язку")
-		}
-		card.ChannelCode = channelCode
-		if channelCode == 5 {
-			hiddenRaw := strings.TrimSpace(hiddenNEntry.Text)
-			hiddenN, err := strconv.ParseInt(hiddenRaw, 10, 64)
-			if err != nil || hiddenN <= 0 {
-				return card, fmt.Errorf("для каналу 5 вкажіть коректний прихований номер")
-			}
-			card.GSMHiddenN = hiddenN
-		} else {
-			card.GSMHiddenN = 0
-		}
-
-		if card.TestControlEnabled {
-			testRaw := strings.TrimSpace(testIntervalEntry.Text)
-			testInterval, err := strconv.ParseInt(testRaw, 10, 64)
-			if err != nil || testInterval <= 0 {
-				return card, fmt.Errorf("некоректний інтервал контролю тесту")
-			}
-			card.TestIntervalMin = testInterval
-		}
-
-		objTypeID := typeLabelToID[objectTypeSelect.Selected]
-		if objTypeID <= 0 {
-			return card, fmt.Errorf("виберіть тип об'єкта")
-		}
-		card.ObjTypeID = objTypeID
-		card.ObjRegID = regionLabelToID[regionSelect.Selected]
-		card.PPKID = ppkLabelToID[ppkSelect.Selected]
-		card.SubServerA = strings.TrimSpace(subServerLabelToBind[subServerASelect.Selected])
-		card.SubServerB = strings.TrimSpace(subServerLabelToBind[subServerBSelect.Selected])
-
-		return card, nil
-	}
-
-	parseDateFromEntry := func(raw string) (time.Time, bool) {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return time.Time{}, false
-		}
-		formats := []string{
-			"02.01.2006",
-			"2006-01-02",
-			"2006-01-02 15:04:05",
-			time.RFC3339,
-		}
-		for _, f := range formats {
-			if t, err := time.ParseInLocation(f, raw, time.Local); err == nil {
-				return t, true
-			}
-		}
-		return time.Time{}, false
-	}
-
-	openDatePicker := func() {
-		initial := time.Now()
-		if parsed, ok := parseDateFromEntry(dateEntry.Text); ok {
-			initial = parsed
-		}
-
-		var pickerDlg dialog.Dialog
-		calendar := xwidget.NewCalendar(initial, func(selected time.Time) {
-			dateEntry.SetText(selected.Format("02.01.2006"))
-			if pickerDlg != nil {
-				pickerDlg.Hide()
-			}
+	personals := s.wizardStateVM.Personals()
+	reviewPersonals := make([]viewmodels.ObjectWizardReviewPersonalItem, 0, len(personals))
+	for _, it := range personals {
+		reviewPersonals = append(reviewPersonals, viewmodels.ObjectWizardReviewPersonalItem{
+			Number:   it.Number,
+			FullName: s.wizardStateVM.PersonalFullName(it),
+			Phones:   it.Phones,
+			IsAdmin:  it.Access1 > 0,
 		})
-		pickerDlg = dialog.NewCustom("Вибір дати", "Закрити", container.NewPadded(calendar), win)
-		pickerDlg.Show()
-	}
-	datePickBtn := widget.NewButton("...", openDatePicker)
-	datePickBtn.Importance = widget.LowImportance
-	dateRow := container.NewBorder(nil, nil, nil, datePickBtn, dateEntry)
-
-	validateStep := func(step int) error {
-		objnRaw := strings.TrimSpace(objnEntry.Text)
-		if step >= 0 {
-			if objnRaw == "" {
-				return fmt.Errorf("вкажіть об'єктовий номер")
-			}
-			if _, err := strconv.ParseInt(objnRaw, 10, 64); err != nil {
-				return fmt.Errorf("некоректний об'єктовий номер")
-			}
-			if strings.TrimSpace(shortNameEntry.Text) == "" {
-				return fmt.Errorf("вкажіть коротку назву об'єкта")
-			}
-			if typeLabelToID[objectTypeSelect.Selected] <= 0 {
-				return fmt.Errorf("виберіть тип об'єкта")
-			}
-			channelCode := channelLabelToCode[channelCodeSelect.Selected]
-			if channelCode == 5 && strings.TrimSpace(hiddenNEntry.Text) == "" {
-				return fmt.Errorf("для каналу GPRS вкажіть прихований номер")
-			}
-		}
-		return nil
 	}
 
-	personalFullName := func(item data.AdminObjectPersonal) string {
-		parts := []string{
-			strings.TrimSpace(item.Surname),
-			strings.TrimSpace(item.Name),
-			strings.TrimSpace(item.SecName),
-		}
-		filtered := make([]string, 0, len(parts))
-		for _, p := range parts {
-			if p != "" {
-				filtered = append(filtered, p)
-			}
-		}
-		if len(filtered) == 0 {
-			return "(без ПІБ)"
-		}
-		return strings.Join(filtered, " ")
+	zones := s.wizardStateVM.Zones()
+	reviewZones := make([]viewmodels.ObjectWizardReviewZoneItem, 0, len(zones))
+	for i, it := range zones {
+		reviewZones = append(reviewZones, viewmodels.ObjectWizardReviewZoneItem{
+			Number:      s.wizardStateVM.EffectiveZoneNumberAt(i),
+			Description: it.Description,
+		})
 	}
 
-	nextPersonalNumber := func() int64 {
-		maxVal := int64(0)
-		for _, it := range pendingPersonals {
-			if it.Number > maxVal {
-				maxVal = it.Number
-			}
-		}
-		return maxVal + 1
-	}
+	return s.reviewVM.BuildText(viewmodels.ObjectWizardReviewInput{
+		ObjN:               s.objnEntry.Text,
+		ShortName:          s.shortNameEntry.Text,
+		FullName:           s.fullNameEntry.Text,
+		ObjectType:         s.objectTypeSelect.Selected,
+		Region:             s.regionSelect.Selected,
+		HiddenN:            s.hiddenNEntry.Text,
+		Address:            s.addressEntry.Text,
+		Phones:             s.phonesEntry.Text,
+		Contract:           s.contractEntry.Text,
+		StartDate:          s.dateEntry.Text,
+		Location:           s.locationEntry.Text,
+		Notes:              s.notesEntry.Text,
+		Channel:            s.channelCodeSelect.Selected,
+		PPK:                s.ppkSelect.Selected,
+		SubServerA:         s.subServerASelect.Selected,
+		SubServerB:         s.subServerBSelect.Selected,
+		SIM1:               s.sim1Entry.Text,
+		SIM2:               s.sim2Entry.Text,
+		TestControlEnabled: s.testControlCheck.Checked,
+		TestIntervalMin:    s.testIntervalEntry.Text,
+		Personals:          reviewPersonals,
+		Zones:              reviewZones,
+		Latitude:           s.latitudeEntry.Text,
+		Longitude:          s.longitudeEntry.Text,
+		CardValidationErr:  cardBuildErr,
+	})
+}
 
-	personalTableView := uiwidgets.NewQTableViewWithCallbacks(
-		func() (int, int) { return len(pendingPersonals) + 1, 6 },
+func (s *objectWizardDialogState) buildObjectDataStep(dateRow fyne.CanvasObject) fyne.CanvasObject {
+	return widget.NewForm(
+		widget.NewFormItem("Об'єктовий номер:", s.objnEntry),
+		widget.NewFormItem("Коротка назва:", s.shortNameEntry),
+		widget.NewFormItem("Повна назва:", s.fullNameEntry),
+		widget.NewFormItem("Тип об'єкта:", s.objectTypeSelect),
+		widget.NewFormItem("Район:", s.regionSelect),
+		widget.NewFormItem("Канал:", s.channelCodeSelect),
+		widget.NewFormItem("", s.hiddenNRow),
+		widget.NewFormItem("Адреса:", s.addressEntry),
+		widget.NewFormItem("Телефони:", s.phonesEntry),
+		widget.NewFormItem("Договір:", s.contractEntry),
+		widget.NewFormItem("Дата:", dateRow),
+		widget.NewFormItem("Розташування:", s.locationEntry),
+		widget.NewFormItem("Інформація:", s.notesEntry),
+	)
+}
+
+func (s *objectWizardDialogState) buildDeviceParamsStep() fyne.CanvasObject {
+	return widget.NewForm(
+		widget.NewFormItem("ППК:", s.ppkSelect),
+		widget.NewFormItem("Підсервер A:", s.subServerASelect),
+		widget.NewFormItem("Підсервер B:", s.subServerBSelect),
+		widget.NewFormItem("SIM 1:", container.NewVBox(s.sim1Entry, s.sim1UsageLabel)),
+		widget.NewFormItem("SIM 2:", container.NewVBox(s.sim2Entry, s.sim2UsageLabel)),
+		widget.NewFormItem(
+			"Контроль GPRS:",
+			container.NewHBox(
+				s.testControlCheck,
+				widget.NewLabel("Інтервал (хв.):"),
+				container.NewGridWrap(fyne.NewSize(100, 36), s.testIntervalEntry),
+			),
+		),
+	)
+}
+
+func (s *objectWizardDialogState) buildAdditionalInfoStep(mapPickBtn *widget.Button, clearCoordsBtn *widget.Button) fyne.CanvasObject {
+	return widget.NewForm(
+		widget.NewFormItem("Широта:", s.latitudeEntry),
+		widget.NewFormItem("Довгота:", s.longitudeEntry),
+		widget.NewFormItem("", container.NewHBox(mapPickBtn, clearCoordsBtn)),
+	)
+}
+
+func (s *objectWizardDialogState) buildPersonalsStep(win fyne.Window, statusLabel *widget.Label) (fyne.CanvasObject, *widget.Table) {
+	personalFullName := s.wizardStateVM.PersonalFullName
+
+	personalTable := widget.NewTable(
+		func() (int, int) { return s.wizardStateVM.PersonalCount() + 1, 6 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			lbl := obj.(*widget.Label)
 			if id.Row == 0 {
-				switch id.Col {
-				case 0:
-					lbl.SetText("№")
-				case 1:
-					lbl.SetText("ПІБ")
-				case 2:
-					lbl.SetText("Телефон")
-				case 3:
-					lbl.SetText("Посада")
-				case 4:
-					lbl.SetText("Доступ")
-				default:
-					lbl.SetText("Примітка")
-				}
+				lbl.SetText(s.personalsVM.HeaderText(id.Col))
 				return
 			}
 			idx := id.Row - 1
-			if idx < 0 || idx >= len(pendingPersonals) {
+			item, ok := s.wizardStateVM.PersonalAt(idx)
+			if !ok {
 				lbl.SetText("")
 				return
 			}
-			it := pendingPersonals[idx]
-			switch id.Col {
-			case 0:
-				lbl.SetText(strconv.FormatInt(it.Number, 10))
-			case 1:
-				lbl.SetText(personalFullName(it))
-			case 2:
-				lbl.SetText(strings.TrimSpace(it.Phones))
-			case 3:
-				lbl.SetText(strings.TrimSpace(it.Position))
-			case 4:
-				if it.Access1 > 0 {
-					lbl.SetText("Адмін")
-				} else {
-					lbl.SetText("Оператор")
-				}
-			case 5:
-				lbl.SetText(strings.TrimSpace(it.Notes))
-			}
+			lbl.SetText(s.personalsVM.CellText(item, personalFullName(item), id.Col))
 		},
 	)
-	personalTable := personalTableView.Widget()
 	personalTable.SetColumnWidth(0, 60)
 	personalTable.SetColumnWidth(1, 270)
 	personalTable.SetColumnWidth(2, 180)
@@ -545,171 +363,102 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 	personalTable.SetColumnWidth(4, 100)
 	personalTable.SetColumnWidth(5, 230)
 	personalTable.OnSelected = func(id widget.TableCellID) {
-		if id.Row <= 0 {
-			selectedPersonal = -1
-			return
+		s.personalsFlow.SelectTableRow(s.wizardStateVM, id.Row)
+	}
+
+	applyPersonalAction := func(out viewmodels.ObjectWizardPersonalsActionResult) {
+		if out.RefreshTable {
+			personalTable.Refresh()
 		}
-		idx := id.Row - 1
-		if idx < 0 || idx >= len(pendingPersonals) {
-			selectedPersonal = -1
-			return
+		if out.StatusText != "" {
+			statusLabel.SetText(out.StatusText)
 		}
-		selectedPersonal = idx
 	}
 
 	addPersonalBtn := widget.NewButton("Додати", func() {
-		showObjectPersonalEditor(win, provider, "Додати В/О", data.AdminObjectPersonal{
-			Number: nextPersonalNumber(),
+		showObjectPersonalEditor(win, s.provider, "Додати В/О", contracts.AdminObjectPersonal{
+			Number: s.personalsFlow.NextNumber(s.wizardStateVM),
 			IsRang: true,
-		}, func(item data.AdminObjectPersonal) error {
-			if item.Number <= 0 {
-				item.Number = nextPersonalNumber()
-			}
-			pendingPersonals = append(pendingPersonals, item)
-			selectedPersonal = len(pendingPersonals) - 1
-			personalTable.Refresh()
+		}, func(item contracts.AdminObjectPersonal) error {
+			out := s.personalsFlow.ApplyAdd(s.wizardStateVM, item)
+			applyPersonalAction(out)
 			return nil
-		}, statusLabel, func() {
-			statusLabel.SetText(fmt.Sprintf("Додано В/О. Всього: %d", len(pendingPersonals)))
-		})
+		}, statusLabel, nil)
 	})
 	editPersonalBtn := widget.NewButton("Змінити", func() {
-		if selectedPersonal < 0 || selectedPersonal >= len(pendingPersonals) {
-			statusLabel.SetText("Виберіть В/О у таблиці")
+		prompt := s.personalsFlow.PrepareEdit(s.wizardStateVM)
+		if !prompt.CanEdit {
+			statusLabel.SetText(prompt.StatusText)
 			return
 		}
-		initial := pendingPersonals[selectedPersonal]
-		showObjectPersonalEditor(win, provider, "Редагування В/О", initial, func(item data.AdminObjectPersonal) error {
-			if item.Number <= 0 {
-				item.Number = initial.Number
-			}
-			pendingPersonals[selectedPersonal] = item
-			personalTable.Refresh()
+		showObjectPersonalEditor(win, s.provider, "Редагування В/О", prompt.Initial, func(item contracts.AdminObjectPersonal) error {
+			out := s.personalsFlow.ApplyUpdate(s.wizardStateVM, prompt.SelectedIdx, item)
+			applyPersonalAction(out)
 			return nil
-		}, statusLabel, func() {
-			statusLabel.SetText("В/О оновлено")
-		})
+		}, statusLabel, nil)
 	})
 	deletePersonalBtn := widget.NewButton("Видалити", func() {
-		if selectedPersonal < 0 || selectedPersonal >= len(pendingPersonals) {
-			statusLabel.SetText("Виберіть В/О у таблиці")
+		prompt := s.personalsFlow.PrepareDelete(s.wizardStateVM)
+		if !prompt.CanDelete {
+			statusLabel.SetText(prompt.StatusText)
 			return
 		}
-		target := pendingPersonals[selectedPersonal]
 		dialog.ShowConfirm(
 			"Підтвердження",
-			fmt.Sprintf("Видалити В/О \"%s\"?", personalFullName(target)),
+			prompt.ConfirmText,
 			func(ok bool) {
 				if !ok {
 					return
 				}
-				pendingPersonals = append(pendingPersonals[:selectedPersonal], pendingPersonals[selectedPersonal+1:]...)
-				selectedPersonal = -1
-				personalTable.Refresh()
-				statusLabel.SetText(fmt.Sprintf("В/О видалено. Залишилось: %d", len(pendingPersonals)))
+				out := s.personalsFlow.ApplyDelete(s.wizardStateVM, prompt.SelectedIdx)
+				applyPersonalAction(out)
 			},
 			win,
 		)
 	})
 
+	step := container.NewBorder(
+		container.NewVBox(
+			container.NewHBox(addPersonalBtn, editPersonalBtn, deletePersonalBtn),
+			widget.NewSeparator(),
+		),
+		nil,
+		nil,
+		nil,
+		personalTable,
+	)
+	return step, personalTable
+}
+
+func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *widget.Label) (fyne.CanvasObject, func(targetZoneNumber int64, focusQuickName bool)) {
 	quickZoneNameEntry := widget.NewEntry()
 	quickZoneNameEntry.SetPlaceHolder("Назва зони (Enter -> наступна зона)")
 	selectedZoneLabel := widget.NewLabel("Зона: —")
 
-	effectiveZoneNumberAt := func(idx int) int64 {
-		if idx < 0 || idx >= len(pendingZones) {
-			return 0
-		}
-		if pendingZones[idx].ZoneNumber > 0 {
-			return pendingZones[idx].ZoneNumber
-		}
-		return int64(idx) + 1
-	}
-	sortPendingZones := func() {
-		sort.SliceStable(pendingZones, func(i, j int) bool {
-			left := pendingZones[i].ZoneNumber
-			right := pendingZones[j].ZoneNumber
-			if left <= 0 {
-				left = int64(i) + 1
-			}
-			if right <= 0 {
-				right = int64(j) + 1
-			}
-			return left < right
-		})
-	}
-	findRowByZoneNumber := func(zoneNumber int64) int {
-		if zoneNumber <= 0 {
-			return -1
-		}
-		for i := range pendingZones {
-			if effectiveZoneNumberAt(i) == zoneNumber {
-				return i
-			}
-		}
-		return -1
-	}
+	effectiveZoneNumberAt := s.wizardStateVM.EffectiveZoneNumberAt
+
 	updateSelectedZoneLabel := func() {
-		if selectedZone < 0 || selectedZone >= len(pendingZones) {
-			selectedZoneLabel.SetText("Зона: —")
-			return
-		}
-		selectedZoneLabel.SetText(fmt.Sprintf("Зона: #%d", effectiveZoneNumberAt(selectedZone)))
-	}
-	ensureZoneExists := func(zoneNumber int64, defaultDescription string) error {
-		if zoneNumber <= 0 {
-			return fmt.Errorf("некоректний номер зони")
-		}
-		if findRowByZoneNumber(zoneNumber) >= 0 {
-			return nil
-		}
-		desc := strings.TrimSpace(defaultDescription)
-		if desc == "" {
-			desc = fmt.Sprintf("Шлейф %d", zoneNumber)
-		}
-		pendingZones = append(pendingZones, data.AdminObjectZone{
-			ZoneNumber:    zoneNumber,
-			ZoneType:      1,
-			Description:   desc,
-			EntryDelaySec: 0,
-		})
-		sortPendingZones()
-		return nil
+		selectedZoneLabel.SetText(s.wizardStateVM.SelectedZoneLabel())
 	}
 
-	zoneTableView := uiwidgets.NewQTableViewWithCallbacks(
-		func() (int, int) { return len(pendingZones) + 1, 3 },
+	zoneTable := widget.NewTable(
+		func() (int, int) { return s.wizardStateVM.ZoneCount() + 1, 3 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			lbl := obj.(*widget.Label)
 			if id.Row == 0 {
-				switch id.Col {
-				case 0:
-					lbl.SetText("ZONEN")
-				case 1:
-					lbl.SetText("Тип")
-				default:
-					lbl.SetText("Опис")
-				}
+				lbl.SetText(s.zonesStepVM.HeaderText(id.Col))
 				return
 			}
 			idx := id.Row - 1
-			if idx < 0 || idx >= len(pendingZones) {
+			it, ok := s.wizardStateVM.ZoneAt(idx)
+			if !ok {
 				lbl.SetText("")
 				return
 			}
-			it := pendingZones[idx]
-			switch id.Col {
-			case 0:
-				lbl.SetText(strconv.FormatInt(effectiveZoneNumberAt(idx), 10))
-			case 1:
-				lbl.SetText("пож.")
-			default:
-				lbl.SetText(strings.TrimSpace(it.Description))
-			}
+			lbl.SetText(s.zonesStepVM.CellText(effectiveZoneNumberAt(idx), it.Description, id.Col))
 		},
 	)
-	zoneTable := zoneTableView.Widget()
 	zoneTable.StickyRowCount = 1
 	zoneTable.StickyColumnCount = 1
 	applyZoneTableLayout := func() {
@@ -720,8 +469,20 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 	applyZoneTableLayout()
 
 	var selectZoneByNumber func(zoneNumber int64, focusQuickName bool)
-	refreshZoneTable := func(targetZoneNumber int64, focusQuickName bool) {
-		sortPendingZones()
+	var refreshZoneTable func(targetZoneNumber int64, focusQuickName bool)
+	applyZoneAction := func(out viewmodels.ObjectWizardZonesActionResult) {
+		if out.Err != nil && out.ShowErrorDialog {
+			dialog.ShowError(out.Err, win)
+		}
+		if out.RefreshTable && refreshZoneTable != nil {
+			refreshZoneTable(out.TargetZoneNumber, out.FocusQuickName)
+		}
+		if out.StatusText != "" {
+			statusLabel.SetText(out.StatusText)
+		}
+	}
+
+	refreshZoneTable = func(targetZoneNumber int64, focusQuickName bool) {
 		zoneTable.Refresh()
 		applyZoneTableLayout()
 		if selectZoneByNumber != nil {
@@ -729,22 +490,15 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 		}
 	}
 	selectZoneByNumber = func(zoneNumber int64, focusQuickName bool) {
-		if len(pendingZones) == 0 {
-			selectedZone = -1
+		if !s.wizardStateVM.SelectZoneByNumber(zoneNumber) {
 			zoneTable.UnselectAll()
 			quickZoneNameEntry.SetText("")
 			updateSelectedZoneLabel()
 			return
 		}
-		targetRow := 0
-		if zoneNumber > 0 {
-			if row := findRowByZoneNumber(zoneNumber); row >= 0 {
-				targetRow = row
-			}
-		}
-		selectedZone = targetRow
+		targetRow := s.wizardStateVM.SelectedZone()
 		zoneTable.Select(widget.TableCellID{Row: targetRow + 1, Col: 0})
-		quickZoneNameEntry.SetText(strings.TrimSpace(pendingZones[targetRow].Description))
+		quickZoneNameEntry.SetText(s.wizardStateVM.SelectedZoneDescription())
 		updateSelectedZoneLabel()
 		if focusQuickName {
 			focusIfOnCanvas(win, quickZoneNameEntry)
@@ -753,175 +507,82 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 
 	zoneTable.OnSelected = func(id widget.TableCellID) {
 		if id.Row <= 0 {
-			selectedZone = -1
+			s.wizardStateVM.SetSelectedZone(-1)
 			quickZoneNameEntry.SetText("")
 			updateSelectedZoneLabel()
 			return
 		}
 		idx := id.Row - 1
-		if idx < 0 || idx >= len(pendingZones) {
-			selectedZone = -1
+		if !s.wizardStateVM.SetSelectedZone(idx) {
+			s.wizardStateVM.SetSelectedZone(-1)
 			quickZoneNameEntry.SetText("")
 			updateSelectedZoneLabel()
 			return
 		}
-		selectedZone = idx
-		quickZoneNameEntry.SetText(strings.TrimSpace(pendingZones[idx].Description))
+		quickZoneNameEntry.SetText(s.wizardStateVM.SelectedZoneDescription())
 		updateSelectedZoneLabel()
 		focusIfOnCanvas(win, quickZoneNameEntry)
 	}
 
 	moveToNextZone := func() {
-		if selectedZone < 0 || selectedZone >= len(pendingZones) {
-			if len(pendingZones) == 0 {
-				if err := ensureZoneExists(1, strings.TrimSpace(quickZoneNameEntry.Text)); err != nil {
-					dialog.ShowError(err, win)
-					statusLabel.SetText("Не вдалося додати першу зону")
-					return
-				}
-				refreshZoneTable(1, true)
-				statusLabel.SetText("Додано зону #1")
-				return
-			}
-			selectZoneByNumber(effectiveZoneNumberAt(0), true)
-		}
-		if selectedZone < 0 || selectedZone >= len(pendingZones) {
-			statusLabel.SetText("Виберіть зону у таблиці")
-			return
-		}
-
-		current := pendingZones[selectedZone]
-		currentZoneNumber := effectiveZoneNumberAt(selectedZone)
-		if current.ZoneNumber <= 0 {
-			current.ZoneNumber = currentZoneNumber
-		}
-		current.Description = strings.TrimSpace(quickZoneNameEntry.Text)
-		pendingZones[selectedZone] = current
-
-		nextZoneNumber := currentZoneNumber + 1
-		if err := ensureZoneExists(nextZoneNumber, ""); err != nil {
-			dialog.ShowError(err, win)
-			statusLabel.SetText("Не вдалося додати наступну зону")
-			return
-		}
-
-		refreshZoneTable(nextZoneNumber, true)
-		statusLabel.SetText(fmt.Sprintf("Збережено зону #%d, перехід на #%d", currentZoneNumber, nextZoneNumber))
+		out := s.zonesFlowVM.MoveToNext(s.wizardStateVM, quickZoneNameEntry.Text)
+		applyZoneAction(out)
 	}
 	quickZoneNameEntry.OnSubmitted = func(string) {
 		moveToNextZone()
 	}
 
 	addZoneBtn := widget.NewButton("Додати", func() {
-		nextZoneNumber := int64(1)
-		if selectedZone >= 0 && selectedZone < len(pendingZones) {
-			nextZoneNumber = effectiveZoneNumberAt(selectedZone) + 1
-		} else if len(pendingZones) > 0 {
-			lastZone := effectiveZoneNumberAt(len(pendingZones) - 1)
-			if lastZone > 0 {
-				nextZoneNumber = lastZone + 1
-			}
-		}
-		if err := ensureZoneExists(nextZoneNumber, ""); err != nil {
-			dialog.ShowError(err, win)
-			statusLabel.SetText("Не вдалося додати зону")
-			return
-		}
-		refreshZoneTable(nextZoneNumber, true)
-		statusLabel.SetText(fmt.Sprintf("Готово до введення зони #%d", nextZoneNumber))
+		out := s.zonesFlowVM.AddZone(s.wizardStateVM)
+		applyZoneAction(out)
 	})
 
 	editZoneBtn := widget.NewButton("Змінити", func() {
-		if len(pendingZones) == 0 {
-			if err := ensureZoneExists(1, ""); err != nil {
-				dialog.ShowError(err, win)
-				statusLabel.SetText("Не вдалося створити першу зону")
-				return
-			}
-			refreshZoneTable(1, true)
-			statusLabel.SetText("Створено зону #1, можна вводити назву")
-			return
-		}
-		if selectedZone < 0 || selectedZone >= len(pendingZones) {
-			selectZoneByNumber(effectiveZoneNumberAt(0), true)
-			statusLabel.SetText("Виберіть зону і вводьте назву")
-			return
-		}
-		updateSelectedZoneLabel()
-		focusIfOnCanvas(win, quickZoneNameEntry)
-		statusLabel.SetText(fmt.Sprintf("Редагування зони #%d: введіть назву і натисніть Enter", effectiveZoneNumberAt(selectedZone)))
+		out := s.zonesFlowVM.StartEdit(s.wizardStateVM)
+		applyZoneAction(out)
 	})
 
 	deleteZoneBtn := widget.NewButton("Видалити", func() {
-		if selectedZone < 0 || selectedZone >= len(pendingZones) {
-			statusLabel.SetText("Виберіть зону у таблиці")
+		prompt := s.zonesFlowVM.PrepareDelete(s.wizardStateVM)
+		if !prompt.CanDelete {
+			statusLabel.SetText(prompt.StatusText)
 			return
 		}
-		targetZone := effectiveZoneNumberAt(selectedZone)
 		dialog.ShowConfirm(
 			"Підтвердження",
-			fmt.Sprintf("Видалити зону #%d?", targetZone),
+			prompt.ConfirmText,
 			func(ok bool) {
 				if !ok {
 					return
 				}
-				pendingZones = append(pendingZones[:selectedZone], pendingZones[selectedZone+1:]...)
-				selectedZone = -1
-				refreshZoneTable(0, false)
-				statusLabel.SetText(fmt.Sprintf("Зону #%d видалено", targetZone))
+				out := s.zonesFlowVM.ApplyDelete(s.wizardStateVM, prompt.TargetZoneNumber)
+				applyZoneAction(out)
 			},
 			win,
 		)
 	})
 
 	defaultZoneFillCount := func() int64 {
-		maxZone := int64(0)
-		for i := range pendingZones {
-			if effectiveZoneNumberAt(i) > maxZone {
-				maxZone = effectiveZoneNumberAt(i)
-			}
-		}
-		if maxZone > 0 {
-			return maxZone
-		}
-		return 24
+		return s.zonesFlowVM.DefaultFillCount(s.wizardStateVM)
 	}
 
 	fillZonesBtn := widget.NewButton("Заповнити", func() {
 		showZoneFillDialog(win, defaultZoneFillCount(), func(count int64) {
-			if count <= 0 {
-				statusLabel.SetText("Кількість зон має бути більше 0")
-				return
-			}
-			existingDescriptions := make(map[int64]string, len(pendingZones))
-			for i := range pendingZones {
-				zoneNumber := effectiveZoneNumberAt(i)
-				existingDescriptions[zoneNumber] = strings.TrimSpace(pendingZones[i].Description)
-			}
-			for zoneNumber := int64(1); zoneNumber <= count; zoneNumber++ {
-				if err := ensureZoneExists(zoneNumber, existingDescriptions[zoneNumber]); err != nil {
-					dialog.ShowError(err, win)
-					statusLabel.SetText("Не вдалося заповнити зони")
-					return
-				}
-			}
-			refreshZoneTable(1, false)
-			statusLabel.SetText(fmt.Sprintf("Зони заповнено до #%d", count))
+			out := s.zonesFlowVM.Fill(s.wizardStateVM, count)
+			applyZoneAction(out)
 		}, statusLabel)
 	})
 
 	clearZonesBtn := widget.NewButton("Очистити", func() {
 		dialog.ShowConfirm(
 			"Підтвердження",
-			"Видалити всі зони, додані в майстрі?",
+			s.zonesFlowVM.ClearConfirmText(),
 			func(ok bool) {
 				if !ok {
 					return
 				}
-				pendingZones = nil
-				selectedZone = -1
-				refreshZoneTable(0, false)
-				statusLabel.SetText("Зони очищено")
+				out := s.zonesFlowVM.Clear(s.wizardStateVM)
+				applyZoneAction(out)
 			},
 			win,
 		)
@@ -929,127 +590,11 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 
 	refreshZonesBtn := widget.NewButton("Оновити", func() {
 		refreshZoneTable(0, false)
-		statusLabel.SetText(fmt.Sprintf("Зони: %d запис(ів)", len(pendingZones)))
+		statusLabel.SetText(s.zonesFlowVM.RefreshStatus(s.wizardStateVM))
 	})
 	nextZoneBtn := widget.NewButton("Enter -> Наступна", moveToNextZone)
 
-	mapPickBtn := widget.NewButton("Вибрати на карті", func() {
-		showCoordinatesMapPicker(
-			win,
-			strings.TrimSpace(latitudeEntry.Text),
-			strings.TrimSpace(longitudeEntry.Text),
-			func(lat, lon string) {
-				latitudeEntry.SetText(lat)
-				longitudeEntry.SetText(lon)
-				statusLabel.SetText("Координати вибрано на карті")
-			},
-		)
-	})
-	clearCoordsBtn := widget.NewButton("Очистити", func() {
-		latitudeEntry.SetText("")
-		longitudeEntry.SetText("")
-		statusLabel.SetText("Координати очищено")
-	})
-
-	reviewText := widget.NewTextGrid()
-	reviewText.SetText("")
-	reviewScroll := container.NewScroll(reviewText)
-	reviewScroll.SetMinSize(fyne.NewSize(0, 420))
-
-	refreshReview := func() {
-		lines := []string{
-			"1) Дані об'єкта",
-			fmt.Sprintf("№ об'єкта: %s", blankFallback(strings.TrimSpace(objnEntry.Text), "—")),
-			fmt.Sprintf("Коротка назва: %s", blankFallback(strings.TrimSpace(shortNameEntry.Text), "—")),
-			fmt.Sprintf("Повна назва: %s", blankFallback(strings.TrimSpace(fullNameEntry.Text), "—")),
-			fmt.Sprintf("Тип: %s", blankFallback(strings.TrimSpace(objectTypeSelect.Selected), "—")),
-			fmt.Sprintf("Район: %s", blankFallback(strings.TrimSpace(regionSelect.Selected), "—")),
-			fmt.Sprintf("Прихований №: %s", blankFallback(strings.TrimSpace(hiddenNEntry.Text), "—")),
-			fmt.Sprintf("Адреса: %s", blankFallback(strings.TrimSpace(addressEntry.Text), "—")),
-			fmt.Sprintf("Телефони: %s", blankFallback(strings.TrimSpace(phonesEntry.Text), "—")),
-			fmt.Sprintf("Договір: %s", blankFallback(strings.TrimSpace(contractEntry.Text), "—")),
-			fmt.Sprintf("Дата: %s", blankFallback(strings.TrimSpace(dateEntry.Text), "—")),
-			fmt.Sprintf("Розташування: %s", blankFallback(strings.TrimSpace(locationEntry.Text), "—")),
-			fmt.Sprintf("Інформація: %s", blankFallback(strings.TrimSpace(notesEntry.Text), "—")),
-			"",
-			"2) Параметри пристрою",
-			fmt.Sprintf("Канал: %s", blankFallback(strings.TrimSpace(channelCodeSelect.Selected), "—")),
-			fmt.Sprintf("ППК: %s", blankFallback(strings.TrimSpace(ppkSelect.Selected), "—")),
-			fmt.Sprintf("Підсервер A: %s", blankFallback(strings.TrimSpace(subServerASelect.Selected), "—")),
-			fmt.Sprintf("Підсервер B: %s", blankFallback(strings.TrimSpace(subServerBSelect.Selected), "—")),
-			fmt.Sprintf("SIM 1: %s", blankFallback(strings.TrimSpace(sim1Entry.Text), "—")),
-			fmt.Sprintf("SIM 2: %s", blankFallback(strings.TrimSpace(sim2Entry.Text), "—")),
-			fmt.Sprintf("Контроль тестів: %t", testControlCheck.Checked),
-			fmt.Sprintf("Інтервал тесту, хв: %s", blankFallback(strings.TrimSpace(testIntervalEntry.Text), "—")),
-			"",
-			"3) Зв'язані дані",
-			fmt.Sprintf("В/О: %d", len(pendingPersonals)),
-			fmt.Sprintf("Зони: %d", len(pendingZones)),
-			fmt.Sprintf("Координати: %s / %s", blankFallback(strings.TrimSpace(latitudeEntry.Text), "0"), blankFallback(strings.TrimSpace(longitudeEntry.Text), "0")),
-		}
-		if _, err := buildCardFromUI(); err != nil {
-			lines = append(lines, "")
-			lines = append(lines, "Увага: перед створенням виправте:")
-			lines = append(lines, "- "+err.Error())
-		}
-		if len(pendingPersonals) > 0 {
-			lines = append(lines, "")
-			lines = append(lines, "Список В/О:")
-			for i, it := range pendingPersonals {
-				role := "Оператор"
-				if it.Access1 > 0 {
-					role = "Адмін"
-				}
-				lines = append(lines, fmt.Sprintf("%d) #%d %s, %s, %s", i+1, it.Number, personalFullName(it), role, strings.TrimSpace(it.Phones)))
-			}
-		}
-		if len(pendingZones) > 0 {
-			lines = append(lines, "")
-			lines = append(lines, "Список зон:")
-			for i, it := range pendingZones {
-				lines = append(lines, fmt.Sprintf("%d) ZONEN=%d, %s", i+1, effectiveZoneNumberAt(i), strings.TrimSpace(it.Description)))
-			}
-		}
-		reviewText.SetText(strings.Join(lines, "\n"))
-	}
-
-	step1 := widget.NewForm(
-		widget.NewFormItem("Об'єктовий номер:", objnEntry),
-		widget.NewFormItem("Коротка назва:", shortNameEntry),
-		widget.NewFormItem("Повна назва:", fullNameEntry),
-		widget.NewFormItem("Тип об'єкта:", objectTypeSelect),
-		widget.NewFormItem("Район:", regionSelect),
-		widget.NewFormItem("Канал:", channelCodeSelect),
-		widget.NewFormItem("", hiddenNRow),
-		widget.NewFormItem("Адреса:", addressEntry),
-		widget.NewFormItem("Телефони:", phonesEntry),
-		widget.NewFormItem("Договір:", contractEntry),
-		widget.NewFormItem("Дата:", dateRow),
-		widget.NewFormItem("Розташування:", locationEntry),
-		widget.NewFormItem("Інформація:", notesEntry),
-	)
-
-	step2 := widget.NewForm(
-		widget.NewFormItem("ППК:", ppkSelect),
-		widget.NewFormItem("Підсервер A:", subServerASelect),
-		widget.NewFormItem("Підсервер B:", subServerBSelect),
-		widget.NewFormItem("SIM 1:", container.NewVBox(sim1Entry, sim1UsageLabel)),
-		widget.NewFormItem("SIM 2:", container.NewVBox(sim2Entry, sim2UsageLabel)),
-		widget.NewFormItem("Контроль GPRS:", container.NewHBox(testControlCheck, widget.NewLabel("Інтервал (хв.):"), container.NewGridWrap(fyne.NewSize(100, 36), testIntervalEntry))),
-	)
-
-	step3 := container.NewBorder(
-		container.NewVBox(
-			container.NewHBox(addPersonalBtn, editPersonalBtn, deletePersonalBtn),
-			widget.NewSeparator(),
-		),
-		nil,
-		nil,
-		nil,
-		personalTable,
-	)
-
-	step4 := container.NewBorder(
+	step := container.NewBorder(
 		container.NewVBox(
 			container.NewHBox(addZoneBtn, editZoneBtn, deleteZoneBtn, fillZonesBtn, clearZonesBtn, layout.NewSpacer(), refreshZonesBtn),
 			widget.NewSeparator(),
@@ -1068,12 +613,207 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 		nil,
 		zoneTable,
 	)
+	return step, refreshZoneTable
+}
 
-	step5 := widget.NewForm(
-		widget.NewFormItem("Широта:", latitudeEntry),
-		widget.NewFormItem("Довгота:", longitudeEntry),
-		widget.NewFormItem("", container.NewHBox(mapPickBtn, clearCoordsBtn)),
+func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminObjectWizardProvider, onSaved func(objn int64)) {
+	win := fyne.CurrentApp().NewWindow("Майстер створення об'єкта")
+	win.Resize(fyne.NewSize(1024, 768))
+
+	statusLabel := widget.NewLabel("Крок 1/6: дані об'єкта")
+	wizardStateVM := viewmodels.NewObjectWizardStateViewModel()
+
+	objnEntry := widget.NewEntry()
+	shortNameBinding := binding.NewString()
+	fullNameBinding := binding.NewString()
+	shortNameEntry := widget.NewEntryWithData(shortNameBinding)
+	fullNameEntry := widget.NewEntryWithData(fullNameBinding)
+	addressEntry := widget.NewEntry()
+	phonesEntry := widget.NewEntry()
+	contractEntry := widget.NewEntry()
+	dateEntry := widget.NewEntry()
+	dateEntry.SetPlaceHolder("дд.мм.рррр")
+	locationEntry := widget.NewMultiLineEntry()
+	locationEntry.SetMinRowsVisible(2)
+	notesEntry := widget.NewMultiLineEntry()
+	notesEntry.SetMinRowsVisible(4)
+	latitudeEntry := widget.NewEntry()
+	latitudeEntry.SetPlaceHolder("Широта (LATITUDE)")
+	longitudeEntry := widget.NewEntry()
+	longitudeEntry.SetPlaceHolder("Довгота (LONGITUDE)")
+
+	channelCodeSelect := widget.NewSelect(viewmodels.ObjectChannelOptions(), nil)
+	channelLabelToCode := viewmodels.DefaultObjectChannelLabelToCode()
+	channelCodeToLabel := viewmodels.DefaultObjectChannelCodeToLabel()
+
+	sim1Entry := widget.NewEntry()
+	sim2Entry := widget.NewEntry()
+	simStateVM := viewmodels.NewObjectWizardSIMUsageStateViewModel()
+	sim1UsageLabel := widget.NewLabelWithData(simStateVM.SIM1Binding())
+	sim1UsageLabel.Wrapping = fyne.TextWrapWord
+	sim2UsageLabel := widget.NewLabelWithData(simStateVM.SIM2Binding())
+	sim2UsageLabel.Wrapping = fyne.TextWrapWord
+	hiddenNEntry := widget.NewEntry()
+	hiddenNEntry.SetPlaceHolder("Прихований номер (до 4 цифр)")
+	hiddenNRow := container.NewHBox(
+		widget.NewLabel("Для каналу GPRS (5):"),
+		container.NewGridWrap(fyne.NewSize(150, 36), hiddenNEntry),
 	)
+
+	testControlCheck := widget.NewCheck("Контролювати тестові повідомлення", nil)
+	testIntervalEntry := widget.NewEntry()
+	testIntervalEntry.SetPlaceHolder("хв.")
+
+	objectTypeSelect := widget.NewSelect(nil, nil)
+	regionSelect := widget.NewSelect(nil, nil)
+	ppkSelect := widget.NewSelect(nil, nil)
+	subServerASelect := widget.NewSelect(nil, nil)
+	subServerBSelect := widget.NewSelect(nil, nil)
+
+	objectCardVM := viewmodels.NewObjectCardViewModel()
+	formVM := viewmodels.NewObjectCardFormViewModel()
+	defaultsVM := viewmodels.NewObjectCardDefaultsViewModel()
+	refsVM := viewmodels.NewObjectCardReferencesViewModel()
+	wizardVM := viewmodels.NewObjectWizardViewModel()
+	initVM := viewmodels.NewObjectWizardInitViewModel()
+	reviewVM := viewmodels.NewObjectWizardReviewViewModel()
+	personalsVM := viewmodels.NewObjectWizardPersonalsTableViewModel()
+	personalsFlow := viewmodels.NewObjectWizardPersonalsFlowViewModel(personalsVM)
+	zonesStepVM := viewmodels.NewObjectWizardZonesStepViewModel()
+	zonesFlowVM := viewmodels.NewObjectWizardZonesFlowViewModel(zonesStepVM)
+	coordsFlowVM := viewmodels.NewObjectWizardCoordinatesFlowViewModel()
+	channelFlowVM := viewmodels.NewObjectChannelFlowViewModel()
+	simUsageVM := viewmodels.NewSIMPhoneUsageViewModel()
+	dateVM := viewmodels.NewObjectDateFieldViewModel()
+
+	state := &objectWizardDialogState{
+		provider:      provider,
+		wizardStateVM: wizardStateVM,
+		objectCardVM:  objectCardVM,
+		formVM:        formVM,
+		defaultsVM:    defaultsVM,
+		refsVM:        refsVM,
+		wizardVM:      wizardVM,
+		initVM:        initVM,
+		reviewVM:      reviewVM,
+		personalsVM:   personalsVM,
+		personalsFlow: personalsFlow,
+		zonesStepVM:   zonesStepVM,
+		zonesFlowVM:   zonesFlowVM,
+		coordsFlowVM:  coordsFlowVM,
+		channelFlowVM: channelFlowVM,
+		simUsageVM:    simUsageVM,
+		simStateVM:    simStateVM,
+		dateVM:        dateVM,
+
+		shortNameBinding: shortNameBinding,
+		fullNameBinding:  fullNameBinding,
+
+		channelLabelToCode: channelLabelToCode,
+		channelCodeToLabel: channelCodeToLabel,
+
+		objnEntry:      objnEntry,
+		shortNameEntry: shortNameEntry,
+		fullNameEntry:  fullNameEntry,
+		addressEntry:   addressEntry,
+		phonesEntry:    phonesEntry,
+		contractEntry:  contractEntry,
+		dateEntry:      dateEntry,
+		locationEntry:  locationEntry,
+		notesEntry:     notesEntry,
+
+		channelCodeSelect: channelCodeSelect,
+		sim1Entry:         sim1Entry,
+		sim2Entry:         sim2Entry,
+		sim1UsageLabel:    sim1UsageLabel,
+		sim2UsageLabel:    sim2UsageLabel,
+		hiddenNEntry:      hiddenNEntry,
+		hiddenNRow:        hiddenNRow,
+
+		testControlCheck:  testControlCheck,
+		testIntervalEntry: testIntervalEntry,
+
+		objectTypeSelect: objectTypeSelect,
+		regionSelect:     regionSelect,
+		ppkSelect:        ppkSelect,
+		subServerASelect: subServerASelect,
+		subServerBSelect: subServerBSelect,
+
+		latitudeEntry:  latitudeEntry,
+		longitudeEntry: longitudeEntry,
+	}
+
+	state.fullNameBinding.AddListener(binding.NewDataListener(state.onFullNameBindingChanged))
+	state.shortNameBinding.AddListener(binding.NewDataListener(state.onShortNameBindingChanged))
+
+	testControlCheck.OnChanged = state.enableTestControls
+
+	channelCodeSelect.OnChanged = func(_ string) {
+		state.onChannelChanged()
+	}
+
+	sim1Entry.OnChanged = func(text string) {
+		state.checkSIMUsage(text, 1)
+	}
+	sim2Entry.OnChanged = func(text string) {
+		state.checkSIMUsage(text, 2)
+	}
+	buildCardFromUI := state.buildCardFromUI
+
+	openDatePicker := func() {
+		initial := state.dateVM.ResolvePickerInitial(dateEntry.Text, time.Now())
+
+		var pickerDlg dialog.Dialog
+		calendar := xwidget.NewCalendar(initial, func(selected time.Time) {
+			dateEntry.SetText(state.dateVM.FormatForDisplay(selected))
+			if pickerDlg != nil {
+				pickerDlg.Hide()
+			}
+		})
+		pickerDlg = dialog.NewCustom("Вибір дати", "Закрити", container.NewPadded(calendar), win)
+		pickerDlg.Show()
+	}
+	datePickBtn := widget.NewButton("...", openDatePicker)
+	datePickBtn.Importance = widget.LowImportance
+	dateRow := container.NewBorder(nil, nil, nil, datePickBtn, dateEntry)
+
+	validateStep := state.validateStep
+	step3, personalTable := state.buildPersonalsStep(win, statusLabel)
+	step4, refreshZoneTable := state.buildZonesStep(win, statusLabel)
+
+	mapPickBtn := widget.NewButton("Вибрати на карті", func() {
+		lat, lon := state.coordsFlowVM.PreparePickerInput(latitudeEntry.Text, longitudeEntry.Text)
+		showCoordinatesMapPicker(
+			win,
+			lat,
+			lon,
+			func(lat, lon string) {
+				out := state.coordsFlowVM.ApplyPicked(lat, lon)
+				latitudeEntry.SetText(out.Latitude)
+				longitudeEntry.SetText(out.Longitude)
+				statusLabel.SetText(out.Status)
+			},
+		)
+	})
+	clearCoordsBtn := widget.NewButton("Очистити", func() {
+		out := state.coordsFlowVM.Clear()
+		latitudeEntry.SetText(out.Latitude)
+		longitudeEntry.SetText(out.Longitude)
+		statusLabel.SetText(out.Status)
+	})
+
+	reviewText := widget.NewTextGrid()
+	reviewText.SetText("")
+	reviewScroll := container.NewScroll(reviewText)
+	reviewScroll.SetMinSize(fyne.NewSize(0, 420))
+
+	refreshReview := func() {
+		reviewText.SetText(state.buildReviewText())
+	}
+
+	step1 := state.buildObjectDataStep(dateRow)
+	step2 := state.buildDeviceParamsStep()
+	step5 := state.buildAdditionalInfoStep(mapPickBtn, clearCoordsBtn)
 
 	step6 := container.NewBorder(
 		widget.NewLabel("Підсумок введених даних перед створенням"),
@@ -1098,16 +838,13 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 		"додаткова інформація",
 		"підтвердження",
 	}
+	flowVM := viewmodels.NewObjectWizardFlowViewModel(stepTitles)
+	submitVM := viewmodels.NewObjectWizardSubmitViewModel(flowVM, wizardVM)
 
-	currentStep := 0
 	updateStepState := func() {
-		steps.SelectIndex(currentStep)
-		stepName := ""
-		if currentStep >= 0 && currentStep < len(stepTitles) {
-			stepName = stepTitles[currentStep]
-		}
-		statusLabel.SetText(fmt.Sprintf("Крок %d/%d: %s", currentStep+1, len(stepTitles), stepName))
-		if currentStep == len(stepTitles)-1 {
+		steps.SelectIndex(flowVM.CurrentStep())
+		statusLabel.SetText(flowVM.StatusText())
+		if flowVM.IsLastStep() {
 			refreshReview()
 		}
 	}
@@ -1118,89 +855,75 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 	cancelBtn := widget.NewButton("Скасувати", func() { win.Close() })
 
 	refreshButtons := func() {
-		if currentStep <= 0 {
+		if !flowVM.CanGoBack() {
 			backBtn.Disable()
 		} else {
 			backBtn.Enable()
 		}
-		if currentStep >= len(stepTitles)-1 {
+		if !flowVM.CanGoNext() {
 			nextBtn.Disable()
-			createBtn.Enable()
 		} else {
 			nextBtn.Enable()
+		}
+		if flowVM.CanCreate() {
+			createBtn.Enable()
+		} else {
 			createBtn.Disable()
 		}
 	}
 
 	backBtn.OnTapped = func() {
-		if currentStep <= 0 {
+		if !flowVM.GoBack() {
 			return
 		}
-		currentStep--
 		updateStepState()
 		refreshButtons()
 	}
 
 	nextBtn.OnTapped = func() {
-		if err := validateStep(currentStep); err != nil {
+		moved, err := flowVM.GoNext(validateStep)
+		if err != nil {
 			statusLabel.SetText(err.Error())
 			return
 		}
-		if currentStep >= len(stepTitles)-1 {
+		if !moved {
 			return
 		}
-		currentStep++
 		updateStepState()
 		refreshButtons()
 	}
 
 	createBtn.OnTapped = func() {
-		if err := validateStep(len(stepTitles) - 1); err != nil {
-			statusLabel.SetText(err.Error())
-			return
-		}
-		card, err := buildCardFromUI()
+		out, err := submitVM.Submit(viewmodels.ObjectWizardSubmitInput{
+			ValidateStep: validateStep,
+			BuildCard:    buildCardFromUI,
+			Persistence:  provider,
+			Personals:    wizardStateVM.Personals(),
+			Zones:        wizardStateVM.Zones(),
+			Coordinates: contracts.AdminObjectCoordinates{
+				Latitude:  latitudeEntry.Text,
+				Longitude: longitudeEntry.Text,
+			},
+		})
 		if err != nil {
-			statusLabel.SetText(err.Error())
+			if out.ShowErrorDialog {
+				dialog.ShowError(err, win)
+			}
+			statusLabel.SetText(out.StatusMessage)
 			return
 		}
-		if err := provider.CreateObject(card); err != nil {
-			dialog.ShowError(err, win)
-			statusLabel.SetText("Не вдалося створити об'єкт")
-			return
-		}
 
-		warnings := make([]string, 0, 4)
-
-		for idx, it := range pendingPersonals {
-			if err := provider.AddObjectPersonal(card.ObjN, it); err != nil {
-				warnings = append(warnings, fmt.Sprintf("В/О #%d не додано: %v", idx+1, err))
-			}
-		}
-		for idx, it := range pendingZones {
-			if err := provider.AddObjectZone(card.ObjN, it); err != nil {
-				warnings = append(warnings, fmt.Sprintf("Зона #%d не додана: %v", idx+1, err))
-			}
-		}
-		coords := data.AdminObjectCoordinates{
-			Latitude:  strings.TrimSpace(latitudeEntry.Text),
-			Longitude: strings.TrimSpace(longitudeEntry.Text),
-		}
-		if err := provider.SaveObjectCoordinates(card.ObjN, coords); err != nil {
-			warnings = append(warnings, fmt.Sprintf("Координати не збережено: %v", err))
-		}
-
-		if len(warnings) > 0 {
+		if out.WarningMessage != "" {
 			dialog.ShowInformation(
 				"Створено з попередженнями",
-				"Об'єкт створено, але частина додаткових даних не збережена:\n\n"+strings.Join(warnings, "\n"),
+				out.WarningMessage,
 				win,
 			)
 		} else {
-			statusLabel.SetText("Новий об'єкт створено")
+			statusLabel.SetText(out.StatusMessage)
 		}
 		if onSaved != nil {
-			onSaved(card.ObjN)
+			onSaved(out.Result.ObjN)
 		}
 		win.Close()
 	}
@@ -1213,11 +936,18 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider data.AdminProvider, 
 	)
 	win.SetContent(content)
 
-	if err := loadReferenceData(); err != nil {
-		dialog.ShowError(err, win)
-		statusLabel.SetText("Не вдалося завантажити довідники")
+	initResult := state.initVM.Initialize(viewmodels.ObjectWizardInitInput{
+		LoadReferenceData: state.loadReferenceData,
+		FillDefaults:      state.fillDefaults,
+	})
+	for _, issue := range initResult.Issues {
+		if issue.ShowErrorDialog && issue.Err != nil {
+			dialog.ShowError(issue.Err, win)
+		}
+		if issue.StatusMessage != "" {
+			statusLabel.SetText(issue.StatusMessage)
+		}
 	}
-	fillDefaults()
 	updateStepState()
 	refreshButtons()
 	personalTable.Refresh()

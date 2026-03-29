@@ -2,12 +2,13 @@ package data
 
 import "obj_catalog_fyne_v3/pkg/contracts"
 
+// Backward-compatible aliases. Prefer pkg/contracts in new code.
 type DisplayBlockMode = contracts.DisplayBlockMode
 
 const (
-	DisplayBlockNone         DisplayBlockMode = contracts.DisplayBlockNone
-	DisplayBlockTemporaryOff DisplayBlockMode = contracts.DisplayBlockTemporaryOff
-	DisplayBlockDebug        DisplayBlockMode = contracts.DisplayBlockDebug
+	DisplayBlockNone         = contracts.DisplayBlockNone
+	DisplayBlockTemporaryOff = contracts.DisplayBlockTemporaryOff
+	DisplayBlockDebug        = contracts.DisplayBlockDebug
 )
 
 type FireMonitoringServer = contracts.FireMonitoringServer
@@ -22,28 +23,35 @@ type AdminObjectCoordinates = contracts.AdminObjectCoordinates
 type AdminSIMPhoneUsage = contracts.AdminSIMPhoneUsage
 type DictionaryItem = contracts.DictionaryItem
 type AdminMessage = contracts.AdminMessage
+type Admin220VMode = contracts.Admin220VMode
+type Admin220VMessageBuckets = contracts.Admin220VMessageBuckets
 type DisplayBlockObject = contracts.DisplayBlockObject
 type AdminAccessStatus = contracts.AdminAccessStatus
 type AdminDataCheckIssue = contracts.AdminDataCheckIssue
 
+const (
+	Admin220VNone    = contracts.Admin220VNone
+	Admin220VAlarm   = contracts.Admin220VAlarm
+	Admin220VRestore = contracts.Admin220VRestore
+)
+
 type AdminStatisticsConnectionMode = contracts.AdminStatisticsConnectionMode
 
 const (
-	StatsConnectionAll     AdminStatisticsConnectionMode = contracts.StatsConnectionAll
-	StatsConnectionOnline  AdminStatisticsConnectionMode = contracts.StatsConnectionOnline
-	StatsConnectionOffline AdminStatisticsConnectionMode = contracts.StatsConnectionOffline
+	StatsConnectionAll     = contracts.StatsConnectionAll
+	StatsConnectionOnline  = contracts.StatsConnectionOnline
+	StatsConnectionOffline = contracts.StatsConnectionOffline
 )
 
 type AdminStatisticsProtocolFilter = contracts.AdminStatisticsProtocolFilter
 
 const (
-	StatsProtocolAll      AdminStatisticsProtocolFilter = contracts.StatsProtocolAll
-	StatsProtocolAutodial AdminStatisticsProtocolFilter = contracts.StatsProtocolAutodial
-	StatsProtocolMost     AdminStatisticsProtocolFilter = contracts.StatsProtocolMost
-	StatsProtocolNova     AdminStatisticsProtocolFilter = contracts.StatsProtocolNova
+	StatsProtocolAll      = contracts.StatsProtocolAll
+	StatsProtocolAutodial = contracts.StatsProtocolAutodial
+	StatsProtocolMost     = contracts.StatsProtocolMost
+	StatsProtocolNova     = contracts.StatsProtocolNova
 )
 
 type AdminStatisticsFilter = contracts.AdminStatisticsFilter
 type AdminStatisticsRow = contracts.AdminStatisticsRow
-
 type AdminProvider = contracts.AdminProvider

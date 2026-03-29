@@ -1,13 +1,20 @@
 package dialogs
 
 import (
+	"encoding/json"
 	"fmt"
 	"image/color"
+	"io"
 	"math"
+	"net/http"
+	"net/url"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -17,8 +24,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 
-	data "obj_catalog_fyne_v3/pkg/contracts"
-	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
+	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
 const (
@@ -34,32 +41,11 @@ const (
 	mapCenterModeLast   = "last"
 )
 
-func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
-	var (
-		items       []data.AdminObjectPersonal
-		selectedRow = -1
-	)
+func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminObjectPersonalTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
+	vm := viewmodels.NewObjectPersonalsTabViewModel()
 
-	fullName := func(item data.AdminObjectPersonal) string {
-		parts := []string{
-			strings.TrimSpace(item.Surname),
-			strings.TrimSpace(item.Name),
-			strings.TrimSpace(item.SecName),
-		}
-		filtered := make([]string, 0, len(parts))
-		for _, p := range parts {
-			if p != "" {
-				filtered = append(filtered, p)
-			}
-		}
-		if len(filtered) == 0 {
-			return "(без ПІБ)"
-		}
-		return strings.Join(filtered, " ")
-	}
-
-	tableView := uiwidgets.NewQTableViewWithCallbacks(
-		func() (int, int) { return len(items) + 1, 6 },
+	table := widget.NewTable(
+		func() (int, int) { return vm.Count() + 1, 6 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			lbl := obj.(*widget.Label)
@@ -81,16 +67,16 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 				return
 			}
 			itemIdx := id.Row - 1
-			if itemIdx < 0 || itemIdx >= len(items) {
+			it, ok := vm.ItemAt(itemIdx)
+			if !ok {
 				lbl.SetText("")
 				return
 			}
-			it := items[itemIdx]
 			switch id.Col {
 			case 0:
 				lbl.SetText(strconv.FormatInt(it.Number, 10))
 			case 1:
-				lbl.SetText(fullName(it))
+				lbl.SetText(vm.FullName(it))
 			case 2:
 				lbl.SetText(strings.TrimSpace(it.Phones))
 			case 3:
@@ -106,7 +92,6 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 			}
 		},
 	)
-	table := tableView.Widget()
 	const (
 		personalColWNum   = float32(60)
 		personalColWName  = float32(280)
@@ -122,16 +107,7 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 	table.SetColumnWidth(4, personalColWRole)
 	table.SetColumnWidth(5, personalColWNote)
 	table.OnSelected = func(id widget.TableCellID) {
-		if id.Row <= 0 {
-			selectedRow = -1
-			return
-		}
-		itemIdx := id.Row - 1
-		if itemIdx < 0 || itemIdx >= len(items) {
-			selectedRow = -1
-			return
-		}
-		selectedRow = itemIdx
+		vm.SelectByTableRow(id.Row)
 	}
 
 	reload := func() {
@@ -141,15 +117,14 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 			statusLabel.SetText("Не вдалося завантажити В/О")
 			return
 		}
-		items = loaded
-		selectedRow = -1
+		vm.SetItems(loaded)
 		table.UnselectAll()
 		table.Refresh()
-		statusLabel.SetText(fmt.Sprintf("В/О: %d запис(ів)", len(items)))
+		statusLabel.SetText(vm.CountStatusText())
 	}
 
 	addBtn := widget.NewButton("Додати", func() {
-		showObjectPersonalEditor(parent, provider, "Додати В/О", data.AdminObjectPersonal{}, func(item data.AdminObjectPersonal) error {
+		showObjectPersonalEditor(parent, provider, "Додати В/О", contracts.AdminObjectPersonal{}, func(item contracts.AdminObjectPersonal) error {
 			return provider.AddObjectPersonal(objn, item)
 		}, statusLabel, func() {
 			reload()
@@ -158,17 +133,13 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 	})
 
 	editBtn := widget.NewButton("Змінити", func() {
-		if selectedRow < 0 || selectedRow >= len(items) {
+		initial, ok := vm.SelectedItem()
+		if !ok {
 			statusLabel.SetText("Виберіть В/О у таблиці")
 			return
 		}
-		initial := items[selectedRow]
-		showObjectPersonalEditor(parent, provider, "Редагування В/О", initial, func(item data.AdminObjectPersonal) error {
-			item.ID = initial.ID
-			if strings.TrimSpace(item.CreatedAt) == "" {
-				item.CreatedAt = initial.CreatedAt
-			}
-			return provider.UpdateObjectPersonal(objn, item)
+		showObjectPersonalEditor(parent, provider, "Редагування В/О", initial, func(item contracts.AdminObjectPersonal) error {
+			return provider.UpdateObjectPersonal(objn, vm.PrepareUpdatedItem(initial, item))
 		}, statusLabel, func() {
 			reload()
 			statusLabel.SetText("В/О оновлено")
@@ -176,14 +147,14 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 	})
 
 	deleteBtn := widget.NewButton("Видалити", func() {
-		if selectedRow < 0 || selectedRow >= len(items) {
+		target, ok := vm.SelectedItem()
+		if !ok {
 			statusLabel.SetText("Виберіть В/О у таблиці")
 			return
 		}
-		target := items[selectedRow]
 		dialog.ShowConfirm(
 			"Підтвердження",
-			fmt.Sprintf("Видалити запис \"%s\"?", fullName(target)),
+			fmt.Sprintf("Видалити запис \"%s\"?", vm.FullName(target)),
 			func(ok bool) {
 				if !ok {
 					return
@@ -217,28 +188,15 @@ func buildObjectPersonalTab(parent fyne.Window, provider data.AdminProvider, obj
 	return content
 }
 
-func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
-	var (
-		items       []data.AdminObjectZone
-		selectedRow = -1
-	)
+func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminObjectZonesTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
+	vm := viewmodels.NewObjectZonesTabViewModel()
 
 	quickNameEntry := widget.NewEntry()
 	quickNameEntry.SetPlaceHolder("Назва зони (Enter -> наступна зона)")
 	selectedZoneLabel := widget.NewLabel("Зона: —")
 
-	effectiveZoneNumberAt := func(idx int) int64 {
-		if idx < 0 || idx >= len(items) {
-			return 0
-		}
-		if items[idx].ZoneNumber > 0 {
-			return items[idx].ZoneNumber
-		}
-		return int64(idx) + 1
-	}
-
-	tableView := uiwidgets.NewQTableViewWithCallbacks(
-		func() (int, int) { return len(items) + 1, 3 },
+	table := widget.NewTable(
+		func() (int, int) { return vm.Count() + 1, 3 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			lbl := obj.(*widget.Label)
@@ -254,14 +212,14 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 				return
 			}
 			itemIdx := id.Row - 1
-			if itemIdx < 0 || itemIdx >= len(items) {
+			it, ok := vm.ItemAt(itemIdx)
+			if !ok {
 				lbl.SetText("")
 				return
 			}
-			it := items[itemIdx]
 			switch id.Col {
 			case 0:
-				zonen := effectiveZoneNumberAt(itemIdx)
+				zonen := vm.EffectiveZoneNumberAt(itemIdx)
 				lbl.SetText(strconv.FormatInt(zonen, 10))
 			case 1:
 				lbl.SetText("пож.")
@@ -270,7 +228,6 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 			}
 		},
 	)
-	table := tableView.Widget()
 	const (
 		zoneColWNum  = float32(120)
 		zoneColWType = float32(120)
@@ -285,64 +242,32 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 	}
 	applyZoneTableLayout()
 
-	findRowByZoneNumber := func(zoneNumber int64) int {
-		if zoneNumber <= 0 {
-			return -1
-		}
-		for i := range items {
-			if effectiveZoneNumberAt(i) == zoneNumber {
-				return i
-			}
-		}
-		return -1
-	}
-
 	updateSelectedZoneLabel := func() {
-		if selectedRow < 0 || selectedRow >= len(items) {
-			selectedZoneLabel.SetText("Зона: —")
-			return
-		}
-		selectedZoneLabel.SetText(fmt.Sprintf("Зона: #%d", effectiveZoneNumberAt(selectedRow)))
+		selectedZoneLabel.SetText(vm.SelectedZoneLabel())
 	}
 
 	ensureZoneExists := func(zoneNumber int64, defaultDescription string) error {
-		if zoneNumber <= 0 {
-			return fmt.Errorf("invalid zone number")
-		}
-		if findRowByZoneNumber(zoneNumber) >= 0 {
+		if vm.FindRowByZoneNumber(zoneNumber) >= 0 {
 			return nil
 		}
-		desc := strings.TrimSpace(defaultDescription)
-		if desc == "" {
-			desc = fmt.Sprintf("Шлейф %d", zoneNumber)
+		zone, err := vm.BuildZoneForCreate(zoneNumber, defaultDescription)
+		if err != nil {
+			return err
 		}
-		return provider.AddObjectZone(objn, data.AdminObjectZone{
-			ZoneNumber:    zoneNumber,
-			ZoneType:      1,
-			Description:   desc,
-			EntryDelaySec: 0,
-		})
+		return provider.AddObjectZone(objn, zone)
 	}
 
 	selectByZoneNumber := func(zoneNumber int64, focusQuickName bool) {
-		if len(items) == 0 {
-			selectedRow = -1
+		if !vm.SelectZoneByNumber(zoneNumber) {
 			table.UnselectAll()
 			quickNameEntry.SetText("")
 			updateSelectedZoneLabel()
 			return
 		}
 
-		targetRow := 0
-		if zoneNumber > 0 {
-			if row := findRowByZoneNumber(zoneNumber); row >= 0 {
-				targetRow = row
-			}
-		}
-
-		selectedRow = targetRow
+		targetRow := vm.SelectedRow()
 		table.Select(widget.TableCellID{Row: targetRow + 1, Col: 0})
-		quickNameEntry.SetText(strings.TrimSpace(items[targetRow].Description))
+		quickNameEntry.SetText(vm.SelectedZoneDescription())
 		updateSelectedZoneLabel()
 		if focusQuickName {
 			focusIfOnCanvas(parent, quickNameEntry)
@@ -356,10 +281,10 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 			statusLabel.SetText("Не вдалося завантажити зони")
 			return
 		}
-		items = loaded
+		vm.SetItems(loaded)
 		table.Refresh()
 		applyZoneTableLayout()
-		statusLabel.SetText(fmt.Sprintf("Зони: %d запис(ів)", len(items)))
+		statusLabel.SetText(vm.CountStatusText())
 		selectByZoneNumber(targetZoneNumber, focusQuickName)
 	}
 
@@ -368,29 +293,20 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 	}
 
 	table.OnSelected = func(id widget.TableCellID) {
-		if id.Row <= 0 {
-			selectedRow = -1
+		if !vm.SelectByTableRow(id.Row) {
 			quickNameEntry.SetText("")
 			updateSelectedZoneLabel()
 			return
 		}
-		itemIdx := id.Row - 1
-		if itemIdx < 0 || itemIdx >= len(items) {
-			selectedRow = -1
-			quickNameEntry.SetText("")
-			updateSelectedZoneLabel()
-			return
-		}
-		selectedRow = itemIdx
-		quickNameEntry.SetText(strings.TrimSpace(items[itemIdx].Description))
+		quickNameEntry.SetText(vm.SelectedZoneDescription())
 		updateSelectedZoneLabel()
 		// Даємо змогу одразу вводити назву наступної/поточної зони.
 		focusIfOnCanvas(parent, quickNameEntry)
 	}
 
 	moveToNextZone := func() {
-		if selectedRow < 0 || selectedRow >= len(items) {
-			if len(items) == 0 {
+		if _, ok := vm.SelectedItem(); !ok {
+			if vm.Count() == 0 {
 				if err := ensureZoneExists(1, strings.TrimSpace(quickNameEntry.Text)); err != nil {
 					dialog.ShowError(err, parent)
 					statusLabel.SetText("Не вдалося додати першу зону")
@@ -400,19 +316,14 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 				statusLabel.SetText("Додано зону #1")
 				return
 			}
-			selectByZoneNumber(effectiveZoneNumberAt(0), true)
+			selectByZoneNumber(0, true)
 		}
-		if selectedRow < 0 || selectedRow >= len(items) {
+
+		current, currentZoneNumber, ok := vm.PrepareSelectedZoneForSave(quickNameEntry.Text)
+		if !ok {
 			statusLabel.SetText("Виберіть зону у таблиці")
 			return
 		}
-
-		current := items[selectedRow]
-		currentZoneNumber := effectiveZoneNumberAt(selectedRow)
-		if current.ZoneNumber <= 0 {
-			current.ZoneNumber = currentZoneNumber
-		}
-		current.Description = strings.TrimSpace(quickNameEntry.Text)
 		if err := provider.UpdateObjectZone(objn, current); err != nil {
 			dialog.ShowError(err, parent)
 			statusLabel.SetText("Не вдалося зберегти назву зони")
@@ -434,15 +345,7 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 	}
 
 	addBtn := widget.NewButton("Додати", func() {
-		nextZoneNumber := int64(1)
-		if selectedRow >= 0 && selectedRow < len(items) {
-			nextZoneNumber = effectiveZoneNumberAt(selectedRow) + 1
-		} else if len(items) > 0 {
-			lastZone := effectiveZoneNumberAt(len(items) - 1)
-			if lastZone > 0 {
-				nextZoneNumber = lastZone + 1
-			}
-		}
+		nextZoneNumber := vm.NextZoneNumberForAdd()
 		if err := ensureZoneExists(nextZoneNumber, ""); err != nil {
 			dialog.ShowError(err, parent)
 			statusLabel.SetText("Не вдалося додати зону")
@@ -453,7 +356,7 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 	})
 
 	editBtn := widget.NewButton("Змінити", func() {
-		if len(items) == 0 {
+		if vm.Count() == 0 {
 			if err := ensureZoneExists(1, ""); err != nil {
 				dialog.ShowError(err, parent)
 				statusLabel.SetText("Не вдалося створити першу зону")
@@ -463,25 +366,34 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 			statusLabel.SetText("Створено зону #1, можна вводити назву")
 			return
 		}
-		if selectedRow < 0 || selectedRow >= len(items) {
-			selectByZoneNumber(effectiveZoneNumberAt(0), true)
+		if _, ok := vm.SelectedItem(); !ok {
+			selectByZoneNumber(0, true)
+			statusLabel.SetText("Виберіть зону і вводьте назву")
+			return
+		}
+		zoneNumber, ok := vm.SelectedZoneNumber()
+		if !ok {
 			statusLabel.SetText("Виберіть зону і вводьте назву")
 			return
 		}
 		updateSelectedZoneLabel()
 		focusIfOnCanvas(parent, quickNameEntry)
-		statusLabel.SetText(fmt.Sprintf("Редагування зони #%d: введіть назву і натисніть Enter", effectiveZoneNumberAt(selectedRow)))
+		statusLabel.SetText(fmt.Sprintf("Редагування зони #%d: введіть назву і натисніть Enter", zoneNumber))
 	})
 
 	deleteBtn := widget.NewButton("Видалити", func() {
-		if selectedRow < 0 || selectedRow >= len(items) {
+		target, ok := vm.SelectedItem()
+		if !ok {
 			statusLabel.SetText("Виберіть зону у таблиці")
 			return
 		}
-		target := items[selectedRow]
+		targetZoneNumber, ok := vm.SelectedZoneNumber()
+		if !ok {
+			targetZoneNumber = target.ZoneNumber
+		}
 		dialog.ShowConfirm(
 			"Підтвердження",
-			fmt.Sprintf("Видалити зону #%d?", target.ZoneNumber),
+			fmt.Sprintf("Видалити зону #%d?", targetZoneNumber),
 			func(ok bool) {
 				if !ok {
 					return
@@ -499,7 +411,7 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 	})
 
 	fillBtn := widget.NewButton("Заповнити", func() {
-		defaultCount := suggestZoneFillCount(provider, objn, items)
+		defaultCount := suggestZoneFillCount(provider, objn, vm.Items())
 		showZoneFillDialog(parent, defaultCount, func(count int64) {
 			if err := provider.FillObjectZones(objn, count); err != nil {
 				dialog.ShowError(err, parent)
@@ -558,12 +470,45 @@ func buildObjectZonesTab(parent fyne.Window, provider data.AdminProvider, objn i
 	return content
 }
 
-func buildObjectAdditionalTab(parent fyne.Window, provider data.AdminProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
+func buildObjectAdditionalTab(
+	parent fyne.Window,
+	provider contracts.AdminObjectAdditionalTabProvider,
+	objn int64,
+	statusLabel *widget.Label,
+	getAddressFromObjectTab func() string,
+	setRegionInObjectTab func(regionID int64) bool,
+) fyne.CanvasObject {
+	vm := viewmodels.NewObjectAdditionalTabViewModel()
+
+	addressEntry := widget.NewEntry()
+	addressEntry.SetPlaceHolder("Адреса для геопошуку")
+
 	latitudeEntry := widget.NewEntry()
 	latitudeEntry.SetPlaceHolder("Широта (LATITUDE)")
 
 	longitudeEntry := widget.NewEntry()
 	longitudeEntry.SetPlaceHolder("Довгота (LONGITUDE)")
+
+	syncAddressFromObjectTab := func() {
+		address, ok := vm.AddressFromObjectTab(getAddressFromObjectTab)
+		if !ok {
+			return
+		}
+		addressEntry.SetText(address)
+	}
+
+	geoByAddress := func(addressRaw string) (string, string, []string, error) {
+		address, err := vm.RequireLookupAddress(addressRaw)
+		if err != nil {
+			return "", "", nil, err
+		}
+		lat, lon, districtHints, err := geocodeAddress(address)
+		if err != nil {
+			return "", "", nil, err
+		}
+		vm.RememberGeocode(address, districtHints)
+		return lat, lon, districtHints, nil
+	}
 
 	reload := func() {
 		coords, err := provider.GetObjectCoordinates(objn)
@@ -572,16 +517,14 @@ func buildObjectAdditionalTab(parent fyne.Window, provider data.AdminProvider, o
 			statusLabel.SetText("Не вдалося завантажити координати")
 			return
 		}
+		syncAddressFromObjectTab()
 		latitudeEntry.SetText(strings.TrimSpace(coords.Latitude))
 		longitudeEntry.SetText(strings.TrimSpace(coords.Longitude))
 		statusLabel.SetText("Координати завантажено")
 	}
 
 	save := func() {
-		coords := data.AdminObjectCoordinates{
-			Latitude:  strings.TrimSpace(latitudeEntry.Text),
-			Longitude: strings.TrimSpace(longitudeEntry.Text),
-		}
+		coords := vm.BuildCoordinates(latitudeEntry.Text, longitudeEntry.Text)
 		if err := provider.SaveObjectCoordinates(objn, coords); err != nil {
 			dialog.ShowError(err, parent)
 			statusLabel.SetText("Не вдалося зберегти координати")
@@ -608,16 +551,65 @@ func buildObjectAdditionalTab(parent fyne.Window, provider data.AdminProvider, o
 			},
 		)
 	})
+	findByAddressBtn := widget.NewButton("Координати з адреси", func() {
+		lat, lon, districtHints, err := geoByAddress(addressEntry.Text)
+		if err != nil {
+			dialog.ShowError(err, parent)
+			statusLabel.SetText("Не вдалося знайти координати за адресою")
+			return
+		}
+		latitudeEntry.SetText(lat)
+		longitudeEntry.SetText(lon)
+		if len(districtHints) > 0 {
+			statusLabel.SetText(fmt.Sprintf("Знайдено координати за адресою. Можна також заповнити район (%s)", districtHints[0]))
+			return
+		}
+		statusLabel.SetText("Знайдено координати за адресою")
+	})
+	fillDistrictBtn := widget.NewButton("Район з адреси", func() {
+		address, err := vm.RequireLookupAddress(addressEntry.Text)
+		if err != nil {
+			statusLabel.SetText(err.Error())
+			return
+		}
+		hints, ok := vm.CachedDistrictHintsForAddress(address)
+		if !ok {
+			_, _, resolvedHints, err := geoByAddress(address)
+			if err != nil {
+				dialog.ShowError(err, parent)
+				statusLabel.SetText("Не вдалося визначити район за адресою")
+				return
+			}
+			hints = resolvedHints
+		}
+		regionID, regionName, err := resolveRegionByAddressHints(provider, hints)
+		if err != nil {
+			dialog.ShowError(err, parent)
+			statusLabel.SetText("Не вдалося підібрати район за адресою")
+			return
+		}
+		if setRegionInObjectTab != nil && setRegionInObjectTab(regionID) {
+			statusLabel.SetText(fmt.Sprintf("Район встановлено: %s (натисніть \"Зберегти\" у картці об'єкта)", regionName))
+			return
+		}
+		statusLabel.SetText(fmt.Sprintf("Знайдено район: %s, але не вдалося застосувати у вкладці \"Об'єкт\"", regionName))
+	})
+	useObjectAddressBtn := widget.NewButton("Взяти адресу з Об'єкта", func() {
+		syncAddressFromObjectTab()
+		statusLabel.SetText("Адресу синхронізовано зі вкладки \"Об'єкт\"")
+	})
 	refreshBtn := widget.NewButton("Оновити", reload)
 
 	form := widget.NewForm(
+		widget.NewFormItem("Адреса:", addressEntry),
 		widget.NewFormItem("Широта:", latitudeEntry),
 		widget.NewFormItem("Довгота:", longitudeEntry),
 	)
 
 	content := container.NewBorder(
 		container.NewVBox(
-			container.NewHBox(saveBtn, clearBtn, mapPickBtn, layout.NewSpacer(), refreshBtn),
+			container.NewHBox(saveBtn, clearBtn, mapPickBtn, findByAddressBtn, fillDistrictBtn),
+			container.NewHBox(useObjectAddressBtn, layout.NewSpacer(), refreshBtn),
 			widget.NewSeparator(),
 		),
 		nil,
@@ -630,12 +622,1070 @@ func buildObjectAdditionalTab(parent fyne.Window, provider data.AdminProvider, o
 	return content
 }
 
+func geocodeAddress(address string) (string, string, []string, error) {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return "", "", nil, fmt.Errorf("адреса порожня")
+	}
+
+	target := buildGeocodeTarget(address)
+	queries := buildGeocodeQueries(target.Cleaned)
+	bestScore := math.Inf(-1)
+	var best geocodeCandidate
+	bestFound := false
+
+	for _, query := range queries {
+		rows, err := geocodeCandidatesForQuery(query)
+		if err != nil {
+			return "", "", nil, err
+		}
+		for _, row := range rows {
+			score := scoreGeocodeCandidate(target, row)
+			if !bestFound || score > bestScore {
+				bestScore = score
+				best = row
+				bestFound = true
+			}
+		}
+		// Достатньо точний збіг (місто+вулиця+будинок) - далі мережеві запити не потрібні.
+		if bestFound && bestScore >= 90 {
+			break
+		}
+	}
+
+	if bestFound {
+		lat := strings.TrimSpace(best.Lat)
+		lon := strings.TrimSpace(best.Lon)
+		if lat == "" || lon == "" {
+			return "", "", nil, fmt.Errorf("геосервіс не повернув координати")
+		}
+		return lat, lon, collectDistrictHints(best.Address, best.DisplayName), nil
+	}
+
+	return "", "", nil, fmt.Errorf("адресу не знайдено")
+}
+
+// GeocodeAddressExact повертає координати з максимально точним підбором.
+// Використовується також утилітою масової перевірки адрес.
+func GeocodeAddressExact(address string) (lat string, lon string, cleaned string, err error) {
+	target := buildGeocodeTarget(address)
+	lat, lon, _, err = geocodeAddress(address)
+	return lat, lon, target.Cleaned, err
+}
+
+// GeocodePreviewQueries повертає всі запити, які будуть використані для геопошуку.
+func GeocodePreviewQueries(address string) []string {
+	target := buildGeocodeTarget(address)
+	return buildGeocodeQueries(target.Cleaned)
+}
+
+type geocodeTarget struct {
+	Cleaned string
+	City    string
+	Street  string
+	House   string
+}
+
+type geocodeCandidate struct {
+	Lat         string            `json:"lat"`
+	Lon         string            `json:"lon"`
+	DisplayName string            `json:"display_name"`
+	Address     map[string]string `json:"address"`
+	Importance  float64           `json:"importance"`
+	Class       string            `json:"class"`
+	Type        string            `json:"type"`
+}
+
+var (
+	geocodeRequestMu    sync.Mutex
+	geocodeLastRequest  time.Time
+	geocodeMinInterval  = 1100 * time.Millisecond
+	geocodeHTTPClient   = &http.Client{Timeout: 14 * time.Second}
+	geocodeMaxRetry429  = 3
+	geocodeRetryBackoff = 2 * time.Second
+)
+
+func buildGeocodeTarget(address string) geocodeTarget {
+	cleaned := normalizeAddressForGeocode(address)
+	city, street, house, _ := parseAddressComponents(cleaned)
+	if city == "" {
+		if cityOnly, ok := parseCityOnly(cleaned); ok {
+			city = cityOnly
+		}
+	}
+	return geocodeTarget{
+		Cleaned: cleaned,
+		City:    city,
+		Street:  street,
+		House:   house,
+	}
+}
+
+func geocodeCandidatesForQuery(query string) ([]geocodeCandidate, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+
+	params := url.Values{}
+	params.Set("q", query)
+	params.Set("format", "jsonv2")
+	params.Set("limit", "8")
+	params.Set("addressdetails", "1")
+	params.Set("accept-language", "uk")
+	params.Set("countrycodes", "ua")
+	params.Set("dedupe", "0")
+
+	searchURL := "https://nominatim.openstreetmap.org/search?" + params.Encode()
+
+	var last429Details string
+	for attempt := 0; attempt <= geocodeMaxRetry429; attempt++ {
+		waitForGeocodeRequestSlot()
+
+		req, err := http.NewRequest(http.MethodGet, searchURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("не вдалося сформувати запит геопошуку: %w", err)
+		}
+		req.Header.Set("User-Agent", "obj_catalog_fyne_v3/1.0")
+
+		resp, err := geocodeHTTPClient.Do(req)
+		if err != nil {
+			if attempt < geocodeMaxRetry429 {
+				time.Sleep(time.Duration(attempt+1) * geocodeRetryBackoff)
+				continue
+			}
+			phRows, phErr := geocodeCandidatesPhoton(query)
+			if phErr == nil && len(phRows) > 0 {
+				return phRows, nil
+			}
+			if phErr != nil {
+				return nil, fmt.Errorf("помилка запиту геопошуку: %v; fallback photon помилка: %v", err, phErr)
+			}
+			return nil, fmt.Errorf("помилка запиту геопошуку: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			_ = resp.Body.Close()
+			last429Details = strings.TrimSpace(string(body))
+			if attempt < geocodeMaxRetry429 {
+				time.Sleep(time.Duration(attempt+1) * geocodeRetryBackoff)
+				continue
+			}
+			phRows, phErr := geocodeCandidatesPhoton(query)
+			if phErr == nil && len(phRows) > 0 {
+				return phRows, nil
+			}
+			if phErr != nil {
+				return nil, fmt.Errorf("геосервіс повернув 429 (%s), fallback photon помилка: %v", last429Details, phErr)
+			}
+			return nil, fmt.Errorf("геосервіс повернув 429: %s", last429Details)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("геосервіс повернув %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+
+		var rows []geocodeCandidate
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rows)
+		_ = resp.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("не вдалося обробити відповідь геосервісу: %w", decodeErr)
+		}
+		if len(rows) == 0 {
+			phRows, phErr := geocodeCandidatesPhoton(query)
+			if phErr == nil && len(phRows) > 0 {
+				return phRows, nil
+			}
+		}
+		return rows, nil
+	}
+
+	phRows, phErr := geocodeCandidatesPhoton(query)
+	if phErr == nil && len(phRows) > 0 {
+		return phRows, nil
+	}
+	if phErr != nil {
+		return nil, fmt.Errorf("геосервіс недоступний, fallback photon помилка: %v", phErr)
+	}
+	return nil, fmt.Errorf("геосервіс недоступний")
+}
+
+func waitForGeocodeRequestSlot() {
+	geocodeRequestMu.Lock()
+	defer geocodeRequestMu.Unlock()
+
+	if !geocodeLastRequest.IsZero() {
+		wait := geocodeMinInterval - time.Since(geocodeLastRequest)
+		if wait > 0 {
+			time.Sleep(wait)
+		}
+	}
+	geocodeLastRequest = time.Now()
+}
+
+func geocodeCandidatesPhoton(query string) ([]geocodeCandidate, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+
+	params := url.Values{}
+	params.Set("q", query)
+	params.Set("lang", "uk")
+	params.Set("limit", "8")
+	photonURL := "https://photon.komoot.io/api/?" + params.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, photonURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("не вдалося сформувати запит photon: %w", err)
+	}
+	req.Header.Set("User-Agent", "obj_catalog_fyne_v3/1.0")
+
+	resp, err := geocodeHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("помилка запиту photon: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("photon повернув %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload struct {
+		Features []struct {
+			Geometry struct {
+				Coordinates []float64 `json:"coordinates"`
+			} `json:"geometry"`
+			Properties struct {
+				Name        string `json:"name"`
+				Street      string `json:"street"`
+				HouseNumber string `json:"housenumber"`
+				City        string `json:"city"`
+				District    string `json:"district"`
+				State       string `json:"state"`
+				Country     string `json:"country"`
+				CountryCode string `json:"countrycode"`
+				OSMKey      string `json:"osm_key"`
+				OSMValue    string `json:"osm_value"`
+			} `json:"properties"`
+		} `json:"features"`
+	}
+
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("не вдалося обробити відповідь photon: %w", err)
+	}
+
+	rows := make([]geocodeCandidate, 0, len(payload.Features))
+	for _, f := range payload.Features {
+		if len(f.Geometry.Coordinates) < 2 {
+			continue
+		}
+		lon := strconv.FormatFloat(f.Geometry.Coordinates[0], 'f', 7, 64)
+		lat := strconv.FormatFloat(f.Geometry.Coordinates[1], 'f', 7, 64)
+		address := map[string]string{
+			"road":         strings.TrimSpace(f.Properties.Street),
+			"house_number": strings.TrimSpace(f.Properties.HouseNumber),
+			"city":         strings.TrimSpace(f.Properties.City),
+			"district":     strings.TrimSpace(f.Properties.District),
+			"state":        strings.TrimSpace(f.Properties.State),
+			"country":      strings.TrimSpace(f.Properties.Country),
+			"country_code": strings.TrimSpace(f.Properties.CountryCode),
+		}
+
+		displayParts := []string{
+			strings.TrimSpace(f.Properties.Name),
+			strings.TrimSpace(f.Properties.Street),
+			strings.TrimSpace(f.Properties.HouseNumber),
+			strings.TrimSpace(f.Properties.City),
+			strings.TrimSpace(f.Properties.State),
+		}
+		displayFiltered := make([]string, 0, len(displayParts))
+		for _, p := range displayParts {
+			if p != "" {
+				displayFiltered = append(displayFiltered, p)
+			}
+		}
+
+		rows = append(rows, geocodeCandidate{
+			Lat:         lat,
+			Lon:         lon,
+			DisplayName: strings.Join(displayFiltered, ", "),
+			Address:     address,
+			Importance:  0,
+			Class:       strings.TrimSpace(f.Properties.OSMKey),
+			Type:        strings.TrimSpace(f.Properties.OSMValue),
+		})
+	}
+
+	return rows, nil
+}
+
+func scoreGeocodeCandidate(target geocodeTarget, row geocodeCandidate) float64 {
+	score := row.Importance * 10
+
+	candidateCity := firstAddressValue(row.Address, "city", "town", "village", "hamlet", "municipality")
+	candidateStreet := firstAddressValue(row.Address, "road", "pedestrian", "residential", "street")
+	candidateHouse := firstAddressValue(row.Address, "house_number")
+
+	if target.City != "" {
+		score += similarityScore(target.City, candidateCity, 38, 18, -7)
+	}
+	if target.Street != "" {
+		// Для вулиці перевіряємо також display_name, бо інколи road порожній.
+		streetScore := similarityScore(target.Street, candidateStreet, 35, 16, -6)
+		if streetScore < 0 {
+			streetScore = similarityScore(target.Street, row.DisplayName, 22, 10, -3)
+		}
+		score += streetScore
+	}
+	if target.House != "" {
+		score += houseMatchScore(target.House, candidateHouse, row.DisplayName)
+	}
+
+	if strings.EqualFold(strings.TrimSpace(row.Address["country_code"]), "ua") {
+		score += 2
+	}
+
+	poiType := strings.ToLower(strings.TrimSpace(row.Type))
+	poiClass := strings.ToLower(strings.TrimSpace(row.Class))
+	if poiType == "house" || poiType == "building" || poiClass == "building" {
+		score += 6
+	}
+	if poiClass == "boundary" {
+		score -= 12
+	}
+
+	return score
+}
+
+func similarityScore(target string, candidate string, exact float64, partial float64, mismatch float64) float64 {
+	t := normalizeGeoToken(target)
+	c := normalizeGeoToken(candidate)
+	if t == "" || c == "" {
+		return 0
+	}
+	if t == c {
+		return exact
+	}
+	if strings.Contains(c, t) || strings.Contains(t, c) {
+		return partial
+	}
+	return mismatch
+}
+
+func houseMatchScore(targetHouse string, candidateHouse string, displayName string) float64 {
+	t := normalizeHouseToken(targetHouse)
+	if t == "" {
+		return 0
+	}
+	c := normalizeHouseToken(candidateHouse)
+	if c != "" {
+		if c == t {
+			return 36
+		}
+		if strings.HasPrefix(c, t) || strings.HasPrefix(t, c) {
+			return 18
+		}
+		return -10
+	}
+
+	if strings.Contains(normalizeGeoToken(displayName), normalizeGeoToken(targetHouse)) {
+		return 10
+	}
+	return -4
+}
+
+func normalizeGeoToken(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" {
+		return ""
+	}
+	v = strings.NewReplacer("’", "'", "`", "'", "ʼ", "'", "ё", "е", "ї", "і").Replace(v)
+
+	var b strings.Builder
+	b.Grow(len(v))
+	for _, r := range v {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte(' ')
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+func normalizeHouseToken(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	re := regexp.MustCompile(`(?i)\d+[0-9\p{L}/-]*`)
+	token := strings.ToLower(strings.TrimSpace(re.FindString(v)))
+	token = strings.ReplaceAll(token, " ", "")
+	token = strings.ReplaceAll(token, "/", "")
+	token = strings.ReplaceAll(token, "-", "")
+	return token
+}
+
+func firstAddressValue(address map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if v := strings.TrimSpace(address[key]); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func buildGeocodeQueries(address string) []string {
+	queries := make([]string, 0, 16)
+	addQuery := func(v string) {
+		v = normalizeAddressSpaces(v)
+		if v == "" {
+			return
+		}
+		for _, existing := range queries {
+			if strings.EqualFold(existing, v) {
+				return
+			}
+		}
+		queries = append(queries, v)
+	}
+
+	raw := normalizeAddressSpaces(address)
+	cleaned := normalizeAddressForGeocode(raw)
+	addQuery(raw)
+	addQuery(cleaned)
+
+	expanded := expandAddressAbbreviations(raw)
+	expandedClean := expandAddressAbbreviations(cleaned)
+	addQuery(expanded)
+	addQuery(expandedClean)
+	addQuery(ensureCountrySuffix(raw))
+	addQuery(ensureCountrySuffix(cleaned))
+	addQuery(ensureCountrySuffix(expanded))
+	addQuery(ensureCountrySuffix(expandedClean))
+
+	city, street, house, ok := parseAddressComponents(cleaned)
+	if ok {
+		if house != "" {
+			addQuery(fmt.Sprintf("вулиця %s %s, %s, Україна", street, house, city))
+			addQuery(fmt.Sprintf("%s %s, %s, Україна", street, house, city))
+			addQuery(fmt.Sprintf("%s, вулиця %s, %s, Україна", city, street, house))
+		}
+		addQuery(fmt.Sprintf("вулиця %s, %s, Україна", street, city))
+		addQuery(fmt.Sprintf("%s, %s, Україна", street, city))
+		addQuery(fmt.Sprintf("%s, вулиця %s, Україна", city, street))
+	}
+
+	if cityOnly, ok := parseCityOnly(cleaned); ok {
+		addQuery(fmt.Sprintf("%s, Україна", cityOnly))
+	} else if streetOnly, houseOnly, ok := parseStreetAndHouseOnly(cleaned); ok {
+		const defaultCity = "Львів"
+		if houseOnly != "" {
+			addQuery(fmt.Sprintf("вулиця %s %s, %s, Україна", streetOnly, houseOnly, defaultCity))
+			addQuery(fmt.Sprintf("%s %s, %s, Україна", streetOnly, houseOnly, defaultCity))
+		}
+		addQuery(fmt.Sprintf("вулиця %s, %s, Україна", streetOnly, defaultCity))
+		addQuery(fmt.Sprintf("%s, %s, Україна", streetOnly, defaultCity))
+	}
+
+	return queries
+}
+
+func parseAddressComponents(address string) (string, string, string, bool) {
+	raw := expandAddressAbbreviations(normalizeAddressSpaces(address))
+	parts := strings.Split(raw, ",")
+	clean := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = normalizeAddressSpaces(p)
+		if p != "" {
+			clean = append(clean, p)
+		}
+	}
+	if len(clean) == 0 {
+		return "", "", "", false
+	}
+
+	city := ""
+	street := ""
+	house := ""
+
+	for _, p := range clean {
+		if city == "" || street == "" {
+			combinedCity, combinedStreet, combinedHouse, ok := splitCombinedLocalityStreetPart(p)
+			if ok {
+				if city == "" {
+					city = combinedCity
+				}
+				if street == "" {
+					street = combinedStreet
+				}
+				if house == "" && combinedHouse != "" {
+					house = combinedHouse
+				}
+			}
+		}
+
+		if city == "" {
+			if v, ok := extractCity(p); ok {
+				city = v
+				continue
+			}
+		}
+		if street == "" {
+			if v, ok := extractStreet(p); ok {
+				street = v
+			}
+		}
+		if house == "" {
+			house = extractHouseNumber(p)
+		}
+	}
+
+	if city == "" {
+		for _, p := range clean {
+			if extractHouseNumber(p) != "" {
+				continue
+			}
+			if _, ok := extractStreet(p); ok {
+				continue
+			}
+			if !isAdministrativePart(p) {
+				city = normalizeAddressSpaces(p)
+				break
+			}
+		}
+	}
+	if street == "" {
+		for _, p := range clean {
+			if extractHouseNumber(p) != "" {
+				continue
+			}
+			if isAdministrativePart(p) {
+				continue
+			}
+			street = normalizeStreetName(p)
+			if street != "" {
+				break
+			}
+		}
+	}
+	if house == "" {
+		if h := extractHouseNumber(raw); h != "" {
+			house = h
+		}
+	}
+
+	if city == "" || street == "" {
+		return "", "", "", false
+	}
+	return city, street, house, true
+}
+
+func parseCityOnly(address string) (string, bool) {
+	raw := expandAddressAbbreviations(normalizeAddressSpaces(address))
+	parts := strings.Split(raw, ",")
+	for _, p := range parts {
+		p = normalizeAddressSpaces(p)
+		if p == "" {
+			continue
+		}
+		if city, ok := extractCity(p); ok {
+			return city, true
+		}
+	}
+	return "", false
+}
+
+func parseStreetAndHouseOnly(address string) (string, string, bool) {
+	raw := expandAddressAbbreviations(normalizeAddressSpaces(address))
+	house := extractHouseNumber(raw)
+	if house == "" {
+		return "", "", false
+	}
+	street := normalizeStreetName(raw)
+	if street == "" || isAdministrativePart(street) {
+		return "", "", false
+	}
+	return street, house, true
+}
+
+func normalizeAddressSpaces(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(v), " ")
+}
+
+func normalizeAddressForGeocode(v string) string {
+	v = strings.TrimSpace(v)
+	v = strings.Trim(v, "\"'`")
+	v = normalizeAddressSpaces(v)
+	if v == "" {
+		return ""
+	}
+
+	v = strings.NewReplacer(
+		"Львіська", "Львівська",
+		"Червоноі", "Червоної",
+		"Мечнікова", "Мечникова",
+		"буд.", " ",
+		"буд ", " ",
+	).Replace(v)
+
+	// Склеюємо випадки типу "Незалежност, і".
+	letterComma := regexp.MustCompile(`([\p{L}]{2,})\s*,\s*([\p{L}])\b`)
+	for i := 0; i < 3; i++ {
+		nv := letterComma.ReplaceAllString(v, "$1$2")
+		if nv == v {
+			break
+		}
+		v = nv
+	}
+
+	// Вирізаємо дужки та службові примітки.
+	v = regexp.MustCompile(`\([^)]*\)`).ReplaceAllString(v, " ")
+	v = regexp.MustCompile(`\[[^\]]*\]`).ReplaceAllString(v, " ")
+	v = regexp.MustCompile(`\{[^}]*\}`).ReplaceAllString(v, " ")
+
+	// Прибираємо телефони та поштові індекси.
+	v = regexp.MustCompile(`\b\d{2,4}[- ]\d{2}[- ]\d{2}(?:[- ]\d{2})?\b`).ReplaceAllString(v, " ")
+	v = regexp.MustCompile(`\b\d{5}\b`).ReplaceAllString(v, " ")
+
+	// Зайві службові хвости.
+	if idx := indexOfAddressNoise(v); idx > 0 {
+		v = v[:idx]
+	}
+
+	if idx := strings.Index(v, "+"); idx > 0 {
+		v = v[:idx]
+	}
+
+	// Нормалізуємо розділювачі.
+	v = strings.ReplaceAll(v, ";", ", ")
+	v = strings.ReplaceAll(v, "|", ", ")
+	v = regexp.MustCompile(`\s*,\s*`).ReplaceAllString(v, ", ")
+	v = regexp.MustCompile(`\s*\.\s*`).ReplaceAllString(v, ". ")
+	v = strings.Trim(v, " ,.-")
+	return normalizeAddressSpaces(v)
+}
+
+func indexOfAddressNoise(v string) int {
+	lower := strings.ToLower(v)
+	keywords := []string{
+		" ю/а ",
+		" фактична",
+		" завгосп",
+		" централь",
+		" охор",
+		" режим роботи",
+		" пожеж",
+		" вхід ",
+		" у дворі",
+		" напроти ",
+		" біля ",
+		" на територ",
+		" терітор",
+		" корпус",
+	}
+	best := -1
+	for _, kw := range keywords {
+		idx := strings.Index(lower, kw)
+		if idx >= 0 && (best < 0 || idx < best) {
+			best = idx
+		}
+	}
+	return best
+}
+
+func expandAddressAbbreviations(v string) string {
+	v = normalizeAddressSpaces(v)
+	abbrRules := []struct {
+		pattern string
+		repl    string
+	}{
+		{pattern: `(?i)(^|[\s,])м\.\s*`, repl: "${1}місто "},
+		{pattern: `(?i)(^|[\s,])с\.\s*`, repl: "${1}село "},
+		{pattern: `(?i)(^|[\s,])в\.\s*`, repl: "${1}вулиця "},
+		{pattern: `(?i)(^|[\s,])вуп\.\s*`, repl: "${1}вулиця "},
+		{pattern: `(?i)(^|[\s,])смт\.\s*`, repl: "${1}смт "},
+		{pattern: `(?i)(^|[\s,])обл\.\s*`, repl: "${1}область "},
+		{pattern: `(?i)(^|[\s,])вул\.\s*`, repl: "${1}вулиця "},
+		{pattern: `(?i)(^|[\s,])пр\.\s*`, repl: "${1}проспект "},
+		{pattern: `(?i)(^|[\s,])просп\.\s*`, repl: "${1}проспект "},
+		{pattern: `(?i)(^|[\s,])пл\.\s*`, repl: "${1}площа "},
+		{pattern: `(?i)(^|[\s,])бул\.\s*`, repl: "${1}бульвар "},
+		{pattern: `(?i)(^|[\s,])пров\.\s*`, repl: "${1}провулок "},
+	}
+	for _, rule := range abbrRules {
+		re := regexp.MustCompile(rule.pattern)
+		v = re.ReplaceAllString(v, rule.repl)
+	}
+
+	repl := strings.NewReplacer(
+		"м.", "місто ",
+		"м ", "місто ",
+		"с.", "село ",
+		"с ", "село ",
+		"в.", "вулиця ",
+		"обл.", "область ",
+		"обл ", "область ",
+		"смт.", "смт ",
+		"вул.", "вулиця ",
+		"вул ", "вулиця ",
+		"пр-т.", "проспект ",
+		"пр-т", "проспект ",
+		"просп.", "проспект ",
+		"пл.", "площа ",
+		"бул.", "бульвар ",
+		"пров.", "провулок ",
+	)
+	v = repl.Replace(v)
+	return normalizeAddressSpaces(v)
+}
+
+func ensureCountrySuffix(v string) string {
+	v = normalizeAddressSpaces(v)
+	if v == "" {
+		return ""
+	}
+	lower := strings.ToLower(v)
+	if strings.Contains(lower, "україн") || strings.Contains(lower, "ukraine") {
+		return v
+	}
+	return v + ", Україна"
+}
+
+func extractCity(v string) (string, bool) {
+	v = strings.NewReplacer(
+		"смт.", "смт ",
+		"м.", "місто ",
+		"місто.", "місто ",
+		"село.", "село ",
+		"с.", "село ",
+	).Replace(v)
+	v = normalizeAddressSpaces(v)
+	lower := strings.ToLower(v)
+	switch {
+	case strings.HasPrefix(lower, "місто "):
+		return normalizeAddressSpaces(strings.TrimSpace(v[len("місто "):])), true
+	case strings.HasPrefix(lower, "смт "):
+		return normalizeAddressSpaces(strings.TrimSpace(v[len("смт "):])), true
+	case strings.HasPrefix(lower, "селище "):
+		return normalizeAddressSpaces(strings.TrimSpace(v[len("селище "):])), true
+	case strings.HasPrefix(lower, "село "):
+		return normalizeAddressSpaces(strings.TrimSpace(v[len("село "):])), true
+	}
+
+	// Підтримка рядків типу:
+	// "Львівська область місто Львів" / "Львівська область село Зимна Вода".
+	for _, marker := range []string{" місто ", " смт ", " селище ", " село "} {
+		if idx := strings.Index(lower, marker); idx >= 0 {
+			candidate := normalizeAddressSpaces(strings.TrimSpace(v[idx+len(marker):]))
+			if candidate != "" {
+				return candidate, true
+			}
+			before := normalizeAddressSpaces(strings.TrimSpace(v[:idx]))
+			if before != "" && !isAdministrativePart(before) {
+				return before, true
+			}
+		}
+	}
+
+	// Підтримка "Яворів м." / "Яворів місто".
+	for _, marker := range []string{" місто", " м"} {
+		if strings.HasSuffix(lower, marker) {
+			before := normalizeAddressSpaces(strings.TrimSpace(v[:len(v)-len(marker)]))
+			if before != "" && !isAdministrativePart(before) {
+				return before, true
+			}
+		}
+	}
+	return "", false
+}
+
+func extractStreet(v string) (string, bool) {
+	v = normalizeAddressSpaces(v)
+	lower := strings.ToLower(v)
+	prefixes := []string{
+		"вулиця ",
+		"проспект ",
+		"бульвар ",
+		"площа ",
+		"провулок ",
+		"шосе ",
+		"узвіз ",
+	}
+	for _, pref := range prefixes {
+		if strings.HasPrefix(lower, pref) {
+			street := normalizeStreetName(strings.TrimSpace(v[len(pref):]))
+			if street != "" {
+				return street, true
+			}
+		}
+	}
+
+	// Підтримка "Маковея вулиця" / "Червоної Калини проспект".
+	for _, pref := range prefixes {
+		suffix := strings.TrimSpace(pref)
+		if strings.HasSuffix(lower, " "+suffix) {
+			street := normalizeStreetName(strings.TrimSpace(v[:len(v)-len(suffix)]))
+			if street != "" {
+				return street, true
+			}
+		}
+	}
+	return "", false
+}
+
+func splitCombinedLocalityStreetPart(part string) (string, string, string, bool) {
+	part = normalizeAddressSpaces(part)
+	if part == "" {
+		return "", "", "", false
+	}
+
+	lower := strings.ToLower(part)
+	streetPrefixes := []string{
+		"вулиця ",
+		"проспект ",
+		"бульвар ",
+		"площа ",
+		"провулок ",
+		"шосе ",
+		"узвіз ",
+	}
+
+	streetIdx := -1
+	for _, pref := range streetPrefixes {
+		if strings.HasPrefix(lower, pref) {
+			streetIdx = 0
+			break
+		}
+		if idx := strings.Index(lower, " "+pref); idx >= 0 {
+			idx++
+			if streetIdx < 0 || idx < streetIdx {
+				streetIdx = idx
+			}
+		}
+	}
+	if streetIdx <= 0 {
+		return "", "", "", false
+	}
+
+	localityPart := normalizeAddressSpaces(part[:streetIdx])
+	streetPart := normalizeAddressSpaces(part[streetIdx:])
+	if localityPart == "" || streetPart == "" {
+		return "", "", "", false
+	}
+
+	city, ok := extractCity(localityPart)
+	if !ok {
+		return "", "", "", false
+	}
+
+	street, ok := extractStreet(streetPart)
+	if !ok {
+		return "", "", "", false
+	}
+	house := extractHouseNumber(streetPart)
+	return city, street, house, true
+}
+
+func normalizeStreetName(v string) string {
+	v = normalizeAddressSpaces(v)
+	if v == "" {
+		return ""
+	}
+	// Якщо номер будинку написали разом зі вулицею, відкидаємо номер.
+	house := extractHouseNumber(v)
+	if house != "" {
+		v = strings.TrimSpace(strings.Replace(v, house, "", 1))
+	}
+	return normalizeAddressSpaces(v)
+}
+
+func extractHouseNumber(v string) string {
+	v = normalizeAddressSpaces(v)
+	if v == "" {
+		return ""
+	}
+	re := regexp.MustCompile(`(?i)\d+[0-9\p{L}/-]*`)
+	return normalizeAddressSpaces(re.FindString(v))
+}
+
+func isAdministrativePart(v string) bool {
+	l := strings.ToLower(normalizeAddressSpaces(v))
+	if l == "" {
+		return true
+	}
+	adminWords := []string{
+		"район",
+		"область",
+		"громада",
+		"україна",
+		"украина",
+		"ukraine",
+	}
+	for _, w := range adminWords {
+		if strings.Contains(l, w) {
+			return true
+		}
+	}
+	return false
+}
+
+func collectDistrictHints(address map[string]string, displayName string) []string {
+	hints := make([]string, 0, 8)
+	addHint := func(v string) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return
+		}
+		for _, existing := range hints {
+			if strings.EqualFold(existing, v) {
+				return
+			}
+		}
+		hints = append(hints, v)
+	}
+
+	keys := []string{
+		"city_district",
+		"district",
+		"suburb",
+		"borough",
+		"county",
+		"state_district",
+		"municipality",
+	}
+	for _, key := range keys {
+		addHint(address[key])
+	}
+
+	parts := strings.Split(displayName, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.Contains(strings.ToLower(part), "район") {
+			addHint(part)
+		}
+	}
+
+	return hints
+}
+
+func resolveRegionByAddressHints(provider contracts.DistrictReferenceService, hints []string) (int64, string, error) {
+	if len(hints) == 0 {
+		return 0, "", fmt.Errorf("геосервіс не повернув район")
+	}
+	regions, err := provider.ListObjectDistricts()
+	if err != nil {
+		return 0, "", fmt.Errorf("не вдалося завантажити райони: %w", err)
+	}
+	if len(regions) == 0 {
+		return 0, "", fmt.Errorf("довідник районів порожній")
+	}
+
+	type regionCandidate struct {
+		ID   int64
+		Name string
+		Norm string
+	}
+	candidates := make([]regionCandidate, 0, len(regions))
+	for _, region := range regions {
+		name := strings.TrimSpace(region.Name)
+		if name == "" || region.ID <= 0 {
+			continue
+		}
+		candidates = append(candidates, regionCandidate{
+			ID:   region.ID,
+			Name: name,
+			Norm: normalizeDistrictName(name),
+		})
+	}
+	if len(candidates) == 0 {
+		return 0, "", fmt.Errorf("не знайдено валідних районів у довіднику")
+	}
+
+	hintNorms := make([]string, 0, len(hints))
+	for _, hint := range hints {
+		if norm := normalizeDistrictName(hint); norm != "" {
+			hintNorms = append(hintNorms, norm)
+		}
+	}
+	if len(hintNorms) == 0 {
+		return 0, "", fmt.Errorf("не вдалося витягнути назву району з адреси")
+	}
+
+	for _, hintNorm := range hintNorms {
+		for _, c := range candidates {
+			if c.Norm != "" && c.Norm == hintNorm {
+				return c.ID, c.Name, nil
+			}
+		}
+	}
+	for _, hintNorm := range hintNorms {
+		for _, c := range candidates {
+			if c.Norm == "" {
+				continue
+			}
+			if strings.Contains(hintNorm, c.Norm) || strings.Contains(c.Norm, hintNorm) {
+				return c.ID, c.Name, nil
+			}
+		}
+	}
+
+	return 0, "", fmt.Errorf("район не зіставлено з довідником: %s", strings.Join(hints, ", "))
+}
+
+func normalizeDistrictName(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		"’", "'",
+		"`", "'",
+		"ʼ", "'",
+		".", " ",
+		",", " ",
+		"(", " ",
+		")", " ",
+		"-", " ",
+		"/", " ",
+	)
+	s = replacer.Replace(s)
+	s = strings.ReplaceAll(s, "р-н", "район")
+
+	tokens := strings.Fields(s)
+	filtered := make([]string, 0, len(tokens))
+	stopWords := map[string]struct{}{
+		"район":   {},
+		"місто":   {},
+		"м":       {},
+		"область": {},
+		"обл":     {},
+		"city":    {},
+	}
+	for _, t := range tokens {
+		if _, skip := stopWords[t]; skip {
+			continue
+		}
+		filtered = append(filtered, t)
+	}
+	return strings.Join(filtered, " ")
+}
+
 func showObjectPersonalEditor(
 	parent fyne.Window,
-	provider data.AdminProvider,
+	provider contracts.AdminObjectPersonalService,
 	title string,
-	initial data.AdminObjectPersonal,
-	onSave func(item data.AdminObjectPersonal) error,
+	initial contracts.AdminObjectPersonal,
+	onSave func(item contracts.AdminObjectPersonal) error,
 	statusLabel *widget.Label,
 	onDone func(),
 ) {
@@ -690,7 +1740,7 @@ func showObjectPersonalEditor(
 		return cnt
 	}
 
-	applyPersonalLookup := func(found *data.AdminObjectPersonal) {
+	applyPersonalLookup := func(found *contracts.AdminObjectPersonal) {
 		if found == nil {
 			return
 		}
@@ -789,7 +1839,7 @@ func showObjectPersonalEditor(
 			number = n
 		}
 
-		item := data.AdminObjectPersonal{
+		item := contracts.AdminObjectPersonal{
 			Number:      number,
 			Surname:     strings.TrimSpace(surnameEntry.Text),
 			Name:        strings.TrimSpace(nameEntry.Text),
@@ -818,8 +1868,8 @@ func showObjectPersonalEditor(
 func showObjectZoneEditor(
 	parent fyne.Window,
 	title string,
-	initial data.AdminObjectZone,
-	onSave func(zone data.AdminObjectZone) error,
+	initial contracts.AdminObjectZone,
+	onSave func(zone contracts.AdminObjectZone) error,
 	statusLabel *widget.Label,
 	onDone func(),
 ) {
@@ -849,7 +1899,7 @@ func showObjectZoneEditor(
 			return
 		}
 
-		zone := data.AdminObjectZone{
+		zone := contracts.AdminObjectZone{
 			ZoneNumber:    zoneNumber,
 			ZoneType:      1,
 			Description:   strings.TrimSpace(descriptionEntry.Text),
@@ -891,7 +1941,7 @@ func showZoneFillDialog(parent fyne.Window, defaultCount int64, onApply func(cou
 	dlg.Show()
 }
 
-func suggestZoneFillCount(provider data.AdminProvider, objn int64, current []data.AdminObjectZone) int64 {
+func suggestZoneFillCount(provider contracts.AdminObjectZonesTabProvider, objn int64, current []contracts.AdminObjectZone) int64 {
 	maxZone := int64(0)
 	for _, z := range current {
 		if z.ZoneNumber > maxZone {
@@ -958,128 +2008,326 @@ func containsCanvasObject(root fyne.CanvasObject, target fyne.CanvasObject) bool
 	return false
 }
 
+type mapInteractionSurface struct {
+	widget.BaseWidget
+
+	onTapped          func(*fyne.PointEvent)
+	onTappedSecondary func(*fyne.PointEvent)
+	onDragged         func(*fyne.DragEvent)
+	onDragEnd         func()
+	onScrolled        func(*fyne.ScrollEvent)
+}
+
+func newMapInteractionSurface() *mapInteractionSurface {
+	surface := &mapInteractionSurface{}
+	surface.ExtendBaseWidget(surface)
+	return surface
+}
+
+func (s *mapInteractionSurface) Tapped(ev *fyne.PointEvent) {
+	if s.onTapped != nil {
+		s.onTapped(ev)
+	}
+}
+
+func (s *mapInteractionSurface) TappedSecondary(ev *fyne.PointEvent) {
+	if s.onTappedSecondary != nil {
+		s.onTappedSecondary(ev)
+	}
+}
+
+func (s *mapInteractionSurface) Dragged(ev *fyne.DragEvent) {
+	if s.onDragged != nil {
+		s.onDragged(ev)
+	}
+}
+
+func (s *mapInteractionSurface) DragEnd() {
+	if s.onDragEnd != nil {
+		s.onDragEnd()
+	}
+}
+
+func (s *mapInteractionSurface) Scrolled(ev *fyne.ScrollEvent) {
+	if s.onScrolled != nil {
+		s.onScrolled(ev)
+	}
+}
+
+func (s *mapInteractionSurface) CreateRenderer() fyne.WidgetRenderer {
+	// Мінімальна прозорість, щоб поверхня гарантовано брала pointer-події.
+	hitBox := canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 1})
+	return widget.NewSimpleRenderer(hitBox)
+}
+
 func showCoordinatesMapPicker(parent fyne.Window, initialLatRaw string, initialLonRaw string, onPick func(lat, lon string)) {
 	centerLat, centerLon, zoom, hasObjectMarker := resolveInitialMapCenter(initialLatRaw, initialLonRaw)
 
 	mapView := xwidget.NewMapWithOptions(
 		xwidget.WithOsmTiles(),
-		xwidget.WithZoomButtons(true),
-		xwidget.WithScrollButtons(true),
+		xwidget.WithZoomButtons(false),
+		xwidget.WithScrollButtons(false),
 		xwidget.AtZoomLevel(zoom),
 		xwidget.AtLatLon(centerLat, centerLon),
 	)
 
-	crosshair := canvas.NewText("+", color.NRGBA{R: 220, G: 20, B: 20, A: 255})
-	crosshair.TextSize = 36
-	crosshair.TextStyle.Bold = true
+	previousMarker := canvas.NewCircle(color.NRGBA{R: 255, G: 40, B: 40, A: 210})
+	previousMarker.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 230}
+	previousMarker.StrokeWidth = 2
+	previousMarker.Resize(fyne.NewSize(12, 12))
+	previousMarker.Hide()
 
-	objectMarker := canvas.NewCircle(color.NRGBA{R: 255, G: 30, B: 30, A: 210})
-	objectMarker.Resize(fyne.NewSize(14, 14))
-	objectMarker.Hide()
-	markerLayer := container.NewWithoutLayout(objectMarker)
+	selectedMarker := canvas.NewCircle(color.NRGBA{R: 25, G: 122, B: 255, A: 210})
+	selectedMarker.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 230}
+	selectedMarker.StrokeWidth = 2
+	selectedMarker.Resize(fyne.NewSize(16, 16))
+	selectedMarker.Hide()
+
+	selectedHalo := canvas.NewCircle(color.NRGBA{R: 25, G: 122, B: 255, A: 70})
+	selectedHalo.Resize(fyne.NewSize(28, 28))
+	selectedHalo.Hide()
+
+	markerLayer := container.NewWithoutLayout(previousMarker, selectedHalo, selectedMarker)
+	interaction := newMapInteractionSurface()
 
 	mapStack := container.NewStack(
 		mapView,
 		markerLayer,
-		container.NewCenter(crosshair),
+		interaction,
 	)
 
-	centerLabel := widget.NewLabel("")
+	selectionLat := centerLat
+	selectionLon := centerLon
+	if lat, lon, ok := parseLatLon(initialLatRaw, initialLonRaw); ok {
+		selectionLat = lat
+		selectionLon = lon
+	}
+
+	centerLabel := widget.NewLabel("Центр: —")
+	selectedLabel := widget.NewLabel("")
+	selectedLabel.TextStyle = fyne.TextStyle{Bold: true}
+
 	updateCenterLabel := func() {
 		lat, lon, err := mapCenterLatLon(mapView)
 		if err != nil {
 			centerLabel.SetText("Центр: невизначено")
 			return
 		}
-		centerLabel.SetText(fmt.Sprintf("Центр: %s, %s", formatCoordinate(lat), formatCoordinate(lon)))
+		zoomText := "?"
+		if state, stateErr := readMapInternalState(mapView); stateErr == nil {
+			zoomText = strconv.Itoa(state.zoom)
+		}
+		centerLabel.SetText(fmt.Sprintf("Центр: %s, %s | Z=%s", formatCoordinate(lat), formatCoordinate(lon), zoomText))
 	}
-	updateCenterLabel()
+	updateSelectedLabel := func() {
+		selectedLabel.SetText(fmt.Sprintf("Вибрана точка: %s, %s", formatCoordinate(selectionLat), formatCoordinate(selectionLon)))
+	}
+
+	var updateMarkers func()
+	lastMarkerUpdate := time.Time{}
+	lastCenterUpdate := time.Time{}
+	forceMapOverlayRefresh := func() {
+		updateCenterLabel()
+		if updateMarkers != nil {
+			updateMarkers()
+		}
+		now := time.Now()
+		lastMarkerUpdate = now
+		lastCenterUpdate = now
+	}
+	updateMapOverlayDuringDrag := func() {
+		now := time.Now()
+		if updateMarkers != nil && now.Sub(lastMarkerUpdate) >= 80*time.Millisecond {
+			updateMarkers()
+			lastMarkerUpdate = now
+		}
+		if now.Sub(lastCenterUpdate) >= 220*time.Millisecond {
+			updateCenterLabel()
+			lastCenterUpdate = now
+		}
+	}
 
 	objectMarkerLat := centerLat
 	objectMarkerLon := centerLon
-	updateObjectMarker := func() {
+	updateMarkers = func() {
 		if !hasObjectMarker {
-			objectMarker.Hide()
-			return
+			previousMarker.Hide()
+		} else {
+			x, y, ok := mapLatLonToCanvasPoint(mapView, objectMarkerLat, objectMarkerLon)
+			if !ok {
+				previousMarker.Hide()
+			} else {
+				size := mapView.Size()
+				if x < -20 || y < -20 || x > size.Width+20 || y > size.Height+20 {
+					previousMarker.Hide()
+				} else {
+					prevSize := previousMarker.Size()
+					previousMarker.Move(fyne.NewPos(x-prevSize.Width/2, y-prevSize.Height/2))
+					previousMarker.Show()
+					previousMarker.Refresh()
+				}
+			}
 		}
-		x, y, ok := mapLatLonToCanvasPoint(mapView, objectMarkerLat, objectMarkerLon)
+
+		sx, sy, ok := mapLatLonToCanvasPoint(mapView, selectionLat, selectionLon)
 		if !ok {
-			objectMarker.Hide()
+			selectedMarker.Hide()
+			selectedHalo.Hide()
 			return
 		}
 		size := mapView.Size()
-		if x < -20 || y < -20 || x > size.Width+20 || y > size.Height+20 {
-			objectMarker.Hide()
+		if sx < -30 || sy < -30 || sx > size.Width+30 || sy > size.Height+30 {
+			selectedMarker.Hide()
+			selectedHalo.Hide()
 			return
 		}
-		objectMarker.Move(fyne.NewPos(x-7, y-7))
-		objectMarker.Show()
-		objectMarker.Refresh()
+
+		haloSize := selectedHalo.Size()
+		selSize := selectedMarker.Size()
+		selectedHalo.Move(fyne.NewPos(sx-haloSize.Width/2, sy-haloSize.Height/2))
+		selectedMarker.Move(fyne.NewPos(sx-selSize.Width/2, sy-selSize.Height/2))
+		selectedHalo.Show()
+		selectedMarker.Show()
+		selectedHalo.Refresh()
+		selectedMarker.Refresh()
+	}
+
+	setSelectionAt := func(lat, lon float64) {
+		selectionLat = lat
+		selectionLon = lon
+		updateSelectedLabel()
+		updateMarkers()
+	}
+	updateSelectedLabel()
+	forceMapOverlayRefresh()
+
+	interaction.onTapped = func(ev *fyne.PointEvent) {
+		lat, lon, err := mapCanvasPointToLatLon(mapView, ev.Position.X, ev.Position.Y)
+		if err != nil {
+			return
+		}
+		setSelectionAt(lat, lon)
+	}
+	interaction.onTappedSecondary = func(ev *fyne.PointEvent) {
+		lat, lon, err := mapCanvasPointToLatLon(mapView, ev.Position.X, ev.Position.Y)
+		if err != nil {
+			return
+		}
+		setSelectionAt(lat, lon)
+		mapView.PanToLatLon(lat, lon)
+		forceMapOverlayRefresh()
+	}
+	interaction.onDragged = func(ev *fyne.DragEvent) {
+		mapView.Dragged(ev)
+		updateMapOverlayDuringDrag()
+	}
+	interaction.onDragEnd = func() {
+		mapView.DragEnd()
+		forceMapOverlayRefresh()
+	}
+	interaction.onScrolled = func(ev *fyne.ScrollEvent) {
+		delta := ev.Scrolled.DY
+		if math.Abs(float64(ev.Scrolled.DX)) > math.Abs(float64(delta)) {
+			delta = ev.Scrolled.DX
+		}
+		steps := mapScrollStepCount(delta)
+		if steps == 0 {
+			return
+		}
+
+		centerLat, centerLon, centerErr := mapCenterLatLon(mapView)
+
+		// Для desktop/Fyne: позитивний wheel delta = прокрутка вгору.
+		// Вгору -> наближення, вниз -> віддалення.
+		if delta > 0 {
+			for i := 0; i < steps; i++ {
+				mapView.ZoomIn()
+			}
+		} else {
+			for i := 0; i < steps; i++ {
+				mapView.ZoomOut()
+			}
+		}
+		if centerErr == nil {
+			// Тримаємо центр стабільним, щоб карта не "пливла" при zoom.
+			mapView.PanToLatLon(centerLat, centerLon)
+		}
+		forceMapOverlayRefresh()
 	}
 
 	pickerWin := fyne.CurrentApp().NewWindow("Вибір координат на карті")
 	pickerWin.Resize(fyne.NewSize(980, 680))
 
-	useCenterBtn := widget.NewButton("Вибрати центр карти", func() {
+	useSelectionBtn := widget.NewButton("Підтвердити вибір", func() {
+		centerLat, centerLon, err := mapCenterLatLon(mapView)
+		if err == nil {
+			saveLastMapCenter(centerLat, centerLon)
+		}
+		if onPick != nil {
+			onPick(formatCoordinate(selectionLat), formatCoordinate(selectionLon))
+		}
+		pickerWin.Close()
+	})
+	setFromCenterBtn := widget.NewButton("Точка = центр", func() {
 		lat, lon, err := mapCenterLatLon(mapView)
 		if err != nil {
 			dialog.ShowError(err, pickerWin)
 			return
 		}
-		saveLastMapCenter(lat, lon)
-		if onPick != nil {
-			onPick(formatCoordinate(lat), formatCoordinate(lon))
-		}
-		pickerWin.Close()
+		setSelectionAt(lat, lon)
 	})
-	refreshCenterBtn := widget.NewButton("Оновити центр", func() {
-		updateCenterLabel()
-		updateObjectMarker()
+	centerOnSelectionBtn := widget.NewButton("До вибраної точки", func() {
+		mapView.PanToLatLon(selectionLat, selectionLon)
+		forceMapOverlayRefresh()
+	})
+	zoomInBtn := widget.NewButton("＋", func() {
+		mapView.ZoomIn()
+		forceMapOverlayRefresh()
+	})
+	zoomOutBtn := widget.NewButton("－", func() {
+		mapView.ZoomOut()
+		forceMapOverlayRefresh()
+	})
+	refreshBtn := widget.NewButton("Оновити", func() {
+		forceMapOverlayRefresh()
 	})
 	mapSettingsBtn := widget.NewButton("Налаштування карти", func() {
 		showMapCenterSettingsDialog(pickerWin, func(lat, lon float64, zoom int) {
 			mapView.Zoom(zoom)
 			mapView.PanToLatLon(lat, lon)
-			updateCenterLabel()
-			updateObjectMarker()
+			forceMapOverlayRefresh()
 		})
 	})
 	cancelBtn := widget.NewButton("Скасувати", func() { pickerWin.Close() })
 
 	content := container.NewBorder(
 		container.NewVBox(
-			widget.NewLabel("Перетягніть/масштабуйте карту, '+' у центрі = точка вибору."),
-			widget.NewLabel("Якщо в об'єкта вже є координати, червоний маркер показує поточну позицію об'єкта."),
+			widget.NewLabel("ЛКМ: вибір точки | ПКМ: вибір + центрування | Колесо: зум | Перетягування: панорама."),
+			widget.NewLabel("Червоний маркер: поточна точка об'єкта. Синій маркер: точка, яку ви обрали."),
 			widget.NewSeparator(),
 		),
-		container.NewHBox(centerLabel, layout.NewSpacer(), mapSettingsBtn, refreshCenterBtn, useCenterBtn, cancelBtn),
+		container.NewVBox(
+			container.NewHBox(centerLabel, layout.NewSpacer(), selectedLabel),
+			container.NewHBox(
+				widget.NewLabel("Зум:"),
+				zoomOutBtn,
+				zoomInBtn,
+				layout.NewSpacer(),
+				mapSettingsBtn,
+				refreshBtn,
+				setFromCenterBtn,
+				centerOnSelectionBtn,
+				useSelectionBtn,
+				cancelBtn,
+			),
+		),
 		nil,
 		nil,
 		mapStack,
 	)
 	pickerWin.SetContent(content)
 
-	// Періодично оновлюємо marker-позицію під час pan/zoom.
-	done := make(chan struct{})
-	ticker := time.NewTicker(160 * time.Millisecond)
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				fyne.Do(func() {
-					updateObjectMarker()
-				})
-			case <-done:
-				return
-			}
-		}
-	}()
-	pickerWin.SetOnClosed(func() {
-		close(done)
-		ticker.Stop()
-	})
-
-	updateObjectMarker()
+	forceMapOverlayRefresh()
 	pickerWin.Show()
 }
 
@@ -1143,8 +2391,30 @@ func mapLatLonToCanvasPoint(m *xwidget.Map, lat float64, lon float64) (float32, 
 	return float32(px / state.scale), float32(py / state.scale), true
 }
 
+func mapCanvasPointToLatLon(m *xwidget.Map, x float32, y float32) (float64, float64, error) {
+	state, err := readMapInternalState(m)
+	if err != nil {
+		return 0, 0, err
+	}
+	px := float64(x) * state.scale
+	py := float64(y) * state.scale
+	xTile := state.mx + (px-state.midTileX-state.offsetX*state.scale)/state.tilePx
+	yTile := state.my + (py-state.midTileY-state.offsetY*state.scale)/state.tilePx
+	return tileXYToLatLon(xTile, yTile, state.n)
+}
+
+func mapScrollStepCount(deltaY float32) int {
+	abs := math.Abs(float64(deltaY))
+	if abs < 0.05 {
+		return 0
+	}
+	// Робимо зум плавним: один рівень за одну подію прокрутки.
+	return 1
+}
+
 type mapInternalState struct {
 	mx, my             float64
+	zoom               int
 	n                  float64
 	offsetX, offsetY   float64
 	scale              float64
@@ -1244,6 +2514,7 @@ func readMapInternalState(m *xwidget.Map) (mapInternalState, error) {
 	return mapInternalState{
 		mx:       float64(mx),
 		my:       float64(my),
+		zoom:     zoom,
 		n:        n,
 		offsetX:  offsetX,
 		offsetY:  offsetY,

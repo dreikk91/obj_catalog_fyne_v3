@@ -38,7 +38,7 @@ func mapSC1ToPaletteCode(sc1 *int64) int {
 	case 12:
 		return 12
 	default:
-		return 6
+		return int(*sc1)
 	}
 }
 

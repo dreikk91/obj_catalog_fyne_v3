@@ -11,19 +11,19 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	data "obj_catalog_fyne_v3/pkg/contracts"
-	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, onEmulated func()) {
+func ShowEventEmulationDialog(parent fyne.Window, provider contracts.AdminProvider, onEmulated func()) {
 	win := fyne.CurrentApp().NewWindow("Емуляція подій")
 	win.Resize(fyne.NewSize(1120, 680))
 
 	var (
-		objects           []data.DisplayBlockObject
-		messages          []data.AdminMessage
-		selectedMessageID int64
-		protocolOptionID  = map[string]int64{}
+		objects            []contracts.DisplayBlockObject
+		messages           []contracts.AdminMessage
+		selectedMessageID  int64
+		selectedMessageRow = -1
+		protocolOptionID   = map[string]int64{}
 	)
 
 	statusLabel := widget.NewLabel("Готово")
@@ -70,43 +70,17 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 		statusLabel.SetText(fmt.Sprintf("Обрано об'єкт №%d", objects[id].ObjN))
 	}
 
-	messageTableView := uiwidgets.NewQTableViewWithHeaders(
-		[]string{"Код", "Повідомлення", "Тип", "Прот."},
-		func() int { return len(messages) },
-		func(row, col int) string {
-			if row < 0 || row >= len(messages) {
-				return ""
-			}
-			m := messages[row]
-			switch col {
-			case 0:
-				if m.MessageID != nil {
-					return strconv.FormatInt(*m.MessageID, 10)
-				}
-				return strconv.FormatInt(m.UIN, 10)
-			case 1:
-				return strings.TrimSpace(m.Text)
-			case 2:
-				return messageTypeLabel(m.SC1)
-			default:
-				if m.ProtocolID != nil {
-					return protocolDisplayName(*m.ProtocolID)
-				}
-				return "—"
-			}
-		},
-	)
-	messageTableView.SetSelectionBehavior(uiwidgets.SelectRows)
-	messageTableView.SetCellRenderer(
+	messageTable := widget.NewTable(
+		func() (int, int) { return len(messages), 4 },
 		func() fyne.CanvasObject { return newColoredTableCell() },
-		func(index uiwidgets.ModelIndex, _ string, selected bool, obj fyne.CanvasObject) {
-			if !index.IsValid() || index.Row < 0 || index.Row >= len(messages) {
+		func(id widget.TableCellID, obj fyne.CanvasObject) {
+			if id.Row < 0 || id.Row >= len(messages) {
 				updateColoredMessageCell(obj, "", nil, false)
 				return
 			}
-			m := messages[index.Row]
+			m := messages[id.Row]
 			cellText := ""
-			switch index.Col {
+			switch id.Col {
 			case 0:
 				if m.MessageID != nil {
 					cellText = strconv.FormatInt(*m.MessageID, 10)
@@ -124,19 +98,19 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 					cellText = "—"
 				}
 			}
-			updateColoredMessageCell(obj, cellText, m.SC1, selected)
+			updateColoredMessageCell(obj, cellText, m.SC1, id.Row == selectedMessageRow)
 		},
 	)
-	messageTable := messageTableView.Widget()
-	messageTableView.SetColumnWidth(0, 90)
-	messageTableView.SetColumnWidth(1, 620)
-	messageTableView.SetColumnWidth(2, 170)
-	messageTableView.SetColumnWidth(3, 100)
-	messageTableView.OnSelected = func(index uiwidgets.ModelIndex) {
-		if index.Row < 0 || index.Row >= len(messages) {
+	messageTable.SetColumnWidth(0, 90)
+	messageTable.SetColumnWidth(1, 620)
+	messageTable.SetColumnWidth(2, 170)
+	messageTable.SetColumnWidth(3, 100)
+	messageTable.OnSelected = func(id widget.TableCellID) {
+		if id.Row < 0 || id.Row >= len(messages) {
 			return
 		}
-		selectedMessageID = messages[index.Row].UIN
+		selectedMessageID = messages[id.Row].UIN
+		selectedMessageRow = id.Row
 		messageTable.Refresh()
 		statusLabel.SetText(fmt.Sprintf("Обрано повідомлення UIN=%d", selectedMessageID))
 	}
@@ -152,7 +126,7 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 		return nil, fmt.Errorf("unknown protocol option: %s", v)
 	}
 
-	messagePasses := func(m data.AdminMessage) bool {
+	messagePasses := func(m contracts.AdminMessage) bool {
 		families := []struct {
 			name  string
 			check *widget.Check
@@ -196,7 +170,7 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 			return
 		}
 
-		filtered := make([]data.AdminMessage, 0, len(loaded))
+		filtered := make([]contracts.AdminMessage, 0, len(loaded))
 		for _, m := range loaded {
 			if messagePasses(m) {
 				filtered = append(filtered, m)
@@ -204,6 +178,7 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 		}
 		messages = filtered
 		selectedMessageID = 0
+		selectedMessageRow = -1
 		messageTable.UnselectAll()
 		messageTable.Refresh()
 		statusLabel.SetText(fmt.Sprintf("Повідомлень для емуляції: %d", len(messages)))
@@ -285,6 +260,13 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 		objectList,
 	)
 
+	headers := container.NewGridWithColumns(
+		4,
+		widget.NewLabel("Код"),
+		widget.NewLabel("Повідомлення"),
+		widget.NewLabel("Тип"),
+		widget.NewLabel("Прот."),
+	)
 	right := container.NewBorder(
 		container.NewVBox(
 			container.NewHBox(
@@ -296,6 +278,8 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 			container.NewHBox(
 				chAlarm, chTech, chRestore, chTest, chInfo,
 			),
+			widget.NewSeparator(),
+			headers,
 		),
 		nil, nil, nil,
 		messageTable,
@@ -333,14 +317,12 @@ func ShowEventEmulationDialog(parent fyne.Window, provider data.AdminProvider, o
 // мапу з типових протоколів з адмінського мануалу.
 func protocolDisplayName(id int64) string {
 	switch id {
-	case 1:
+	case 18:
 		return "Контакт ID"
-	case 2:
-		return "20BPS"
 	case 3:
-		return "Демко-Експрес"
+		return "20bps / ADEMCO"
 	case 4:
-		return "Мост"
+		return "МОСТ"
 	default:
 		return fmt.Sprintf("Протокол %d", id)
 	}

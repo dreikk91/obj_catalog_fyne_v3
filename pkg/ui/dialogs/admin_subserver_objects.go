@@ -7,33 +7,32 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	data "obj_catalog_fyne_v3/pkg/contracts"
-	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider, onUpdated func()) {
+func ShowSubServerObjectsDialog(parent fyne.Window, provider contracts.AdminProvider, onUpdated func()) {
 	win := fyne.CurrentApp().NewWindow("Керування об'єктами підсерверів")
-	win.Resize(fyne.NewSize(1040, 640))
+	win.Resize(fyne.NewSize(1024, 768))
 
 	var (
-		objects         []data.AdminSubServerObject
-		subservers      []data.AdminSubServer
+		objects         []contracts.AdminSubServerObject
+		subservers      []contracts.AdminSubServer
 		selectedObject  = -1
 		selectedServer  = -1
 		selectedObjNSet = map[int64]struct{}{}
 		lastSelectedObj int64
-		ctrlMultiNext   bool
+		objRowSelecting bool
+		srvRowSelecting bool
 	)
 
 	filterEntry := widget.NewEntry()
 	filterEntry.SetPlaceHolder("Пошук: № об'єкта, назва, адреса")
 	onlyUnboundCheck := widget.NewCheck("Очистка без підсерверів", nil)
 	statusLabel := widget.NewLabel("Готово")
-	hintLabel := widget.NewLabel("F3 - пошук | Ctrl+клік - мультивибір | Ctrl+A - вибрати всі")
+	hintLabel := widget.NewLabel("F3 - пошук по номеру об'єкта | Ctrl+A - вибрати всі об'єкти")
 
 	bindLabel := func(bind string) string {
 		bind = strings.TrimSpace(bind)
@@ -66,7 +65,7 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 		return "—"
 	}
 
-	serverTypeLabel := func(s data.AdminSubServer) string {
+	serverTypeLabel := func(s contracts.AdminSubServer) string {
 		switch s.Type {
 		case 2:
 			return "GPRS"
@@ -80,11 +79,11 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 		}
 	}
 
-	currentObjects := func() []data.AdminSubServerObject {
+	currentObjects := func() []contracts.AdminSubServerObject {
 		if !onlyUnboundCheck.Checked {
 			return objects
 		}
-		filtered := make([]data.AdminSubServerObject, 0, len(objects))
+		filtered := make([]contracts.AdminSubServerObject, 0, len(objects))
 		for _, obj := range objects {
 			if strings.TrimSpace(obj.SubServerA) == "" && strings.TrimSpace(obj.SubServerB) == "" {
 				filtered = append(filtered, obj)
@@ -94,9 +93,9 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 	}
 	var objectTable *widget.Table
 
-	getSelectedObjects := func() []data.AdminSubServerObject {
+	getSelectedObjects := func() []contracts.AdminSubServerObject {
 		rows := currentObjects()
-		selected := make([]data.AdminSubServerObject, 0, len(selectedObjNSet))
+		selected := make([]contracts.AdminSubServerObject, 0, len(selectedObjNSet))
 		for _, obj := range rows {
 			if _, ok := selectedObjNSet[obj.ObjN]; ok {
 				selected = append(selected, obj)
@@ -135,107 +134,131 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 		}
 	}
 
-	subserverTableView := uiwidgets.NewQTableViewWithHeaders(
-		[]string{"Інфо", "Хост", "Тип"},
-		func() int { return len(subservers) },
-		func(row, col int) string {
-			if row < 0 || row >= len(subservers) {
-				return ""
+	subserverTable := widget.NewTable(
+		func() (int, int) { return len(subservers) + 1, 3 },
+		func() fyne.CanvasObject { return widget.NewLabel("cell") },
+		func(id widget.TableCellID, obj fyne.CanvasObject) {
+			lbl := obj.(*widget.Label)
+			if id.Row == 0 {
+				switch id.Col {
+				case 0:
+					lbl.SetText("Інфо")
+				case 1:
+					lbl.SetText("Хост")
+				default:
+					lbl.SetText("Тип")
+				}
+				return
 			}
-			sb := subservers[row]
-			switch col {
+			idx := id.Row - 1
+			if idx < 0 || idx >= len(subservers) {
+				lbl.SetText("")
+				return
+			}
+			sb := subservers[idx]
+			switch id.Col {
 			case 0:
 				info := strings.TrimSpace(sb.Info)
 				if info == "" {
 					info = strings.TrimSpace(sb.Host)
 				}
-				return info
+				lbl.SetText(info)
 			case 1:
-				return strings.TrimSpace(sb.Host)
+				lbl.SetText(strings.TrimSpace(sb.Host))
 			default:
-				return serverTypeLabel(sb)
+				lbl.SetText(serverTypeLabel(sb))
 			}
 		},
 	)
-	subserverTableView.SetSelectionBehavior(uiwidgets.SelectRows)
-	subserverTable := subserverTableView.Widget()
-	subserverTableView.SetColumnWidth(0, 180)
-	subserverTableView.SetColumnWidth(1, 110)
-	subserverTableView.SetColumnWidth(2, 60)
-	subserverTableView.OnSelected = func(index uiwidgets.ModelIndex) {
-		if index.Row < 0 || index.Row >= len(subservers) {
+	subserverTable.SetColumnWidth(0, 180)
+	subserverTable.SetColumnWidth(1, 110)
+	subserverTable.SetColumnWidth(2, 60)
+	subserverTable.OnSelected = func(id widget.TableCellID) {
+		if id.Row <= 0 {
 			selectedServer = -1
 			return
 		}
-		selectedServer = index.Row
-		statusLabel.SetText(fmt.Sprintf("Вибрано підсервер: %s", bindLabel(subservers[index.Row].Bind)))
+		if id.Col != 0 && !srvRowSelecting {
+			srvRowSelecting = true
+			subserverTable.Select(widget.TableCellID{Row: id.Row, Col: 0})
+			srvRowSelecting = false
+			return
+		}
+		idx := id.Row - 1
+		if idx < 0 || idx >= len(subservers) {
+			selectedServer = -1
+			return
+		}
+		selectedServer = idx
+		statusLabel.SetText(fmt.Sprintf("Вибрано підсервер: %s", bindLabel(subservers[idx].Bind)))
 	}
 
-	objectTableView := uiwidgets.NewQTableViewWithHeaders(
-		[]string{"№пр.", "Об'єкт", "Підсервер 1"},
-		func() int { return len(currentObjects()) },
-		func(row, col int) string {
-			dataRows := currentObjects()
-			if row < 0 || row >= len(dataRows) {
-				return ""
+	objectTable = widget.NewTable(
+		func() (int, int) { return len(currentObjects()) + 1, 3 },
+		func() fyne.CanvasObject { return widget.NewLabel("cell") },
+		func(id widget.TableCellID, obj fyne.CanvasObject) {
+			lbl := obj.(*widget.Label)
+			if id.Row == 0 {
+				switch id.Col {
+				case 0:
+					lbl.SetText("№пр.")
+				case 1:
+					lbl.SetText("Об'єкт")
+				default:
+					lbl.SetText("Підсервер 1")
+				}
+				return
 			}
-			item := dataRows[row]
-			switch col {
+
+			dataRows := currentObjects()
+			idx := id.Row - 1
+			if idx < 0 || idx >= len(dataRows) {
+				lbl.SetText("")
+				return
+			}
+			row := dataRows[idx]
+			switch id.Col {
 			case 0:
 				prefix := "  "
-				if _, ok := selectedObjNSet[item.ObjN]; ok {
+				if _, ok := selectedObjNSet[row.ObjN]; ok {
 					prefix = "✓ "
 				}
-				return fmt.Sprintf("%s%d", prefix, item.ObjN)
+				lbl.SetText(fmt.Sprintf("%s%d", prefix, row.ObjN))
 			case 1:
-				return strings.TrimSpace(item.Name)
+				lbl.SetText(strings.TrimSpace(row.Name))
 			default:
-				return bindLabel(item.SubServerA)
+				lbl.SetText(bindLabel(row.SubServerA))
 			}
 		},
 	)
-	objectTableView.SetSelectionBehavior(uiwidgets.SelectRows)
-	objectTable = objectTableView.Widget()
-	objectTableView.SetColumnWidth(0, 110)
-	objectTableView.SetColumnWidth(1, 460)
-	objectTableView.SetColumnWidth(2, 180)
-	objectTableView.OnSelected = func(index uiwidgets.ModelIndex) {
+	objectTable.SetColumnWidth(0, 110)
+	objectTable.SetColumnWidth(1, 460)
+	objectTable.SetColumnWidth(2, 180)
+	objectTable.OnSelected = func(id widget.TableCellID) {
+		if id.Row <= 0 {
+			selectedObject = -1
+			return
+		}
+		if id.Col != 0 && !objRowSelecting {
+			objRowSelecting = true
+			objectTable.Select(widget.TableCellID{Row: id.Row, Col: 0})
+			objRowSelecting = false
+			return
+		}
 		rows := currentObjects()
-		idx := index.Row
+		idx := id.Row - 1
 		if idx < 0 || idx >= len(rows) {
 			selectedObject = -1
 			return
 		}
-
-		objn := rows[idx].ObjN
-		if ctrlMultiNext {
-			ctrlMultiNext = false
-			if _, ok := selectedObjNSet[objn]; ok {
-				delete(selectedObjNSet, objn)
-			} else {
-				selectedObjNSet[objn] = struct{}{}
-			}
-			lastSelectedObj = objn
-			if len(selectedObjNSet) == 0 {
-				selectedObject = -1
-				statusLabel.SetText("Виділення очищено")
-			} else {
-				selectedObject = idx
-				statusLabel.SetText(fmt.Sprintf("Вибрано об'єктів: %d", len(selectedObjNSet)))
-			}
-			objectTable.Refresh()
-			return
-		}
-
 		selectedObject = idx
-		lastSelectedObj = objn
-		selectSingleObject(objn)
+		lastSelectedObj = rows[idx].ObjN
+		selectSingleObject(rows[idx].ObjN)
 		objectTable.Refresh()
 		statusLabel.SetText(fmt.Sprintf("Вибрано об'єкт #%d", rows[idx].ObjN))
 	}
 
 	selectObjectByObjN := func(objn int64) {
-		ctrlMultiNext = false
 		if objn <= 0 {
 			selectedObject = -1
 			objectTable.UnselectAll()
@@ -246,7 +269,7 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 			if rows[i].ObjN == objn {
 				selectedObject = i
 				selectSingleObject(objn)
-				objectTable.Select(widget.TableCellID{Row: i, Col: 0})
+				objectTable.Select(widget.TableCellID{Row: i + 1, Col: 0})
 				return
 			}
 		}
@@ -256,7 +279,6 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 	}
 
 	reload := func(selectObjN int64, selectServerIndex int) {
-		ctrlMultiNext = false
 		loadedSub, err := provider.ListSubServers()
 		if err != nil {
 			dialog.ShowError(err, win)
@@ -459,6 +481,7 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 	attachBtn := widget.NewButton("Під'єднати", attach)
 	attachAllBtn := widget.NewButton("Під'єднати всі (фільтр)", attachAllFiltered)
 	detachAllBtn := widget.NewButton("Очистити всі (фільтр)", clearAllFiltered)
+	searchBtn := widget.NewButton("Пошук", func() { reload(lastSelectedObj, selectedServer) })
 	refreshBtn := widget.NewButton("Оновити", func() { reload(lastSelectedObj, selectedServer) })
 	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
 
@@ -471,10 +494,6 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 
 	win.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
 		if ev == nil {
-			return
-		}
-		if ev.Name == desktop.KeyControlLeft || ev.Name == desktop.KeyControlRight {
-			ctrlMultiNext = true
 			return
 		}
 		if ev.Name == fyne.KeyF3 {
@@ -492,11 +511,12 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider data.AdminProvider,
 	mainSplit.Offset = 0.68
 
 	top := container.NewVBox(
-		container.NewHBox(
+		container.NewBorder(
+			nil,
+			nil,
 			widget.NewLabel("Пошук:"),
+			container.NewHBox(searchBtn, refreshBtn),
 			filterEntry,
-			layout.NewSpacer(),
-			refreshBtn,
 		),
 		widget.NewSeparator(),
 	)

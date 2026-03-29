@@ -8,6 +8,11 @@ type EventType string
 
 const (
 	EventFire       EventType = "fire"       // Пожежа
+	EventBurglary   EventType = "burglary"   // Проникнення/охоронна тривога
+	EventPanic      EventType = "panic"      // Тривожна кнопка/напад
+	EventMedical    EventType = "medical"    // Медична тривога
+	EventGas        EventType = "gas"        // Газова тривога
+	EventTamper     EventType = "tamper"     // Саботаж/тампер
 	EventFault      EventType = "fault"      // Несправність
 	EventRestore    EventType = "restore"    // Відновлення
 	EventArm        EventType = "arm"        // Постановка під охорону
@@ -39,6 +44,16 @@ func (e *Event) GetTypeDisplay() string {
 	switch e.Type {
 	case EventFire:
 		return "ПОЖЕЖА"
+	case EventBurglary:
+		return "ПРОНИКНЕННЯ"
+	case EventPanic:
+		return "ТРИВОЖНА КНОПКА"
+	case EventMedical:
+		return "МЕДИЧНА ТРИВОГА"
+	case EventGas:
+		return "ГАЗОВА ТРИВОГА"
+	case EventTamper:
+		return "ТАМПЕР/САБОТАЖ"
 	case EventFault:
 		return "НЕСПРАВНІСТЬ"
 	case EventRestore:
@@ -78,7 +93,12 @@ func (e *Event) GetDateTimeDisplay() string {
 
 // IsCritical повертає true якщо подія критична (пожежа, несправність)
 func (e *Event) IsCritical() bool {
-	return e.Type == EventFire || e.Type == EventFault || e.Type == EventOffline
+	switch e.Type {
+	case EventFire, EventBurglary, EventPanic, EventMedical, EventGas, EventTamper, EventFault, EventOffline:
+		return true
+	default:
+		return false
+	}
 }
 
 // IsWarning повертає true якщо подія є попередженням

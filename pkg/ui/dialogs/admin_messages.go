@@ -11,18 +11,19 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	data "obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowAdminMessagesDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowAdminMessagesDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Управління повідомленнями адміністратора")
-	win.Resize(fyne.NewSize(1100, 640))
+	win.Resize(fyne.NewSize(1024, 768))
 
 	var (
-		regularMessages []data.AdminMessage
-		adminMessages   []data.AdminMessage
+		regularMessages []contracts.AdminMessage
+		adminMessages   []contracts.AdminMessage
 		selectedLeft    = -1
 		selectedRight   = -1
+		protocolOption  = map[string]int64{}
 	)
 
 	statusLabel := widget.NewLabel("Готово")
@@ -33,7 +34,7 @@ func ShowAdminMessagesDialog(parent fyne.Window, provider data.AdminProvider) {
 	filterEntry := widget.NewEntry()
 	filterEntry.SetPlaceHolder("Фільтр (текст / hex / код)")
 
-	messageDisplay := func(m data.AdminMessage) string {
+	messageDisplay := func(m contracts.AdminMessage) string {
 		idText := "?"
 		if m.MessageID != nil {
 			idText = strconv.FormatInt(*m.MessageID, 10)
@@ -87,11 +88,10 @@ func ShowAdminMessagesDialog(parent fyne.Window, provider data.AdminProvider) {
 		if val == "" || val == "Всі" {
 			return nil, nil
 		}
-		n, err := strconv.ParseInt(val, 10, 64)
-		if err != nil {
-			return nil, err
+		if id, ok := protocolOption[val]; ok {
+			return &id, nil
 		}
-		return &n, nil
+		return nil, fmt.Errorf("unknown protocol option: %s", val)
 	}
 
 	reload := func() {
@@ -134,9 +134,12 @@ func ShowAdminMessagesDialog(parent fyne.Window, provider data.AdminProvider) {
 			statusLabel.SetText("Помилка завантаження протоколів")
 			return
 		}
+		protocolOption = map[string]int64{}
 		opts := []string{"Всі"}
 		for _, p := range protocols {
-			opts = append(opts, strconv.FormatInt(p, 10))
+			option := protocolOptionLabel(p)
+			opts = append(opts, option)
+			protocolOption[option] = p
 		}
 		protocolSelect.Options = opts
 		protocolSelect.SetSelected("Всі")

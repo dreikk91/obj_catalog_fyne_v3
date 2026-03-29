@@ -3,6 +3,7 @@ package dialogs
 import (
 	"bufio"
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,37 +11,42 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	data "obj_catalog_fyne_v3/pkg/contracts"
-	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
+	appTheme "obj_catalog_fyne_v3/pkg/theme"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowAdminSystemControlDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Контроль системи")
-	win.Resize(fyne.NewSize(1120, 720))
+	win.Resize(fyne.NewSize(1024, 768))
 
 	var (
-		issues       []data.AdminDataCheckIssue
-		accessStatus data.AdminAccessStatus
+		issues       []contracts.AdminDataCheckIssue
+		accessStatus contracts.AdminAccessStatus
 	)
 
-	statusLabel := widget.NewLabel("Готово")
+	statusLabel := makeStatusLabel("Готово")
 	accessLabel := widget.NewLabel("Доступ: перевірка...")
 	accessLabel.Wrapping = fyne.TextWrapWord
+	issueCountLabel := widget.NewLabel("")
+	updateIssueCount := func(n int) {
+		issueCountLabel.SetText(fmt.Sprintf("Знайдено: %d", n))
+	}
 
 	issueFilterEntry := widget.NewEntry()
 	issueFilterEntry.SetPlaceHolder("Фільтр перевірок: код / № об'єкта / текст")
 
-	filteredIssues := func() []data.AdminDataCheckIssue {
+	filteredIssues := func() []contracts.AdminDataCheckIssue {
 		filter := strings.ToLower(strings.TrimSpace(issueFilterEntry.Text))
 		if filter == "" {
 			return issues
 		}
-		out := make([]data.AdminDataCheckIssue, 0, len(issues))
+		out := make([]contracts.AdminDataCheckIssue, 0, len(issues))
 		for _, it := range issues {
 			objnText := ""
 			if it.ObjN > 0 {
@@ -59,43 +65,78 @@ func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvide
 		return out
 	}
 
-	issueTableView := uiwidgets.NewQTableViewWithHeaders(
-		[]string{"Рівень", "Код", "№пр.", "Опис"},
-		func() int { return len(filteredIssues()) },
-		func(row, col int) string {
-			rows := filteredIssues()
-			if row < 0 || row >= len(rows) {
-				return ""
-			}
-			it := rows[row]
-			switch col {
-			case 0:
-				switch strings.ToLower(strings.TrimSpace(it.Severity)) {
-				case "error":
-					return "Помилка"
-				case "warn":
-					return "Попередження"
+	issueTable := widget.NewTable(
+		func() (int, int) { return len(filteredIssues()) + 1, 4 },
+		func() fyne.CanvasObject {
+			// Use canvas.Text for data rows so we can colorize severity
+			// (template cell — color/text set in UpdateCell)
+			return canvas.NewText("cell", color.White)
+		},
+		func(id widget.TableCellID, obj fyne.CanvasObject) {
+			txt := obj.(*canvas.Text)
+			txt.TextSize = fyne.CurrentApp().Settings().Theme().Size("text")
+			if id.Row == 0 {
+				// Header row — bold, themed foreground
+				txt.TextStyle = fyne.TextStyle{Bold: true}
+				txt.Color = fyne.CurrentApp().Settings().Theme().Color("foreground", 0)
+				switch id.Col {
+				case 0:
+					txt.Text = "Рівень"
+				case 1:
+					txt.Text = "Код"
+				case 2:
+					txt.Text = "№пр."
 				default:
-					return strings.TrimSpace(it.Severity)
+					txt.Text = "Опис"
+				}
+				txt.Refresh()
+				return
+			}
+			// Data rows
+			txt.TextStyle = fyne.TextStyle{}
+			rows := filteredIssues()
+			idx := id.Row - 1
+			if idx < 0 || idx >= len(rows) {
+				txt.Text = ""
+				txt.Refresh()
+				return
+			}
+			it := rows[idx]
+			switch id.Col {
+			case 0:
+				sev := strings.ToLower(strings.TrimSpace(it.Severity))
+				switch sev {
+				case "error":
+					txt.Text = "⛔ Помилка"
+					txt.Color = appTheme.ColorDanger
+				case "warn":
+					txt.Text = "⚠️ Попередження"
+					txt.Color = appTheme.ColorWarning
+				default:
+					txt.Text = strings.TrimSpace(it.Severity)
+					txt.Color = fyne.CurrentApp().Settings().Theme().Color("foreground", 0)
 				}
 			case 1:
-				return strings.TrimSpace(it.Code)
+				txt.Text = strings.TrimSpace(it.Code)
+				txt.Color = fyne.CurrentApp().Settings().Theme().Color("foreground", 0)
 			case 2:
 				if it.ObjN > 0 {
-					return strconv.FormatInt(it.ObjN, 10)
+					txt.Text = strconv.FormatInt(it.ObjN, 10)
+				} else {
+					txt.Text = "—"
 				}
-				return "—"
+				txt.Color = fyne.CurrentApp().Settings().Theme().Color("foreground", 0)
 			default:
-				return strings.TrimSpace(it.Details)
+				txt.Text = strings.TrimSpace(it.Details)
+				txt.Color = fyne.CurrentApp().Settings().Theme().Color("foreground", 0)
 			}
+			txt.Refresh()
 		},
 	)
-	issueTableView.SetSortingEnabled(true)
-	issueTable := issueTableView.Widget()
-	issueTableView.SetColumnWidth(0, 130)
-	issueTableView.SetColumnWidth(1, 170)
-	issueTableView.SetColumnWidth(2, 90)
-	issueTableView.SetColumnWidth(3, 680)
+	issueTable.SetColumnWidth(0, 130)
+	issueTable.SetColumnWidth(1, 170)
+	issueTable.SetColumnWidth(2, 90)
+	issueTable.SetColumnWidth(3, 680)
 
 	logSourceSelect := widget.NewSelect([]string{
 		"log/app.log",
@@ -206,6 +247,7 @@ func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvide
 			return
 		}
 		issues = loaded
+		updateIssueCount(len(issues))
 		issueTable.Refresh()
 		statusLabel.SetText(fmt.Sprintf("Перевірки виконано: %d проблем(а/и)", len(issues)))
 	}
@@ -257,7 +299,8 @@ func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvide
 		}, win).Show()
 	}
 
-	issueFilterEntry.OnChanged = func(string) {
+	issueFilterEntry.OnChanged = func(s string) {
+		updateIssueCount(len(filteredIssues()))
 		issueTable.Refresh()
 	}
 
@@ -273,8 +316,13 @@ func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvide
 
 	checksTab := container.NewBorder(
 		container.NewVBox(
-			accessLabel,
-			container.NewBorder(nil, nil, widget.NewLabel("Фільтр:"), nil, issueFilterEntry),
+			widget.NewCard("Права доступу", "", accessLabel),
+			container.NewBorder(
+				nil, nil,
+				widget.NewLabel("Фільтр:"),
+				issueCountLabel,
+				issueFilterEntry,
+			),
 			widget.NewSeparator(),
 		),
 		nil,
@@ -307,27 +355,24 @@ func ShowAdminSystemControlDialog(parent fyne.Window, provider data.AdminProvide
 		container.NewTabItem("Локальні логи", logsTab),
 	)
 
-	refreshBtn := widget.NewButton("Оновити", func() {
+	refreshBtn := makeIconButton("Оновити", iconRefresh(), widget.MediumImportance, func() {
 		if tabs.SelectedIndex() == 1 {
 			reloadLogs()
 			return
 		}
 		reloadChecks()
 	})
-	fitColumnsBtn := widget.NewButton("Автоширина", func() {
-		issueTableView.ResizeColumnsToContents()
-	})
-	exportBtn := widget.NewButton("Експорт", func() {
+	exportBtn := makeIconButton("Експорт", iconExport(), widget.LowImportance, func() {
 		active := "checks"
 		if tabs.SelectedIndex() == 1 {
 			active = "logs"
 		}
 		exportCurrentTab(active)
 	})
-	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
+	closeBtn := makeIconButton("Закрити", iconClose(), widget.LowImportance, func() { win.Close() })
 
 	content := container.NewBorder(
-		container.NewHBox(exportBtn, refreshBtn, fitColumnsBtn, layout.NewSpacer(), widget.NewLabel(time.Now().Format("02.01.2006"))),
+		container.NewHBox(exportBtn, refreshBtn, layout.NewSpacer(), widget.NewLabel(time.Now().Format("02.01.2006"))),
 		container.NewHBox(statusLabel, layout.NewSpacer(), closeBtn),
 		nil, nil,
 		tabs,

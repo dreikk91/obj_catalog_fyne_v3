@@ -13,13 +13,12 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	data "obj_catalog_fyne_v3/pkg/contracts"
-	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowStatisticsDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Збір статистики")
-	win.Resize(fyne.NewSize(1440, 820))
+	win.Resize(fyne.NewSize(1360, 820))
 
 	statusLabel := widget.NewLabel("Готово")
 	summaryLabel := widget.NewLabel("Поки що немає даних")
@@ -79,16 +78,15 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 
 	typeLabelToID := map[string]int64{"Всі типи": 0}
 	regionLabelToID := map[string]int64{"Всі райони": 0}
-	channelLabelToProtocol := map[string]data.AdminStatisticsProtocolFilter{
-		"Всі протоколи": data.StatsProtocolAll,
-		"Автододзвон":   data.StatsProtocolAutodial,
-		"Мост":          data.StatsProtocolMost,
-		"Нова":          data.StatsProtocolNova,
+	channelLabelToProtocol := map[string]contracts.AdminStatisticsProtocolFilter{
+		"Всі протоколи": contracts.StatsProtocolAll,
+		"Автододзвон":   contracts.StatsProtocolAutodial,
+		"Мост":          contracts.StatsProtocolMost,
+		"Нова":          contracts.StatsProtocolNova,
 	}
 
 	var (
-		rows    []data.AdminStatisticsRow
-		loading bool
+		rows []contracts.AdminStatisticsRow
 	)
 
 	columns := []string{
@@ -99,7 +97,7 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		"Тривога", "Тех", "Блок.", "Тип", "Район", "GRPN", "OBJUIN",
 	}
 
-	getCell := func(item data.AdminStatisticsRow, col int) string {
+	getCell := func(item contracts.AdminStatisticsRow, col int) string {
 		switch col {
 		case 0:
 			return strconv.FormatInt(item.ObjN, 10)
@@ -166,18 +164,30 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		}
 	}
 
-	tableView := uiwidgets.NewQTableViewWithHeaders(
-		columns,
-		func() int { return len(rows) },
-		func(row, col int) string {
-			if row < 0 || row >= len(rows) {
-				return ""
+	table := widget.NewTable(
+		func() (int, int) { return len(rows) + 1, len(columns) },
+		func() fyne.CanvasObject {
+			lbl := widget.NewLabel("cell")
+			lbl.Truncation = fyne.TextTruncateClip
+			return lbl
+		},
+		func(id widget.TableCellID, obj fyne.CanvasObject) {
+			lbl := obj.(*widget.Label)
+			if id.Row == 0 {
+				lbl.TextStyle = fyne.TextStyle{Bold: true}
+				lbl.SetText(columns[id.Col])
+				return
 			}
-			return getCell(rows[row], col)
+			lbl.TextStyle = fyne.TextStyle{}
+			idx := id.Row - 1
+			if idx < 0 || idx >= len(rows) {
+				lbl.SetText("")
+				return
+			}
+			lbl.SetText(getCell(rows[idx], id.Col))
 		},
 	)
-	tableView.SetSortingEnabled(true)
-	table := tableView.Widget()
+	table.StickyRowCount = 1
 
 	columnWidths := []float32{
 		80, 220, 260, 240, 180,
@@ -187,13 +197,14 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		80, 80, 140, 200, 180, 70, 90,
 	}
 	for i := range columns {
-		tableView.SetColumnWidth(i, int(columnWidths[i]))
+		table.SetColumnWidth(i, columnWidths[i])
 	}
 
-	sortRowsByMode := func(items []data.AdminStatisticsRow, sortMode string) {
-		sort.SliceStable(items, func(i, j int) bool {
-			left := items[i]
-			right := items[j]
+	sortRows := func() {
+		sortMode := sortSelect.Selected
+		sort.SliceStable(rows, func(i, j int) bool {
+			left := rows[i]
+			right := rows[j]
 			switch sortMode {
 			case "№ об'єкта ↓":
 				return left.ObjN > right.ObjN
@@ -230,18 +241,14 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		})
 	}
 
-	sortRows := func() {
-		sortRowsByMode(rows, sortSelect.Selected)
-	}
-
-	buildSummaryText := func(items []data.AdminStatisticsRow) string {
-		total := len(items)
+	updateSummary := func() {
+		total := len(rows)
 		online := 0
 		offline := 0
 		alarm := 0
 		tech := 0
 		blocked := 0
-		for _, it := range items {
+		for _, it := range rows {
 			if it.IsConnState > 0 {
 				online++
 			} else {
@@ -253,14 +260,14 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 			if it.TechAlarmState > 0 {
 				tech++
 			}
-			if it.BlockMode != data.DisplayBlockNone {
+			if it.BlockMode != contracts.DisplayBlockNone {
 				blocked++
 			}
 		}
-		return fmt.Sprintf(
+		summaryLabel.SetText(fmt.Sprintf(
 			"Всього: %d | Зв'язок: %d | Без зв'язку: %d | Тривога: %d | Тех: %d | Блоковані: %d",
 			total, online, offline, alarm, tech, blocked,
-		)
+		))
 	}
 
 	parseLimit := func() int {
@@ -278,16 +285,16 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		return n
 	}
 
-	buildFilter := func() data.AdminStatisticsFilter {
-		filter := data.AdminStatisticsFilter{
-			ConnectionMode: data.StatsConnectionAll,
+	buildFilter := func() contracts.AdminStatisticsFilter {
+		filter := contracts.AdminStatisticsFilter{
+			ConnectionMode: contracts.StatsConnectionAll,
 			Search:         strings.TrimSpace(searchEntry.Text),
 		}
 		switch connectionRadio.Selected {
 		case "Зв'язок норма":
-			filter.ConnectionMode = data.StatsConnectionOnline
+			filter.ConnectionMode = contracts.StatsConnectionOnline
 		case "Без зв'язку":
-			filter.ConnectionMode = data.StatsConnectionOffline
+			filter.ConnectionMode = contracts.StatsConnectionOffline
 		}
 
 		if protocol, ok := channelLabelToProtocol[channelSelect.Selected]; ok {
@@ -319,91 +326,28 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 
 		switch blockSelect.Selected {
 		case "Тимчасово зняті з нагляду":
-			v := data.DisplayBlockTemporaryOff
+			v := contracts.DisplayBlockTemporaryOff
 			filter.BlockMode = &v
 		case "В режимі налагодження":
-			v := data.DisplayBlockDebug
+			v := contracts.DisplayBlockDebug
 			filter.BlockMode = &v
 		}
 
 		return filter
 	}
 
-	var executeBtn *widget.Button
-	var refreshBtn *widget.Button
-	var fitColumnsBtn *widget.Button
-	var exportBtn *widget.Button
-	setLoading := func(on bool) {
-		if executeBtn != nil {
-			if on {
-				executeBtn.Disable()
-			} else {
-				executeBtn.Enable()
-			}
-		}
-		if refreshBtn != nil {
-			if on {
-				refreshBtn.Disable()
-			} else {
-				refreshBtn.Enable()
-			}
-		}
-		if fitColumnsBtn != nil {
-			if on {
-				fitColumnsBtn.Disable()
-			} else {
-				fitColumnsBtn.Enable()
-			}
-		}
-		if exportBtn != nil {
-			if on {
-				exportBtn.Disable()
-			} else {
-				exportBtn.Enable()
-			}
-		}
-	}
-
 	reload := func() {
-		if loading {
+		loaded, err := provider.CollectObjectStatistics(buildFilter(), parseLimit())
+		if err != nil {
+			dialog.ShowError(err, win)
+			statusLabel.SetText("Не вдалося зібрати статистику")
 			return
 		}
-
-		filter := buildFilter()
-		limit := parseLimit()
-		sortMode := sortSelect.Selected
-
-		loading = true
-		setLoading(true)
-		statusLabel.SetText("Виконується збір статистики...")
-		summaryLabel.SetText("Зачекайте, виконується запит до БД")
-
-		go func() {
-			loaded, err := provider.CollectObjectStatistics(filter, limit)
-			if err == nil {
-				sortRowsByMode(loaded, sortMode)
-			}
-			summaryText := ""
-			if err == nil {
-				summaryText = buildSummaryText(loaded)
-			}
-
-			fyne.Do(func() {
-				loading = false
-				setLoading(false)
-
-				if err != nil {
-					dialog.ShowError(err, win)
-					statusLabel.SetText("Не вдалося зібрати статистику")
-					return
-				}
-
-				rows = loaded
-				table.Refresh()
-				summaryLabel.SetText(summaryText)
-				statusLabel.SetText(fmt.Sprintf("Завантажено записів: %d", len(rows)))
-			})
-		}()
+		rows = loaded
+		sortRows()
+		table.Refresh()
+		updateSummary()
+		statusLabel.SetText(fmt.Sprintf("Завантажено записів: %d", len(rows)))
 	}
 
 	loadReferenceOptions := func() {
@@ -444,12 +388,9 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 		}
 	}
 
-	executeBtn = widget.NewButton("Виконати", reload)
-	refreshBtn = widget.NewButton("Оновити", reload)
-	fitColumnsBtn = widget.NewButton("Автоширина", func() {
-		tableView.ResizeColumnsToContents()
-	})
-	exportBtn = widget.NewButton("Експорт CSV", func() {
+	executeBtn := makePrimaryButton("Виконати", reload)
+	refreshBtn := makeIconButton("Оновити", iconRefresh(), widget.MediumImportance, reload)
+	exportBtn := makeIconButton("Експорт CSV", iconExport(), widget.LowImportance, func() {
 		dialog.NewFileSave(func(uc fyne.URIWriteCloser, err error) {
 			if err != nil {
 				dialog.ShowError(err, win)
@@ -480,55 +421,54 @@ func ShowStatisticsDialog(parent fyne.Window, provider data.AdminProvider) {
 			statusLabel.SetText(fmt.Sprintf("Експортовано: %s", uriPathToLocalPath(uc.URI().Path())))
 		}, win).Show()
 	})
-	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
+	closeBtn := makeIconButton("Закрити", iconClose(), widget.LowImportance, func() { win.Close() })
 
 	sortSelect.OnChanged = func(string) {
-		if loading {
-			return
-		}
 		sortRows()
 		table.Refresh()
 	}
 	searchEntry.OnSubmitted = func(string) { reload() }
 	limitEntry.OnSubmitted = func(string) { reload() }
 
-	filters := container.NewVBox(
+	filtersCard := widget.NewCard("Фільтри", "", container.NewVBox(
 		container.NewHBox(
 			widget.NewLabel("Підключення:"),
 			connectionRadio,
-		),
-		container.NewHBox(
+			layout.NewSpacer(),
 			widget.NewLabel("Протокол:"),
 			container.NewGridWrap(fyne.NewSize(220, 36), channelSelect),
 			widget.NewLabel("Режим:"),
-			container.NewGridWrap(fyne.NewSize(180, 36), guardSelect),
+			container.NewGridWrap(fyne.NewSize(190, 36), guardSelect),
+		),
+		container.NewHBox(
 			widget.NewLabel("Тип:"),
-			container.NewGridWrap(fyne.NewSize(260, 36), typeSelect),
-		),
-		container.NewHBox(
+			container.NewGridWrap(fyne.NewSize(300, 36), typeSelect),
 			widget.NewLabel("Район:"),
-			container.NewGridWrap(fyne.NewSize(260, 36), regionSelect),
+			container.NewGridWrap(fyne.NewSize(300, 36), regionSelect),
+			layout.NewSpacer(),
 			widget.NewLabel("Блокування:"),
-			container.NewGridWrap(fyne.NewSize(210, 36), blockSelect),
+			container.NewGridWrap(fyne.NewSize(240, 36), blockSelect),
 			widget.NewLabel("Ліміт:"),
-			container.NewGridWrap(fyne.NewSize(90, 36), limitEntry),
+			container.NewGridWrap(fyne.NewSize(100, 36), limitEntry),
 		),
-		container.NewHBox(
+		container.NewBorder(
+			nil,
+			nil,
 			widget.NewLabel("Пошук:"),
+			container.NewHBox(
+				widget.NewLabel("Сортування:"),
+				container.NewGridWrap(fyne.NewSize(190, 36), sortSelect),
+				executeBtn,
+				refreshBtn,
+				exportBtn,
+			),
 			searchEntry,
-			widget.NewLabel("Сортування:"),
-			container.NewGridWrap(fyne.NewSize(180, 36), sortSelect),
-			executeBtn,
-			refreshBtn,
-			fitColumnsBtn,
-			exportBtn,
 		),
-		widget.NewSeparator(),
-		summaryLabel,
-	)
+	))
+	summaryCard := widget.NewCard("Зведення", "", summaryLabel)
 
 	content := container.NewBorder(
-		filters,
+		container.NewVBox(filtersCard, summaryCard),
 		container.NewHBox(statusLabel, layout.NewSpacer(), widget.NewLabel(time.Now().Format("02.01.2006")), closeBtn),
 		nil, nil,
 		table,
@@ -585,11 +525,11 @@ func binaryCaption(v int64) string {
 	return "0"
 }
 
-func blockModeCaption(mode data.DisplayBlockMode) string {
+func blockModeCaption(mode contracts.DisplayBlockMode) string {
 	switch mode {
-	case data.DisplayBlockTemporaryOff:
+	case contracts.DisplayBlockTemporaryOff:
 		return "блок. постановки"
-	case data.DisplayBlockDebug:
+	case contracts.DisplayBlockDebug:
 		return "налагодження"
 	default:
 		return "немає"

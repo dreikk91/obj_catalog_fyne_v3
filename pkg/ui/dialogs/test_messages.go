@@ -2,16 +2,15 @@ package dialogs
 
 import (
 	"fmt"
-	data "obj_catalog_fyne_v3/pkg/contracts"
-	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
+	"obj_catalog_fyne_v3/pkg/contracts"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
 
-// ShowTestMessagesDialog відкриває вікно з тестовими повідомленнями об'єкта
-func ShowTestMessagesDialog(parent fyne.Window, provider data.DataProvider, objectID string) {
+// ShowTestMessagesDialog відкриває вікно з тестовими повідомленнями об'єкта.
+func ShowTestMessagesDialog(parent fyne.Window, provider contracts.TestMessageProvider, objectID string) {
 	win := fyne.CurrentApp().NewWindow("Тестові повідомлення: " + objectID)
 	win.Resize(fyne.NewSize(700, 400))
 
@@ -29,7 +28,7 @@ func ShowTestMessagesDialog(parent fyne.Window, provider data.DataProvider, obje
 				return
 			}
 
-			tableView := uiwidgets.NewQTableViewWithCallbacks(
+			table := widget.NewTable(
 				func() (int, int) {
 					return len(messages), 3
 				},
@@ -49,7 +48,6 @@ func ShowTestMessagesDialog(parent fyne.Window, provider data.DataProvider, obje
 					}
 				},
 			)
-			table := tableView.Widget()
 
 			table.SetColumnWidth(0, 150)
 			table.SetColumnWidth(1, 250)

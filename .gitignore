@@ -10,3 +10,4 @@ obj_catalog_fyne_v3
 *.xlsx
 docs
 scripts
+tmp

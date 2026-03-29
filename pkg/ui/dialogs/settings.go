@@ -37,6 +37,31 @@ func ShowSettingsDialog(
 	paramsEntry := widget.NewEntry()
 	paramsEntry.SetText(dbCfg.Params)
 
+	// CASL Cloud fields
+	caslBaseURLEntry := widget.NewEntry()
+	caslBaseURLEntry.SetText(strings.TrimSpace(dbCfg.CASLBaseURL))
+	caslBaseURLEntry.SetPlaceHolder("http://10.32.1.221:50003")
+
+	caslTokenEntry := widget.NewEntry()
+	caslTokenEntry.SetText(strings.TrimSpace(dbCfg.CASLToken))
+	caslTokenEntry.SetPlaceHolder("JWT токен (необов'язково)")
+
+	caslEmailEntry := widget.NewEntry()
+	caslEmailEntry.SetText(strings.TrimSpace(dbCfg.CASLEmail))
+	caslEmailEntry.SetPlaceHolder("test@lot.lviv.ua")
+
+	caslPassEntry := widget.NewPasswordEntry()
+	caslPassEntry.SetText(strings.TrimSpace(dbCfg.CASLPass))
+	caslPassEntry.SetPlaceHolder("Пароль CASL")
+
+	caslPultIDEntry := widget.NewEntry()
+	if dbCfg.CASLPultID > 0 {
+		caslPultIDEntry.SetText(strconv.FormatInt(dbCfg.CASLPultID, 10))
+	}
+	caslPultIDEntry.SetPlaceHolder("0 = авто")
+	caslEnabledCheck := widget.NewCheck("Увімкнути CASL Cloud паралельно з БД/мостом", nil)
+	caslEnabledCheck.SetChecked(dbCfg.CASLEnabled || dbCfg.NormalizedMode() == config.BackendModeCASLCloud)
+
 	// UI fields
 	fontEntry := widget.NewEntry()
 	fontEntry.SetText(fmt.Sprintf("%.1f", uiCfg.FontSize))
@@ -59,7 +84,7 @@ func ShowSettingsDialog(
 	exportDirEntry.SetText(uiCfg.ExportDir)
 	exportDirEntry.SetPlaceHolder("Папка запуску програми")
 
-	browseExportDirBtn := widget.NewButton("Обрати...", func() {
+	browseExportDirBtn := makeIconButton("Обрати...", iconFolder(), widget.MediumImportance, func() {
 		dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil {
 				dialog.ShowError(err, win)
@@ -72,7 +97,7 @@ func ShowSettingsDialog(
 		}, win).Show()
 	})
 
-	clearExportDirBtn := widget.NewButton("Очистити", func() {
+	clearExportDirBtn := makeIconButton("Очистити", iconClear(), widget.LowImportance, func() {
 		exportDirEntry.SetText("")
 	})
 
@@ -84,9 +109,16 @@ func ShowSettingsDialog(
 		exportDirEntry,
 	)
 
-	colorsBtn := widget.NewButton("Налаштувати кольори...", func() {
+	colorsBtn := makeIconButton("Налаштувати кольори...", iconSearch(), widget.LowImportance, func() {
 		ShowColorPaletteDialog(win, isDarkTheme, onColorsChanged)
 	})
+
+	logLevelOptions := []string{"debug", "info", "warn", "error"}
+	logLevelSelect := widget.NewSelect(logLevelOptions, nil)
+	logLevelSelect.SetSelected(strings.ToLower(strings.TrimSpace(dbCfg.LogLevel)))
+	if logLevelSelect.Selected == "" {
+		logLevelSelect.SetSelected("info")
+	}
 
 	tabs := container.NewAppTabs(
 		container.NewTabItem("База даних", widget.NewForm(
@@ -97,11 +129,20 @@ func ShowSettingsDialog(
 			widget.NewFormItem("Шлях до БД", pathEntry),
 			widget.NewFormItem("Параметри", paramsEntry),
 		)),
+		container.NewTabItem("CASL Cloud", widget.NewForm(
+			widget.NewFormItem("Паралельний режим", caslEnabledCheck),
+			widget.NewFormItem("Base URL", caslBaseURLEntry),
+			widget.NewFormItem("Token", caslTokenEntry),
+			widget.NewFormItem("Email", caslEmailEntry),
+			widget.NewFormItem("Password", caslPassEntry),
+			widget.NewFormItem("Pult ID", caslPultIDEntry),
+		)),
 		container.NewTabItem("Інтерфейс", widget.NewForm(
 			widget.NewFormItem("Загальний шрифт", fontEntry),
 			widget.NewFormItem("Шрифт об'єктів", fontObjEntry),
 			widget.NewFormItem("Шрифт подій", fontEvEntry),
 			widget.NewFormItem("Шрифт тривог", fontAlmEntry),
+			widget.NewFormItem("Режим логування", logLevelSelect),
 			widget.NewFormItem("Ліміт загального журналу", eventLimitEntry),
 			widget.NewFormItem("Ліміт журналу об'єкта", objectLimitEntry),
 			widget.NewFormItem("Папка експорту", exportDirRow),
@@ -116,13 +157,32 @@ func ShowSettingsDialog(
 		tabs,
 		func(save bool) {
 			if save {
+				caslEnabled := caslEnabledCheck.Checked
+				mode := config.BackendModeFirebird
+				if caslEnabled {
+					mode = config.BackendModeCASLCloud
+				}
+
+				caslPultID := int64(0)
+				if parsed, err := strconv.ParseInt(strings.TrimSpace(caslPultIDEntry.Text), 10, 64); err == nil && parsed > 0 {
+					caslPultID = parsed
+				}
+
 				newDbCfg := config.DBConfig{
-					User:     userEntry.Text,
-					Password: passEntry.Text,
-					Host:     hostEntry.Text,
-					Port:     portEntry.Text,
-					Path:     pathEntry.Text,
-					Params:   paramsEntry.Text,
+					User:        userEntry.Text,
+					Password:    passEntry.Text,
+					Host:        hostEntry.Text,
+					Port:        portEntry.Text,
+					Path:        pathEntry.Text,
+					Params:      paramsEntry.Text,
+					CASLEnabled: caslEnabled,
+					Mode:        mode,
+					CASLBaseURL: strings.TrimSpace(caslBaseURLEntry.Text),
+					CASLToken:   strings.TrimSpace(caslTokenEntry.Text),
+					CASLEmail:   strings.TrimSpace(caslEmailEntry.Text),
+					CASLPass:    strings.TrimSpace(caslPassEntry.Text),
+					CASLPultID:  caslPultID,
+					LogLevel:    strings.ToLower(strings.TrimSpace(logLevelSelect.Selected)),
 				}
 
 				fSize, _ := strconv.ParseFloat(fontEntry.Text, 32)

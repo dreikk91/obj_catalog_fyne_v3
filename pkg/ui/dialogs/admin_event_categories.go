@@ -13,6 +13,11 @@ func messageCategoryOptions() []messageCategoryOption {
 	return []messageCategoryOption{
 		{Label: "Тривога", SC1: i64(1)},
 		{Label: "Технічна тривога", SC1: i64(2)},
+		{Label: "Тривожна кнопка / напад", SC1: i64(21)},
+		{Label: "Проникнення", SC1: i64(22)},
+		{Label: "Медична тривога", SC1: i64(23)},
+		{Label: "Газова тривога", SC1: i64(24)},
+		{Label: "Саботаж / Тампер", SC1: i64(25)},
 		{Label: "Відновлення", SC1: i64(5)},
 		{Label: "Інформація", SC1: i64(6)},
 		{Label: "Під охороною", SC1: i64(10)},
@@ -30,6 +35,16 @@ func messageTypeLabel(sc1 *int64) string {
 	switch *sc1 {
 	case 1:
 		return "тривога"
+	case 21:
+		return "паніка"
+	case 22:
+		return "проникнення"
+	case 23:
+		return "медична"
+	case 24:
+		return "газ"
+	case 25:
+		return "саботаж"
 	case 2, 3:
 		return "тех. тривога"
 	case 5, 9, 13, 17:
@@ -80,7 +95,7 @@ func sc1MatchesFamily(sc1 *int64, family string) bool {
 
 	switch family {
 	case "alarm":
-		return v == 1
+		return v == 1 || v == 21 || v == 22 || v == 23 || v == 24 || v == 25
 	case "tech":
 		return v == 2 || v == 3
 	case "restore":

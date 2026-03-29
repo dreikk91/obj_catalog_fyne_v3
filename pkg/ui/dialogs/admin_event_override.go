@@ -2,6 +2,7 @@ package dialogs
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -11,76 +12,178 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	data "obj_catalog_fyne_v3/pkg/contracts"
-	uiwidgets "obj_catalog_fyne_v3/pkg/ui/widgets"
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowEventOverrideDialog(parent fyne.Window, provider data.AdminProvider) {
+func ShowEventOverrideDialog(parent fyne.Window, provider contracts.AdminProvider) {
 	win := fyne.CurrentApp().NewWindow("Глобальне перевизначення подій")
-	win.Resize(fyne.NewSize(1160, 700))
+	win.Resize(fyne.NewSize(980, 700))
 
 	var (
-		messages       []data.AdminMessage
-		selectedUIN    int64
-		selectedRowIdx = -1
+		messages           []contracts.AdminMessage
+		selectedUIN        int64
+		selectedRowIdx           = -1
+		selectedProtocolID int64 = 18
 	)
 
 	statusLabel := widget.NewLabel("Готово")
 	filterEntry := widget.NewEntry()
-	filterEntry.SetPlaceHolder("Фільтр (текст / hex / код)")
-	protocolSelect := widget.NewSelect([]string{"Всі"}, nil)
-	protocolSelect.SetSelected("Всі")
+	filterEntry.SetPlaceHolder("Фільтр")
+	filterByCheck := widget.NewCheck("Фільтрувати", nil)
+	filterByCheck.SetChecked(true)
 
-	categoryLabels := make([]string, 0, len(messageCategoryOptions()))
-	for _, c := range messageCategoryOptions() {
-		categoryLabels = append(categoryLabels, c.Label)
+	searchMode := widget.NewRadioGroup([]string{"Код", "Повідомлення"}, nil)
+	searchMode.Horizontal = true
+	searchMode.SetSelected("Повідомлення")
+
+	applyFilterControlsState := func() {
+		if filterByCheck.Checked {
+			filterEntry.Enable()
+		} else {
+			filterEntry.Disable()
+		}
 	}
-	categorySelect := widget.NewSelect(categoryLabels, nil)
-	categorySelect.SetSelected("Інше / без категорії")
-	adminOnlyCheck := widget.NewCheck("Для адміністратора", nil)
 
-	messageTableView := uiwidgets.NewQTableViewWithHeaders(
-		[]string{"Код", "Hex", "Повідомлення", "Категорія", "Адмін"},
-		func() int { return len(messages) },
-		func(row, col int) string {
-			if row < 0 || row >= len(messages) {
-				return ""
-			}
-			m := messages[row]
-			switch col {
-			case 0:
-				if m.MessageID != nil {
-					return strconv.FormatInt(*m.MessageID, 10)
-				}
-				return strconv.FormatInt(m.UIN, 10)
-			case 1:
-				if strings.TrimSpace(m.MessageHex) != "" {
-					return m.MessageHex
-				}
-				return "—"
-			case 2:
-				return strings.TrimSpace(m.Text)
-			case 3:
-				return categoryLabelFromSC1(m.SC1)
-			default:
-				if m.ForAdminOnly {
-					return "так"
-				}
-				return "ні"
-			}
+	scenarioLabelFromSC1 := func(sc1 *int64) string {
+		if sc1 == nil {
+			return "Інформація"
+		}
+		switch *sc1 {
+		case 1:
+			return "Тривога"
+		case 2, 3:
+			return "Тривога техн."
+		case 5, 9, 13, 17:
+			return "Відновлення"
+		case 12:
+			return "Подію заборонено"
+		case 16:
+			return "Тестове повідомлення"
+		default:
+			return "Інформація"
+		}
+	}
+
+	scenarioSC1FromLabel := func(label string) *int64 {
+		switch label {
+		case "Тривога":
+			return i64(1)
+		case "Тривога техн.":
+			return i64(2)
+		case "Відновлення":
+			return i64(5)
+		case "Подію заборонено":
+			return i64(12)
+		case "Тестове повідомлення":
+			return i64(16)
+		case "Інформація":
+			return i64(6)
+		default:
+			return i64(6)
+		}
+	}
+
+	scenarioRadio := widget.NewRadioGroup(
+		[]string{
+			"Тривога",
+			"Тривога техн.",
+			"Відновлення",
+			"Інформація",
+			"Подію заборонено",
+			"Тестове повідомлення",
 		},
+		nil,
 	)
-	messageTableView.SetSelectionBehavior(uiwidgets.SelectRows)
-	messageTableView.SetCellRenderer(
+	scenarioRadio.Disable()
+	adminOnlyCheck := widget.NewCheck("Для адміністратора", nil)
+	adminOnlyCheck.Disable()
+
+	eventTextEntry := widget.NewEntry()
+	eventTextEntry.Disable()
+
+	clearSelectionDetails := func() {
+		scenarioRadio.SetSelected("Інформація")
+		adminOnlyCheck.SetChecked(false)
+		adminOnlyCheck.Disable()
+		eventTextEntry.SetText("")
+	}
+
+	updateSelectionDetails := func(m *contracts.AdminMessage) {
+		if m == nil {
+			clearSelectionDetails()
+			scenarioRadio.Disable()
+			return
+		}
+		scenarioRadio.Enable()
+		adminOnlyCheck.Enable()
+		scenarioRadio.SetSelected(scenarioLabelFromSC1(m.SC1))
+		adminOnlyCheck.SetChecked(m.ForAdminOnly)
+		eventTextEntry.SetText(strings.TrimSpace(m.Text))
+	}
+
+	applyCodeOnlyFilter := func(in []contracts.AdminMessage, needle string) []contracts.AdminMessage {
+		needle = strings.ToLower(strings.TrimSpace(needle))
+		if needle == "" {
+			return in
+		}
+		out := make([]contracts.AdminMessage, 0, len(in))
+		for _, m := range in {
+			decCode := ""
+			if m.MessageID != nil {
+				decCode = strconv.FormatInt(*m.MessageID, 10)
+			} else {
+				decCode = strconv.FormatInt(m.UIN, 10)
+			}
+			hexCode := strings.TrimSpace(m.MessageHex)
+			if strings.Contains(strings.ToLower(decCode), needle) || strings.Contains(strings.ToLower(hexCode), needle) {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+
+	codeForSort := func(m contracts.AdminMessage) int64 {
+		if m.MessageID != nil {
+			return *m.MessageID
+		}
+		return m.UIN
+	}
+
+	sortMessages := func(in []contracts.AdminMessage) {
+		if strings.EqualFold(searchMode.Selected, "Повідомлення") {
+			sort.SliceStable(in, func(i, j int) bool {
+				ti := strings.ToLower(strings.TrimSpace(in[i].Text))
+				tj := strings.ToLower(strings.TrimSpace(in[j].Text))
+				if ti == tj {
+					return codeForSort(in[i]) < codeForSort(in[j])
+				}
+				return ti < tj
+			})
+			return
+		}
+		sort.SliceStable(in, func(i, j int) bool {
+			ci := codeForSort(in[i])
+			cj := codeForSort(in[j])
+			if ci == cj {
+				ti := strings.ToLower(strings.TrimSpace(in[i].Text))
+				tj := strings.ToLower(strings.TrimSpace(in[j].Text))
+				return ti < tj
+			}
+			return ci < cj
+		})
+	}
+
+	messageTable := widget.NewTable(
+		func() (int, int) { return len(messages), 3 },
 		func() fyne.CanvasObject { return newColoredTableCell() },
-		func(index uiwidgets.ModelIndex, _ string, selected bool, obj fyne.CanvasObject) {
-			if !index.IsValid() || index.Row < 0 || index.Row >= len(messages) {
+		func(id widget.TableCellID, obj fyne.CanvasObject) {
+			if id.Row < 0 || id.Row >= len(messages) {
 				updateColoredMessageCell(obj, "", nil, false)
 				return
 			}
-			m := messages[index.Row]
+			m := messages[id.Row]
 			cellText := ""
-			switch index.Col {
+			switch id.Col {
 			case 0:
 				if m.MessageID != nil {
 					cellText = strconv.FormatInt(*m.MessageID, 10)
@@ -88,74 +191,56 @@ func ShowEventOverrideDialog(parent fyne.Window, provider data.AdminProvider) {
 					cellText = strconv.FormatInt(m.UIN, 10)
 				}
 			case 1:
-				if strings.TrimSpace(m.MessageHex) != "" {
-					cellText = m.MessageHex
-				} else {
-					cellText = "—"
-				}
-			case 2:
 				cellText = strings.TrimSpace(m.Text)
-			case 3:
-				cellText = categoryLabelFromSC1(m.SC1)
 			default:
-				if m.ForAdminOnly {
-					cellText = "так"
-				} else {
-					cellText = "ні"
-				}
+				cellText = scenarioLabelFromSC1(m.SC1)
 			}
-			updateColoredMessageCell(obj, cellText, m.SC1, selected)
+			updateColoredMessageCell(obj, cellText, m.SC1, id.Row == selectedRowIdx)
 		},
 	)
-	messageTable := messageTableView.Widget()
-	messageTableView.SetColumnWidth(0, 85)
-	messageTableView.SetColumnWidth(1, 120)
-	messageTableView.SetColumnWidth(2, 590)
-	messageTableView.SetColumnWidth(3, 210)
-	messageTableView.SetColumnWidth(4, 95)
-	messageTableView.OnSelected = func(index uiwidgets.ModelIndex) {
-		if index.Row < 0 || index.Row >= len(messages) {
+	messageTable.SetColumnWidth(0, 110)
+	messageTable.SetColumnWidth(1, 500)
+	messageTable.SetColumnWidth(2, 210)
+	messageTable.OnSelected = func(id widget.TableCellID) {
+		if id.Row < 0 || id.Row >= len(messages) {
 			return
 		}
-		selectedRowIdx = index.Row
-		selectedUIN = messages[index.Row].UIN
-		categorySelect.SetSelected(categoryLabelFromSC1(messages[index.Row].SC1))
-		adminOnlyCheck.SetChecked(messages[index.Row].ForAdminOnly)
+		selectedRowIdx = id.Row
+		selectedUIN = messages[id.Row].UIN
+		updateSelectionDetails(&messages[id.Row])
 		messageTable.Refresh()
 		statusLabel.SetText(fmt.Sprintf("Вибрано повідомлення UIN=%d", selectedUIN))
 	}
 
-	selectedProtocol := func() (*int64, error) {
-		raw := strings.TrimSpace(protocolSelect.Selected)
-		if raw == "" || raw == "Всі" {
-			return nil, nil
-		}
-		n, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		return &n, nil
-	}
-
 	reload := func(reselectUIN int64) {
-		protocolID, err := selectedProtocol()
-		if err != nil {
-			statusLabel.SetText("Некоректний протокол")
-			return
+		protocolID := &selectedProtocolID
+		filterValue := ""
+		if filterByCheck.Checked {
+			filterValue = strings.TrimSpace(filterEntry.Text)
 		}
 
-		loaded, err := provider.ListMessages(protocolID, strings.TrimSpace(filterEntry.Text))
+		providerFilter := filterValue
+		if strings.EqualFold(searchMode.Selected, "Код") {
+			providerFilter = ""
+		}
+
+		loaded, err := provider.ListMessages(protocolID, providerFilter)
 		if err != nil {
 			dialog.ShowError(err, win)
 			statusLabel.SetText("Помилка завантаження повідомлень")
 			return
 		}
+		if strings.EqualFold(searchMode.Selected, "Код") && filterValue != "" {
+			loaded = applyCodeOnlyFilter(loaded, filterValue)
+		}
+		sortMessages(loaded)
 
 		messages = loaded
 		selectedUIN = 0
 		selectedRowIdx = -1
 		messageTable.UnselectAll()
 		messageTable.Refresh()
+		updateSelectionDetails(nil)
 
 		if reselectUIN != 0 {
 			for i := range messages {
@@ -163,6 +248,7 @@ func ShowEventOverrideDialog(parent fyne.Window, provider data.AdminProvider) {
 					selectedUIN = reselectUIN
 					selectedRowIdx = i
 					messageTable.Select(widget.TableCellID{Row: i, Col: 0})
+					statusLabel.SetText(fmt.Sprintf("Знайдено повідомлень: %d", len(messages)))
 					return
 				}
 			}
@@ -173,28 +259,12 @@ func ShowEventOverrideDialog(parent fyne.Window, provider data.AdminProvider) {
 		statusLabel.SetText(fmt.Sprintf("Знайдено повідомлень: %d", len(messages)))
 	}
 
-	loadProtocols := func() {
-		protocols, err := provider.ListMessageProtocols()
-		if err != nil {
-			dialog.ShowError(err, win)
-			statusLabel.SetText("Не вдалося завантажити протоколи")
-			return
-		}
-		opts := []string{"Всі"}
-		for _, p := range protocols {
-			opts = append(opts, strconv.FormatInt(p, 10))
-		}
-		protocolSelect.Options = opts
-		protocolSelect.SetSelected("Всі")
-		protocolSelect.Refresh()
-	}
-
 	applyBtn := widget.NewButton("Змінити", func() {
 		if selectedUIN <= 0 || selectedRowIdx < 0 || selectedRowIdx >= len(messages) {
 			statusLabel.SetText("Спочатку виберіть повідомлення в таблиці")
 			return
 		}
-		selectedCategory := categorySC1FromLabel(categorySelect.Selected)
+		selectedCategory := scenarioSC1FromLabel(scenarioRadio.Selected)
 		if err := provider.SetMessageCategory(selectedUIN, selectedCategory); err != nil {
 			dialog.ShowError(err, win)
 			statusLabel.SetText("Не вдалося змінити категорію")
@@ -213,48 +283,115 @@ func ShowEventOverrideDialog(parent fyne.Window, provider data.AdminProvider) {
 	openAdminMessagesBtn := widget.NewButton("Керування адмін повідомленнями", func() {
 		ShowAdminMessagesDialog(win, provider)
 	})
+	open220Btn := widget.NewButton("Пропажа / відновлення 220В", func() {
+		Show220VConstructorDialog(win, provider)
+	})
+	openAIBtn := widget.NewButton("+", func() {
+		ShowAdminPlaceholderDialog(win, "Додатково", "Кнопка '+' збережена для візуальної сумісності з legacy-формою.")
+	})
 	refreshBtn := widget.NewButton("Оновити", func() { reload(selectedUIN) })
 	closeBtn := widget.NewButton("Закрити", func() { win.Close() })
+	executeFilterBtn := widget.NewButton("Виконати", func() { reload(selectedUIN) })
 
 	filterEntry.OnSubmitted = func(_ string) { reload(selectedUIN) }
-	protocolSelect.OnChanged = func(_ string) { reload(selectedUIN) }
+	filterByCheck.OnChanged = func(_ bool) {
+		applyFilterControlsState()
+		reload(selectedUIN)
+	}
+	searchMode.OnChanged = func(v string) {
+		if strings.EqualFold(v, "Код") {
+			filterEntry.SetPlaceHolder("Код / hex")
+		} else {
+			filterEntry.SetPlaceHolder("Текст повідомлення")
+		}
+		reload(selectedUIN)
+	}
 
-	top := container.NewHBox(
-		widget.NewLabel("Протокол:"),
-		protocolSelect,
-		widget.NewLabel("Фільтр:"),
+	tabDefinitions := []struct {
+		Label string
+		ID    int64
+	}{
+		{Label: "Contact ID", ID: 18},
+		{Label: "20BPS / Ademko-Express", ID: 3},
+		{Label: "Мост", ID: 4},
+	}
+	tabProtocol := map[string]int64{}
+	tabItems := make([]*container.TabItem, 0, len(tabDefinitions))
+	for _, def := range tabDefinitions {
+		tabProtocol[def.Label] = def.ID
+		tabItems = append(tabItems, container.NewTabItem(def.Label, container.NewMax()))
+	}
+	protocolTabs := container.NewAppTabs(tabItems...)
+	protocolTabs.SetTabLocation(container.TabLocationTop)
+	protocolTabs.OnSelected = func(item *container.TabItem) {
+		if item == nil {
+			return
+		}
+		if id, ok := tabProtocol[item.Text]; ok {
+			selectedProtocolID = id
+			reload(selectedUIN)
+		}
+	}
+	protocolTabs.SelectIndex(0)
+
+	filterRow := container.NewBorder(
+		nil, nil,
+		container.NewHBox(searchMode, filterByCheck),
+		executeFilterBtn,
 		filterEntry,
-		refreshBtn,
-		openAdminMessagesBtn,
 	)
 
+	header := container.NewGridWithColumns(
+		3,
+		widget.NewLabel("Код"),
+		widget.NewLabel("Повідомлення"),
+		widget.NewLabel("Сценарій"),
+	)
+
+	detailsGroup := widget.NewCard("Текст події:", "", container.NewVBox(eventTextEntry, adminOnlyCheck))
+
 	left := container.NewBorder(
-		container.NewVBox(top, widget.NewSeparator()),
-		nil, nil, nil,
+		container.NewVBox(filterRow, widget.NewSeparator(), header),
+		detailsGroup,
+		nil, nil,
 		messageTable,
 	)
 
+	scenarioGroup := widget.NewCard("Сценарій:", "", scenarioRadio)
 	right := container.NewVBox(
-		widget.NewLabel("Категорія:"),
-		categorySelect,
-		adminOnlyCheck,
+		scenarioGroup,
 		widget.NewSeparator(),
 		applyBtn,
 		layout.NewSpacer(),
 	)
 
 	body := container.NewHSplit(left, right)
-	body.SetOffset(0.84)
+	body.SetOffset(0.74)
+
+	bottomButtons := container.NewHBox(
+		openAdminMessagesBtn,
+		open220Btn,
+		openAIBtn,
+		layout.NewSpacer(),
+		refreshBtn,
+		closeBtn,
+	)
 
 	content := container.NewBorder(
-		nil,
-		container.NewHBox(statusLabel, layout.NewSpacer(), closeBtn),
+		protocolTabs,
+		container.NewVBox(
+			widget.NewSeparator(),
+			bottomButtons,
+			widget.NewSeparator(),
+			statusLabel,
+		),
 		nil, nil,
 		body,
 	)
 	win.SetContent(content)
 
-	loadProtocols()
+	clearSelectionDetails()
+	applyFilterControlsState()
 	reload(0)
 	win.Show()
 }

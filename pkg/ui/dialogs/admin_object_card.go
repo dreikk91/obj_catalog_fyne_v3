@@ -1,616 +1,589 @@
 package dialogs
 
 import (
-	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 
-	data "obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
-func ShowNewObjectDialog(parent fyne.Window, provider data.AdminProvider, onSaved func(objn int64)) {
+func ShowNewObjectDialog(parent fyne.Window, provider contracts.AdminObjectWizardProvider, onSaved func(objn int64)) {
 	ShowNewObjectWizardDialog(parent, provider, onSaved)
 }
 
-func ShowEditObjectDialog(parent fyne.Window, provider data.AdminProvider, objn int64, onSaved func(objn int64)) {
+func ShowEditObjectDialog(parent fyne.Window, provider contracts.AdminObjectCardProvider, objn int64, onSaved func(objn int64)) {
 	showObjectCardDialog(parent, provider, &objn, onSaved)
 }
 
-func showObjectCardDialog(parent fyne.Window, provider data.AdminProvider, editObjN *int64, onSaved func(objn int64)) {
-	isEdit := editObjN != nil && *editObjN > 0
-	title := "Новий об'єкт"
-	if isEdit {
-		title = "Редагування/Створення об'єкта"
-	} else {
-		title = "Редагування/Створення об'єкта"
+type objectCardDialogState struct {
+	win       fyne.Window
+	provider  contracts.AdminObjectCardProvider
+	onSaved   func(objn int64)
+	editObjN  *int64
+	isEdit    bool
+	vm        *viewmodels.ObjectCardViewModel
+	formVM    *viewmodels.ObjectCardFormViewModel
+	dateVM    *viewmodels.ObjectDateFieldViewModel
+	initVM    *viewmodels.ObjectCardInitViewModel
+	dialogVM  *viewmodels.ObjectCardDialogViewModel
+	submitVM  *viewmodels.ObjectCardSubmitViewModel
+	defVM     *viewmodels.ObjectCardDefaultsViewModel
+	loadVM    *viewmodels.ObjectCardLoadViewModel
+	channelVM *viewmodels.ObjectChannelFlowViewModel
+	refsVM    *viewmodels.ObjectCardReferencesViewModel
+	simVM     *viewmodels.SIMPhoneUsageViewModel
+	simState  *viewmodels.ObjectCardSIMUsageStateViewModel
+
+	statusLabel *widget.Label
+
+	shortNameBinding binding.String
+	fullNameBinding  binding.String
+
+	objnEntry      *widget.Entry
+	shortNameEntry *widget.Entry
+	fullNameEntry  *widget.Entry
+	addressEntry   *widget.Entry
+	phonesEntry    *widget.Entry
+	contractEntry  *widget.Entry
+	dateEntry      *widget.Entry
+	locationEntry  *widget.Entry
+	notesEntry     *widget.Entry
+
+	channelCodeSelect *widget.Select
+	sim1Entry         *widget.Entry
+	sim2Entry         *widget.Entry
+	sim1UsageLabel    *widget.Label
+	sim2UsageLabel    *widget.Label
+	hiddenNEntry      *widget.Entry
+	hiddenNCard       *widget.Card
+
+	testControlCheck  *widget.Check
+	testIntervalEntry *widget.Entry
+
+	objectTypeSelect *widget.Select
+	regionSelect     *widget.Select
+	ppkSelect        *widget.Select
+	subServerASelect *widget.Select
+	subServerBSelect *widget.Select
+
+	channelLabelToCode map[string]int64
+	channelCodeToLabel map[int64]string
+}
+
+func newObjectCardDialogState(win fyne.Window, provider contracts.AdminObjectCardProvider, editObjN *int64, onSaved func(objn int64)) *objectCardDialogState {
+	simState := viewmodels.NewObjectCardSIMUsageStateViewModel()
+	channelOptions := viewmodels.ObjectChannelOptions()
+	channelLabelToCode := viewmodels.DefaultObjectChannelLabelToCode()
+	channelCodeToLabel := viewmodels.DefaultObjectChannelCodeToLabel()
+
+	s := &objectCardDialogState{
+		win:       win,
+		provider:  provider,
+		onSaved:   onSaved,
+		editObjN:  editObjN,
+		isEdit:    editObjN != nil && *editObjN > 0,
+		vm:        viewmodels.NewObjectCardViewModel(),
+		formVM:    viewmodels.NewObjectCardFormViewModel(),
+		dateVM:    viewmodels.NewObjectDateFieldViewModel(),
+		initVM:    viewmodels.NewObjectCardInitViewModel(),
+		dialogVM:  viewmodels.NewObjectCardDialogViewModel(),
+		submitVM:  nil,
+		defVM:     viewmodels.NewObjectCardDefaultsViewModel(),
+		loadVM:    viewmodels.NewObjectCardLoadViewModel(),
+		channelVM: viewmodels.NewObjectChannelFlowViewModel(),
+		refsVM:    viewmodels.NewObjectCardReferencesViewModel(),
+		simVM:     viewmodels.NewSIMPhoneUsageViewModel(),
+		simState:  simState,
+
+		statusLabel: widget.NewLabel("Готово"),
+
+		shortNameBinding: binding.NewString(),
+		fullNameBinding:  binding.NewString(),
+
+		objnEntry:     widget.NewEntry(),
+		addressEntry:  widget.NewEntry(),
+		phonesEntry:   widget.NewEntry(),
+		contractEntry: widget.NewEntry(),
+		dateEntry:     widget.NewEntry(),
+		locationEntry: widget.NewMultiLineEntry(),
+		notesEntry:    widget.NewMultiLineEntry(),
+
+		channelCodeSelect: widget.NewSelect(channelOptions, nil),
+		sim1Entry:         widget.NewEntry(),
+		sim2Entry:         widget.NewEntry(),
+		sim1UsageLabel:    widget.NewLabelWithData(simState.SIM1Binding()),
+		sim2UsageLabel:    widget.NewLabelWithData(simState.SIM2Binding()),
+		hiddenNEntry:      widget.NewEntry(),
+
+		testControlCheck:  widget.NewCheck("Контролювати тестові повідомлення", nil),
+		testIntervalEntry: widget.NewEntry(),
+
+		objectTypeSelect: widget.NewSelect(nil, nil),
+		regionSelect:     widget.NewSelect(nil, nil),
+		ppkSelect:        widget.NewSelect(nil, nil),
+		subServerASelect: widget.NewSelect(nil, nil),
+		subServerBSelect: widget.NewSelect(nil, nil),
+
+		channelLabelToCode: channelLabelToCode,
+		channelCodeToLabel: channelCodeToLabel,
 	}
 
-	win := fyne.CurrentApp().NewWindow(title)
-	// Орієнтуємось на форму frmObjChange.dfm (D:\\most_output).
-	win.Resize(fyne.NewSize(980, 760))
+	s.shortNameEntry = widget.NewEntryWithData(s.shortNameBinding)
+	s.fullNameEntry = widget.NewEntryWithData(s.fullNameBinding)
 
-	statusLabel := widget.NewLabel("Готово")
+	s.dateEntry.SetPlaceHolder("дд.мм.рррр")
+	s.locationEntry.SetMinRowsVisible(2)
+	s.notesEntry.SetMinRowsVisible(4)
+	s.sim1UsageLabel.Wrapping = fyne.TextWrapWord
+	s.sim2UsageLabel.Wrapping = fyne.TextWrapWord
+	s.hiddenNEntry.SetPlaceHolder("Прихований номер (до 4 цифр)")
+	s.testIntervalEntry.SetPlaceHolder("хв.")
 
-	objnEntry := widget.NewEntry()
-	shortNameEntry := widget.NewEntry()
-	fullNameEntry := widget.NewEntry()
-	addressEntry := widget.NewEntry()
-	phonesEntry := widget.NewEntry()
-	contractEntry := widget.NewEntry()
-	dateEntry := widget.NewEntry()
-	dateEntry.SetPlaceHolder("дд.мм.рррр")
-	locationEntry := widget.NewMultiLineEntry()
-	locationEntry.SetMinRowsVisible(2)
-	notesEntry := widget.NewMultiLineEntry()
-	notesEntry.SetMinRowsVisible(4)
-
-	channelCodeSelect := widget.NewSelect([]string{
-		"1 - Автододзвон",
-		"5 - GPRS",
-	}, nil)
-	channelLabelToCode := map[string]int64{
-		"1 - Автододзвон": 1,
-		"5 - GPRS":        5,
-	}
-	channelCodeToLabel := map[int64]string{
-		1: "1 - Автододзвон",
-		5: "5 - GPRS",
-	}
-	sim1Entry := widget.NewEntry()
-	sim2Entry := widget.NewEntry()
-	sim1UsageLabel := widget.NewLabel("")
-	sim1UsageLabel.Wrapping = fyne.TextWrapWord
-	sim2UsageLabel := widget.NewLabel("")
-	sim2UsageLabel.Wrapping = fyne.TextWrapWord
-	hiddenNEntry := widget.NewEntry()
-	hiddenNEntry.SetPlaceHolder("Прихований номер (до 4 цифр)")
-	hiddenNRow := container.NewHBox(
-		widget.NewLabel("Для каналу GPRS (5):"),
-		container.NewGridWrap(fyne.NewSize(140, 36), hiddenNEntry),
+	s.hiddenNCard = widget.NewCard(
+		"Прихований номер",
+		"",
+		container.NewVBox(
+			widget.NewLabel("Номер (до 4 цифр):"),
+			s.hiddenNEntry,
+		),
 	)
 
-	testControlCheck := widget.NewCheck("Контролювати тестові повідомлення", nil)
-	testIntervalEntry := widget.NewEntry()
-	testIntervalEntry.SetPlaceHolder("хв.")
+	s.submitVM = viewmodels.NewObjectCardSubmitViewModel(s.dialogVM)
+	s.wireEvents()
+	return s
+}
 
-	objectTypeSelect := widget.NewSelect(nil, nil)
-	regionSelect := widget.NewSelect(nil, nil)
-	ppkSelect := widget.NewSelect(nil, nil)
-	subServerASelect := widget.NewSelect(nil, nil)
-	subServerBSelect := widget.NewSelect(nil, nil)
+func (s *objectCardDialogState) wireEvents() {
+	s.fullNameBinding.AddListener(binding.NewDataListener(s.onFullNameBindingChanged))
+	s.shortNameBinding.AddListener(binding.NewDataListener(s.onShortNameBindingChanged))
 
-	typeLabelToID := map[string]int64{}
-	regionLabelToID := map[string]int64{}
-	ppkLabelToID := map[string]int64{}
-	allPPKItems := make([]data.PPKConstructorItem, 0)
-	subServerLabelToBind := map[string]string{}
+	s.testControlCheck.OnChanged = s.enableTestControls
 
-	autoUpdatingFullName := false
-	fullNameSyncedWithShort := true
-	fullNameEntry.OnChanged = func(text string) {
-		if autoUpdatingFullName {
-			return
-		}
-		fullNameSyncedWithShort = strings.TrimSpace(text) == strings.TrimSpace(shortNameEntry.Text)
-	}
-	shortNameEntry.OnChanged = func(text string) {
-		if autoUpdatingFullName {
-			return
-		}
-		if !fullNameSyncedWithShort {
-			return
-		}
-		autoUpdatingFullName = true
-		fullNameEntry.SetText(strings.TrimSpace(text))
-		autoUpdatingFullName = false
+	s.channelCodeSelect.OnChanged = func(_ string) {
+		change := s.channelVM.ResolveChange(
+			s.channelCodeSelect.Selected,
+			s.ppkSelect.Selected,
+			s.channelLabelToCode,
+			s.refsVM.PPKID,
+		)
+		s.vm.SetChannelCode(change.ChannelCode)
+		s.updateChannelSpecificControls()
+		s.refreshPPKOptionsByChannel(change.PreferredPPKID)
 	}
 
-	enableTestControls := func(enabled bool) {
-		if enabled {
-			testIntervalEntry.Enable()
-			return
-		}
-		testIntervalEntry.Disable()
+	s.sim1Entry.OnChanged = func(text string) {
+		s.checkSIMUsage(text, 1)
 	}
-	testControlCheck.OnChanged = enableTestControls
+	s.sim2Entry.OnChanged = func(text string) {
+		s.checkSIMUsage(text, 2)
+	}
+}
 
-	updateChannelSpecificControls := func() {
-		channelCode := channelLabelToCode[channelCodeSelect.Selected]
-		if channelCode == 5 {
-			hiddenNRow.Show()
-			hiddenNEntry.Enable()
-		} else {
-			hiddenNRow.Hide()
-			hiddenNEntry.Disable()
-		}
+func (s *objectCardDialogState) onFullNameBindingChanged() {
+	fullName, err := s.fullNameBinding.Get()
+	if err != nil {
+		return
 	}
-	refreshPPKOptionsByChannel := func(preferredID int64) {
-		channelCode := channelLabelToCode[channelCodeSelect.Selected]
-		ppkLabelToID = map[string]int64{"—": 0}
-		ppkOptions := []string{"—"}
-		for _, item := range allPPKItems {
-			if channelCode > 0 && item.Channel > 0 && item.Channel != channelCode {
-				continue
-			}
-			label := strings.TrimSpace(item.Name)
-			if label == "" {
-				label = fmt.Sprintf("ППК %d", item.ID)
-			}
-			label = fmt.Sprintf("%s [%d]", label, item.ID)
-			ppkOptions = append(ppkOptions, label)
-			ppkLabelToID[label] = item.ID
-		}
-		ppkSelect.Options = ppkOptions
-		ppkSelect.Refresh()
+	shortName, err := s.shortNameBinding.Get()
+	if err != nil {
+		return
+	}
+	s.vm.OnFullNameChanged(fullName, shortName)
+}
 
-		if preferredID > 0 {
-			for _, opt := range ppkSelect.Options {
-				if ppkLabelToID[opt] == preferredID {
-					ppkSelect.SetSelected(opt)
-					return
-				}
-			}
-		}
-		ppkSelect.SetSelected("—")
+func (s *objectCardDialogState) onShortNameBindingChanged() {
+	shortName, err := s.shortNameBinding.Get()
+	if err != nil {
+		return
 	}
-	channelCodeSelect.OnChanged = func(_ string) {
-		selectedPPKID := ppkLabelToID[ppkSelect.Selected]
-		updateChannelSpecificControls()
-		refreshPPKOptionsByChannel(selectedPPKID)
+	fullName, shouldApply := s.vm.OnShortNameChanged(shortName)
+	if !shouldApply {
+		return
 	}
+	_ = s.fullNameBinding.Set(fullName)
+}
 
-	formatSIMUsageList := func(usages []data.AdminSIMPhoneUsage) string {
-		if len(usages) == 0 {
-			return ""
-		}
-		parts := make([]string, 0, len(usages))
-		for _, u := range usages {
-			name := strings.TrimSpace(u.Name)
-			if name != "" {
-				parts = append(parts, fmt.Sprintf("#%d (%s, %s)", u.ObjN, name, u.Slot))
-				continue
-			}
-			parts = append(parts, fmt.Sprintf("#%d (%s)", u.ObjN, u.Slot))
-		}
-		return "Номер вже використовується: " + strings.Join(parts, "; ")
+func (s *objectCardDialogState) enableTestControls(enabled bool) {
+	if enabled {
+		s.testIntervalEntry.Enable()
+		return
 	}
+	s.testIntervalEntry.Disable()
+}
 
-	checkSIMUsage := func(rawPhone string, targetLabel *widget.Label) {
-		rawPhone = strings.TrimSpace(rawPhone)
-		if rawPhone == "" {
-			targetLabel.SetText("")
-			return
-		}
-		usages, err := provider.FindObjectsBySIMPhone(rawPhone, editObjN)
-		if err != nil {
-			targetLabel.SetText("Не вдалося перевірити номер у базі")
-			return
-		}
-		targetLabel.SetText(formatSIMUsageList(usages))
+func (s *objectCardDialogState) updateChannelSpecificControls() {
+	if s.vm.ShouldShowHiddenNumber() {
+		s.hiddenNCard.Show()
+		s.hiddenNEntry.Enable()
+		return
 	}
-	sim1Entry.OnChanged = func(text string) {
-		checkSIMUsage(text, sim1UsageLabel)
+	s.hiddenNCard.Hide()
+	s.hiddenNEntry.Disable()
+}
+
+func (s *objectCardDialogState) refreshPPKOptionsByChannel(preferredID int64) {
+	selected := s.refsVM.RefreshPPKOptions(preferredID)
+	s.ppkSelect.Options = s.refsVM.PPKOptions()
+	s.ppkSelect.Refresh()
+	s.ppkSelect.SetSelected(selected)
+}
+
+func (s *objectCardDialogState) checkSIMUsage(rawPhone string, slot int) {
+	text := s.simVM.ResolveUsageText(s.provider, rawPhone, s.editObjN)
+	if slot == 2 {
+		s.simState.SetSIM2(text)
+		return
 	}
-	sim2Entry.OnChanged = func(text string) {
-		checkSIMUsage(text, sim2UsageLabel)
+	s.simState.SetSIM1(text)
+}
+
+func (s *objectCardDialogState) loadReferenceData() error {
+	if err := s.refsVM.LoadFromProvider(s.provider); err != nil {
+		return err
 	}
 
-	loadReferenceData := func() error {
-		typeItems, err := provider.ListObjectTypes()
-		if err != nil {
-			return fmt.Errorf("не вдалося завантажити типи об'єктів: %w", err)
-		}
-		regionItems, err := provider.ListObjectDistricts()
-		if err != nil {
-			return fmt.Errorf("не вдалося завантажити райони: %w", err)
-		}
-		ppkItems, err := provider.ListPPKConstructor()
-		if err != nil {
-			return fmt.Errorf("не вдалося завантажити довідник ППК: %w", err)
-		}
-		subServerItems, err := provider.ListSubServers()
-		if err != nil {
-			return fmt.Errorf("не вдалося завантажити довідник підсерверів: %w", err)
-		}
+	s.objectTypeSelect.Options = s.refsVM.ObjectTypeOptions()
+	s.objectTypeSelect.Refresh()
 
-		typeLabelToID = map[string]int64{}
-		typeOptions := make([]string, 0, len(typeItems))
-		for _, item := range typeItems {
-			label := strings.TrimSpace(item.Name)
-			if label == "" {
-				label = fmt.Sprintf("Тип %d", item.ID)
-			}
-			label = fmt.Sprintf("%s [%d]", label, item.ID)
-			typeOptions = append(typeOptions, label)
-			typeLabelToID[label] = item.ID
-		}
-		objectTypeSelect.Options = typeOptions
-		objectTypeSelect.Refresh()
+	s.regionSelect.Options = s.refsVM.RegionOptions()
+	s.regionSelect.Refresh()
 
-		regionLabelToID = map[string]int64{}
-		regionOptions := []string{"—"}
-		regionLabelToID["—"] = 0
-		for _, item := range regionItems {
-			label := strings.TrimSpace(item.Name)
-			if label == "" {
-				label = fmt.Sprintf("Район %d", item.ID)
-			}
-			label = fmt.Sprintf("%s [%d]", label, item.ID)
-			regionOptions = append(regionOptions, label)
-			regionLabelToID[label] = item.ID
-		}
-		regionSelect.Options = regionOptions
-		regionSelect.Refresh()
+	s.refreshPPKOptionsByChannel(s.refsVM.PPKID(s.ppkSelect.Selected))
 
-		allPPKItems = ppkItems
-		refreshPPKOptionsByChannel(ppkLabelToID[ppkSelect.Selected])
+	s.subServerASelect.Options = s.refsVM.SubServerOptions()
+	s.subServerASelect.Refresh()
+	s.subServerBSelect.Options = s.refsVM.SubServerOptions()
+	s.subServerBSelect.Refresh()
 
-		subServerLabelToBind = map[string]string{}
-		subServerOptions := []string{"—"}
-		subServerLabelToBind["—"] = ""
-		subServerTypeLabel := func(t int64) string {
-			switch t {
-			case 2:
-				return "GPRS"
-			case 4:
-				return "AVD"
-			default:
-				if t > 0 {
-					return fmt.Sprintf("%d", t)
-				}
-				return "—"
-			}
-		}
-		for _, item := range subServerItems {
-			bind := strings.TrimSpace(item.Bind)
-			if bind == "" {
-				continue
-			}
-			name := strings.TrimSpace(item.Info)
-			if name == "" {
-				name = strings.TrimSpace(item.Host)
-			}
-			if name == "" {
-				name = fmt.Sprintf("Підсервер %d", item.ID)
-			}
-			label := fmt.Sprintf("%s (%s) [%s]", name, subServerTypeLabel(item.Type), bind)
-			subServerOptions = append(subServerOptions, label)
-			subServerLabelToBind[label] = bind
-		}
-		subServerASelect.Options = subServerOptions
-		subServerASelect.Refresh()
-		subServerBSelect.Options = subServerOptions
-		subServerBSelect.Refresh()
+	return nil
+}
 
-		return nil
+func (s *objectCardDialogState) fillDefaults() {
+	defaults := s.formVM.Defaults()
+	presentation := s.defVM.BuildPresentation(
+		defaults,
+		s.refsVM,
+		s.channelCodeToLabel,
+		s.dateVM.FormatForDisplay(time.Now()),
+	)
+
+	s.objnEntry.SetText(presentation.ObjNText)
+	s.shortNameEntry.SetText(presentation.ShortName)
+	s.fullNameEntry.SetText(presentation.FullName)
+	s.vm.ResetNameSync(presentation.ShortName, presentation.FullName)
+	s.addressEntry.SetText(presentation.Address)
+	s.phonesEntry.SetText(presentation.Phones)
+	s.contractEntry.SetText(presentation.Contract)
+	s.dateEntry.SetText(presentation.StartDateText)
+	s.locationEntry.SetText(presentation.Location)
+	s.notesEntry.SetText(presentation.Notes)
+	s.channelCodeSelect.SetSelected(presentation.ChannelLabel)
+	s.vm.SetChannelCode(presentation.ChannelCode)
+	s.sim1Entry.SetText(presentation.GSMPhone1)
+	s.sim2Entry.SetText(presentation.GSMPhone2)
+	s.simState.Clear()
+	s.hiddenNEntry.SetText(presentation.GSMHiddenNText)
+	s.testControlCheck.SetChecked(presentation.TestControlEnabled)
+	s.testIntervalEntry.SetText(presentation.TestIntervalMinText)
+	s.enableTestControls(presentation.TestControlEnabled)
+	s.updateChannelSpecificControls()
+	s.refreshPPKOptionsByChannel(0)
+
+	s.objectTypeSelect.SetSelected(presentation.ObjectTypeLabel)
+	s.regionSelect.SetSelected(presentation.RegionLabel)
+	s.subServerASelect.SetSelected(presentation.SubServerALabel)
+	s.subServerBSelect.SetSelected(presentation.SubServerBLabel)
+}
+
+func (s *objectCardDialogState) loadCard(objn int64) error {
+	card, err := s.provider.GetObjectCard(objn)
+	if err != nil {
+		return err
 	}
 
-	setSelectByID := func(sel *widget.Select, options []string, labelToID map[string]int64, id int64) {
-		for _, opt := range options {
-			if labelToID[opt] == id {
-				sel.SetSelected(opt)
-				return
-			}
-		}
-		if len(options) > 0 {
-			sel.SetSelected(options[0])
-			return
-		}
-		sel.ClearSelected()
+	presentation := s.loadVM.BuildPresentation(card, s.refsVM, s.channelCodeToLabel)
+
+	s.objnEntry.SetText(presentation.ObjNText)
+	s.shortNameEntry.SetText(presentation.ShortName)
+	s.fullNameEntry.SetText(presentation.FullName)
+	s.vm.ResetNameSync(presentation.ShortName, presentation.FullName)
+	s.addressEntry.SetText(presentation.Address)
+	s.phonesEntry.SetText(presentation.Phones)
+	s.contractEntry.SetText(presentation.Contract)
+	s.dateEntry.SetText(presentation.StartDate)
+	s.locationEntry.SetText(presentation.Location)
+	s.notesEntry.SetText(presentation.Notes)
+	s.channelCodeSelect.SetSelected(presentation.ChannelLabel)
+	s.vm.SetChannelCode(presentation.ChannelCode)
+	s.refreshPPKOptionsByChannel(presentation.PPKID)
+	s.sim1Entry.SetText(presentation.GSMPhone1)
+	s.sim2Entry.SetText(presentation.GSMPhone2)
+	s.checkSIMUsage(presentation.GSMPhone1, 1)
+	s.checkSIMUsage(presentation.GSMPhone2, 2)
+	s.hiddenNEntry.SetText(presentation.GSMHiddenNText)
+	s.testControlCheck.SetChecked(presentation.TestControlEnabled)
+	s.testIntervalEntry.SetText(presentation.TestIntervalMinText)
+	s.enableTestControls(presentation.TestControlEnabled)
+	s.objectTypeSelect.SetSelected(presentation.ObjectTypeLabel)
+	s.regionSelect.SetSelected(presentation.RegionLabel)
+	s.subServerASelect.SetSelected(presentation.SubServerALabel)
+	s.subServerBSelect.SetSelected(presentation.SubServerBLabel)
+	s.updateChannelSpecificControls()
+
+	return nil
+}
+
+func (s *objectCardDialogState) buildCardFromUI() (contracts.AdminObjectCard, error) {
+	input, err := s.formVM.BuildInput(viewmodels.ObjectCardFormSnapshot{
+		ObjNRaw:            s.objnEntry.Text,
+		ShortName:          s.shortNameEntry.Text,
+		FullName:           s.fullNameEntry.Text,
+		Address:            s.addressEntry.Text,
+		Phones:             s.phonesEntry.Text,
+		Contract:           s.contractEntry.Text,
+		StartDate:          s.dateEntry.Text,
+		Location:           s.locationEntry.Text,
+		Notes:              s.notesEntry.Text,
+		GSMPhone1:          s.sim1Entry.Text,
+		GSMPhone2:          s.sim2Entry.Text,
+		GSMHiddenNRaw:      s.hiddenNEntry.Text,
+		ChannelLabel:       s.channelCodeSelect.Selected,
+		TestControlEnabled: s.testControlCheck.Checked,
+		TestIntervalMinRaw: s.testIntervalEntry.Text,
+		ObjectTypeLabel:    s.objectTypeSelect.Selected,
+		RegionLabel:        s.regionSelect.Selected,
+		PPKLabel:           s.ppkSelect.Selected,
+		SubServerALabel:    s.subServerASelect.Selected,
+		SubServerBLabel:    s.subServerBSelect.Selected,
+	}, s.refsVM, s.channelLabelToCode)
+	if err != nil {
+		return contracts.AdminObjectCard{}, err
 	}
+	return s.vm.ValidateAndBuildCard(input)
+}
 
-	setSubServerByBind := func(sel *widget.Select, bind string) {
-		bind = strings.TrimSpace(bind)
-		if bind == "" {
-			sel.SetSelected("—")
-			return
+func (s *objectCardDialogState) openDatePicker() {
+	initial := s.dateVM.ResolvePickerInitial(s.dateEntry.Text, time.Now())
+
+	var pickerDlg dialog.Dialog
+	calendar := xwidget.NewCalendar(initial, func(selected time.Time) {
+		s.dateEntry.SetText(s.dateVM.FormatForDisplay(selected))
+		if pickerDlg != nil {
+			pickerDlg.Hide()
 		}
-		for _, opt := range sel.Options {
-			if subServerLabelToBind[opt] == bind {
-				sel.SetSelected(opt)
-				return
-			}
-		}
-		sel.SetSelected("—")
-	}
-
-	fillDefaults := func() {
-		objnEntry.SetText("")
-		shortNameEntry.SetText("")
-		fullNameEntry.SetText("")
-		fullNameSyncedWithShort = true
-		addressEntry.SetText("")
-		phonesEntry.SetText("")
-		contractEntry.SetText("")
-		dateEntry.SetText(time.Now().Format("02.01.2006"))
-		locationEntry.SetText("")
-		notesEntry.SetText("")
-		channelCodeSelect.SetSelected(channelCodeToLabel[1])
-		sim1Entry.SetText("")
-		sim2Entry.SetText("")
-		sim1UsageLabel.SetText("")
-		sim2UsageLabel.SetText("")
-		hiddenNEntry.SetText("")
-		testControlCheck.SetChecked(true)
-		testIntervalEntry.SetText("9")
-		enableTestControls(true)
-		updateChannelSpecificControls()
-		refreshPPKOptionsByChannel(0)
-
-		setSelectByID(objectTypeSelect, objectTypeSelect.Options, typeLabelToID, 0)
-		setSelectByID(regionSelect, regionSelect.Options, regionLabelToID, 0)
-		subServerASelect.SetSelected("—")
-		subServerBSelect.SetSelected("—")
-	}
-
-	loadCard := func(objn int64) error {
-		card, err := provider.GetObjectCard(objn)
-		if err != nil {
-			return err
-		}
-
-		objnEntry.SetText(strconv.FormatInt(card.ObjN, 10))
-		shortNameEntry.SetText(card.ShortName)
-		fullNameEntry.SetText(card.FullName)
-		addressEntry.SetText(card.Address)
-		phonesEntry.SetText(card.Phones)
-		contractEntry.SetText(card.Contract)
-		dateEntry.SetText(card.StartDate)
-		locationEntry.SetText(card.Location)
-		notesEntry.SetText(card.Notes)
-		if label, ok := channelCodeToLabel[card.ChannelCode]; ok {
-			channelCodeSelect.SetSelected(label)
-		} else {
-			channelCodeSelect.SetSelected(channelCodeToLabel[1])
-		}
-		refreshPPKOptionsByChannel(card.PPKID)
-		sim1Entry.SetText(card.GSMPhone1)
-		sim2Entry.SetText(card.GSMPhone2)
-		checkSIMUsage(card.GSMPhone1, sim1UsageLabel)
-		checkSIMUsage(card.GSMPhone2, sim2UsageLabel)
-		if card.GSMHiddenN > 0 {
-			hiddenNEntry.SetText(strconv.FormatInt(card.GSMHiddenN, 10))
-		} else {
-			hiddenNEntry.SetText("")
-		}
-		testControlCheck.SetChecked(card.TestControlEnabled)
-		if card.TestIntervalMin > 0 {
-			testIntervalEntry.SetText(strconv.FormatInt(card.TestIntervalMin, 10))
-		} else {
-			testIntervalEntry.SetText("9")
-		}
-		enableTestControls(card.TestControlEnabled)
-
-		setSelectByID(objectTypeSelect, objectTypeSelect.Options, typeLabelToID, card.ObjTypeID)
-		setSelectByID(regionSelect, regionSelect.Options, regionLabelToID, card.ObjRegID)
-		setSubServerByBind(subServerASelect, card.SubServerA)
-		setSubServerByBind(subServerBSelect, card.SubServerB)
-		updateChannelSpecificControls()
-
-		return nil
-	}
-
-	buildCardFromUI := func() (data.AdminObjectCard, error) {
-		var card data.AdminObjectCard
-
-		objnRaw := strings.TrimSpace(objnEntry.Text)
-		objn, err := strconv.ParseInt(objnRaw, 10, 64)
-		if err != nil {
-			return card, fmt.Errorf("некоректний об'єктовий номер")
-		}
-		card.ObjN = objn
-		card.GrpN = 1
-		card.ShortName = strings.TrimSpace(shortNameEntry.Text)
-		card.FullName = strings.TrimSpace(fullNameEntry.Text)
-		card.Address = strings.TrimSpace(addressEntry.Text)
-		card.Phones = strings.TrimSpace(phonesEntry.Text)
-		card.Contract = strings.TrimSpace(contractEntry.Text)
-		card.StartDate = strings.TrimSpace(dateEntry.Text)
-		card.Location = strings.TrimSpace(locationEntry.Text)
-		card.Notes = strings.TrimSpace(notesEntry.Text)
-		card.GSMPhone1 = strings.TrimSpace(sim1Entry.Text)
-		card.GSMPhone2 = strings.TrimSpace(sim2Entry.Text)
-		card.TestControlEnabled = testControlCheck.Checked
-
-		channelCode, ok := channelLabelToCode[channelCodeSelect.Selected]
-		if !ok {
-			return card, fmt.Errorf("виберіть канал зв'язку")
-		}
-		card.ChannelCode = channelCode
-		if channelCode == 5 {
-			hiddenRaw := strings.TrimSpace(hiddenNEntry.Text)
-			hiddenN, err := strconv.ParseInt(hiddenRaw, 10, 64)
-			if err != nil || hiddenN <= 0 {
-				return card, fmt.Errorf("для каналу 5 вкажіть коректний прихований номер")
-			}
-			card.GSMHiddenN = hiddenN
-		} else {
-			card.GSMHiddenN = 0
-		}
-
-		if card.TestControlEnabled {
-			testRaw := strings.TrimSpace(testIntervalEntry.Text)
-			testInterval, err := strconv.ParseInt(testRaw, 10, 64)
-			if err != nil || testInterval <= 0 {
-				return card, fmt.Errorf("некоректний інтервал контролю тесту")
-			}
-			card.TestIntervalMin = testInterval
-		}
-
-		objTypeID := typeLabelToID[objectTypeSelect.Selected]
-		if objTypeID <= 0 {
-			return card, fmt.Errorf("виберіть тип об'єкта")
-		}
-		card.ObjTypeID = objTypeID
-		card.ObjRegID = regionLabelToID[regionSelect.Selected]
-		card.PPKID = ppkLabelToID[ppkSelect.Selected]
-		card.SubServerA = strings.TrimSpace(subServerLabelToBind[subServerASelect.Selected])
-		card.SubServerB = strings.TrimSpace(subServerLabelToBind[subServerBSelect.Selected])
-
-		return card, nil
-	}
-
-	parseDateFromEntry := func(raw string) (time.Time, bool) {
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return time.Time{}, false
-		}
-		formats := []string{
-			"02.01.2006",
-			"2006-01-02",
-			"2006-01-02 15:04:05",
-			time.RFC3339,
-		}
-		for _, f := range formats {
-			if t, err := time.ParseInLocation(f, raw, time.Local); err == nil {
-				return t, true
-			}
-		}
-		return time.Time{}, false
-	}
-
-	openDatePicker := func() {
-		initial := time.Now()
-		if parsed, ok := parseDateFromEntry(dateEntry.Text); ok {
-			initial = parsed
-		}
-
-		var pickerDlg dialog.Dialog
-		calendar := xwidget.NewCalendar(initial, func(selected time.Time) {
-			dateEntry.SetText(selected.Format("02.01.2006"))
-			if pickerDlg != nil {
-				pickerDlg.Hide()
-			}
-		})
-		pickerDlg = dialog.NewCustom("Вибір дати", "Закрити", container.NewPadded(calendar), win)
-		pickerDlg.Show()
-	}
-	datePickBtn := widget.NewButton("...", openDatePicker)
-	datePickBtn.Importance = widget.LowImportance
-	dateRow := container.NewBorder(nil, nil, nil, datePickBtn, dateEntry)
-
-	saveBtn := widget.NewButton("Зберегти", func() {
-		card, err := buildCardFromUI()
-		if err != nil {
-			statusLabel.SetText(err.Error())
-			return
-		}
-
-		if isEdit {
-			loaded, err := provider.GetObjectCard(*editObjN)
-			if err != nil {
-				dialog.ShowError(err, win)
-				statusLabel.SetText("Не вдалося перезавантажити картку")
-				return
-			}
-			card.ObjUIN = loaded.ObjUIN
-			if err := provider.UpdateObject(card); err != nil {
-				dialog.ShowError(err, win)
-				statusLabel.SetText("Не вдалося зберегти зміни об'єкта")
-				return
-			}
-			statusLabel.SetText("Картку об'єкта оновлено")
-		} else {
-			if err := provider.CreateObject(card); err != nil {
-				dialog.ShowError(err, win)
-				statusLabel.SetText("Не вдалося створити об'єкт")
-				return
-			}
-			statusLabel.SetText("Новий об'єкт створено")
-		}
-
-		if onSaved != nil {
-			onSaved(card.ObjN)
-		}
-		win.Close()
 	})
+	pickerDlg = dialog.NewCustom("Вибір дати", "Закрити", container.NewPadded(calendar), s.win)
+	pickerDlg.Show()
+}
 
-	cancelBtn := widget.NewButton("Відміна", func() { win.Close() })
+func (s *objectCardDialogState) setRegionByID(regionID int64) bool {
+	if label, ok := s.refsVM.RegionLabelByIDExact(regionID); ok {
+		s.regionSelect.SetSelected(label)
+		return true
+	}
+	return false
+}
 
-	formTop := widget.NewForm(
-		widget.NewFormItem("Об'єктовий номер:", objnEntry),
-		widget.NewFormItem("Об'єкт:", shortNameEntry),
-		widget.NewFormItem("Повна назва:", fullNameEntry),
-		widget.NewFormItem("Тип об'єкта:", objectTypeSelect),
-		widget.NewFormItem("Район:", regionSelect),
-		widget.NewFormItem("Адреса:", addressEntry),
-		widget.NewFormItem("Телефони:", phonesEntry),
-		widget.NewFormItem("Договір:", contractEntry),
-		widget.NewFormItem("Дата:", dateRow),
+func (s *objectCardDialogState) buildDateRow() fyne.CanvasObject {
+	datePickBtn := widget.NewButton("...", s.openDatePicker)
+	datePickBtn.Importance = widget.LowImportance
+	return container.NewBorder(nil, nil, nil, datePickBtn, s.dateEntry)
+}
+
+func (s *objectCardDialogState) buildMainInfoForm(dateRow fyne.CanvasObject) *widget.Form {
+	objectAndTypeRow := container.NewGridWithColumns(
+		2,
+		s.shortNameEntry,
+		s.objectTypeSelect,
 	)
-
-	formBottom := widget.NewForm(
-		widget.NewFormItem("Розташування:", locationEntry),
-		widget.NewFormItem("Інформація:", notesEntry),
-		widget.NewFormItem("Канал:", channelCodeSelect),
-		widget.NewFormItem("ППК:", ppkSelect),
-		widget.NewFormItem("Підсервер A:", subServerASelect),
-		widget.NewFormItem("Підсервер B:", subServerBSelect),
-		widget.NewFormItem("SIM 1:", container.NewVBox(sim1Entry, sim1UsageLabel)),
-		widget.NewFormItem("SIM 2:", container.NewVBox(sim2Entry, sim2UsageLabel)),
-		widget.NewFormItem("Контроль GPRS:", container.NewHBox(testControlCheck, widget.NewLabel("Інтервал (хв.):"), container.NewGridWrap(fyne.NewSize(100, 36), testIntervalEntry))),
+	phoneContractDateRow := container.NewGridWithColumns(
+		3,
+		s.phonesEntry,
+		s.contractEntry,
+		dateRow,
 	)
+	channelAndPPKRow := container.NewGridWithColumns(2, s.channelCodeSelect, s.ppkSelect)
 
-	objectTab := container.NewVScroll(container.NewVBox(
-		formTop,
+	return widget.NewForm(
+		widget.NewFormItem("№ об'єкта:", s.objnEntry),
+		widget.NewFormItem("Об'єкт / Тип:", objectAndTypeRow),
+		widget.NewFormItem("Повна назва:", s.fullNameEntry),
+		widget.NewFormItem("Телефони / Договір / Дата:", phoneContractDateRow),
+		widget.NewFormItem("Адреса:", s.addressEntry),
+		widget.NewFormItem("Розташування:", s.locationEntry),
+		widget.NewFormItem("Інформація:", s.notesEntry),
+		widget.NewFormItem("Район:", s.regionSelect),
+		widget.NewFormItem("Канал / ППК:", channelAndPPKRow),
+	)
+}
+
+func (s *objectCardDialogState) buildTestControlCard() fyne.CanvasObject {
+	testControlForm := widget.NewForm(
+		widget.NewFormItem("Контролювати:", s.testControlCheck),
+		widget.NewFormItem("Інтервал, хв.:", container.NewGridWrap(fyne.NewSize(90, 36), s.testIntervalEntry)),
+	)
+	return widget.NewCard("Контроль GPRS/тестів", "", testControlForm)
+}
+
+func (s *objectCardDialogState) buildSIMPhonesCard() fyne.CanvasObject {
+	simPhonesForm := widget.NewForm(
+		widget.NewFormItem("SIM1:", container.NewVBox(s.sim1Entry, s.sim1UsageLabel)),
+		widget.NewFormItem("SIM2:", container.NewVBox(s.sim2Entry, s.sim2UsageLabel)),
+	)
+	return widget.NewCard("Телефони", "", simPhonesForm)
+}
+
+func (s *objectCardDialogState) buildSubserverCard() fyne.CanvasObject {
+	subserverForm := widget.NewForm(
+		widget.NewFormItem("Підсервер A:", s.subServerASelect),
+		widget.NewFormItem("Підсервер B:", s.subServerBSelect),
+	)
+	return widget.NewCard("Підсервери", "", subserverForm)
+}
+
+func (s *objectCardDialogState) buildObjectTab() fyne.CanvasObject {
+	dateRow := s.buildDateRow()
+	mainInfoForm := s.buildMainInfoForm(dateRow)
+	testControlCard := s.buildTestControlCard()
+	simPhonesCard := s.buildSIMPhonesCard()
+	subserverCard := s.buildSubserverCard()
+	ppkParamsRow := container.NewGridWithColumns(3, testControlCard, simPhonesCard, s.hiddenNCard)
+
+	return container.NewVScroll(container.NewVBox(
+		mainInfoForm,
 		widget.NewSeparator(),
-		formBottom,
+		makeSectionHeader("Технічні параметри"),
+		ppkParamsRow,
 		widget.NewSeparator(),
-		hiddenNRow,
+		subserverCard,
 	))
+}
 
-	placeholderText := "Вкладка буде перенесена за формами з D:\\most_output (frmObjChange.dfm)."
-	if !isEdit {
-		placeholderText = "Для цієї вкладки спочатку збережіть новий об'єкт."
+func (s *objectCardDialogState) placeholderTabText() string {
+	if s.isEdit {
+		return "Вкладка буде перенесена за формами з D:\\most_output (frmObjChange.dfm)."
+	}
+	return "Для цієї вкладки спочатку збережіть новий об'єкт."
+}
+
+func (s *objectCardDialogState) saveObject() {
+	out, err := s.submitVM.Submit(viewmodels.ObjectCardSubmitInput{
+		BuildCard:   s.buildCardFromUI,
+		Persistence: s.provider,
+		EditObjN:    s.editObjN,
+	})
+	if err != nil {
+		if out.ShowErrorDialog {
+			dialog.ShowError(err, s.win)
+		}
+		s.statusLabel.SetText(out.StatusMessage)
+		return
+	}
+	s.statusLabel.SetText(out.StatusMessage)
+	if s.onSaved != nil {
+		s.onSaved(out.Result.ObjN)
+	}
+	s.win.Close()
+}
+
+func (s *objectCardDialogState) buildPlaceholderTab(text string) fyne.CanvasObject {
+	return container.NewPadded(widget.NewLabel(text))
+}
+
+func (s *objectCardDialogState) buildRelatedTabs(placeholderText string) (fyne.CanvasObject, fyne.CanvasObject, fyne.CanvasObject) {
+	personalTab := s.buildPlaceholderTab(placeholderText)
+	zonesTab := s.buildPlaceholderTab(placeholderText)
+	additionalTab := s.buildPlaceholderTab(placeholderText)
+	if !s.isEdit {
+		return personalTab, zonesTab, additionalTab
 	}
 
-	personalTab := fyne.CanvasObject(container.NewPadded(widget.NewLabel(placeholderText)))
-	zonesTab := fyne.CanvasObject(container.NewPadded(widget.NewLabel(placeholderText)))
-	additionalTab := fyne.CanvasObject(container.NewPadded(widget.NewLabel(placeholderText)))
-	if isEdit {
-		personalTab = buildObjectPersonalTab(win, provider, *editObjN, statusLabel)
-		zonesTab = buildObjectZonesTab(win, provider, *editObjN, statusLabel)
-		additionalTab = buildObjectAdditionalTab(win, provider, *editObjN, statusLabel)
-	}
+	personalTab = buildObjectPersonalTab(s.win, s.provider, *s.editObjN, s.statusLabel)
+	zonesTab = buildObjectZonesTab(s.win, s.provider, *s.editObjN, s.statusLabel)
+	additionalTab = buildObjectAdditionalTab(
+		s.win,
+		s.provider,
+		*s.editObjN,
+		s.statusLabel,
+		func() string {
+			return strings.TrimSpace(s.addressEntry.Text)
+		},
+		s.setRegionByID,
+	)
+	return personalTab, zonesTab, additionalTab
+}
 
-	tabs := container.NewAppTabs(
+func (s *objectCardDialogState) buildTabs(objectTab fyne.CanvasObject, placeholderText string) fyne.CanvasObject {
+	personalTab, zonesTab, additionalTab := s.buildRelatedTabs(placeholderText)
+	return container.NewAppTabs(
 		container.NewTabItem("Об'єкт", objectTab),
 		container.NewTabItem("В/О", personalTab),
-		container.NewTabItem("Зображення", container.NewPadded(widget.NewLabel(placeholderText))),
+		container.NewTabItem("Зображення", s.buildPlaceholderTab(placeholderText)),
 		container.NewTabItem("Зони", zonesTab),
 		container.NewTabItem("Додатково", additionalTab),
 	)
+}
 
-	content := container.NewBorder(
-		nil,
-		container.NewHBox(statusLabel, layout.NewSpacer(), saveBtn, cancelBtn),
-		nil, nil,
-		tabs,
+func (s *objectCardDialogState) buildFooter() fyne.CanvasObject {
+	saveBtn := makePrimaryButton("Зберегти", s.saveObject)
+	cancelBtn := makeLowButton("Відміна", func() { s.win.Close() })
+	return container.NewVBox(
+		widget.NewSeparator(),
+		container.NewHBox(s.statusLabel, layout.NewSpacer(), saveBtn, cancelBtn),
 	)
-	win.SetContent(content)
+}
 
-	if err := loadReferenceData(); err != nil {
-		dialog.ShowError(err, win)
-		statusLabel.SetText("Не вдалося завантажити довідники")
-	}
+func (s *objectCardDialogState) buildContent() fyne.CanvasObject {
+	objectTab := s.buildObjectTab()
+	placeholderText := s.placeholderTabText()
 
-	if isEdit {
-		objnEntry.Disable()
-		if err := loadCard(*editObjN); err != nil {
-			dialog.ShowError(err, win)
-			statusLabel.SetText("Не вдалося завантажити об'єкт для редагування")
+	return container.NewBorder(
+		nil,
+		s.buildFooter(),
+		nil,
+		nil,
+		s.buildTabs(objectTab, placeholderText),
+	)
+}
+
+func (s *objectCardDialogState) initializeDialogData() {
+	result := s.initVM.Initialize(viewmodels.ObjectCardInitInput{
+		EditObjN:          s.editObjN,
+		LoadReferenceData: s.loadReferenceData,
+		PrepareEditMode: func() {
+			s.objnEntry.Disable()
+		},
+		LoadCard:     s.loadCard,
+		FillDefaults: s.fillDefaults,
+	})
+
+	for _, issue := range result.Issues {
+		if issue.ShowErrorDialog && issue.Err != nil {
+			dialog.ShowError(issue.Err, s.win)
 		}
-	} else {
-		fillDefaults()
+		if issue.StatusMessage != "" {
+			s.statusLabel.SetText(issue.StatusMessage)
+		}
 	}
+}
 
+func showObjectCardDialog(parent fyne.Window, provider contracts.AdminObjectCardProvider, editObjN *int64, onSaved func(objn int64)) {
+	title := "Редагування/Створення об'єкта"
+
+	win := fyne.CurrentApp().NewWindow(title)
+	win.Resize(fyne.NewSize(800, 600))
+
+	state := newObjectCardDialogState(win, provider, editObjN, onSaved)
+	win.SetContent(state.buildContent())
+	state.initializeDialogData()
 	win.Show()
 }

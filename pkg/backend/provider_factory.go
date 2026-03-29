@@ -12,11 +12,50 @@ func NewDBProvider(db *sqlx.DB, dsn string) contracts.DataProvider {
 	return data.NewDBDataProvider(db, dsn)
 }
 
+// NewCASLCloudProvider creates CASL Cloud API backend provider.
+func NewCASLCloudProvider(baseURL string, token string, pultID int64, credentials ...string) contracts.DataProvider {
+	return data.NewCASLCloudProvider(baseURL, token, pultID, credentials...)
+}
+
+// NewCombinedProvider creates a composite provider where primary source stays authoritative
+// and secondary source augments monitoring data.
+func NewCombinedProvider(primary contracts.DataProvider, secondary contracts.DataProvider) contracts.DataProvider {
+	if secondary == nil {
+		return primary
+	}
+	if primary == nil {
+		return secondary
+	}
+	return data.NewCombinedDataProvider(primary, secondary)
+}
+
+// NewMultiSourceProvider builds a provider over an arbitrary number of sources.
+func NewMultiSourceProvider(sources ...data.ProviderSource) contracts.DataProvider {
+	return data.NewMultiSourceDataProvider(sources...)
+}
+
+type adminProviderResolver interface {
+	AdminProvider() contracts.AdminProvider
+}
+
 // AsAdminProvider returns admin capabilities when backend implementation supports them.
 func AsAdminProvider(provider contracts.DataProvider) (contracts.AdminProvider, bool) {
 	admin, ok := provider.(contracts.AdminProvider)
-	return admin, ok
+	if ok {
+		return admin, true
+	}
+	resolver, ok := provider.(adminProviderResolver)
+	if !ok {
+		return nil, false
+	}
+	admin = resolver.AdminProvider()
+	if admin == nil {
+		return nil, false
+	}
+	return admin, true
 }
 
 var _ contracts.DataProvider = (*data.DBDataProvider)(nil)
 var _ contracts.AdminProvider = (*data.DBDataProvider)(nil)
+var _ contracts.DataProvider = (*data.CASLCloudProvider)(nil)
+var _ contracts.DataProvider = (*data.CombinedDataProvider)(nil)

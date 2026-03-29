@@ -6,13 +6,20 @@ import (
 
 	"fyne.io/fyne/v2/dialog"
 
+	"obj_catalog_fyne_v3/pkg/backend"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
 )
 
+type adminObjectScope interface {
+	CanUseAdminForObjectID(objectID int) bool
+	SourceNameForObjectID(objectID int) string
+}
+
 func (a *Application) withAdminProvider(onReady func(contracts.AdminProvider)) func() {
 	return func() {
-		adminProvider, ok := a.dataProvider.(contracts.AdminProvider)
+		provider := a.getDataProvider()
+		adminProvider, ok := backend.AsAdminProvider(provider)
 		if !ok {
 			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
 			return
@@ -43,6 +50,17 @@ func (a *Application) ensureCurrentObjectSelected() (id int64, name string, ok b
 	if a.currentObject == nil || a.currentObject.ID <= 0 {
 		dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
 		return 0, "", false
+	}
+	if scopedProvider, ok := a.getDataProvider().(adminObjectScope); ok {
+		if !scopedProvider.CanUseAdminForObjectID(a.currentObject.ID) {
+			source := scopedProvider.SourceNameForObjectID(a.currentObject.ID)
+			dialogs.ShowInfoDialog(
+				a.mainWindow,
+				"Недоступно для цього джерела",
+				fmt.Sprintf("Для об'єкта з джерела \"%s\" адмін-операції недоступні.", source),
+			)
+			return 0, "", false
+		}
 	}
 	return int64(a.currentObject.ID), a.currentObject.Name, true
 }

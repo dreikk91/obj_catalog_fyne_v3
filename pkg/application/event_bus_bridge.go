@@ -1,10 +1,14 @@
 package application
 
 import (
+	"time"
+
 	"fyne.io/fyne/v2"
 
 	"obj_catalog_fyne_v3/pkg/eventbus"
 )
+
+const refreshCoalesceWindow = 120 * time.Millisecond
 
 func (a *Application) registerEventBusHandlers() {
 	if a == nil || a.eventBus == nil {
@@ -64,7 +68,22 @@ func (a *Application) publishDataRefresh(refresh eventbus.DataRefreshEvent) {
 	if a == nil || a.eventBus == nil {
 		return
 	}
-	a.eventBus.Publish(eventbus.TopicDataRefresh, refresh)
+	if !refresh.RefreshObjects && !refresh.RefreshAlarms && !refresh.RefreshEvents {
+		return
+	}
+
+	a.refreshCoalesceMu.Lock()
+	a.pendingRefresh = mergeDataRefreshEvents(a.pendingRefresh, refresh)
+	if a.refreshCoalescePending {
+		a.refreshCoalesceMu.Unlock()
+		return
+	}
+	a.refreshCoalescePending = true
+	a.refreshCoalesceMu.Unlock()
+
+	time.AfterFunc(refreshCoalesceWindow, func() {
+		a.flushPendingDataRefresh()
+	})
 }
 
 func (a *Application) handleDataRefresh(refresh eventbus.DataRefreshEvent) {
@@ -80,6 +99,30 @@ func (a *Application) handleDataRefresh(refresh eventbus.DataRefreshEvent) {
 	if refresh.RefreshEvents && a.workArea != nil {
 		a.workArea.RefreshCurrentObjectEvents()
 	}
+}
+
+func (a *Application) flushPendingDataRefresh() {
+	if a == nil || a.eventBus == nil {
+		return
+	}
+
+	a.refreshCoalesceMu.Lock()
+	refresh := a.pendingRefresh
+	a.pendingRefresh = eventbus.DataRefreshEvent{}
+	a.refreshCoalescePending = false
+	a.refreshCoalesceMu.Unlock()
+
+	if !refresh.RefreshObjects && !refresh.RefreshAlarms && !refresh.RefreshEvents {
+		return
+	}
+	a.eventBus.Publish(eventbus.TopicDataRefresh, refresh)
+}
+
+func mergeDataRefreshEvents(base, extra eventbus.DataRefreshEvent) eventbus.DataRefreshEvent {
+	base.RefreshObjects = base.RefreshObjects || extra.RefreshObjects
+	base.RefreshAlarms = base.RefreshAlarms || extra.RefreshAlarms
+	base.RefreshEvents = base.RefreshEvents || extra.RefreshEvents
+	return base
 }
 
 func (a *Application) focusObjectByID(objectID int64) {

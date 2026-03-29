@@ -8,10 +8,11 @@ import (
 
 // resolveObjectByID повертає об'єкт за ID через поточний провайдер даних.
 func (a *Application) resolveObjectByID(objectID int64) *models.Object {
-	if a == nil || a.dataProvider == nil {
+	provider := a.getDataProvider()
+	if provider == nil {
 		return nil
 	}
-	return a.dataProvider.GetObjectByID(strconv.FormatInt(objectID, 10))
+	return provider.GetObjectByID(strconv.FormatInt(objectID, 10))
 }
 
 // applyObjectContext синхронізує стан заголовка, правої панелі й контекстного журналу.

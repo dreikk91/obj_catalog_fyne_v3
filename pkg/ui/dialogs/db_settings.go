@@ -55,14 +55,13 @@ func ShowDatabaseSettingsDialog(win fyne.Window, pref fyne.Preferences, onSave f
 		),
 		func(save bool) {
 			if save {
-				newCfg := config.DBConfig{
-					User:     userEntry.Text,
-					Password: passEntry.Text,
-					Host:     hostEntry.Text,
-					Port:     portEntry.Text,
-					Path:     pathEntry.Text,
-					Params:   paramsEntry.Text,
-				}
+				newCfg := cfg
+				newCfg.User = userEntry.Text
+				newCfg.Password = passEntry.Text
+				newCfg.Host = hostEntry.Text
+				newCfg.Port = portEntry.Text
+				newCfg.Path = pathEntry.Text
+				newCfg.Params = paramsEntry.Text
 				config.SaveDBConfig(pref, newCfg)
 				if onSave != nil {
 					onSave(newCfg)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	// "math/rand"
 	"strings"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -44,8 +45,13 @@ type Application struct {
 
 	// Сховище даних (інтерфейс)
 	dataProvider contracts.DataProvider
+	providerMu   sync.RWMutex
 	// Внутрішня шина подій для розв'язування UI-компонентів.
 	eventBus *eventbus.Bus
+	// Коротке вікно для об'єднання частих refresh-подій в одну.
+	refreshCoalesceMu      sync.Mutex
+	pendingRefresh         eventbus.DataRefreshEvent
+	refreshCoalescePending bool
 	// Пряме посилання на MockData ТІЛЬКИ для симуляції
 	// mockData *contracts.MockData
 
@@ -70,6 +76,25 @@ type Application struct {
 
 	statusLabel *widget.Label
 	versionInfo appversion.Info
+	caslEnabled bool
+}
+
+func (a *Application) getDataProvider() contracts.DataProvider {
+	if a == nil {
+		return nil
+	}
+	a.providerMu.RLock()
+	defer a.providerMu.RUnlock()
+	return a.dataProvider
+}
+
+func (a *Application) setDataProvider(provider contracts.DataProvider) {
+	if a == nil {
+		return
+	}
+	a.providerMu.Lock()
+	a.dataProvider = provider
+	a.providerMu.Unlock()
 }
 
 // updateWindowTitle оновлює заголовок вікна з урахуванням
@@ -91,6 +116,16 @@ func (a *Application) updateWindowTitle() {
 	if a.mainWindow != nil {
 		a.mainWindow.SetTitle(base)
 	}
+}
+
+func (a *Application) backendStatusConnectedText() string {
+	if a == nil {
+		return "Джерело даних: —"
+	}
+	if a.caslEnabled {
+		return "БД/МІСТ: підключено | CASL Cloud: підключено"
+	}
+	return "БД/МІСТ: підключено"
 }
 
 const (
@@ -119,22 +154,46 @@ func NewApplication() *Application {
 	// Завантажуємо налаштування БД
 	log.Info().Msg("Завантаження налаштувань БД...")
 	dbCfg := config.LoadDBConfig(fyneApp.Preferences())
-	dsn := dbCfg.ToDSN()
-	log.Info().Str("host", dbCfg.Host).Str("port", dbCfg.Port).Str("user", dbCfg.User).Msg("Налаштування БД завантажено")
+	caslEnabled := dbCfg.CASLEnabled || dbCfg.NormalizedMode() == config.BackendModeCASLCloud
+	log.Info().
+		Str("host", dbCfg.Host).
+		Str("port", dbCfg.Port).
+		Str("user", dbCfg.User).
+		Bool("caslEnabled", caslEnabled).
+		Msg("Налаштування джерела даних завантажено")
 
-	// Ініціалізуємо БД
-	log.Info().Msg("Підключення до бази даних...")
-	db := database.InitDB(dsn)
-	log.Info().Msg("БД підключена, запуск перевірки здоров'я...")
-	healthCancel := database.StartHealthCheck(db)
+	var (
+		db           *sqlx.DB
+		healthCancel context.CancelFunc
+		dataProvider contracts.DataProvider
+		dbProvider   contracts.DataProvider
+	)
 
 	// Створюємо mock дані
 	// mockData := contracts.NewMockData()
 
-	// ВИБІР ПРОВАЙДЕРА
+	// Ініціалізація основного провайдера БД/мосту
 	log.Info().Msg("Ініціалізація провайдера даних...")
-	dataProvider := backend.NewDBProvider(db, dsn)
+	dsn := dbCfg.ToDSN()
+	log.Info().Msg("Підключення до бази даних...")
+	db = database.InitDB(dsn)
+	log.Info().Msg("БД підключена, запуск перевірки здоров'я...")
+	healthCancel = database.StartHealthCheck(db)
+	dbProvider = backend.NewDBProvider(db, dsn)
+	dataProvider = dbProvider
 	log.Debug().Msg("Провайдер даних БД створено")
+
+	if caslEnabled {
+		caslProvider := backend.NewCASLCloudProvider(
+			dbCfg.CASLBaseURL,
+			dbCfg.CASLToken,
+			dbCfg.CASLPultID,
+			dbCfg.CASLEmail,
+			dbCfg.CASLPass,
+		)
+		dataProvider = backend.NewCombinedProvider(dbProvider, caslProvider)
+		log.Debug().Str("baseURL", dbCfg.CASLBaseURL).Msg("CASL Cloud підключено паралельно до БД/мосту")
+	}
 
 	log.Info().Msg("Створення структури додатку...")
 	application := &Application{
@@ -147,6 +206,7 @@ func NewApplication() *Application {
 		// mockData:   mockData,
 		isDarkTheme: isDark,
 		versionInfo: ver,
+		caslEnabled: caslEnabled,
 	}
 	log.Debug().Msg("Структура додатку готова")
 	log.Info().Str("version", ver.String()).Msg("Версія застосунку")
@@ -194,19 +254,20 @@ func (a *Application) buildUI() {
 
 	// Створюємо UI компоненти
 	log.Debug().Msg("Створення AlarmPanel...")
-	a.alarmPanel = ui.NewAlarmPanelWidget(a.dataProvider)
+	provider := a.getDataProvider()
+	a.alarmPanel = ui.NewAlarmPanelWidget(provider)
 	log.Debug().Msg("AlarmPanel створена")
 
 	log.Debug().Msg("Створення ObjectListPanel...")
-	a.objectList = ui.NewObjectListPanel(a.dataProvider)
+	a.objectList = ui.NewObjectListPanel(provider)
 	log.Debug().Msg("ObjectListPanel створена")
 
 	log.Debug().Msg("Створення WorkAreaPanel...")
-	a.workArea = ui.NewWorkAreaPanel(a.dataProvider, a.mainWindow)
+	a.workArea = ui.NewWorkAreaPanel(provider, a.mainWindow)
 	log.Debug().Msg("WorkAreaPanel створена")
 
 	log.Debug().Msg("Створення EventLogPanel...")
-	a.eventLog = ui.NewEventLogPanel(a.dataProvider)
+	a.eventLog = ui.NewEventLogPanel(provider)
 	log.Debug().Msg("EventLogPanel створена")
 	a.registerEventBusHandlers()
 
@@ -240,7 +301,12 @@ func (a *Application) buildUI() {
 		log.Debug().Int("alarmID", alarm.ID).Msg("Початок обробки тривоги...")
 		dialogs.ShowProcessAlarmDialog(a.mainWindow, alarm, func(result dialogs.ProcessAlarmResult) {
 			log.Info().Int("alarmID", alarm.ID).Str("action", result.Action).Str("note", result.Note).Msg("Тривога оброблена")
-			a.dataProvider.ProcessAlarm(fmt.Sprintf("%d", alarm.ID), "Диспетчер", result.Note)
+			provider := a.getDataProvider()
+			if provider == nil {
+				dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Провайдер даних недоступний.")
+				return
+			}
+			provider.ProcessAlarm(fmt.Sprintf("%d", alarm.ID), "Диспетчер", result.Note)
 			a.publishDataRefresh(eventbus.DataRefreshEvent{RefreshAlarms: true})
 			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Тривогу оброблено: "+result.Action)
 		})
@@ -338,7 +404,7 @@ func (a *Application) buildUI() {
 	}
 	rootSplit.SetOffset(savedOffset)
 
-	a.statusLabel = widget.NewLabel("БД : підключено")
+	a.statusLabel = widget.NewLabel(a.backendStatusConnectedText())
 	shortcutsLabel := widget.NewLabel("Ctrl+1..3: вкладки | Ctrl+T: тема | Ctrl+F: пошук")
 	statusBar := container.NewVBox(
 		widget.NewSeparator(),
@@ -499,47 +565,72 @@ func (a *Application) Run() {
 	log.Info().Msg("Основний цикл завершено")
 }
 
-// Reconnect перепідключає базу даних та оновлює провайдери
+// Reconnect перепідключає джерело даних та оновлює провайдери.
 func (a *Application) Reconnect(cfg config.DBConfig) {
-	dsn := cfg.ToDSN()
-	log.Warn().Str("dsn", dsn).Msg("🔄 Перепідключення до бази даних...")
+	caslEnabled := cfg.CASLEnabled || cfg.NormalizedMode() == config.BackendModeCASLCloud
+	log.Warn().Bool("caslEnabled", caslEnabled).Msg("🔄 Перепідключення до джерела даних...")
 	if a.statusLabel != nil {
-		a.statusLabel.SetText("БД : перепідключення...")
+		a.statusLabel.SetText("БД/МІСТ: перепідключення...")
 	}
+
+	var (
+		newDB          *sqlx.DB
+		newHealthCheck context.CancelFunc
+		newProvider    contracts.DataProvider
+		dbProvider     contracts.DataProvider
+	)
+
+	dsn := cfg.ToDSN()
 	log.Debug().Msg("Ініціалізація нового з'єднання з БД...")
-	newDB := database.InitDB(dsn)
+	newDB = database.InitDB(dsn)
 	if err := newDB.Ping(); err != nil {
 		log.Error().Err(err).Msg("❌ Помилка перевірки з'єднання з новою БД")
 		if a.statusLabel != nil {
-			a.statusLabel.SetText("БД : помилка підключення")
+			a.statusLabel.SetText("БД/МІСТ: помилка підключення")
 		}
 		dialogs.ShowErrorDialog(a.mainWindow, "Помилка підключення", err)
 		return
 	}
 	log.Debug().Msg("✓ Нове з'єднання з БД успішне")
+	newHealthCheck = database.StartHealthCheck(newDB)
+	dbProvider = backend.NewDBProvider(newDB, dsn)
+	newProvider = dbProvider
+	if caslEnabled {
+		caslProvider := backend.NewCASLCloudProvider(
+			cfg.CASLBaseURL,
+			cfg.CASLToken,
+			cfg.CASLPultID,
+			cfg.CASLEmail,
+			cfg.CASLPass,
+		)
+		newProvider = backend.NewCombinedProvider(dbProvider, caslProvider)
+		log.Debug().Str("baseURL", cfg.CASLBaseURL).Msg("CASL Cloud підключено паралельно")
+	}
 
-	// Закриваємо стару базу
+	// Закриваємо попередні ресурси
 	if a.db != nil {
-		log.Debug().Msg("Закриття старого з'єднання з БД...")
+		log.Debug().Msg("Закриття попереднього з'єднання з БД...")
 		if a.dbHealthCancel != nil {
 			a.dbHealthCancel()
 			a.dbHealthCancel = nil
 		}
 		a.db.Close()
-		log.Debug().Msg("✓ Старе з'єднання закрито")
+		log.Debug().Msg("✓ Попереднє з'єднання закрито")
 	}
 
 	a.db = newDB
-	a.dataProvider = backend.NewDBProvider(newDB, dsn)
-	a.dbHealthCancel = database.StartHealthCheck(newDB)
+	a.dbHealthCancel = newHealthCheck
+	a.setDataProvider(newProvider)
+	a.caslEnabled = caslEnabled
 	log.Debug().Msg("Провайдер даних оновлено")
 
 	// Оновлюємо посилання в панелях
 	log.Debug().Msg("Оновлення посилань на БД у панелях...")
-	a.alarmPanel.Data = a.dataProvider
-	a.objectList.Data = a.dataProvider
-	a.workArea.Data = a.dataProvider
-	a.eventLog.Data = a.dataProvider
+	provider := a.getDataProvider()
+	a.alarmPanel.Data = provider
+	a.objectList.Data = provider
+	a.workArea.Data = provider
+	a.eventLog.Data = provider
 	log.Debug().Msg("✓ Посилання оновлено")
 
 	// Перезавантажуємо дані
@@ -551,11 +642,11 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 	})
 	log.Debug().Msg("✓ Дані перезавантажено")
 
-	log.Info().Msg("✅ Перепідключення до БД завершено успішно")
+	log.Info().Bool("caslEnabled", caslEnabled).Msg("✅ Перепідключення джерела даних завершено успішно")
 	if a.statusLabel != nil {
-		a.statusLabel.SetText("БД : підключено")
+		a.statusLabel.SetText(a.backendStatusConnectedText())
 	}
-	dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Підключення до бази даних оновлено")
+	dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Підключення до джерел даних оновлено")
 }
 
 // RefreshUI оновлює інтерфейс (тему, шрифти)

@@ -89,7 +89,7 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 
 func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 	objectID, err := strconv.Atoi(idStr)
-	if err != nil {
+	if err != nil || !isCASLObjectID(objectID) {
 		return nil
 	}
 
@@ -124,7 +124,9 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 
 func (p *CASLCloudProvider) GetZones(objectID string) []models.Zone {
 	internalID, err := strconv.Atoi(objectID)
-	if err != nil { return nil }
+	if err != nil || !isCASLObjectID(internalID) {
+		return nil
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), casl.HTTPTimeout)
 	defer cancel()
@@ -140,7 +142,9 @@ func (p *CASLCloudProvider) GetZones(objectID string) []models.Zone {
 
 func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 	internalID, err := strconv.Atoi(objectID)
-	if err != nil { return nil }
+	if err != nil || !isCASLObjectID(internalID) {
+		return nil
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), casl.HTTPTimeout)
 	defer cancel()
@@ -167,7 +171,9 @@ func (p *CASLCloudProvider) GetEvents() []models.Event {
 
 func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
 	internalID, err := strconv.Atoi(objectID)
-	if err != nil { return nil }
+	if err != nil || !isCASLObjectID(internalID) {
+		return nil
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), casl.HTTPTimeout)
 	defer cancel()
@@ -224,7 +230,9 @@ func (p *CASLCloudProvider) ProcessAlarm(id string, user string, note string) {
 
 func (p *CASLCloudProvider) GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time) {
 	internalID, err := strconv.Atoi(objectID)
-	if err != nil { return "н/д", "н/д", time.Time{}, time.Time{} }
+	if err != nil || !isCASLObjectID(internalID) {
+		return "н/д", "н/д", time.Time{}, time.Time{}
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), casl.HTTPTimeout)
 	defer cancel()
@@ -305,36 +313,44 @@ func (p *CASLCloudProvider) loadHistoricalEvents() {
 }
 
 func (p *CASLCloudProvider) handleRealtimeEvents(rows []casl.ObjectEvent) {
+	if len(rows) == 0 {
+		return
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for _, row := range rows {
+	newEvents := make([]models.Event, 0, len(rows))
+	for i := len(rows) - 1; i >= 0; i-- {
+		row := rows[i]
 		deviceType := ""
 		if dev, ok := p.deviceByObjectID[row.ObjID.String()]; ok {
 			deviceType = dev.Type.String()
 		}
 
 		ev := p.mapRowToEvent(row, deviceType)
-		p.cachedEvents = append([]models.Event{ev}, p.cachedEvents...)
-		if len(p.cachedEvents) > casl.MaxCachedEvents {
-			p.cachedEvents = p.cachedEvents[:casl.MaxCachedEvents]
-		}
-		p.eventsRevision++
+		newEvents = append([]models.Event{ev}, newEvents...)
 
 		action := strings.ToUpper(row.Action.String())
 		if action == "GRD_OBJ_MGR_CANCEL" || action == "GRD_OBJ_FINISH" || ev.Type == models.EventRestore || ev.Type == models.EventPowerOK || ev.Type == models.EventOnline {
 			delete(p.realtimeAlarmByObjID, row.ObjID.String())
 		} else if isAlarmType(ev.Type) {
 			p.realtimeAlarmByObjID[row.ObjID.String()] = models.Alarm{
-				ID: ev.ID,
-				ObjectID: ev.ObjectID,
+				ID:         ev.ID,
+				ObjectID:   ev.ObjectID,
 				ObjectName: ev.ObjectName,
-				Type: mapEventToAlarmType(ev.Type),
-				Time: ev.Time,
-				Details: ev.Details,
+				Type:       mapEventToAlarmType(ev.Type),
+				Time:       ev.Time,
+				Details:    ev.Details,
 			}
 		}
 	}
+
+	p.cachedEvents = append(newEvents, p.cachedEvents...)
+	if len(p.cachedEvents) > casl.MaxCachedEvents {
+		p.cachedEvents = p.cachedEvents[:casl.MaxCachedEvents]
+	}
+	p.eventsRevision++
 }
 
 func (p *CASLCloudProvider) mapRowToEvent(row casl.ObjectEvent, deviceType string) models.Event {
@@ -342,14 +358,20 @@ func (p *CASLCloudProvider) mapRowToEvent(row casl.ObjectEvent, deviceType strin
 	dict := p.loadDictionaryMap(context.Background())
 	trans := p.loadTranslatorMap(context.Background(), deviceType)
 
+	userName := row.UserFIO.String()
+	if userName == "" {
+		userName = row.ContactID.String()
+	}
+
 	return models.Event{
-		ID: casl.StableEventID(row.ObjID.String(), row.Time.Int64(), row.Code.String(), 0),
-		Time: time.UnixMilli(row.Time.Int64()),
-		ObjectID: casl.MapObjectID(row.ObjID.String()),
+		ID:         casl.StableEventID(row.ObjID.String(), row.Time.Int64(), row.Code.String(), 0),
+		Time:       time.UnixMilli(row.Time.Int64()),
+		ObjectID:   casl.MapObjectID(row.ObjID.String()),
 		ObjectName: row.ObjName.String(),
-		Type: eventType,
-		Details: protocol.DecodeEventDescription(trans, dict, row.Code.String(), row.ContactID.String(), int(row.Number.Int64()), deviceType),
-		SC1: protocol.MapEventSC1(eventType),
+		Type:       eventType,
+		Details:    protocol.DecodeEventDescription(trans, dict, row.Code.String(), row.ContactID.String(), int(row.Number.Int64()), deviceType),
+		UserName:   userName,
+		SC1:        protocol.MapEventSC1(eventType),
 	}
 }
 
@@ -402,29 +424,38 @@ func (p *CASLCloudProvider) loadObjects(ctx context.Context) ([]casl.GrdObject, 
 	}
 	p.mu.RUnlock()
 
-	records, err := p.client.ReadGuardObjects(ctx, 0, casl.ReadLimit)
-	if err == nil && len(records) > 0 {
-		p.applySnapshot(records, nil, nil)
-		return records, nil
-	}
+	var allRecords []casl.GrdObject
+	var allDevices []casl.Device
+	seenObjIDs := make(map[string]struct{})
 
-	connRecords, err := p.client.ReadConnections(ctx, 0, casl.ReadLimit)
-	if err == nil && len(connRecords) > 0 {
-		objs := make([]casl.GrdObject, 0, len(connRecords))
-		devs := make([]casl.Device, 0, len(connRecords))
-		for _, r := range connRecords {
-			objs = append(objs, r.GuardedObject)
-			devs = append(devs, r.Device)
+	addUnique := func(record casl.GrdObject) {
+		if record.ObjID == "" {
+			return
 		}
-		p.applySnapshot(objs, devs, nil)
-		return objs, nil
+		if _, exists := seenObjIDs[record.ObjID]; !exists {
+			seenObjIDs[record.ObjID] = struct{}{}
+			allRecords = append(allRecords, record)
+		}
 	}
 
-	pults, pultErr := p.client.ReadPults(ctx, 0, casl.ReadLimit)
-	if pultErr == nil && len(pults) > 0 {
-		objs := make([]casl.GrdObject, 0, len(pults))
+	if records, err := p.client.ReadGuardObjects(ctx, 0, casl.ReadLimit); err == nil {
+		for _, r := range records {
+			addUnique(r)
+		}
+	}
+
+	if connRecords, err := p.client.ReadConnections(ctx, 0, casl.ReadLimit); err == nil {
+		for _, r := range connRecords {
+			addUnique(r.GuardedObject)
+			if r.Device.DeviceID.String() != "" {
+				allDevices = append(allDevices, r.Device)
+			}
+		}
+	}
+
+	if pults, err := p.client.ReadPults(ctx, 0, casl.ReadLimit); err == nil {
 		for _, pult := range pults {
-			objs = append(objs, casl.GrdObject{
+			addUnique(casl.GrdObject{
 				ObjID:   pult.PultID,
 				Name:    pult.Name,
 				Lat:     strconv.FormatFloat(pult.Lat, 'f', 6, 64),
@@ -432,11 +463,14 @@ func (p *CASLCloudProvider) loadObjects(ctx context.Context) ([]casl.GrdObject, 
 				Address: pult.Nickname,
 			})
 		}
-		p.applySnapshot(objs, nil, nil)
-		return objs, nil
 	}
 
-	return nil, err
+	if len(allRecords) > 0 {
+		p.applySnapshot(allRecords, allDevices, nil)
+		return allRecords, nil
+	}
+
+	return nil, fmt.Errorf("no objects found in any source")
 }
 
 func (p *CASLCloudProvider) loadDevices(ctx context.Context) ([]casl.Device, error) {

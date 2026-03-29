@@ -223,6 +223,7 @@ func (s *RealtimeService) mapRealtimeRow(source map[string]any, fallbackType str
 		Type:      asString(source["type"]),
 		Number:    Int64(parseAnyInt(source["number"])),
 		ContactID: Text(asString(source["contact_id"])),
+		UserFIO:   Text(asString(source["user_fio"])),
 		Time:      Int64(parseAnyTime(source["time"]).UnixMilli()),
 	}
 	if row.Type == "" { row.Type = fallbackType }

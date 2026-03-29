@@ -3480,7 +3480,83 @@ func (p *CASLCloudProvider) loadDictionaryMap(ctx context.Context) map[string]st
 	p.cachedDictionaryAt = time.Now()
 	p.mu.Unlock()
 
+	// Після завантаження словника одразу попередньо завантажуємо транслятори
+	// для всіх типів пристроїв, що вказані у user_device_types.
+	// Виконується у окремій горутині, щоб не блокувати поточний запит.
+	go p.preloadTranslatorsFromDict(context.Background(), dict)
+
 	return flattenLocalizedDictionaryMap(dict)
+}
+
+// preloadTranslatorsFromDict читає список user_device_types зі словника
+// та послідовно завантажує транслятор (get_msg_translator_by_device_type) для кожного типу.
+// Викликається один раз після кешування словника.
+func (p *CASLCloudProvider) preloadTranslatorsFromDict(ctx context.Context, dict map[string]any) {
+	deviceTypes := extractCASLUserDeviceTypes(dict)
+	if len(deviceTypes) == 0 {
+		return
+	}
+	log.Debug().
+		Strs("device_types", deviceTypes).
+		Msg("CASL: попереднє завантаження трансляторів для типів пристроїв")
+
+	for _, dt := range deviceTypes {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		p.loadTranslatorMap(ctx, dt)
+	}
+}
+
+// extractCASLUserDeviceTypes витягує всі типи приладів зі словника.
+// Читає два поля:
+//   - user_device_types: ["AX_PRO","Ajax Pro","MAKS_PRO","SATEL",...]
+//   - devices: [{"type":"TYPE_DEVICE_Ajax",...}, {"type":"TYPE_DEVICE_Dunay_4_3",...}, ...]
+//
+// Результат — об'єднаний дедупльований список.
+func extractCASLUserDeviceTypes(dict map[string]any) []string {
+	if len(dict) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	types := make([]string, 0, 32)
+
+	addType := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return
+		}
+		if _, exists := seen[s]; exists {
+			return
+		}
+		seen[s] = struct{}{}
+		types = append(types, s)
+	}
+
+	// Поле 1: user_device_types (рядковий масив)
+	if raw, ok := dict["user_device_types"]; ok {
+		if arr, ok := raw.([]any); ok {
+			for _, item := range arr {
+				addType(asString(item))
+			}
+		}
+	}
+
+	// Поле 2: devices (масив об'єктів з полем "type")
+	if raw, ok := dict["devices"]; ok {
+		if arr, ok := raw.([]any); ok {
+			for _, item := range arr {
+				if obj, ok := item.(map[string]any); ok {
+					addType(asString(obj["type"]))
+				}
+			}
+		}
+	}
+
+	return types
 }
 
 func flattenLocalizedDictionaryMap(dict map[string]any) map[string]string {
@@ -4003,12 +4079,59 @@ func resolveCASLTemplate(source map[string]string, key string) string {
 		return ""
 	}
 
-	candidates := []string{
-		key,
-		strings.ToUpper(key),
-		strings.ToLower(key),
+	upper := strings.ToUpper(key)
+
+	// Основні кандидати: точний ключ + upper + lower.
+	candidates := []string{key, upper, strings.ToLower(key)}
+
+	// Для user_device_types приладів коди подій приходять у форматі "E627"/"R627".
+	// Транслятор будується з {"code":627,"typeEvent":"E"} → ключі "E627" і "627".
+	// Тому додаємо cross-варіанти:
+	//   "E627" → також пробуємо "R627" і "627" (числовий)
+	//   "R627" → також пробуємо "E627" і "627"
+	//   "627"  → також пробуємо "E627" і "R627"
+	if len(upper) >= 2 && (upper[0] == 'E' || upper[0] == 'R') {
+		tail := upper[1:]
+		isNumericTail := len(tail) >= 1
+		for _, ch := range tail {
+			if ch < '0' || ch > '9' {
+				isNumericTail = false
+				break
+			}
+		}
+		if isNumericTail {
+			// Strip prefix → numeric fallback
+			candidates = append(candidates, tail)
+			// Alternate prefix
+			if upper[0] == 'E' {
+				candidates = append(candidates, "R"+tail)
+			} else {
+				candidates = append(candidates, "E"+tail)
+			}
+		}
+	} else {
+		// Чисто числовий ключ → пробуємо E/R варіанти
+		isAllDigits := len(upper) >= 1
+		for _, ch := range upper {
+			if ch < '0' || ch > '9' {
+				isAllDigits = false
+				break
+			}
+		}
+		if isAllDigits {
+			candidates = append(candidates, "E"+upper, "R"+upper)
+		}
 	}
+
+	seen := make(map[string]struct{}, len(candidates))
 	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if _, dup := seen[candidate]; dup {
+			continue
+		}
+		seen[candidate] = struct{}{}
 		if value := strings.TrimSpace(source[candidate]); value != "" {
 			return value
 		}
@@ -4654,7 +4777,18 @@ func decodeCASLEventDescription(translator map[string]string, dictionary map[str
 	resolvedNumber := number
 
 	// Пріоритет 1: явні мапи по code.
+	// Транслятор (get_msg_translator_by_device_type) повертає message-key (наприклад,
+	// "PROG_MODE_ENTER"), а не кириличний текст. Тому після отримання ключа зі транслятора
+	// необхідно ще раз заглянути у словник (read_dictionary) щоб отримати локалізований опис.
 	template := resolveCASLTemplate(translator, code)
+	if template != "" && !hasCyrillicChars(template) {
+		// translator повернув message-key — шукаємо людський текст у словнику.
+		if dictText := resolveCASLTemplate(dictionary, template); dictText != "" {
+			template = dictText
+		} else if fb := resolveCASLTemplate(caslMessageKeyFallbackTemplates, template); fb != "" {
+			template = fb
+		}
+	}
 	if template == "" {
 		template = resolveCASLTemplate(dictionary, code)
 	}
@@ -4680,6 +4814,14 @@ func decodeCASLEventDescription(translator map[string]string, dictionary map[str
 			resolvedNumber = decoded.Number
 		}
 		template = resolveCASLTemplate(translator, decoded.MessageKey)
+		// Аналогічно: якщо транслятор повернув message-key, дворазовий lookup через словник.
+		if template != "" && !hasCyrillicChars(template) {
+			if dictText := resolveCASLTemplate(dictionary, template); dictText != "" {
+				template = dictText
+			} else if fb := resolveCASLTemplate(caslMessageKeyFallbackTemplates, template); fb != "" {
+				template = fb
+			}
+		}
 		if template == "" {
 			template = resolveCASLTemplate(dictionary, decoded.MessageKey)
 		}
@@ -4689,9 +4831,6 @@ func decodeCASLEventDescription(translator map[string]string, dictionary map[str
 		}
 		if template == "" {
 			template = resolveCASLTemplate(caslContactIDFallbackTemplates, decoded.MessageKey)
-		}
-		if template == "" {
-			template = fallbackTemplate
 		}
 		if template == "" {
 			template = strings.TrimSpace(decoded.MessageKey)

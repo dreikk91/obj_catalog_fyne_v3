@@ -1,6 +1,7 @@
 package data
 
 import (
+	"obj_catalog_fyne_v3/pkg/data/casl"
 	"strconv"
 	"testing"
 	"time"
@@ -75,7 +76,7 @@ func TestCombinedDataProvider_MergesObjectsAndAlarms(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
-	secondaryObjID := caslObjectIDNamespaceStart + 1
+	secondaryObjID := casl.ObjectIDNamespaceStart + 1
 
 	primary := &combinedStubProvider{
 		objects: []models.Object{
@@ -116,7 +117,7 @@ func TestCombinedDataProvider_MergesObjectsAndAlarms(t *testing.T) {
 func TestCombinedDataProvider_RoutesByObjectIDNamespace(t *testing.T) {
 	t.Parallel()
 
-	secondaryObjID := caslObjectIDNamespaceStart + 2
+	secondaryObjID := casl.ObjectIDNamespaceStart + 2
 	secondaryObjIDStr := strconv.Itoa(secondaryObjID)
 
 	primary := &combinedStubProvider{

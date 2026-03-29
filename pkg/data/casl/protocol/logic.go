@@ -146,8 +146,7 @@ func resolveTemplate(source map[string]string, key string) string {
 		return ""
 	}
 	upper := strings.ToUpper(key)
-	candidates := []string{key, upper, strings.ToLower(key)}
-	for _, candidate := range candidates {
+	for _, candidate := range []string{key, upper, strings.ToLower(key)} {
 		if value, ok := source[candidate]; ok && value != "" {
 			return value
 		}
@@ -196,51 +195,113 @@ func needsNumberSuffix(key string) bool {
 }
 
 func fallbackContactIDTemplate(contactID string) string {
-	if len(contactID) < 4 { return "" }
-	if contactID[0] == 'R' { return "Відновлення ContactID " + contactID }
-	if contactID[0] == 'E' { return "Тривога ContactID " + contactID }
+	if len(contactID) < 4 {
+		return ""
+	}
+	if contactID[0] == 'R' {
+		return "Відновлення ContactID " + contactID
+	}
+	if contactID[0] == 'E' {
+		return "Тривога ContactID " + contactID
+	}
 	return ""
 }
 
 func ClassifyEventType(code string) models.EventType {
 	value := strings.ToUpper(strings.TrimSpace(code))
+	valueLower := strings.ToLower(strings.TrimSpace(code))
+
 	switch {
-	case strings.Contains(value, "FIRE"): return models.EventFire
-	case strings.Contains(value, "BURGLARY"): return models.EventBurglary
-	case strings.Contains(value, "PANIC"): return models.EventPanic
-	case strings.Contains(value, "ARMED"): return models.EventArm
-	case strings.Contains(value, "DISARM"): return models.EventDisarm
-	case strings.Contains(value, "NO_220"): return models.EventPowerFail
-	case strings.Contains(value, "OK_220"): return models.EventRestore
+	case strings.Contains(value, "FIRE"), strings.Contains(value, "SMOKE"), strings.Contains(value, "HEAT"), strings.Contains(valueLower, "пожеж"), strings.Contains(valueLower, "дим"), strings.Contains(valueLower, "тепл"):
+		return models.EventFire
+	case strings.Contains(value, "BURGLARY"), strings.Contains(value, "INTRUSION"), strings.Contains(value, "BRUTFORS"), strings.Contains(value, "ZONE_ALM"), strings.Contains(valueLower, "проник"), strings.Contains(valueLower, "злом"):
+		return models.EventBurglary
+	case strings.Contains(value, "PANIC"), strings.Contains(value, "COERCION"), strings.Contains(value, "ATTACK"), strings.Contains(valueLower, "панік"), strings.Contains(valueLower, "напад"):
+		return models.EventPanic
+	case strings.Contains(value, "MEDICAL"), strings.Contains(valueLower, "медич"):
+		return models.EventMedical
+	case strings.Contains(value, "GAS"), strings.Contains(valueLower, "газ"):
+		return models.EventGas
+	case strings.Contains(value, "SABOTAGE"), strings.Contains(value, "TAMPER"), strings.Contains(valueLower, "саботаж"), strings.Contains(valueLower, "тампер"):
+		return models.EventTamper
+	case strings.Contains(value, "ARMED"), strings.Contains(valueLower, "взят"), strings.Contains(value, "R402"):
+		return models.EventArm
+	case strings.Contains(value, "DISARM"), strings.Contains(valueLower, "знят"), strings.Contains(value, "R401"):
+		return models.EventDisarm
+	case strings.Contains(value, "NO_220"), strings.Contains(value, "POWER_FAIL"), strings.Contains(valueLower, "220") && strings.Contains(valueLower, "пропаж"):
+		return models.EventPowerFail
+	case strings.Contains(value, "OK_220"), strings.Contains(value, "RESTORE"), strings.Contains(value, "RECOVER"), strings.Contains(valueLower, "віднов"), strings.Contains(valueLower, "норма"):
+		return models.EventRestore
+	case strings.Contains(value, "OFFLINE"), strings.Contains(value, "CONNECTION_LOST"), strings.Contains(valueLower, "нема зв"):
+		return models.EventOffline
+	case strings.Contains(value, "BATTERY") && strings.Contains(value, "LOW"), strings.Contains(valueLower, "акб") && strings.Contains(valueLower, "розряд"):
+		return models.EventBatteryLow
+	case strings.Contains(value, "TEST"), strings.Contains(value, "PING"), strings.Contains(value, "POLL"):
+		return models.EventTest
+	case strings.Contains(value, "UPD_START"), strings.Contains(value, "FIRMWARE"), strings.Contains(value, "ID_HOZ"), strings.Contains(value, "USER_ACCESS"):
+		return models.SystemEvent
 	}
 	return models.EventFault
 }
 
+func ClassifyEventTypeWithContext(code, contactID, sourceType, details string) models.EventType {
+	normalizedType := strings.TrimSpace(sourceType)
+	if normalizedType != "" && !strings.EqualFold(normalizedType, "user_action") && !strings.EqualFold(normalizedType, "mob_user_action") {
+		if mapped := mapTapeEventType(normalizedType); mapped != models.EventFault || strings.EqualFold(normalizedType, "fault") {
+			return mapped
+		}
+	}
+
+	if et := ClassifyEventType(code); et != models.EventFault {
+		return et
+	}
+	if et := ClassifyEventType(contactID); et != models.EventFault {
+		return et
+	}
+	if et := ClassifyEventType(details); et != models.EventFault {
+		return et
+	}
+	return models.EventFault
+}
+
+func mapTapeEventType(raw string) models.EventType {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "fire": return models.EventFire
+	case "burglary": return models.EventBurglary
+	case "panic": return models.EventPanic
+	case "medical": return models.EventMedical
+	case "gas": return models.EventGas
+	case "tamper": return models.EventTamper
+	case "fault": return models.EventFault
+	case "restore": return models.EventRestore
+	case "arm": return models.EventArm
+	case "disarm": return models.EventDisarm
+	case "test", "poll": return models.EventTest
+	case "power_fail": return models.EventPowerFail
+	case "power_ok": return models.EventPowerOK
+	case "batt_low": return models.EventBatteryLow
+	case "offline": return models.EventOffline
+	case "online": return models.EventOnline
+	case "system", "user_action", "ppk_action", "ppk_service", "system_event", "system_action", "m3_in", "mob_user_action":
+		return models.SystemEvent
+	}
+	return ClassifyEventType(value)
+}
+
 func MapEventSC1(eventType models.EventType) int {
 	switch eventType {
-	case models.EventFire:
-		return 1
-	case models.EventBurglary:
-		return 22
-	case models.EventPanic:
-		return 21
-	case models.EventMedical:
-		return 23
-	case models.EventGas:
-		return 24
-	case models.EventTamper:
-		return 25
-	case models.EventRestore, models.EventPowerOK:
-		return 5
-	case models.EventArm:
-		return 10
-	case models.EventDisarm:
-		return 14
-	case models.EventOffline:
-		return 12
-	case models.EventTest, models.SystemEvent:
-		return 6
-	default:
-		return 2
+	case models.EventFire: return 1
+	case models.EventBurglary: return 22
+	case models.EventPanic: return 21
+	case models.EventMedical: return 23
+	case models.EventGas: return 24
+	case models.EventTamper: return 25
+	case models.EventRestore, models.EventPowerOK: return 5
+	case models.EventArm: return 10
+	case models.EventDisarm: return 14
+	case models.EventOffline: return 12
+	case models.EventTest, models.SystemEvent: return 6
+	default: return 2
 	}
 }

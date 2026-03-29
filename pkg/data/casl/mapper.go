@@ -93,6 +93,21 @@ func (m *Mapper) ToObject(record GrdObject, device *Device) models.Object {
 	}
 }
 
+func (m *Mapper) EnrichObjectWithDeviceMeta(obj *models.Object, device *Device, deviceTypeLabel string) {
+	if obj == nil || device == nil {
+		return
+	}
+
+	if deviceTypeLabel != "" {
+		obj.DeviceType = deviceTypeLabel
+	}
+
+	deviceName := strings.TrimSpace(device.Name.String())
+	if deviceName != "" {
+		obj.Notes1 = deviceName
+	}
+}
+
 func (m *Mapper) ToPultObject(item Pult) models.Object {
 	name := strings.TrimSpace(item.Name)
 	if name == "" {
@@ -261,6 +276,40 @@ func (m *Mapper) MapObjectGroups(rawGroups any, rooms []Room) []models.ObjectGro
 	})
 
 	return groups
+}
+
+func (m *Mapper) BuildLineNameIndex(lines []DeviceLine) map[int]string {
+	if len(lines) == 0 {
+		return nil
+	}
+	index := make(map[int]string, len(lines))
+	for _, line := range lines {
+		name := strings.TrimSpace(line.Name.String())
+		if name == "" { continue }
+		if num := int(line.ID.Int64()); num > 0 {
+			index[num] = name
+			continue
+		}
+		if num := int(line.Number.Int64()); num > 0 {
+			index[num] = name
+		}
+	}
+	return index
+}
+
+func (m *Mapper) NormalizeObjectRecord(record *GrdObject, device Device) {
+	if record == nil { return }
+	if record.ManagerID == "" {
+		record.ManagerID = strings.TrimSpace(record.Manager.UserID)
+	}
+	if record.ObjID == "" {
+		record.ObjID = device.ObjID.String()
+	}
+	if record.DeviceID.Int64() <= 0 {
+		if i, err := strconv.ParseInt(device.DeviceID.String(), 10, 64); err == nil {
+			record.DeviceID = Int64(i)
+		}
+	}
 }
 
 // Internal recursive helpers for groups

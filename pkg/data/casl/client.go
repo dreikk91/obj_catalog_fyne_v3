@@ -317,6 +317,48 @@ func (c *APIClient) ReadBasketCount(ctx context.Context) (int, error) {
 	return resp.Count, nil
 }
 
+func (c *APIClient) ReadDeviceState(ctx context.Context, deviceID string) (DeviceState, error) {
+	payload := map[string]any{"type": "read_device_state", "device_id": deviceID}
+	var resp ReadDeviceStateResponse
+	if err := c.PostCommand(ctx, payload, &resp, true); err != nil {
+		return DeviceState{}, err
+	}
+	return resp.State, nil
+}
+
+func (c *APIClient) ReadDictionary(ctx context.Context) (map[string]any, error) {
+	var resp struct {
+		Status string `json:"status"`
+		Dictionary map[string]any `json:"dictionary"`
+		Error string `json:"error"`
+	}
+	payload := map[string]any{"type": "read_dictionary"}
+	if err := c.PostCommand(ctx, payload, &resp, true); err != nil {
+		return nil, err
+	}
+	return resp.Dictionary, nil
+}
+
+func (c *APIClient) GetMessageTranslatorByDeviceType(ctx context.Context, deviceType string) (any, error) {
+	// Try both param names
+	p1 := map[string]any{"type": "get_msg_translator_by_device_type", "typeDevice": deviceType}
+	var r1 struct {
+		Status string `json:"status"`
+		Data any `json:"data"`
+		Error string `json:"error"`
+	}
+	if err := c.PostCommand(ctx, p1, &r1, true); err == nil { return r1.Data, nil }
+
+	p2 := map[string]any{"type": "get_msg_translator_by_device_type", "device_type": deviceType}
+	var r2 struct {
+		Status string `json:"status"`
+		Data any `json:"data"`
+		Error string `json:"error"`
+	}
+	if err := c.PostCommand(ctx, p2, &r2, true); err == nil { return r2.Data, nil }
+	return nil, fmt.Errorf("failed to get translator")
+}
+
 func (c *APIClient) GetStatisticReport(ctx context.Context, name string, limit int) ([]map[string]any, error) {
 	payload := map[string]any{
 		"type": "get_statistic",
@@ -333,6 +375,22 @@ func (c *APIClient) GetStatisticReport(ctx context.Context, name string, limit i
 	}
 	if err := c.PostCommand(ctx, payload, &resp, true); err != nil {
 		return nil, err
+	}
+	return resp.Data, nil
+}
+
+func (c *APIClient) ReadStatsAlarms(ctx context.Context, deviceID, objectID string, start, end int64) (StatsAlarmsData, error) {
+	payload := map[string]any{
+		"type": "get_statistic",
+		"name": "stats_alarms",
+		"deviceId": deviceID,
+		"objectId": objectID,
+		"startTime": start,
+		"endTime": end,
+	}
+	var resp GetStatisticResponse
+	if err := c.PostCommand(ctx, payload, &resp, true); err != nil {
+		return StatsAlarmsData{}, err
 	}
 	return resp.Data, nil
 }

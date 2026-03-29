@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"fmt"
 	"obj_catalog_fyne_v3/pkg/data/casl"
 	"obj_catalog_fyne_v3/pkg/data/casl/protocol"
 	"obj_catalog_fyne_v3/pkg/models"
@@ -38,6 +39,8 @@ type CASLCloudProvider struct {
 	cachedDictionary   map[string]any
 	cachedDictionaryAt time.Time
 
+	cachedTranslators map[string]map[string]string
+
 	realtimeAlarmByObjID map[string]models.Alarm
 }
 
@@ -55,6 +58,7 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 		deviceByObjectID:     make(map[string]casl.Device),
 		deviceByNumber:       make(map[int64]casl.Device),
 		cachedUsers:          make(map[string]casl.User),
+		cachedTranslators:    make(map[string]map[string]string),
 		realtimeAlarmByObjID: make(map[string]models.Alarm),
 	}
 
@@ -108,14 +112,20 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 
 	_, _ = p.loadDevices(ctx)
 
-	device, _ := p.resolveDeviceForObject(record)
+	device, hasDevice := p.resolveDeviceForObject(record)
 	obj := p.mapper.ToObject(record, &device)
 
-	var state casl.DeviceState
-	if err := p.client.PostCommand(ctx, map[string]any{"type": "read_device_state", "device_id": strconv.FormatInt(record.DeviceID.Int64(), 10)}, &state, true); err == nil {
+	if state, stateErr := p.client.ReadDeviceState(ctx, strconv.FormatInt(record.DeviceID.Int64(), 10)); stateErr == nil {
 		obj.IsConnState = int64(state.Online.Int64())
 		obj.IsConnOK = obj.IsConnState > 0
+		if state.LastPingDate.Int64() > 0 {
+			obj.LastMessageTime = time.UnixMilli(state.LastPingDate.Int64()).Local()
+		}
 		obj.Groups = p.mapper.MapObjectGroups(state.Groups, record.Rooms)
+	}
+
+	if hasDevice {
+		p.mapper.EnrichObjectWithDeviceMeta(&obj, &device, "")
 	}
 
 	return &obj
@@ -188,9 +198,14 @@ func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
 	rows := resp.Data
 	if len(rows) == 0 { rows = resp.Events }
 
+	deviceType := ""
+	if dev, ok := p.deviceByObjectID[record.ObjID]; ok {
+		deviceType = dev.Type.String()
+	}
+
 	events := make([]models.Event, 0, len(rows))
 	for _, row := range rows {
-		events = append(events, p.mapRowToEvent(row))
+		events = append(events, p.mapRowToEvent(row, deviceType))
 	}
 	return events
 }
@@ -221,14 +236,25 @@ func (p *CASLCloudProvider) GetExternalData(objectID string) (signal string, tes
 	record, found, err := p.resolveObjectRecord(ctx, internalID)
 	if err != nil || !found { return "н/д", "н/д", time.Time{}, time.Time{} }
 
-	var state casl.DeviceState
-	if err := p.client.PostCommand(ctx, map[string]any{"type": "read_device_state", "device_id": strconv.FormatInt(record.DeviceID.Int64(), 10)}, &state, true); err == nil {
+	state, stateErr := p.client.ReadDeviceState(ctx, strconv.FormatInt(record.DeviceID.Int64(), 10))
+	if stateErr == nil {
 		if state.LastPingDate.Int64() > 0 {
 			lastMsg = time.UnixMilli(state.LastPingDate.Int64()).Local()
 			lastTest = lastMsg
 		}
 	}
-	return "н/д", "н/д", lastTest, lastMsg
+
+	testParts := []string{"н/д"}
+	if stats, statsErr := p.client.ReadStatsAlarms(ctx, strconv.FormatInt(record.DeviceID.Int64(), 10), record.ObjID, time.Now().Add(-casl.StatsSpan).UnixMilli(), time.Now().UnixMilli()); statsErr == nil {
+		testParts = []string{
+			fmt.Sprintf("freq=%d", stats.ResponseFrequencies.Int64()),
+			fmt.Sprintf("quality=%d", stats.CommunicQuality.Int64()),
+			fmt.Sprintf("alarms=%d", stats.CustomWins.Int64()),
+			fmt.Sprintf("power=%d", stats.PowerFailure.Int64()),
+		}
+	}
+
+	return "н/д", strings.Join(testParts, "; "), lastTest, lastMsg
 }
 
 func (p *CASLCloudProvider) GetTestMessages(objectID string) []models.TestMessage {
@@ -240,11 +266,13 @@ func (p *CASLCloudProvider) GetTestMessages(objectID string) []models.TestMessag
 		if ev.Type == models.EventTest || strings.Contains(strings.ToUpper(ev.Details), "TEST") {
 			messages = append(messages, models.TestMessage{Time: ev.Time, Info: ev.GetTypeDisplay(), Details: ev.Details})
 		}
+		if len(messages) >= 200 { break }
 	}
 	return messages
 }
 
 func (p *CASLCloudProvider) GetLatestEventID() (int64, error) {
+	p.realtime.Start(context.Background())
 	p.mu.RLock()
 	revision := p.eventsRevision
 	p.mu.RUnlock()
@@ -256,14 +284,23 @@ func (p *CASLCloudProvider) handleRealtimeEvents(rows []casl.ObjectEvent) {
 	defer p.mu.Unlock()
 
 	for _, row := range rows {
-		ev := p.mapRowToEvent(row)
+		// Resolve device type for decoding
+		deviceType := ""
+		if dev, ok := p.deviceByObjectID[row.ObjID.String()]; ok {
+			deviceType = dev.Type.String()
+		}
+
+		ev := p.mapRowToEvent(row, deviceType)
 		p.cachedEvents = append([]models.Event{ev}, p.cachedEvents...)
 		if len(p.cachedEvents) > casl.MaxCachedEvents {
 			p.cachedEvents = p.cachedEvents[:casl.MaxCachedEvents]
 		}
 		p.eventsRevision++
 
-		if isAlarmType(ev.Type) {
+		action := strings.ToUpper(row.Action.String())
+		if action == "GRD_OBJ_MGR_CANCEL" || action == "GRD_OBJ_FINISH" || ev.Type == models.EventRestore || ev.Type == models.EventPowerOK || ev.Type == models.EventOnline {
+			delete(p.realtimeAlarmByObjID, row.ObjID.String())
+		} else if isAlarmType(ev.Type) {
 			p.realtimeAlarmByObjID[row.ObjID.String()] = models.Alarm{
 				ID: ev.ID,
 				ObjectID: ev.ObjectID,
@@ -276,17 +313,61 @@ func (p *CASLCloudProvider) handleRealtimeEvents(rows []casl.ObjectEvent) {
 	}
 }
 
-func (p *CASLCloudProvider) mapRowToEvent(row casl.ObjectEvent) models.Event {
-	eventType := protocol.ClassifyEventType(row.Code.String())
+func (p *CASLCloudProvider) mapRowToEvent(row casl.ObjectEvent, deviceType string) models.Event {
+	eventType := protocol.ClassifyEventTypeWithContext(row.Code.String(), row.ContactID.String(), row.Type, row.ObjName.String())
+
+	dict := p.loadDictionaryMap(context.Background())
+	trans := p.loadTranslatorMap(context.Background(), deviceType)
+
 	return models.Event{
-		ID: int(time.Now().UnixNano() & 0x7fffffff),
+		ID: casl.StableEventID(row.ObjID.String(), row.Time.Int64(), row.Code.String(), 0),
 		Time: time.UnixMilli(row.Time.Int64()),
 		ObjectID: casl.MapObjectID(row.ObjID.String()),
 		ObjectName: row.ObjName.String(),
 		Type: eventType,
-		Details: protocol.DecodeEventDescription(nil, nil, row.Code.String(), row.ContactID.String(), int(row.Number.Int64()), ""),
+		Details: protocol.DecodeEventDescription(trans, dict, row.Code.String(), row.ContactID.String(), int(row.Number.Int64()), deviceType),
 		SC1: protocol.MapEventSC1(eventType),
 	}
+}
+
+func (p *CASLCloudProvider) loadDictionaryMap(ctx context.Context) map[string]string {
+	p.mu.RLock()
+	if len(p.cachedDictionary) > 0 && time.Since(p.cachedDictionaryAt) <= casl.DictionaryTTL {
+		res := casl.FlattenDictionaryMap(p.cachedDictionary)
+		p.mu.RUnlock()
+		return res
+	}
+	p.mu.RUnlock()
+
+	dict, err := p.client.ReadDictionary(ctx)
+	if err != nil { return nil }
+
+	p.mu.Lock()
+	p.cachedDictionary = dict
+	p.cachedDictionaryAt = time.Now()
+	p.mu.Unlock()
+
+	return casl.FlattenDictionaryMap(dict)
+}
+
+func (p *CASLCloudProvider) loadTranslatorMap(ctx context.Context, deviceType string) map[string]string {
+	if deviceType == "" { return nil }
+	p.mu.RLock()
+	if m, ok := p.cachedTranslators[deviceType]; ok {
+		p.mu.RUnlock()
+		return m
+	}
+	p.mu.RUnlock()
+
+	raw, err := p.client.GetMessageTranslatorByDeviceType(ctx, deviceType)
+	if err != nil { return nil }
+
+	m := casl.FlattenTranslatorMap(raw)
+	p.mu.Lock()
+	p.cachedTranslators[deviceType] = m
+	p.mu.Unlock()
+
+	return m
 }
 
 func (p *CASLCloudProvider) loadObjects(ctx context.Context) ([]casl.GrdObject, error) {
@@ -306,9 +387,10 @@ func (p *CASLCloudProvider) loadObjects(ctx context.Context) ([]casl.GrdObject, 
 	p.mu.Lock()
 	p.cachedObjects = records
 	p.cachedObjectsAt = time.Now()
-	for _, obj := range records {
-		internalID := casl.MapObjectID(obj.ObjID, obj.Name, strconv.FormatInt(obj.DeviceNumber.Int64(), 10))
-		p.objectByInternalID[internalID] = obj
+	for i := range records {
+		p.mapper.NormalizeObjectRecord(&records[i], casl.Device{})
+		internalID := casl.MapObjectID(records[i].ObjID, records[i].Name, strconv.FormatInt(records[i].DeviceNumber.Int64(), 10))
+		p.objectByInternalID[internalID] = records[i]
 	}
 	p.mu.Unlock()
 
@@ -428,7 +510,7 @@ func isCASLObjectID(id int) bool {
 }
 
 func isAlarmType(t models.EventType) bool {
-	return t == models.EventFire || t == models.EventBurglary || t == models.EventPanic
+	return t == models.EventFire || t == models.EventBurglary || t == models.EventPanic || t == models.EventMedical || t == models.EventGas || t == models.EventTamper
 }
 
 func mapEventToAlarmType(t models.EventType) models.AlarmType {
@@ -436,6 +518,9 @@ func mapEventToAlarmType(t models.EventType) models.AlarmType {
 	case models.EventFire: return models.AlarmFire
 	case models.EventBurglary: return models.AlarmBurglary
 	case models.EventPanic: return models.AlarmPanic
+	case models.EventMedical: return models.AlarmMedical
+	case models.EventGas: return models.AlarmGas
+	case models.EventTamper: return models.AlarmTamper
 	}
 	return models.AlarmFault
 }

@@ -248,7 +248,7 @@ func (s *RealtimeService) extractConnID(msg any) string {
 }
 
 func (s *RealtimeService) subscribe(ctx context.Context, connID string) {
-	tags := []string{"ppk_in", "user_action", "system_event"}
+	tags := []string{"ppk_in", "user_action", "ppk_service", "system_event"}
 	for _, tag := range tags {
 		payload := map[string]any{
 			"conn_id": connID,
@@ -261,6 +261,7 @@ func (s *RealtimeService) subscribe(ctx context.Context, connID string) {
 func parseAnyInt(value any) int {
 	switch v := value.(type) {
 	case int: return v
+	case int64: return int(v)
 	case float64: return int(v)
 	case string:
 		i, _ := strconv.Atoi(v)
@@ -271,10 +272,14 @@ func parseAnyInt(value any) int {
 
 func parseAnyTime(value any) time.Time {
 	switch v := value.(type) {
+	case time.Time: return v
 	case float64: return time.UnixMilli(int64(v))
+	case int64: return time.UnixMilli(v)
 	case string:
-		t, _ := time.Parse(time.RFC3339, v)
-		return t
+		t, err := time.Parse(time.RFC3339, v)
+		if err == nil { return t }
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err == nil { return time.UnixMilli(i) }
 	}
 	return time.Time{}
 }

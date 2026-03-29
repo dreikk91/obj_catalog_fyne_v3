@@ -14,6 +14,7 @@ const workAreaDateTimeLayout = "02.01.2006 15:04:05"
 type WorkAreaDevicePresentation struct {
 	DeviceTypeText   string
 	PanelMarkText    string
+	GroupsText       string
 	PowerText        string
 	SIMText          string
 	SIMCopyText      string
@@ -47,19 +48,41 @@ func NewWorkAreaDeviceViewModel() *WorkAreaDeviceViewModel {
 
 func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) WorkAreaDevicePresentation {
 	powerText := "220В (мережа)"
-	if obj.PowerSource == models.PowerBattery {
+	if obj.PowerSource == models.PowerBattery || obj.PowerFault != 0 {
 		powerText = "🔋 АКБ (резерв)"
 	}
 
-	simText := "SIM1: " + strings.TrimSpace(obj.SIM1)
-	copySimText := strings.TrimSpace(obj.SIM1)
-	if strings.TrimSpace(obj.SIM2) != "" {
-		simText += " | SIM2: " + strings.TrimSpace(obj.SIM2)
+	sim1 := strings.TrimSpace(obj.SIM1)
+	sim2 := strings.TrimSpace(obj.SIM2)
+	simText := "SIM1: —"
+	copySimText := ""
+	if sim1 != "" {
+		simText = "SIM1: " + sim1
+		copySimText = sim1
+	}
+	if sim2 != "" {
+		simText += " | SIM2: " + sim2
 		if copySimText != "" {
-			copySimText += " / " + strings.TrimSpace(obj.SIM2)
+			copySimText += " / " + sim2
 		} else {
-			copySimText = strings.TrimSpace(obj.SIM2)
+			copySimText = sim2
 		}
+	}
+	if copySimText == "" {
+		copySimText = "—"
+	}
+
+	groupsText := "🔐 Групи: —"
+	if len(obj.Groups) > 0 {
+		lines := make([]string, 0, len(obj.Groups))
+		for _, group := range obj.Groups {
+			label := fmt.Sprintf("Група %d: %s", group.Number, strings.TrimSpace(group.StateText))
+			if strings.TrimSpace(group.RoomName) != "" {
+				label += " | Приміщення: " + strings.TrimSpace(group.RoomName)
+			}
+			lines = append(lines, label)
+		}
+		groupsText = "🔐 Групи:\n" + strings.Join(lines, "\n")
 	}
 
 	channelText := "Інший канал"
@@ -71,7 +94,7 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 	}
 
 	akbText := "Норма"
-	if obj.AkbState > 0 {
+	if obj.AkbState != 0 {
 		akbText = "ТРИВОГА (Розряд/Відсутній)"
 	}
 
@@ -85,17 +108,31 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 		guardText = "🔓 ЗНЯТО З ОХОРОНИ"
 	}
 
+	deviceType := strings.TrimSpace(obj.DeviceType)
+	if deviceType == "" {
+		deviceType = "—"
+	}
+	panelMark := strings.TrimSpace(obj.PanelMark)
+	if panelMark == "" {
+		panelMark = "—"
+	}
+	phone := strings.TrimSpace(obj.Phones1)
+	if IsCASLObjectID(obj.ID) || phone == "" {
+		phone = "—"
+	}
+
 	return WorkAreaDevicePresentation{
-		DeviceTypeText:   "🔧 Тип: " + obj.DeviceType,
-		PanelMarkText:    "🏷️ Марка: " + obj.PanelMark,
+		DeviceTypeText:   "🔧 Тип: " + deviceType,
+		PanelMarkText:    "🏷️ Марка: " + panelMark,
+		GroupsText:       groupsText,
 		PowerText:        "🔌 " + powerText,
 		SIMText:          "📱 " + simText,
 		SIMCopyText:      copySimText,
 		AutoTestText:     fmt.Sprintf("⏱️ Автотест: кожні %d год", obj.AutoTestHours),
 		GuardText:        guardText,
 		ChannelText:      "📡 Канал: " + channelText,
-		PhoneText:        "☎️ Тел. об'єкта: " + obj.Phones1,
-		PhoneCopyText:    obj.Phones1,
+		PhoneText:        "☎️ Тел. об'єкта: " + phone,
+		PhoneCopyText:    phone,
 		AkbText:          "🔋 АКБ: " + akbText,
 		TestControlText:  "⏲️ Контроль тесту: " + testCtrlText,
 		NotesText:        obj.Notes1,

@@ -15,6 +15,7 @@ type EventLogUseCase interface {
 type EventLogFilterInput struct {
 	AllEvents          []models.Event
 	Period             string
+	SelectedSource     string
 	ImportantOnly      bool
 	ShowForCurrentOnly bool
 	CurrentObjectID    int
@@ -25,8 +26,11 @@ type EventLogFilterInput struct {
 
 // EventLogFilterOutput описує результат фільтрації журналу подій.
 type EventLogFilterOutput struct {
-	Filtered []models.Event
-	Count    int
+	Filtered    []models.Event
+	Count       int
+	CountAll    int
+	CountBridge int
+	CountCASL   int
 }
 
 // EventLogViewModel інкапсулює бізнес-правила формування журналу подій.
@@ -52,6 +56,9 @@ func (vm *EventLogViewModel) ApplyFilters(input EventLogFilterInput) EventLogFil
 	year, month, day := now.Date()
 
 	filtered := make([]models.Event, 0, len(input.AllEvents))
+	countAll := 0
+	countBridge := 0
+	countCASL := 0
 	for _, event := range input.AllEvents {
 		switch input.Period {
 		case "Остання година":
@@ -75,6 +82,18 @@ func (vm *EventLogViewModel) ApplyFilters(input EventLogFilterInput) EventLogFil
 			continue
 		}
 
+		source := ObjectSourceByID(event.ObjectID)
+		countAll++
+		if source == ObjectSourceCASL {
+			countCASL++
+		} else {
+			countBridge++
+		}
+
+		if !sourceMatchesFilter(source, input.SelectedSource) {
+			continue
+		}
+
 		filtered = append(filtered, event)
 	}
 
@@ -84,7 +103,10 @@ done:
 	}
 
 	return EventLogFilterOutput{
-		Filtered: filtered,
-		Count:    len(filtered),
+		Filtered:    filtered,
+		Count:       len(filtered),
+		CountAll:    countAll,
+		CountBridge: countBridge,
+		CountCASL:   countCASL,
 	}
 }

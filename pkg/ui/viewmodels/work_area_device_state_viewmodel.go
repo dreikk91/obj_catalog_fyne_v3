@@ -6,6 +6,7 @@ import "fyne.io/fyne/v2/data/binding"
 type WorkAreaDeviceStateViewModel struct {
 	deviceType  binding.String
 	panelMark   binding.String
+	groups      binding.String
 	power       binding.String
 	sim         binding.String
 	autoTest    binding.String
@@ -22,6 +23,7 @@ func NewWorkAreaDeviceStateViewModel() *WorkAreaDeviceStateViewModel {
 	vm := &WorkAreaDeviceStateViewModel{
 		deviceType:  binding.NewString(),
 		panelMark:   binding.NewString(),
+		groups:      binding.NewString(),
 		power:       binding.NewString(),
 		sim:         binding.NewString(),
 		autoTest:    binding.NewString(),
@@ -39,6 +41,7 @@ func NewWorkAreaDeviceStateViewModel() *WorkAreaDeviceStateViewModel {
 
 func (vm *WorkAreaDeviceStateViewModel) DeviceTypeBinding() binding.String { return vm.deviceType }
 func (vm *WorkAreaDeviceStateViewModel) PanelMarkBinding() binding.String  { return vm.panelMark }
+func (vm *WorkAreaDeviceStateViewModel) GroupsBinding() binding.String     { return vm.groups }
 func (vm *WorkAreaDeviceStateViewModel) PowerBinding() binding.String      { return vm.power }
 func (vm *WorkAreaDeviceStateViewModel) SIMBinding() binding.String        { return vm.sim }
 func (vm *WorkAreaDeviceStateViewModel) AutoTestBinding() binding.String   { return vm.autoTest }
@@ -55,6 +58,7 @@ func (vm *WorkAreaDeviceStateViewModel) LocationBinding() binding.String { retur
 func (vm *WorkAreaDeviceStateViewModel) Reset() {
 	_ = vm.deviceType.Set("🔧 Тип: —")
 	_ = vm.panelMark.Set("🏷️ Марка: —")
+	_ = vm.groups.Set("🔐 Групи: —")
 	_ = vm.power.Set("🔌 Живлення: —")
 	_ = vm.sim.Set("📱 SIM: —")
 	_ = vm.autoTest.Set("⏱️ Автотест: —")
@@ -70,6 +74,7 @@ func (vm *WorkAreaDeviceStateViewModel) Reset() {
 func (vm *WorkAreaDeviceStateViewModel) Apply(p WorkAreaDevicePresentation) {
 	_ = vm.deviceType.Set(p.DeviceTypeText)
 	_ = vm.panelMark.Set(p.PanelMarkText)
+	_ = vm.groups.Set(p.GroupsText)
 	_ = vm.power.Set(p.PowerText)
 	_ = vm.sim.Set(p.SIMText)
 	_ = vm.autoTest.Set(p.AutoTestText)

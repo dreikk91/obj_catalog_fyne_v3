@@ -66,10 +66,21 @@ type Object struct {
 	// Технічні стани
 	IsUnderGuard bool
 	IsConnOK     bool
+	HasAssignment bool
 
 	// Списки (можуть завантажуватись ліниво)
 	Zones    []Zone
 	Contacts []Contact
+	Groups   []ObjectGroup
+}
+
+// ObjectGroup описує стан окремої групи ППК на об'єкті.
+type ObjectGroup struct {
+	Number    int
+	Armed     bool
+	StateText string
+	RoomID    string
+	RoomName  string
 }
 
 // GetStatusDisplay повертає текстовий статус об'єкта

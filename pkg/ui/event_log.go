@@ -4,6 +4,7 @@ package ui
 import (
 	"image/color"
 	"obj_catalog_fyne_v3/pkg/config"
+	"strings"
 	"sync"
 
 	"fyne.io/fyne/v2"
@@ -32,6 +33,7 @@ type EventLogPanel struct {
 	IsPaused        bool
 	PauseBtn        *widget.Button
 	RangeSelect     *widget.Select
+	SourceSelect    *widget.Select
 	ImportantOnly   *widget.Check
 	OnEventSelected func(models.Event)
 	OnCountChanged  func(count int)
@@ -82,6 +84,15 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	panel.RangeSelect.SetSelected("Остання година")
 	panel.RangeSelect.PlaceHolder = "Період"
 
+	panel.SourceSelect = widget.NewSelect(
+		viewmodels.BuildObjectSourceOptions(0, 0, 0),
+		func(string) {
+			panel.applyFilters()
+		},
+	)
+	panel.SourceSelect.SetSelected(panel.SourceSelect.Options[0])
+	panel.SourceSelect.PlaceHolder = "Джерело"
+
 	panel.ImportantOnly = widget.NewCheck("Тільки важливі", func(bool) {
 		panel.applyFilters()
 	})
@@ -96,6 +107,7 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 		container.NewPadded(panel.TitleText),
 		layout.NewSpacer(),
 		contextToggle,
+		panel.SourceSelect,
 		panel.RangeSelect,
 		panel.ImportantOnly,
 		panel.PauseBtn,
@@ -155,8 +167,12 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 			txt.Color = textColor
 
 			// Для непідготовленого користувача: стабільний читабельний формат рядка.
-			// [дата/час] — №[об'єкт] [назва] — [тип] — [зона/деталі]
-			text := event.GetDateTimeDisplay() + " — №" + itoa(event.ObjectID) + " " + event.ObjectName + " — " + event.GetTypeDisplay()
+			// [дата/час] — [назва об'єкта] — [тип] — [зона/деталі]
+			objectName := strings.TrimSpace(event.ObjectName)
+			if objectName == "" {
+				objectName = "Об'єкт"
+			}
+			text := event.GetDateTimeDisplay() + " — " + objectName + " — " + event.GetTypeDisplay()
 			if event.ZoneNumber > 0 {
 				text += " — Зона " + itoa(event.ZoneNumber)
 			}
@@ -268,11 +284,16 @@ func (p *EventLogPanel) applyFilters() {
 	if p.ImportantOnly != nil {
 		importantOnly = p.ImportantOnly.Checked
 	}
+	selectedSource := viewmodels.ObjectSourceAll
+	if p.SourceSelect != nil {
+		selectedSource = viewmodels.NormalizeObjectSourceFilter(p.SourceSelect.Selected)
+	}
 
 	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
 	input := viewmodels.EventLogFilterInput{
 		AllEvents:          all,
 		Period:             period,
+		SelectedSource:     selectedSource,
 		ImportantOnly:      importantOnly,
 		ShowForCurrentOnly: showForCurrentOnly,
 		MaxEvents:          uiCfg.EventLogLimit,
@@ -288,6 +309,24 @@ func (p *EventLogPanel) applyFilters() {
 	p.mutex.Unlock()
 
 	fyne.Do(func() {
+		if p.SourceSelect != nil {
+			options := viewmodels.BuildObjectSourceOptions(out.CountAll, out.CountBridge, out.CountCASL)
+			p.SourceSelect.Options = options
+
+			target := options[0]
+			for _, option := range options {
+				if strings.HasPrefix(option, selectedSource+" (") || option == selectedSource {
+					target = option
+					break
+				}
+			}
+			handler := p.SourceSelect.OnChanged
+			p.SourceSelect.OnChanged = nil
+			p.SourceSelect.SetSelected(target)
+			p.SourceSelect.OnChanged = handler
+			p.SourceSelect.Refresh()
+		}
+
 		_ = SetUntypedList(p.listData, out.Filtered)
 		if p.OnCountChanged != nil {
 			p.OnCountChanged(out.Count)
@@ -305,6 +344,16 @@ func getEventIcon(eventType models.EventType) string {
 	switch eventType {
 	case models.EventFire:
 		return "🔴"
+	case models.EventBurglary:
+		return "🚨"
+	case models.EventPanic:
+		return "🆘"
+	case models.EventMedical:
+		return "🩺"
+	case models.EventGas:
+		return "☣"
+	case models.EventTamper:
+		return "🔧"
 	case models.EventFault, models.EventOffline, models.EventPowerFail, models.EventBatteryLow:
 		return "🟡"
 	case models.EventArm, models.EventDisarm:
@@ -327,6 +376,9 @@ func (p *EventLogPanel) OnThemeChanged(fontSize float32) {
 	}
 	if p.RangeSelect != nil {
 		p.RangeSelect.Refresh()
+	}
+	if p.SourceSelect != nil {
+		p.SourceSelect.Refresh()
 	}
 	if p.ImportantOnly != nil {
 		p.ImportantOnly.Refresh()

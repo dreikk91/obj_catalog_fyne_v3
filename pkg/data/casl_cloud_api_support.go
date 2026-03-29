@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -43,6 +45,15 @@ type CASLAlarmEventDefinition struct {
 // CASLObjectEvent is an exported shape of read_events_by_id records.
 type CASLObjectEvent struct {
 	PPKNum    int64
+	DeviceID  string
+	ObjID     string
+	ObjName   string
+	ObjAddr   string
+	Action    string
+	AlarmType string
+	MgrID     string
+	UserID    string
+	UserFIO   string
 	Time      int64
 	Code      string
 	Type      string
@@ -58,9 +69,9 @@ type CASLDeviceStateInfo struct {
 	Door         int64
 	Online       int64
 	LastPingDate int64
-	Lines        map[string]any
-	Groups       map[string]any
-	Adapters     map[string]any
+	Lines        any
+	Groups       any
+	Adapters     any
 }
 
 // CASLStatsAlarms is an exported shape of get_statistic(name=stats_alarms).
@@ -92,6 +103,7 @@ type CASLGetStatisticRequest struct {
 	ObjectID  string
 	StartTime int64
 	EndTime   int64
+	Limit     int
 }
 
 // CASLReadEventsRequest describes read_events input.
@@ -359,16 +371,98 @@ func (p *CASLCloudProvider) Monitor(ctx context.Context) (map[string]any, error)
 
 // GetMessageTranslatorByDeviceType calls get_msg_translator_by_device_type command.
 func (p *CASLCloudProvider) GetMessageTranslatorByDeviceType(ctx context.Context, deviceType string) (any, error) {
-	payload := map[string]any{"type": "get_msg_translator_by_device_type"}
-	if strings.TrimSpace(deviceType) != "" {
-		payload["device_type"] = strings.TrimSpace(deviceType)
+	key := strings.TrimSpace(deviceType)
+	if key == "" {
+		// Для translator endpoint не робимо auto-relogin на WRONG_FORMAT,
+		// інакше отримаємо шторм login+command запитів.
+		return p.readCommandDataAsAnyNoRelogin(ctx, map[string]any{"type": "get_msg_translator_by_device_type"}, true)
 	}
-	return p.readCommandDataAsAny(ctx, payload, true)
+
+	// У різних інсталяціях CASL зустрічаються обидва варіанти:
+	// typeDevice (frontend) та device_type.
+	primary := map[string]any{
+		"type":       "get_msg_translator_by_device_type",
+		"typeDevice": key,
+	}
+	data, err := p.readCommandDataAsAnyNoRelogin(ctx, primary, true)
+	if err == nil {
+		return data, nil
+	}
+	if !isCASLWrongFormatErr(err) {
+		return nil, err
+	}
+
+	fallback := map[string]any{
+		"type":        "get_msg_translator_by_device_type",
+		"device_type": key,
+	}
+	return p.readCommandDataAsAnyNoRelogin(ctx, fallback, true)
 }
 
 // ReadGeneralTapeObjects calls get_general_tape_objects command.
 func (p *CASLCloudProvider) ReadGeneralTapeObjects(ctx context.Context) ([]map[string]any, error) {
 	return p.readCommandDataAsMaps(ctx, map[string]any{"type": "get_general_tape_objects"}, true)
+}
+
+// ReadGeneralTapeItem calls get_general_tape_item command for selected object IDs.
+func (p *CASLCloudProvider) ReadGeneralTapeItem(ctx context.Context, objIDs []string) (map[string][]map[string]any, error) {
+	filtered := make([]string, 0, len(objIDs))
+	seen := make(map[string]struct{}, len(objIDs))
+	for _, rawID := range objIDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		filtered = append(filtered, id)
+	}
+
+	payload := map[string]any{"type": "get_general_tape_item"}
+	if len(filtered) > 0 {
+		payload["obj_ids"] = filtered
+	}
+
+	data, err := p.readCommandDataAsAny(ctx, payload, true)
+	if err != nil {
+		return nil, err
+	}
+	if data == nil {
+		return map[string][]map[string]any{}, nil
+	}
+
+	root, ok := data.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("casl command %q: expected object data, got %T", asString(payload["type"]), data)
+	}
+
+	result := make(map[string][]map[string]any, len(root))
+	for rawObjID, rawRows := range root {
+		objID := strings.TrimSpace(rawObjID)
+		if objID == "" {
+			continue
+		}
+
+		rows := make([]map[string]any, 0, 8)
+		switch typed := rawRows.(type) {
+		case []any:
+			for _, row := range typed {
+				if mapped, ok := row.(map[string]any); ok {
+					rows = append(rows, mapped)
+				}
+			}
+		case map[string]any:
+			rows = append(rows, typed)
+		}
+		if len(rows) == 0 {
+			continue
+		}
+		result[objID] = rows
+	}
+
+	return result, nil
 }
 
 // GetRTSPURL calls get_rtsp_url command and returns data payload.
@@ -417,6 +511,15 @@ func (p *CASLCloudProvider) ReadEventsJournal(ctx context.Context, req CASLReadE
 	for _, item := range rows {
 		result = append(result, CASLObjectEvent{
 			PPKNum:    item.PPKNum.Int64(),
+			DeviceID:  strings.TrimSpace(item.DeviceID.String()),
+			ObjID:     strings.TrimSpace(item.ObjID.String()),
+			ObjName:   strings.TrimSpace(item.ObjName.String()),
+			ObjAddr:   strings.TrimSpace(item.ObjAddr.String()),
+			Action:    strings.TrimSpace(item.Action.String()),
+			AlarmType: strings.TrimSpace(item.AlarmType.String()),
+			MgrID:     strings.TrimSpace(item.MgrID.String()),
+			UserID:    strings.TrimSpace(item.UserID.String()),
+			UserFIO:   strings.TrimSpace(item.UserFIO.String()),
 			Time:      item.Time.Int64(),
 			Code:      strings.TrimSpace(item.Code.String()),
 			Type:      strings.TrimSpace(item.Type),
@@ -473,6 +576,15 @@ func (p *CASLCloudProvider) ReadEventsByID(ctx context.Context, req CASLReadEven
 	for _, item := range rawEvents {
 		result = append(result, CASLObjectEvent{
 			PPKNum:    item.PPKNum.Int64(),
+			DeviceID:  strings.TrimSpace(item.DeviceID.String()),
+			ObjID:     strings.TrimSpace(item.ObjID.String()),
+			ObjName:   strings.TrimSpace(item.ObjName.String()),
+			ObjAddr:   strings.TrimSpace(item.ObjAddr.String()),
+			Action:    strings.TrimSpace(item.Action.String()),
+			AlarmType: strings.TrimSpace(item.AlarmType.String()),
+			MgrID:     strings.TrimSpace(item.MgrID.String()),
+			UserID:    strings.TrimSpace(item.UserID.String()),
+			UserFIO:   strings.TrimSpace(item.UserFIO.String()),
 			Time:      item.Time.Int64(),
 			Code:      strings.TrimSpace(item.Code.String()),
 			Type:      strings.TrimSpace(item.Type),
@@ -520,7 +632,7 @@ func (p *CASLCloudProvider) GetStatistic(ctx context.Context, req CASLGetStatist
 	}
 	deviceID := strings.TrimSpace(req.DeviceID)
 	objectID := strings.TrimSpace(req.ObjectID)
-	if deviceID == "" || objectID == "" {
+	if name == "stats_alarms" && (deviceID == "" || objectID == "") {
 		return CASLStatsAlarms{}, fmt.Errorf("casl get_statistic: deviceID and objectID are required")
 	}
 
@@ -536,10 +648,17 @@ func (p *CASLCloudProvider) GetStatistic(ctx context.Context, req CASLGetStatist
 	payload := map[string]any{
 		"type":      "get_statistic",
 		"name":      name,
-		"deviceId":  deviceID,
-		"objectId":  objectID,
 		"startTime": start,
 		"endTime":   end,
+	}
+	if deviceID != "" {
+		payload["deviceId"] = deviceID
+	}
+	if objectID != "" {
+		payload["objectId"] = objectID
+	}
+	if req.Limit > 0 {
+		payload["limit"] = req.Limit
 	}
 
 	var resp caslGetStatisticResponse
@@ -557,6 +676,24 @@ func (p *CASLCloudProvider) GetStatistic(ctx context.Context, req CASLGetStatist
 		Criminogenicity:     stats.Criminogenicity.Int64(),
 		CustomWins:          stats.CustomWins.Int64(),
 	}, nil
+}
+
+// GetStatisticReport executes generic get_statistic(name=...) query and returns rows.
+func (p *CASLCloudProvider) GetStatisticReport(ctx context.Context, name string, limit int) ([]map[string]any, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("casl get_statistic report: name is required")
+	}
+
+	payload := map[string]any{
+		"type": "get_statistic",
+		"name": name,
+	}
+	if limit > 0 {
+		payload["limit"] = limit
+	}
+
+	return p.readCommandDataAsMaps(ctx, payload, true)
 }
 
 // GroupOnDevice executes group_on_device action command.
@@ -674,12 +811,20 @@ func (p *CASLCloudProvider) readCommandDataAsMaps(ctx context.Context, payload m
 }
 
 func (p *CASLCloudProvider) readCommandDataAsAny(ctx context.Context, payload map[string]any, requireAuth bool) (any, error) {
+	return p.readCommandDataAsAnyWithRelogin(ctx, payload, requireAuth, true)
+}
+
+func (p *CASLCloudProvider) readCommandDataAsAnyNoRelogin(ctx context.Context, payload map[string]any, requireAuth bool) (any, error) {
+	return p.readCommandDataAsAnyWithRelogin(ctx, payload, requireAuth, false)
+}
+
+func (p *CASLCloudProvider) readCommandDataAsAnyWithRelogin(ctx context.Context, payload map[string]any, requireAuth bool, allowRelogin bool) (any, error) {
 	var resp struct {
 		Status string          `json:"status"`
 		Data   json.RawMessage `json:"data"`
 		Error  string          `json:"error"`
 	}
-	if err := p.postCommand(ctx, payload, &resp, requireAuth); err != nil {
+	if err := p.postCommandWithRetry(ctx, payload, &resp, requireAuth, allowRelogin); err != nil {
 		return nil, err
 	}
 	if len(resp.Data) == 0 || string(resp.Data) == "null" {
@@ -695,6 +840,12 @@ func (p *CASLCloudProvider) readCommandDataAsAny(ctx context.Context, payload ma
 }
 
 func (p *CASLCloudProvider) doJSONGet(ctx context.Context, path string) ([]byte, caslStatusOnlyResponse, error) {
+	startedAt := time.Now()
+	log.Debug().
+		Str("method", http.MethodGet).
+		Str("path", path).
+		Msg("CASL HTTP request")
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+path, nil)
 	if err != nil {
 		return nil, caslStatusOnlyResponse{}, fmt.Errorf("casl create request: %w", err)
@@ -711,6 +862,14 @@ func (p *CASLCloudProvider) doJSONGet(ctx context.Context, path string) ([]byte,
 	if readErr != nil {
 		return nil, caslStatusOnlyResponse{}, fmt.Errorf("casl read response: %w", readErr)
 	}
+
+	log.Debug().
+		Str("method", http.MethodGet).
+		Str("path", path).
+		Int("statusCode", resp.StatusCode).
+		Dur("duration", time.Since(startedAt)).
+		Msg("CASL HTTP response")
+	logCASLHTTPBody(http.MethodGet, path, "response", body)
 
 	var status caslStatusOnlyResponse
 	_ = json.Unmarshal(body, &status)

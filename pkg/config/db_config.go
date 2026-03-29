@@ -23,6 +23,7 @@ const (
 	PrefCASLEmail   = "casl.email"
 	PrefCASLPass    = "casl.password"
 	PrefCASLPultID  = "casl.pult_id"
+	PrefLogLevel    = "log.level"
 )
 
 const (
@@ -45,6 +46,7 @@ type DBConfig struct {
 	CASLEmail   string
 	CASLPass    string
 	CASLPultID  int64
+	LogLevel    string
 }
 
 func LoadDBConfig(p fyne.Preferences) DBConfig {
@@ -66,6 +68,7 @@ func LoadDBConfig(p fyne.Preferences) DBConfig {
 		CASLEmail:   p.StringWithFallback(PrefCASLEmail, ""),
 		CASLPass:    p.StringWithFallback(PrefCASLPass, ""),
 		CASLPultID:  int64(p.IntWithFallback(PrefCASLPultID, 0)),
+		LogLevel:    normalizeLogLevel(p.StringWithFallback(PrefLogLevel, "info")),
 	}
 
 	log.Debug().
@@ -109,6 +112,7 @@ func SaveDBConfig(p fyne.Preferences, cfg DBConfig) {
 	p.SetString(PrefCASLEmail, cfg.CASLEmail)
 	p.SetString(PrefCASLPass, cfg.CASLPass)
 	p.SetInt(PrefCASLPultID, int(cfg.CASLPultID))
+	p.SetString(PrefLogLevel, normalizeLogLevel(cfg.LogLevel))
 	log.Debug().Str("host", cfg.Host).Str("port", cfg.Port).Msg("Налаштування БД збережено")
 }
 
@@ -135,5 +139,20 @@ func normalizeBackendMode(mode string) string {
 		return BackendModeCASLCloud
 	default:
 		return BackendModeFirebird
+	}
+}
+
+func normalizeLogLevel(level string) string {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "trace":
+		return "trace"
+	case "debug":
+		return "debug"
+	case "warn":
+		return "warn"
+	case "error":
+		return "error"
+	default:
+		return "info"
 	}
 }

@@ -13,6 +13,7 @@ func TestWorkAreaDeviceStateViewModel_DefaultState(t *testing.T) {
 	vm := NewWorkAreaDeviceStateViewModel()
 
 	deviceType, _ := vm.DeviceTypeBinding().Get()
+	groups, _ := vm.GroupsBinding().Get()
 	guard, _ := vm.GuardBinding().Get()
 	notes, _ := vm.NotesBinding().Get()
 
@@ -21,6 +22,9 @@ func TestWorkAreaDeviceStateViewModel_DefaultState(t *testing.T) {
 	}
 	if guard != "🔒 Стан: —" {
 		t.Fatalf("unexpected default guard: %q", guard)
+	}
+	if groups != "🔐 Групи: —" {
+		t.Fatalf("unexpected default groups: %q", groups)
 	}
 	if notes != "" {
 		t.Fatalf("unexpected default notes: %q", notes)
@@ -35,6 +39,7 @@ func TestWorkAreaDeviceStateViewModel_ApplyAndReset(t *testing.T) {
 	vm.Apply(WorkAreaDevicePresentation{
 		DeviceTypeText:  "🔧 Тип: Tiras",
 		PanelMarkText:   "🏷️ Марка: TM-1",
+		GroupsText:      "🔐 Групи:\nГрупа 1: ПІД ОХОРОНОЮ",
 		PowerText:       "🔌 🔋 АКБ (резерв)",
 		SIMText:         "📱 SIM1: 111",
 		AutoTestText:    "⏱️ Автотест: кожні 12 год",

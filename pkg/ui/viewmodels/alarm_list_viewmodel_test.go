@@ -41,13 +41,38 @@ func TestAlarmListViewModel_BuildRefreshOutput(t *testing.T) {
 	if out.Total != 2 {
 		t.Fatalf("unexpected total: %d", out.Total)
 	}
-	if out.FireCount != 1 {
-		t.Fatalf("unexpected fire count: %d", out.FireCount)
+	if out.CriticalCount != 2 {
+		t.Fatalf("unexpected critical count: %d", out.CriticalCount)
 	}
 	if !out.HasNewCritical || out.NewCritical.ID != 10 {
 		t.Fatalf("expected new critical alarm, got %+v", out)
 	}
 	if _, ok := out.KnownIDs[10]; !ok {
 		t.Fatalf("known ids must include alarm 10")
+	}
+	if out.CountAll != 2 || out.CountBridge != 2 || out.CountCASL != 0 {
+		t.Fatalf("unexpected source counters: all=%d bridge=%d casl=%d", out.CountAll, out.CountBridge, out.CountCASL)
+	}
+}
+
+func TestAlarmListViewModel_BuildRefreshOutput_BySource(t *testing.T) {
+	vm := NewAlarmListViewModel()
+	caslObjectID := caslObjectIDNamespaceStart + 100
+
+	out := vm.BuildRefreshOutput(AlarmRefreshInput{
+		Alarms: []models.Alarm{
+			{ID: 1, ObjectID: 22, Type: models.AlarmFire, IsProcessed: false},
+			{ID: 2, ObjectID: caslObjectID, Type: models.AlarmFire, IsProcessed: false},
+			{ID: 3, ObjectID: caslObjectID, Type: models.AlarmFault, IsProcessed: false},
+		},
+		LastKnownIDs:   map[int]struct{}{},
+		SelectedSource: ObjectSourceCASL,
+	})
+
+	if len(out.FilteredAlarms) != 2 {
+		t.Fatalf("expected 2 CASL alarms in filtered list, got %d", len(out.FilteredAlarms))
+	}
+	if out.CountAll != 3 || out.CountBridge != 1 || out.CountCASL != 2 {
+		t.Fatalf("unexpected source counters: all=%d bridge=%d casl=%d", out.CountAll, out.CountBridge, out.CountCASL)
 	}
 }

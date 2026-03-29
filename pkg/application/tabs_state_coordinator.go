@@ -15,7 +15,7 @@ func (a *Application) configureTabsState(detailsTab *container.TabItem, eventsTa
 	a.eventsTab = eventsTab
 	a.alarmsTab = alarmsTab
 	a.lastAlarmsCount = 0
-	a.lastFireCount = 0
+	a.lastCriticalCount = 0
 	a.lastEventsCount = 0
 
 	if rightTabs != nil && detailsTab != nil {
@@ -24,14 +24,14 @@ func (a *Application) configureTabsState(detailsTab *container.TabItem, eventsTa
 }
 
 // updateTabBadges оновлює заголовки вкладок і синхронізує заголовок вікна.
-func (a *Application) updateTabBadges(alarmsCount int, fireCount int, eventsCount int) {
+func (a *Application) updateTabBadges(alarmsCount int, criticalCount int, eventsCount int) {
 	if a == nil {
 		return
 	}
 
 	if alarmsCount >= 0 {
 		a.lastAlarmsCount = alarmsCount
-		a.lastFireCount = fireCount
+		a.lastCriticalCount = criticalCount
 	}
 	if eventsCount >= 0 {
 		a.lastEventsCount = eventsCount
@@ -41,8 +41,8 @@ func (a *Application) updateTabBadges(alarmsCount int, fireCount int, eventsCoun
 		alarmTitle := "АКТИВНІ ТРИВОГИ"
 		if a.lastAlarmsCount > 0 {
 			alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d)", a.lastAlarmsCount)
-			if a.lastFireCount > 0 {
-				alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d, ПОЖЕЖА: %d)", a.lastAlarmsCount, a.lastFireCount)
+			if a.lastCriticalCount > 0 {
+				alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d, КРИТИЧНІ: %d)", a.lastAlarmsCount, a.lastCriticalCount)
 			}
 		}
 		a.alarmsTab.Text = alarmTitle

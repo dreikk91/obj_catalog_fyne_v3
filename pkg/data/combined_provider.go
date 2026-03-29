@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -14,6 +15,10 @@ import (
 
 type latestEventIDProvider interface {
 	GetLatestEventID() (int64, error)
+}
+
+type caslStatisticReportProvider interface {
+	GetStatisticReport(ctx context.Context, name string, limit int) ([]map[string]any, error)
 }
 
 // ProviderSource описує одне джерело даних у мультисистемній конфігурації.
@@ -74,6 +79,20 @@ func (p *CombinedDataProvider) AdminProvider() contracts.AdminProvider {
 		}
 	}
 	return nil
+}
+
+func (p *CombinedDataProvider) GetStatisticReport(ctx context.Context, name string, limit int) ([]map[string]any, error) {
+	if p == nil {
+		return nil, errors.New("combined provider is nil")
+	}
+	for _, source := range p.sources {
+		reporter, ok := source.Provider.(caslStatisticReportProvider)
+		if !ok {
+			continue
+		}
+		return reporter.GetStatisticReport(ctx, name, limit)
+	}
+	return nil, errors.New("casl reports provider is not configured")
 }
 
 func (p *CombinedDataProvider) CanUseAdminForObjectID(objectID int) bool {

@@ -3,6 +3,7 @@ package ui
 
 import (
 	"image/color"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -23,17 +25,20 @@ import (
 
 // AlarmPanelWidget - структура для панелі тривог
 type AlarmPanelWidget struct {
-	Container *fyne.Container
-	List      *widget.List
-	listData  binding.UntypedList
-	Data      contracts.AlarmProvider
-	UseCase   *usecases.AlarmListUseCase
-	ViewModel *viewmodels.AlarmListViewModel
+	Container    *fyne.Container
+	List         *widget.List
+	listData     binding.UntypedList
+	SourceSelect *widget.Select
+	Data         contracts.AlarmProvider
+	UseCase      *usecases.AlarmListUseCase
+	ViewModel    *viewmodels.AlarmListViewModel
 
 	// Кеш даних
+	AllAlarms     []models.Alarm
 	CurrentAlarms []models.Alarm
 	mutex         sync.RWMutex
 	isRefreshing  bool
+	currentSource string
 	selectedIndex int
 	selectedID    int
 	lastClickTime time.Time
@@ -46,7 +51,7 @@ type AlarmPanelWidget struct {
 	OnAlarmActivated func(alarm models.Alarm)
 
 	OnProcessAlarm     func(alarm models.Alarm)
-	OnCountsChanged    func(total int, fire int)
+	OnCountsChanged    func(total int, critical int)
 	OnNewCriticalAlarm func(alarm models.Alarm)
 	TitleText          *canvas.Text
 	lastFontSize       float32
@@ -59,6 +64,7 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 		UseCase:       usecases.NewAlarmListUseCase(provider),
 		ViewModel:     viewmodels.NewAlarmListViewModel(),
 		listData:      binding.NewUntypedList(),
+		currentSource: viewmodels.ObjectSourceAll,
 		selectedIndex: -1,
 		lastKnownIDs:  make(map[int]struct{}),
 	}
@@ -69,8 +75,25 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 	panel.TitleText.TextSize = appTheme.Size(theme.SizeNameText) + 1
 	panel.TitleText.TextStyle = fyne.TextStyle{Bold: true}
 
+	panel.SourceSelect = widget.NewSelect(
+		viewmodels.BuildObjectSourceOptions(0, 0, 0),
+		func(selected string) {
+			panel.mutex.Lock()
+			panel.currentSource = viewmodels.NormalizeObjectSourceFilter(selected)
+			panel.mutex.Unlock()
+			go panel.Refresh()
+		},
+	)
+	panel.SourceSelect.SetSelected(panel.SourceSelect.Options[0])
+	panel.SourceSelect.PlaceHolder = "Джерело"
+
 	titleBg := canvas.NewRectangle(color.NRGBA{R: 100, G: 0, B: 0, A: 255})
 	titleContainer := container.NewStack(titleBg, container.NewPadded(panel.TitleText))
+	header := container.NewHBox(
+		titleContainer,
+		layout.NewSpacer(),
+		panel.SourceSelect,
+	)
 
 	// Список тривог (тепер використовує кеш)
 	panel.List = widget.NewListWithData(
@@ -134,7 +157,7 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 
 			// Для непідготовленого користувача: стабільний читабельний формат рядка.
 			// [час] — [тип] — №[об'єкт] [назва] — [зона/деталі]
-			if alarm.Type == models.AlarmFire {
+			if alarm.IsCritical() {
 				txt.TextStyle.Bold = true
 			} else {
 				txt.TextStyle.Bold = false
@@ -213,7 +236,7 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 	actions := container.NewPadded(container.NewBorder(nil, nil, nil, nil, panel.processBtn))
 
 	panel.Container = container.NewBorder(
-		titleContainer,
+		header,
 		actions, nil, nil,
 		panel.List,
 	)
@@ -252,6 +275,12 @@ func (p *AlarmPanelWidget) Refresh() {
 	}()
 
 	alarms := p.ViewModel.LoadAlarms(p.UseCase)
+	currentSource := viewmodels.ObjectSourceAll
+	p.mutex.RLock()
+	if strings.TrimSpace(p.currentSource) != "" {
+		currentSource = p.currentSource
+	}
+	p.mutex.RUnlock()
 
 	p.mutex.RLock()
 	lastKnown := make(map[int]struct{}, len(p.lastKnownIDs))
@@ -261,13 +290,15 @@ func (p *AlarmPanelWidget) Refresh() {
 	p.mutex.RUnlock()
 
 	result := p.ViewModel.BuildRefreshOutput(viewmodels.AlarmRefreshInput{
-		Alarms:       alarms,
-		LastKnownIDs: lastKnown,
+		Alarms:         alarms,
+		LastKnownIDs:   lastKnown,
+		SelectedSource: currentSource,
 	})
 
 	// Оновлюємо кеш та UI
 	p.mutex.Lock()
-	p.CurrentAlarms = result.CurrentAlarms
+	p.AllAlarms = result.CurrentAlarms
+	p.CurrentAlarms = result.FilteredAlarms
 	p.lastKnownIDs = result.KnownIDs
 	if p.selectedID > 0 {
 		found := -1
@@ -287,7 +318,24 @@ func (p *AlarmPanelWidget) Refresh() {
 	p.mutex.Unlock()
 
 	fyne.Do(func() {
-		_ = SetUntypedList(p.listData, result.CurrentAlarms)
+		if p.SourceSelect != nil {
+			options := viewmodels.BuildObjectSourceOptions(result.CountAll, result.CountBridge, result.CountCASL)
+			p.SourceSelect.Options = options
+			target := options[0]
+			for _, option := range options {
+				if strings.HasPrefix(option, currentSource+" (") || option == currentSource {
+					target = option
+					break
+				}
+			}
+			handler := p.SourceSelect.OnChanged
+			p.SourceSelect.OnChanged = nil
+			p.SourceSelect.SetSelected(target)
+			p.SourceSelect.OnChanged = handler
+			p.SourceSelect.Refresh()
+		}
+
+		_ = SetUntypedList(p.listData, result.FilteredAlarms)
 		if p.List != nil {
 			p.List.Refresh()
 		}
@@ -295,7 +343,7 @@ func (p *AlarmPanelWidget) Refresh() {
 			p.processBtn.Disable()
 		}
 		if p.OnCountsChanged != nil {
-			p.OnCountsChanged(result.Total, result.FireCount)
+			p.OnCountsChanged(result.Total, result.CriticalCount)
 		}
 		if result.HasNewCritical && p.OnNewCriticalAlarm != nil {
 			p.OnNewCriticalAlarm(result.NewCritical)
@@ -311,6 +359,9 @@ func (p *AlarmPanelWidget) OnThemeChanged(fontSize float32) {
 	}
 	if p.List != nil {
 		p.List.Refresh()
+	}
+	if p.SourceSelect != nil {
+		p.SourceSelect.Refresh()
 	}
 }
 

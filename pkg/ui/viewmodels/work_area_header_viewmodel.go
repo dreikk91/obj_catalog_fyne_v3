@@ -37,6 +37,6 @@ func (vm *WorkAreaHeaderViewModel) Reset() {
 }
 
 func (vm *WorkAreaHeaderViewModel) ApplyObject(object models.Object) {
-	_ = vm.headerName.Set(fmt.Sprintf("%s (№%d)", object.Name, object.ID))
-	_ = vm.headerAddress.Set(fmt.Sprintf("📌 %s | 📄 %s", object.Address, object.ContractNum))
+	_ = vm.headerName.Set(fmt.Sprintf("%s (№%s)", object.Name, ObjectDisplayNumber(object)))
+	_ = vm.headerAddress.Set(fmt.Sprintf("📌 %s | 📄 %s | 🧭 %s", object.Address, object.ContractNum, ObjectSourceByID(object.ID)))
 }

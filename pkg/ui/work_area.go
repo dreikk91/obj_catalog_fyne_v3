@@ -58,6 +58,7 @@ type WorkAreaPanel struct {
 	// Лейбли інформації про прилад
 	DeviceTypeLabel      *widget.Label
 	PanelMarkLabel       *widget.Label // Added PanelMarkLabel
+	GroupsLabel          *widget.Label
 	GSMLabel             *widget.Label
 	PowerLabel           *widget.Label
 	SIMLabel             *widget.Label
@@ -180,6 +181,8 @@ func (w *WorkAreaPanel) initExportButtons() {
 func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 	w.DeviceTypeLabel = widget.NewLabelWithData(w.DeviceStateVM.DeviceTypeBinding())
 	w.PanelMarkLabel = widget.NewLabelWithData(w.DeviceStateVM.PanelMarkBinding()) // Initialized PanelMarkLabel
+	w.GroupsLabel = widget.NewLabelWithData(w.DeviceStateVM.GroupsBinding())
+	w.GroupsLabel.Wrapping = fyne.TextWrapWord
 	// w.GSMLabel = widget.NewLabel("📶 GSM: —")
 	w.PowerLabel = widget.NewLabelWithData(w.DeviceStateVM.PowerBinding())
 	w.SIMLabel = widget.NewLabelWithData(w.DeviceStateVM.SIMBinding())
@@ -228,6 +231,7 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 				w.LastTestTimeLabel,
 				w.LastMessageTimeLabel,
 				w.GuardLabel,
+				w.GroupsLabel,
 				widget.NewSeparator(),
 				w.TestLogsBtn,
 			),

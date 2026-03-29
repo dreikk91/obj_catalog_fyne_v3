@@ -30,6 +30,7 @@ type ObjectListPanel struct {
 	SearchClear  *widget.Button
 	FilteredData binding.UntypedList
 	FilterSelect *widget.Select
+	SourceSelect *widget.Select
 	Data         contracts.ObjectProvider
 	UseCase      *usecases.ObjectListUseCase
 	ViewModel    *viewmodels.ObjectListViewModel
@@ -42,6 +43,7 @@ type ObjectListPanel struct {
 	mutex         sync.RWMutex
 
 	CurrentFilter string
+	CurrentSource string
 	LoadingLabel  *widget.Label
 	SelectedRow   int
 	TitleText     *canvas.Text
@@ -66,6 +68,7 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 		ViewModel:     viewmodels.NewObjectListViewModel(),
 		FilteredData:  binding.NewUntypedList(),
 		CurrentFilter: "Всі",
+		CurrentSource: viewmodels.ObjectSourceAll,
 		SelectedRow:   -1,
 		colNameWidth:  200,
 		colAddrWidth:  250,
@@ -112,6 +115,18 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	})
 	panel.FilterSelect.PlaceHolder = "Фільтр"
 
+	panel.SourceSelect = widget.NewSelect(
+		viewmodels.BuildObjectSourceOptions(0, 0, 0),
+		func(selected string) {
+			if panel.isUpdating {
+				return
+			}
+			panel.CurrentSource = viewmodels.NormalizeObjectSourceFilter(selected)
+			go panel.applyFilters()
+		},
+	)
+	panel.SourceSelect.PlaceHolder = "Джерело"
+
 	// Лейбл завантаження
 	panel.LoadingLabel = widget.NewLabel("Завантаження даних...")
 	panel.LoadingLabel.Alignment = fyne.TextAlignCenter
@@ -146,42 +161,12 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 				return
 			}
 
-			// Визначаємо кольори на основі комбінації статусів
-			textColor, rowColor := utils.ChangeItemColorNRGBA(item.AlarmState, item.GuardState, item.TechAlarmState, item.IsConnState, IsDarkMode())
-			if item.BlockedArmedOnOff == 1 {
-				// Тимчасово знято із спостереження (документація: фіолетовий)
-				if IsDarkMode() {
-					textColor = color.NRGBA{R: 230, G: 220, B: 245, A: 255}
-					rowColor = color.NRGBA{R: 98, G: 52, B: 125, A: 255}
-				} else {
-					textColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-					rowColor = color.NRGBA{R: 144, G: 64, B: 196, A: 255}
-				}
-			} else if item.BlockedArmedOnOff == 2 {
-				// Режим налагодження (документація: оливковий)
-				if IsDarkMode() {
-					textColor = color.NRGBA{R: 238, G: 236, B: 195, A: 255}
-					rowColor = color.NRGBA{R: 95, G: 96, B: 42, A: 255}
-				} else {
-					textColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-					rowColor = color.NRGBA{R: 128, G: 128, B: 0, A: 255}
-				}
-			}
-			missingSubServer := strings.TrimSpace(item.SubServerA) == "" && strings.TrimSpace(item.SubServerB) == ""
-			if missingSubServer {
-				// Якщо підсервер не задано - явно підсвічуємо проблемний рядок.
-				textColor = color.NRGBA{R: 210, G: 0, B: 0, A: 255}
-				rowColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-			}
+			textColor, rowColor := objectListRowColors(item, IsDarkMode())
 
 			panel.mutex.RLock()
 			selectedRow := panel.SelectedRow
 			panel.mutex.RUnlock()
-			if missingSubServer {
-				bg.FillColor = rowColor
-				bg.Show()
-				txt.Color = textColor
-			} else if id.Row == selectedRow {
+			if id.Row == selectedRow {
 				bg.FillColor = appTheme.ColorSelection
 				bg.Show()
 				txt.Color = color.White // Білий для виділеного
@@ -196,10 +181,9 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 			var cellText string
 			switch id.Col {
 			case 0:
-				cellText = itoa(item.ID)
+				cellText = viewmodels.ObjectDisplayNumber(item)
 			case 1:
-				// cellText = getStatusIcon(item.Status) + " " + item.Name
-				cellText = item.Name
+				cellText = fmt.Sprintf("%s %s", viewmodels.SourceBadgeForObjectID(item.ID), item.Name)
 			case 2:
 				cellText = item.Address
 			case 3:
@@ -255,7 +239,7 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	header := container.NewVBox(
 		container.NewPadded(panel.TitleText),
 		container.NewBorder(nil, nil, nil, panel.SearchClear, panel.SearchEntry),
-		panel.FilterSelect,
+		container.NewGridWithColumns(2, panel.FilterSelect, panel.SourceSelect),
 		panel.ColumnHeader,
 	)
 
@@ -304,6 +288,7 @@ func (p *ObjectListPanel) applyFilters() {
 	// Виконуємо фільтрацію в фоні
 	query := strings.ToLower(strings.TrimSpace(p.SearchEntry.Text))
 	currentFilter := p.CurrentFilter
+	currentSource := p.CurrentSource
 
 	p.mutex.RLock()
 	all := p.AllObjects
@@ -321,6 +306,7 @@ func (p *ObjectListPanel) applyFilters() {
 		AllObjects:           all,
 		Query:                query,
 		CurrentFilter:        currentFilter,
+		CurrentSource:        currentSource,
 		PreviousSelectedID:   prevSelectedID,
 		HadPreviousSelection: hadPrevSelection,
 		LastNotifiedID:       lastNotifiedID,
@@ -358,6 +344,21 @@ func (p *ObjectListPanel) applyFilters() {
 		}
 		p.FilterSelect.Refresh()
 
+		if p.SourceSelect != nil {
+			p.SourceSelect.Options = viewmodels.BuildObjectSourceOptions(
+				result.CountAll,
+				result.CountBridge,
+				result.CountCASL,
+			)
+			for _, opt := range p.SourceSelect.Options {
+				if strings.HasPrefix(opt, currentSource+" (") || opt == currentSource {
+					p.SourceSelect.SetSelected(opt)
+					break
+				}
+			}
+			p.SourceSelect.Refresh()
+		}
+
 		if p.TitleText != nil {
 			p.TitleText.Text = fmt.Sprintf("ОБ'ЄКТИ (%d)", result.CountAll)
 			p.TitleText.Refresh()
@@ -392,6 +393,60 @@ func (p *ObjectListPanel) objectByRow(row int) (models.Object, bool) {
 	}
 	obj, ok := value.(models.Object)
 	return obj, ok
+}
+
+func objectListRowColors(item models.Object, isDark bool) (color.NRGBA, color.NRGBA) {
+	selectEventColor := utils.SelectColorNRGBA
+	if isDark {
+		selectEventColor = utils.SelectColorNRGBADark
+	}
+
+	// Пріоритети кольорів (зверху вниз):
+	// 1) блокування, 2) тривога, 3) технічна/пожежна несправність,
+	// 4) втрата зв'язку, 5) проблема приписки/конфігурації, 6) інші стани.
+	if item.BlockedArmedOnOff == 1 {
+		// Тимчасово знято із спостереження.
+		if isDark {
+			return color.NRGBA{R: 230, G: 220, B: 245, A: 255}, color.NRGBA{R: 98, G: 52, B: 125, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 144, G: 64, B: 196, A: 255}
+	}
+	if item.BlockedArmedOnOff == 2 {
+		// Режим налагодження.
+		if isDark {
+			return color.NRGBA{R: 238, G: 236, B: 195, A: 255}, color.NRGBA{R: 95, G: 96, B: 42, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 128, G: 128, B: 0, A: 255}
+	}
+
+	if item.AlarmState > 0 || item.Status == models.StatusFire {
+		return selectEventColor(1)
+	}
+
+	if item.TechAlarmState > 0 || item.Status == models.StatusFault {
+		return selectEventColor(2)
+	}
+
+	if item.IsConnState == 0 || item.Status == models.StatusOffline {
+		if isDark {
+			return color.NRGBA{R: 255, G: 250, B: 180, A: 255}, color.NRGBA{R: 90, G: 90, B: 20, A: 255}
+		}
+		return color.NRGBA{R: 0, G: 0, B: 0, A: 255}, color.NRGBA{R: 225, G: 235, B: 35, A: 255}
+	}
+
+	if viewmodels.IsCASLObjectID(item.ID) && !item.HasAssignment {
+		if isDark {
+			return color.NRGBA{R: 240, G: 243, B: 255, A: 255}, color.NRGBA{R: 52, G: 70, B: 98, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 77, G: 112, B: 168, A: 255}
+	}
+
+	if !viewmodels.IsCASLObjectID(item.ID) && strings.TrimSpace(item.SubServerA) == "" && strings.TrimSpace(item.SubServerB) == "" {
+		// Для МІСТ/БД підсервери мають бути заповнені.
+		return color.NRGBA{R: 210, G: 0, B: 0, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	}
+
+	return utils.ChangeItemColorNRGBA(item.AlarmState, item.GuardState, item.TechAlarmState, item.IsConnState, isDark)
 }
 
 // objectListTableLayout для динамічного ресайзу колонок "Назва" та "Адреса"

@@ -16,9 +16,35 @@ type adminObjectScope interface {
 	SourceNameForObjectID(objectID int) string
 }
 
+func normalizeSourceLabel(value string) string {
+	source := strings.TrimSpace(strings.ToLower(value))
+	switch source {
+	case "casl":
+		return "CASL Cloud"
+	case "primary":
+		return "БД/МІСТ"
+	default:
+		if strings.TrimSpace(value) == "" {
+			return "невідоме джерело"
+		}
+		return value
+	}
+}
+
 func (a *Application) withAdminProvider(onReady func(contracts.AdminProvider)) func() {
 	return func() {
 		provider := a.getDataProvider()
+		if a.currentObject != nil {
+			if scopedProvider, ok := provider.(adminObjectScope); ok && !scopedProvider.CanUseAdminForObjectID(a.currentObject.ID) {
+				source := normalizeSourceLabel(scopedProvider.SourceNameForObjectID(a.currentObject.ID))
+				dialogs.ShowInfoDialog(
+					a.mainWindow,
+					"Недоступно для цього джерела",
+					fmt.Sprintf("Адмін-операції недоступні для джерела \"%s\". Використовуйте окреме меню CASL.", source),
+				)
+				return
+			}
+		}
 		adminProvider, ok := backend.AsAdminProvider(provider)
 		if !ok {
 			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
@@ -53,7 +79,7 @@ func (a *Application) ensureCurrentObjectSelected() (id int64, name string, ok b
 	}
 	if scopedProvider, ok := a.getDataProvider().(adminObjectScope); ok {
 		if !scopedProvider.CanUseAdminForObjectID(a.currentObject.ID) {
-			source := scopedProvider.SourceNameForObjectID(a.currentObject.ID)
+			source := normalizeSourceLabel(scopedProvider.SourceNameForObjectID(a.currentObject.ID))
 			dialogs.ShowInfoDialog(
 				a.mainWindow,
 				"Недоступно для цього джерела",

@@ -45,6 +45,9 @@ func TestEventLogViewModel_ApplyFiltersByPeriod(t *testing.T) {
 	if out.Filtered[0].ID != 1 || out.Filtered[1].ID != 2 {
 		t.Fatalf("unexpected filtered order: %+v", out.Filtered)
 	}
+	if out.CountAll != 2 || out.CountBridge != 2 || out.CountCASL != 0 {
+		t.Fatalf("unexpected source counters: all=%d bridge=%d casl=%d", out.CountAll, out.CountBridge, out.CountCASL)
+	}
 }
 
 func TestEventLogViewModel_ApplyFiltersImportantCurrentAndLimit(t *testing.T) {
@@ -71,5 +74,32 @@ func TestEventLogViewModel_ApplyFiltersImportantCurrentAndLimit(t *testing.T) {
 	}
 	if out.Filtered[0].ID != 1 {
 		t.Fatalf("expected first matching critical event, got %+v", out.Filtered[0])
+	}
+	if out.CountAll != 2 || out.CountBridge != 2 || out.CountCASL != 0 {
+		t.Fatalf("unexpected source counters: all=%d bridge=%d casl=%d", out.CountAll, out.CountBridge, out.CountCASL)
+	}
+}
+
+func TestEventLogViewModel_ApplyFiltersBySource(t *testing.T) {
+	vm := NewEventLogViewModel()
+	now := time.Date(2026, 3, 29, 12, 0, 0, 0, time.Local)
+	caslID := caslObjectIDNamespaceStart + 24
+
+	out := vm.ApplyFilters(EventLogFilterInput{
+		AllEvents: []models.Event{
+			{ID: 1, ObjectID: 11, Time: now.Add(-2 * time.Minute), Type: models.EventFire},
+			{ID: 2, ObjectID: caslID, Time: now.Add(-3 * time.Minute), Type: models.EventFire},
+			{ID: 3, ObjectID: caslID, Time: now.Add(-4 * time.Minute), Type: models.EventFault},
+		},
+		Period:         "Всі",
+		SelectedSource: ObjectSourceCASL,
+		Now:            now,
+	})
+
+	if out.Count != 2 {
+		t.Fatalf("expected 2 CASL events, got %d", out.Count)
+	}
+	if out.CountAll != 3 || out.CountBridge != 1 || out.CountCASL != 2 {
+		t.Fatalf("unexpected source counters: all=%d bridge=%d casl=%d", out.CountAll, out.CountBridge, out.CountCASL)
 	}
 }

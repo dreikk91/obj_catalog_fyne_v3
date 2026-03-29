@@ -2,7 +2,9 @@ package viewmodels
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"obj_catalog_fyne_v3/pkg/models"
 )
@@ -17,6 +19,7 @@ type ObjectListFilterInput struct {
 	AllObjects           []models.Object
 	Query                string
 	CurrentFilter        string
+	CurrentSource        string
 	PreviousSelectedID   int
 	HadPreviousSelection bool
 	LastNotifiedID       int
@@ -30,6 +33,8 @@ type ObjectListFilterOutput struct {
 	CountAlarm            int
 	CountOffline          int
 	CountDisarmed         int
+	CountBridge           int
+	CountCASL             int
 	NewSelectedRow        int
 	SelectedObject        models.Object
 	HasSelectedObject     bool
@@ -71,30 +76,30 @@ func (vm *ObjectListViewModel) BuildFilterOptions(countAll int, countAlarm int, 
 func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectListFilterOutput {
 	query := strings.ToLower(strings.TrimSpace(input.Query))
 	currentFilter := strings.TrimSpace(input.CurrentFilter)
+	currentSource := NormalizeObjectSourceFilter(input.CurrentSource)
 
 	filtered := make([]models.Object, 0, len(input.AllObjects))
 	countAll := 0
 	countAlarm := 0
 	countOffline := 0
 	countDisarmed := 0
+	countBridge := 0
+	countCASL := 0
+
+	terms := splitSearchTerms(query)
 
 	for _, obj := range input.AllObjects {
-		matchSearch := true
-		if query != "" {
-			idText := strings.ToLower(fmt.Sprintf("%d", obj.ID))
-			matchSearch = strings.Contains(idText, query) ||
-				strings.Contains(strings.ToLower(obj.Name), query) ||
-				strings.Contains(strings.ToLower(obj.Address), query) ||
-				strings.Contains(strings.ToLower(obj.ContractNum), query) ||
-				strings.Contains(strings.ToLower(obj.SIM1), query) ||
-				strings.Contains(strings.ToLower(obj.SIM2), query) ||
-				strings.Contains(strings.ToLower(obj.Phone), query)
-		}
-		if !matchSearch {
+		source := ObjectSourceByID(obj.ID)
+		if !matchesSearchTerms(obj, source, terms) {
 			continue
 		}
 
 		countAll++
+		if source == ObjectSourceCASL {
+			countCASL++
+		} else {
+			countBridge++
+		}
 		if obj.Status == models.StatusFire || obj.Status == models.StatusFault {
 			countAlarm++
 		}
@@ -120,9 +125,13 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 				statusMatch = false
 			}
 		}
-		if statusMatch {
-			filtered = append(filtered, obj)
+		if !statusMatch {
+			continue
 		}
+		if !sourceMatchesFilter(source, currentSource) {
+			continue
+		}
+		filtered = append(filtered, obj)
 	}
 
 	newSelectedRow := -1
@@ -144,6 +153,8 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 		CountAlarm:     countAlarm,
 		CountOffline:   countOffline,
 		CountDisarmed:  countDisarmed,
+		CountBridge:    countBridge,
+		CountCASL:      countCASL,
 		NewSelectedRow: newSelectedRow,
 	}
 	if newSelectedRow >= 0 {
@@ -156,4 +167,103 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 	}
 
 	return out
+}
+
+func splitSearchTerms(query string) []string {
+	if strings.TrimSpace(query) == "" {
+		return nil
+	}
+	parts := strings.Fields(strings.ToLower(strings.TrimSpace(query)))
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		result = append(result, part)
+	}
+	return result
+}
+
+func matchesSearchTerms(obj models.Object, source string, terms []string) bool {
+	if len(terms) == 0 {
+		return true
+	}
+
+	idText := strconv.Itoa(obj.ID)
+	nameText := strings.ToLower(strings.TrimSpace(obj.Name))
+	addressText := strings.ToLower(strings.TrimSpace(obj.Address))
+	contractText := strings.ToLower(strings.TrimSpace(obj.ContractNum))
+	phoneText := strings.ToLower(strings.TrimSpace(obj.Phone))
+	sim1Text := strings.ToLower(strings.TrimSpace(obj.SIM1))
+	sim2Text := strings.ToLower(strings.TrimSpace(obj.SIM2))
+	sourceText := strings.ToLower(strings.TrimSpace(source))
+
+	sim1Digits := digitsOnly(sim1Text)
+	sim2Digits := digitsOnly(sim2Text)
+	phoneDigits := digitsOnly(phoneText)
+
+	for _, term := range terms {
+		switch {
+		case strings.HasPrefix(term, "src:"):
+			required := NormalizeObjectSourceFilter(strings.TrimSpace(strings.TrimPrefix(term, "src:")))
+			if !sourceMatchesFilter(source, required) {
+				return false
+			}
+		case strings.HasPrefix(term, "sim:"):
+			simQuery := digitsOnly(strings.TrimSpace(strings.TrimPrefix(term, "sim:")))
+			if simQuery == "" {
+				return false
+			}
+			if !strings.Contains(sim1Digits, simQuery) && !strings.Contains(sim2Digits, simQuery) {
+				return false
+			}
+		default:
+			digitsTerm := digitsOnly(term)
+			isNumericTerm := digitsTerm != "" && isDigitsOnlyTerm(term)
+			if isNumericTerm && len(digitsTerm) >= 4 {
+				if strings.Contains(sim1Digits, digitsTerm) || strings.Contains(sim2Digits, digitsTerm) || strings.Contains(phoneDigits, digitsTerm) || strings.Contains(idText, digitsTerm) {
+					continue
+				}
+			}
+			if strings.Contains(idText, term) ||
+				strings.Contains(nameText, term) ||
+				strings.Contains(addressText, term) ||
+				strings.Contains(contractText, term) ||
+				strings.Contains(phoneText, term) ||
+				strings.Contains(sim1Text, term) ||
+				strings.Contains(sim2Text, term) ||
+				strings.Contains(sourceText, term) {
+				continue
+			}
+			return false
+		}
+	}
+	return true
+}
+
+func digitsOnly(value string) string {
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(value))
+	for _, r := range value {
+		if unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func isDigitsOnlyTerm(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
 }

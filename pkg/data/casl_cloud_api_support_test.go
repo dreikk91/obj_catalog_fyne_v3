@@ -168,7 +168,12 @@ func TestCASLProvider_CommandWrappers(t *testing.T) {
 			case "read_device_state":
 				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":-1,"accum":-1,"door":-1,"online":0,"lastPingDate":1774769732941,"lines":{},"groups":{},"adapters":{}}}`))
 			case "get_statistic":
-				_, _ = w.Write([]byte(`{"status":"ok","data":{"device_id":"23","obj_id":"24","responseFrequencies":6,"communicQuality":6,"powerFailure":6,"criminogenicity":0,"customWins":13}}`))
+				name := strings.TrimSpace(asString(payload["name"]))
+				if name == "stats_events" {
+					_, _ = w.Write([]byte(`{"status":"ok","data":[{"event_type":"fire","count":3}]}`))
+				} else {
+					_, _ = w.Write([]byte(`{"status":"ok","data":{"device_id":"23","obj_id":"24","responseFrequencies":6,"communicQuality":6,"powerFailure":6,"criminogenicity":0,"customWins":13}}`))
+				}
 			case "group_on_device", "group_off_device", "update_grd_object", "grd_obj_pick", "grd_obj_finish":
 				_, _ = w.Write([]byte(`{"status":"ok"}`))
 			default:
@@ -338,6 +343,14 @@ func TestCASLProvider_CommandWrappers(t *testing.T) {
 	}
 	if stats.CustomWins != 13 {
 		t.Fatalf("unexpected CustomWins: %d", stats.CustomWins)
+	}
+
+	reportRows, err := provider.GetStatisticReport(ctx, "stats_events", 1001)
+	if err != nil {
+		t.Fatalf("GetStatisticReport failed: %v", err)
+	}
+	if len(reportRows) != 1 || strings.TrimSpace(asString(reportRows[0]["event_type"])) != "fire" {
+		t.Fatalf("unexpected report rows: %#v", reportRows)
 	}
 
 	if err := provider.GroupOnDevice(ctx, 1003, 1); err != nil {

@@ -49,7 +49,7 @@ func TestWorkAreaHeaderViewModel_ApplyObject(t *testing.T) {
 	}
 
 	address, _ := vm.HeaderAddressBinding().Get()
-	if address != "📌 Main St | 📄 C-001" {
+	if address != "📌 Main St | 📄 C-001 | 🧭 БД/МІСТ" {
 		t.Fatalf("unexpected formatted address: %q", address)
 	}
 }
@@ -66,5 +66,24 @@ func TestWorkAreaHeaderViewModel_Reset(t *testing.T) {
 	address, _ := vm.HeaderAddressBinding().Get()
 	if name != "← Оберіть об'єкт зі списку" || address != "" {
 		t.Fatalf("unexpected reset state: %q / %q", name, address)
+	}
+}
+
+func TestWorkAreaHeaderViewModel_ApplyObjectCASLNumber(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	vm := NewWorkAreaHeaderViewModel()
+	vm.ApplyObject(models.Object{
+		ID:          caslObjectIDNamespaceStart + 24,
+		Name:        "Офіс",
+		Address:     "Border 1",
+		ContractNum: "C-003",
+		PanelMark:   "CASL #1003",
+	})
+
+	name, _ := vm.HeaderNameBinding().Get()
+	if name != "Офіс (№1003)" {
+		t.Fatalf("unexpected formatted CASL name: %q", name)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/eventbus"
+	applogger "obj_catalog_fyne_v3/pkg/logger"
 	"obj_catalog_fyne_v3/pkg/models"
 	apptheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui"
@@ -67,9 +68,9 @@ type Application struct {
 	alarmsTab *container.TabItem
 
 	// Стан лічильників для бейджів правих вкладок.
-	lastAlarmsCount int
-	lastFireCount   int
-	lastEventsCount int
+	lastAlarmsCount   int
+	lastCriticalCount int
+	lastEventsCount   int
 
 	// Поточна тема
 	isDarkTheme bool
@@ -154,6 +155,7 @@ func NewApplication() *Application {
 	// Завантажуємо налаштування БД
 	log.Info().Msg("Завантаження налаштувань БД...")
 	dbCfg := config.LoadDBConfig(fyneApp.Preferences())
+	dbCfg.LogLevel = applogger.SetLogLevel(dbCfg.LogLevel)
 	caslEnabled := dbCfg.CASLEnabled || dbCfg.NormalizedMode() == config.BackendModeCASLCloud
 	log.Info().
 		Str("host", dbCfg.Host).
@@ -377,9 +379,9 @@ func (a *Application) buildUI() {
 
 	// Синхронізуємо лічильники з панелями (викличеться після їх Refresh()).
 	if a.alarmPanel != nil {
-		a.alarmPanel.OnCountsChanged = func(total int, fire int) {
+		a.alarmPanel.OnCountsChanged = func(total int, critical int) {
 			// eventsCount тут не знаємо — не чіпаємо.
-			a.updateTabBadges(total, fire, -1)
+			a.updateTabBadges(total, critical, -1)
 		}
 		a.alarmPanel.OnNewCriticalAlarm = func(alarm models.Alarm) {
 			// Для адміністратора не перемикаємо вкладку автоматично,
@@ -539,7 +541,18 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 		}),
 	)
 
-	return fyne.NewMainMenu(adminMenu, helpMenu)
+	menus := []*fyne.Menu{adminMenu}
+	if _, ok := a.resolveCASLReportsProvider(); ok {
+		caslMenu := fyne.NewMenu("CASL",
+			fyne.NewMenuItem("Звіти", func() {
+				a.openCASLReportsDialog()
+			}),
+		)
+		menus = append(menus, caslMenu)
+	}
+	menus = append(menus, helpMenu)
+
+	return fyne.NewMainMenu(menus...)
 }
 
 // Run запускає додаток
@@ -567,6 +580,7 @@ func (a *Application) Run() {
 
 // Reconnect перепідключає джерело даних та оновлює провайдери.
 func (a *Application) Reconnect(cfg config.DBConfig) {
+	cfg.LogLevel = applogger.SetLogLevel(cfg.LogLevel)
 	caslEnabled := cfg.CASLEnabled || cfg.NormalizedMode() == config.BackendModeCASLCloud
 	log.Warn().Bool("caslEnabled", caslEnabled).Msg("🔄 Перепідключення до джерела даних...")
 	if a.statusLabel != nil {

@@ -9,16 +9,21 @@ type AlarmListUseCase interface {
 
 // AlarmRefreshInput описує вхідні дані для оновлення стану панелі тривог.
 type AlarmRefreshInput struct {
-	Alarms       []models.Alarm
-	LastKnownIDs map[int]struct{}
+	Alarms         []models.Alarm
+	LastKnownIDs   map[int]struct{}
+	SelectedSource string
 }
 
 // AlarmRefreshOutput описує результат обробки списку тривог для UI.
 type AlarmRefreshOutput struct {
 	CurrentAlarms  []models.Alarm
+	FilteredAlarms []models.Alarm
 	KnownIDs       map[int]struct{}
 	Total          int
-	FireCount      int
+	CriticalCount  int
+	CountAll       int
+	CountBridge    int
+	CountCASL      int
 	NewCritical    models.Alarm
 	HasNewCritical bool
 }
@@ -40,18 +45,29 @@ func (vm *AlarmListViewModel) LoadAlarms(useCase AlarmListUseCase) []models.Alar
 
 func (vm *AlarmListViewModel) BuildRefreshOutput(input AlarmRefreshInput) AlarmRefreshOutput {
 	out := AlarmRefreshOutput{
-		CurrentAlarms: append([]models.Alarm(nil), input.Alarms...),
-		KnownIDs:      make(map[int]struct{}, len(input.Alarms)),
-		Total:         len(input.Alarms),
+		CurrentAlarms:  append([]models.Alarm(nil), input.Alarms...),
+		FilteredAlarms: make([]models.Alarm, 0, len(input.Alarms)),
+		KnownIDs:       make(map[int]struct{}, len(input.Alarms)),
+		Total:          len(input.Alarms),
 	}
 
 	for i := range input.Alarms {
 		alarm := input.Alarms[i]
-		if alarm.Type == models.AlarmFire && !alarm.IsProcessed {
-			out.FireCount++
+		source := ObjectSourceByID(alarm.ObjectID)
+		out.CountAll++
+		if source == ObjectSourceCASL {
+			out.CountCASL++
+		} else {
+			out.CountBridge++
+		}
+		if sourceMatchesFilter(source, input.SelectedSource) {
+			out.FilteredAlarms = append(out.FilteredAlarms, alarm)
+		}
+		if alarm.IsCritical() && !alarm.IsProcessed {
+			out.CriticalCount++
 		}
 		if _, ok := input.LastKnownIDs[alarm.ID]; !ok {
-			if !out.HasNewCritical && alarm.Type == models.AlarmFire && !alarm.IsProcessed {
+			if !out.HasNewCritical && alarm.IsCritical() && !alarm.IsProcessed {
 				out.NewCritical = alarm
 				out.HasNewCritical = true
 			}

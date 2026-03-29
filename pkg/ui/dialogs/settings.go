@@ -113,6 +113,13 @@ func ShowSettingsDialog(
 		ShowColorPaletteDialog(win, isDarkTheme, onColorsChanged)
 	})
 
+	logLevelOptions := []string{"debug", "info", "warn", "error"}
+	logLevelSelect := widget.NewSelect(logLevelOptions, nil)
+	logLevelSelect.SetSelected(strings.ToLower(strings.TrimSpace(dbCfg.LogLevel)))
+	if logLevelSelect.Selected == "" {
+		logLevelSelect.SetSelected("info")
+	}
+
 	tabs := container.NewAppTabs(
 		container.NewTabItem("База даних", widget.NewForm(
 			widget.NewFormItem("Користувач", userEntry),
@@ -135,6 +142,7 @@ func ShowSettingsDialog(
 			widget.NewFormItem("Шрифт об'єктів", fontObjEntry),
 			widget.NewFormItem("Шрифт подій", fontEvEntry),
 			widget.NewFormItem("Шрифт тривог", fontAlmEntry),
+			widget.NewFormItem("Режим логування", logLevelSelect),
 			widget.NewFormItem("Ліміт загального журналу", eventLimitEntry),
 			widget.NewFormItem("Ліміт журналу об'єкта", objectLimitEntry),
 			widget.NewFormItem("Папка експорту", exportDirRow),
@@ -174,6 +182,7 @@ func ShowSettingsDialog(
 					CASLEmail:   strings.TrimSpace(caslEmailEntry.Text),
 					CASLPass:    strings.TrimSpace(caslPassEntry.Text),
 					CASLPultID:  caslPultID,
+					LogLevel:    strings.ToLower(strings.TrimSpace(logLevelSelect.Selected)),
 				}
 
 				fSize, _ := strconv.ParseFloat(fontEntry.Text, 32)

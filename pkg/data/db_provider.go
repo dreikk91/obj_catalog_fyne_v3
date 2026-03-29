@@ -336,7 +336,7 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 		alarm := models.Alarm{
 			ID:         int(ptrToInt64(row.ObjN)),
 			ObjectID:   int(ptrToInt64(row.ObjN)),
-			ObjectName: ptrToString(row.ObjShortName1),
+			ObjectName: formatDBObjectName(row.ObjN, row.ObjShortName1),
 			Address:    ptrToString(row.Address1),
 			Details:    details,
 			Time:       ptrToTime(row.EvTime1),
@@ -548,7 +548,7 @@ func mapEventRowToModel(row database.EventRow, objID int) models.Event {
 	e := models.Event{
 		ID:         int(row.ID),
 		ObjectID:   id,
-		ObjectName: ptrToString(row.ObjShortName1),
+		ObjectName: formatDBObjectName(row.ObjN, row.ObjShortName1),
 		Details:    ptrToString(row.Ukr1),
 		SC1:        0,
 	}
@@ -602,6 +602,37 @@ func mapEventRowToModel(row database.EventRow, objID int) models.Event {
 		e.Type = models.SystemEvent
 	}
 	return e
+}
+
+func formatDBObjectName(objN *int64, shortName *string) string {
+	number := strconv.FormatInt(ptrToInt64(objN), 10)
+	if number == "0" {
+		number = ""
+	}
+	title := strings.TrimSpace(ptrToString(shortName))
+
+	if number == "" {
+		if title == "" {
+			return "Об'єкт"
+		}
+		return title
+	}
+	if title == "" {
+		return "Об'єкт #" + number
+	}
+
+	prefixes := []string{
+		number + " |",
+		number + " ",
+		"Об'єкт #" + number,
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(title, prefix) {
+			return title
+		}
+	}
+
+	return number + " | " + title
 }
 
 func ptrToString(p *string) string {

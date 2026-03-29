@@ -25,6 +25,10 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation(t *testing.T) {
 		Notes1:        "note",
 		Location1:     "location",
 		IsUnderGuard:  true,
+		Groups: []models.ObjectGroup{
+			{Number: 1, Armed: true, StateText: "ПІД ОХОРОНОЮ", RoomName: "Room A"},
+			{Number: 2, Armed: false, StateText: "ЗНЯТО"},
+		},
 	})
 
 	if presentation.DeviceTypeText != "🔧 Тип: Tiras" {
@@ -45,6 +49,9 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation(t *testing.T) {
 	if presentation.GuardText != "🔒 ПІД ОХОРОНОЮ" {
 		t.Fatalf("unexpected guard text: %q", presentation.GuardText)
 	}
+	if presentation.GroupsText != "🔐 Групи:\nГрупа 1: ПІД ОХОРОНОЮ | Приміщення: Room A\nГрупа 2: ЗНЯТО" {
+		t.Fatalf("unexpected groups text: %q", presentation.GroupsText)
+	}
 }
 
 func TestWorkAreaDeviceViewModel_BuildObjectPresentation_NoGuard(t *testing.T) {
@@ -60,6 +67,33 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_NoGuard(t *testing.T) {
 	}
 	if presentation.GuardText != "🔓 ЗНЯТО З ОХОРОНИ" {
 		t.Fatalf("unexpected guard text: %q", presentation.GuardText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLFallbacks(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:         caslObjectIDNamespaceStart + 24,
+		DeviceType: "",
+		ObjChan:    5,
+		Phones1:    "",
+	})
+
+	if presentation.DeviceTypeText != "🔧 Тип: —" {
+		t.Fatalf("unexpected device type text: %q", presentation.DeviceTypeText)
+	}
+	if presentation.SIMText != "📱 SIM1: —" {
+		t.Fatalf("unexpected sim text: %q", presentation.SIMText)
+	}
+	if presentation.PhoneText != "☎️ Тел. об'єкта: —" {
+		t.Fatalf("unexpected phone text: %q", presentation.PhoneText)
+	}
+	if presentation.ChannelText != "📡 Канал: GPRS" {
+		t.Fatalf("unexpected channel text: %q", presentation.ChannelText)
+	}
+	if presentation.GroupsText != "🔐 Групи: —" {
+		t.Fatalf("unexpected groups fallback: %q", presentation.GroupsText)
 	}
 }
 

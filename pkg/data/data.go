@@ -20,14 +20,14 @@ type Data struct {
 	// Лічильники для генерації ID
 	nextAlarmID int
 	nextEventID int
-	db *sqlx.DB
+	db          *sqlx.DB
 }
 
 func NewData(db *sqlx.DB) *Data {
 	return &Data{
 		nextAlarmID: 100,
 		nextEventID: 1000,
-		db: db,
+		db:          db,
 	}
 }
 
@@ -49,14 +49,13 @@ func (d *Data) AddEvent(event models.Event) {
 	d.Events = append(d.Events, event)
 }
 
-
 func (d *Data) GetObjects() []models.Object {
 	d.mutex.RLock()
 	defer d.mutex.RUnlock()
 
 	// Створюємо копію для безпеки
 	objects := make([]models.Object, len(d.Objects))
-	
+
 	return objects
 }
 

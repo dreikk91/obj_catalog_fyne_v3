@@ -635,10 +635,11 @@ func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context) ([]model
 			seedObjectID = "casl"
 		}
 		alarms = append(alarms, models.Alarm{
-			ID:         stableCASLEventID(seedObjectID, tsValue.UnixMilli(), seed, 0),
-			ObjectID:   objectID,
-			ObjectName: objectName,
-			Address:    strings.TrimSpace(asString(row["address"])),
+			ID:           stableCASLEventID(seedObjectID, tsValue.UnixMilli(), seed, 0),
+			ObjectID:     objectID,
+			ObjectNumber: objectNum,
+			ObjectName:   objectName,
+			Address:      strings.TrimSpace(asString(row["address"])),
 			Time:       tsValue.Local(),
 			Details:    details,
 			Type:       alarmType,

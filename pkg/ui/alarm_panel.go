@@ -162,7 +162,11 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 			} else {
 				txt.TextStyle.Bold = false
 			}
-			displayText := alarm.GetTimeDisplay() + " — " + alarm.GetTypeDisplay() + " — №" + itoa(alarm.ObjectID)
+			objNum := alarm.ObjectNumber
+			if objNum == "" {
+				objNum = itoa(alarm.ObjectID)
+			}
+			displayText := alarm.GetTimeDisplay() + " — " + alarm.GetTypeDisplay() + " — №" + objNum
 			if alarm.ZoneNumber > 0 {
 				displayText += "-" + itoa(alarm.ZoneNumber)
 			}

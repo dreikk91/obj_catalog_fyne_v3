@@ -334,10 +334,11 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 		}
 
 		alarm := models.Alarm{
-			ID:         int(ptrToInt64(row.ObjN)),
-			ObjectID:   int(ptrToInt64(row.ObjN)),
-			ObjectName: formatDBObjectName(row.ObjN, row.ObjShortName1),
-			Address:    ptrToString(row.Address1),
+			ID:           int(ptrToInt64(row.ObjN)),
+			ObjectID:     int(ptrToInt64(row.ObjN)),
+			ObjectNumber: strconv.FormatInt(ptrToInt64(row.ObjN), 10),
+			ObjectName:   formatDBObjectName(row.ObjN, row.ObjShortName1),
+			Address:      ptrToString(row.Address1),
 			Details:    details,
 			Time:       ptrToTime(row.EvTime1),
 			Type:       alarmType,

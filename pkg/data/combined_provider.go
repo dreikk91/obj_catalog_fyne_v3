@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"sort"
 	"strconv"
 	"strings"
@@ -124,20 +125,25 @@ func (p *CombinedDataProvider) GetObjects() []models.Object {
 		return nil
 	}
 
-	seen := make(map[int]struct{}, len(objects))
-	deduped := objects[:0]
-	for _, obj := range objects {
-		if _, exists := seen[obj.ID]; exists {
-			continue
-		}
-		seen[obj.ID] = struct{}{}
-		deduped = append(deduped, obj)
-	}
+	// seen := make(map[int]struct{}, len(objects))
+	// deduped := objects[:0]
+	// for _, obj := range objects {
+	// 	if _, exists := seen[obj.ID]; exists {
+	// 		continue
+	// 	}
+	// 	seen[obj.ID] = struct{}{}
+	// 	deduped = append(deduped, obj)
+	// }
 
-	sort.SliceStable(deduped, func(i, j int) bool {
-		return deduped[i].ID < deduped[j].ID
+	// sort.SliceStable(deduped, func(i, j int) bool {
+	// 	return deduped[i].ID < deduped[j].ID
+	// })
+	// return deduped
+	// return viewmodels.ObjectDisplayNumber(deduped[i]) < viewmodels.ObjectDisplayNumber(deduped[j])
+	sort.SliceStable(objects, func(i, j int) bool {
+		return viewmodels.ObjectDisplayNumber(objects[i]) < viewmodels.ObjectDisplayNumber(objects[j])
 	})
-	return deduped
+	return objects
 }
 
 func (p *CombinedDataProvider) GetObjectByID(id string) *models.Object {

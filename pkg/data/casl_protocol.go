@@ -1137,10 +1137,18 @@ func mapCASLEventSC1(eventType models.EventType) int {
 		return 10
 	case models.EventDisarm:
 		return 14
+	case models.EventPowerFail:
+		return 26
+	case models.EventBatteryLow:
+		return 27
+	case models.EventOnline:
+		return 28
 	case models.EventOffline:
-		return 12
-	case models.EventTest, models.SystemEvent:
-		return 6
+		return 29
+	case models.EventTest:
+		return 16
+	case models.SystemEvent:
+		return 30
 	default:
 		return 2
 	}

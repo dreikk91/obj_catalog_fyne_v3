@@ -24,13 +24,14 @@ const (
 
 // Object - основна структура об'єкта
 type Object struct {
-	ID          int
-	Name        string
-	Address     string
-	ContractNum string
-	Phone       string
-	Status      ObjectStatus
-	StatusText  string
+	ID            int
+	DisplayNumber string
+	Name          string
+	Address       string
+	ContractNum   string
+	Phone         string
+	Status        ObjectStatus
+	StatusText    string
 
 	// Детальні стани для відображення в списку
 	AlarmState        int64
@@ -40,14 +41,14 @@ type Object struct {
 	BlockedArmedOnOff int16
 
 	// Інформація про прилад
-	DeviceType      string    // Тип приладу (напр. "Тірас-16П")
-	PanelMark       string    // Марка ППК (напр. "Тірас-8П")
-	SignalStrength  string    // Рівень сигналу (напр. "[-61 dBm]" або "AVD")
-	GSMLevel        int       // Рівень GSM сигналу (0-100%)
-	LastTestTime    time.Time // Час останнього тесту
-	LastMessageTime time.Time // Час останньої події
+	DeviceType      string      // Тип приладу (напр. "Тірас-16П")
+	PanelMark       string      // Марка ППК (напр. "Тірас-8П")
+	SignalStrength  string      // Рівень сигналу (напр. "[-61 dBm]" або "AVD")
+	GSMLevel        int         // Рівень GSM сигналу (0-100%)
+	LastTestTime    time.Time   // Час останнього тесту
+	LastMessageTime time.Time   // Час останньої події
 	PowerSource     PowerSource // Поточне джерело живлення
-	AutoTestHours   int       // Період автотесту в годинах
+	AutoTestHours   int         // Період автотесту в годинах
 
 	SIM1        string // Номер SIM 1
 	SIM2        string // Номер SIM 2
@@ -64,8 +65,8 @@ type Object struct {
 	LaunchDate  string // Дата запуску (OBJECTS_INFO.RESERVTEXT)
 
 	// Технічні стани
-	IsUnderGuard bool
-	IsConnOK     bool
+	IsUnderGuard  bool
+	IsConnOK      bool
 	HasAssignment bool
 
 	// Списки (можуть завантажуватись ліниво)

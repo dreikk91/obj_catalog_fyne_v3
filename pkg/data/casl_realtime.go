@@ -562,6 +562,7 @@ func (p *CASLCloudProvider) subscribeRealtimeTags(ctx context.Context, connID st
 	tags := []tagSpec{
 		{name: "ppk_in", required: true},
 		{name: "user_action", required: true},
+		{name: "tape", required: true},
 		{name: "ppk_service", required: false},
 		{name: "ppk_out", required: false},
 		{name: "system_event", required: false},
@@ -613,23 +614,33 @@ func (p *CASLCloudProvider) appendRealtimeRows(ctx context.Context, rows []CASLO
 	startGate := p.eventsStartAtMs
 	p.mu.RUnlock()
 
+	// 1. Обробка для загального журналу подій
 	events, maxEventTime := p.mapCASLRowsToEvents(ctx, rows, startGate)
-	if len(events) == 0 {
-		p.updateRealtimeAlarmsFromRows(ctx, rows)
-		return nil
+	if len(events) > 0 {
+		p.mu.Lock()
+		added := p.mergeCachedEventsLocked(events)
+		if maxEventTime > p.eventsCursorMs {
+			p.eventsCursorMs = maxEventTime
+		}
+		if added > 0 {
+			p.eventsRevision++
+		}
+		p.mu.Unlock()
 	}
 
-	p.mu.Lock()
-	added := p.mergeCachedEventsLocked(events)
-	if maxEventTime > p.eventsCursorMs {
-		p.eventsCursorMs = maxEventTime
+	// 2. Обробка виключно для стрічки тривог (tape)
+	tapeRows := make([]CASLObjectEvent, 0, len(rows))
+	for _, row := range rows {
+		// Фільтруємо суворо: тільки події з тегу/типу tape
+		if strings.Contains(strings.ToLower(row.Type), "tape") {
+			tapeRows = append(tapeRows, row)
+		}
 	}
-	if added > 0 {
-		p.eventsRevision++
-	}
-	p.mu.Unlock()
 
-	p.updateRealtimeAlarmsFromRows(ctx, rows)
+	if len(tapeRows) > 0 {
+		p.updateRealtimeAlarmsFromRows(ctx, tapeRows)
+	}
+
 	return nil
 }
 
@@ -741,6 +752,40 @@ func isCASLEventAlarmCandidate(eventType models.EventType) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func (p *CASLCloudProvider) updateRealtimeAlarmsFromEvents(ctx context.Context, events []models.Event) {
+	if len(events) == 0 {
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, event := range events {
+		cacheKey := canonicalCASLRealtimeAlarmKey(strconv.Itoa(event.ObjectID), event.ZoneNumber)
+		if event.Type == models.EventRestore || event.Type == models.EventPowerOK || event.Type == models.EventOnline {
+			delete(p.realtimeAlarmByObjID, cacheKey)
+			continue
+		}
+
+		alarmType, include := mapEventTypeToAlarmType(event.Type)
+		if !include {
+			continue
+		}
+
+		p.realtimeAlarmByObjID[cacheKey] = models.Alarm{
+			ID:         event.ID,
+			ObjectID:   event.ObjectID,
+			ObjectName: event.ObjectName,
+			Address:    event.Details, // Для tape подій часто адреса в деталях або треба довантажити
+			Time:       event.Time,
+			Details:    event.Details,
+			Type:       alarmType,
+			ZoneNumber: event.ZoneNumber,
+			SC1:        event.SC1,
+		}
 	}
 }
 

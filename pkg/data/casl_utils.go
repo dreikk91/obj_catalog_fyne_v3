@@ -784,15 +784,16 @@ func stableCASLEventID(objID string, ts int64, code string, index int) int {
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(strconv.Itoa(index)))
 
-	value := int(h.Sum32() & 0x7fffffff)
-	if value == 0 {
+	base := int(h.Sum32() & 0x7fffffff)
+	if base == 0 {
 		return nextCASLEventID()
 	}
-	return value
+	return caslObjectIDNamespaceStart + (base % caslObjectIDNamespaceSize)
 }
 
 func nextCASLEventID() int {
-	return int(time.Now().UnixMilli() & 0x7fffffff)
+	base := int(time.Now().UnixMilli() & 0x7fffffff)
+	return caslObjectIDNamespaceStart + (base % caslObjectIDNamespaceSize)
 }
 
 func statusIsOK(status string) bool {

@@ -862,7 +862,7 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		if row.Time > 0 {
 			alarmTime = time.UnixMilli(row.Time).Local()
 		}
-		objectNumint, err := strconv.Atoi(objectNum)
+		_, err = strconv.Atoi(objectNum)
 		if err != nil {
 			log.Error().Err(err).Msg("CASL: не вдалося перетворити objectNum на int")
 		}
@@ -871,7 +871,7 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			seed := action + "|" + strings.TrimSpace(row.AlarmType) + "|" + strconv.Itoa(zoneNumber)
 			p.realtimeAlarmByObjID[cacheKey] = models.Alarm{
 				ID:         stableCASLEventID(cacheKey, alarmTime.UnixMilli(), seed, 0),
-				ObjectID:   objectNumint,
+				ObjectID:   objectID,
 				ObjectName: objectName,
 				Address:    strings.TrimSpace(row.ObjAddr),
 				Time:       alarmTime,
@@ -919,7 +919,7 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		seed := strings.TrimSpace(row.Code) + "|" + strings.TrimSpace(row.ContactID) + "|" + strconv.Itoa(zoneNumber)
 		p.realtimeAlarmByObjID[cacheKey] = models.Alarm{
 			ID:         stableCASLEventID(cacheKey, alarmTime.UnixMilli(), seed, 0),
-			ObjectID:   objectNumint,
+			ObjectID:   objectID,
 			ObjectName: objectName,
 			Address:    strings.TrimSpace(row.ObjAddr),
 			Time:       alarmTime,

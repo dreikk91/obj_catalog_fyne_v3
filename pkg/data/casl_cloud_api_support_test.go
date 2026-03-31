@@ -365,7 +365,7 @@ func TestCASLProvider_CommandWrappers(t *testing.T) {
 	if err := provider.PickGuardObject(ctx, "24", "845920"); err != nil {
 		t.Fatalf("PickGuardObject failed: %v", err)
 	}
-	if err := provider.FinishGuardObject(ctx, "24", "845920"); err != nil {
+	if err := provider.FinishGuardObject(ctx, "24", "845920", "CAUSES_FALSE_ALARM", "test note"); err != nil {
 		t.Fatalf("FinishGuardObject failed: %v", err)
 	}
 

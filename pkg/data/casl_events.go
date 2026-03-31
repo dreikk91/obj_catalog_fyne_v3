@@ -815,7 +815,45 @@ func logCASLGeneralTapeItemRows(rows []CASLObjectEvent) {
 }
 
 func (p *CASLCloudProvider) ProcessAlarm(id string, user string, note string) {
-	log.Warn().Str("alarmID", id).Str("user", user).Msg("CASL: ProcessAlarm не підтримується API інтеграцією")
+	alarmID, _ := strconv.Atoi(id)
+	if alarmID <= 0 {
+		return
+	}
+
+	var foundObjectID int
+	var foundCacheKey string
+
+	p.mu.Lock()
+	for key, alarm := range p.realtimeAlarmByObjID {
+		if alarm.ID == alarmID {
+			foundObjectID = alarm.ObjectID
+			foundCacheKey = key
+			break
+		}
+	}
+
+	if foundCacheKey != "" {
+		delete(p.realtimeAlarmByObjID, foundCacheKey)
+	}
+
+	record, hasRecord := p.objectByInternalID[foundObjectID]
+	p.mu.Unlock()
+
+	if hasRecord && strings.TrimSpace(record.ObjID) != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+		defer cancel()
+
+		caslObjID := strings.TrimSpace(record.ObjID)
+		// Для grd_obj_pick/finish у CASL API достатньо obj_id, якщо ми не маємо event_id.
+		if err := p.PickGuardObject(ctx, caslObjID, ""); err != nil {
+			log.Debug().Err(err).Str("objID", caslObjID).Msg("CASL: PickGuardObject failed")
+		}
+		if err := p.FinishGuardObject(ctx, caslObjID, "", "CAUSES_FALSE_ALARM", note); err != nil {
+			log.Debug().Err(err).Str("objID", caslObjID).Msg("CASL: FinishGuardObject failed")
+		}
+	} else {
+		log.Debug().Int("alarmID", alarmID).Int("objectID", foundObjectID).Msg("CASL: record not found for ProcessAlarm or not a CASL alarm")
+	}
 }
 
 func (p *CASLCloudProvider) GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time) {

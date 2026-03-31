@@ -297,7 +297,7 @@ func TestClassifyCASLEventTypeWithContext_UserActionByCode(t *testing.T) {
 	t.Parallel()
 
 	got := classifyCASLEventTypeWithContext("GRD_OBJ_NOTIF", "", "user_action", "")
-	if got != models.EventBurglary {
+	if got != models.EventType(models.AlarmBurglary) {
 		t.Fatalf("expected EventBurglary for GRD_OBJ_NOTIF, got %s", got)
 	}
 }
@@ -659,7 +659,7 @@ func TestCASLProvider_LoginAndReadObjects(t *testing.T) {
 	if gotByID.Name != "Object 24" {
 		t.Fatalf("unexpected object name: %q", gotByID.Name)
 	}
-	if gotByID.DeviceType != "ППКО CASL" {
+	if gotByID.DeviceType != "CASL" {
 		t.Fatalf("unexpected object device type: %q", gotByID.DeviceType)
 	}
 	if gotByID.Notes1 != "Ломбард" {

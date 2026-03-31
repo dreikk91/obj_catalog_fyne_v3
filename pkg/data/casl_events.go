@@ -100,7 +100,7 @@ func (p *CASLCloudProvider) readEventsJournalAsEvents(ctx context.Context) ([]mo
 	logCASLReadEventsRows(start, now, rows)
 
 	events, maxEventTime := p.mapCASLRowsToEvents(ctx, rows, startGate)
-	p.updateRealtimeAlarmsFromRows(ctx, rows)
+	// p.updateRealtimeAlarmsFromRows(ctx, rows) // ВИДАЛЕНО: події з журналу не повинні потрапляти в тривоги
 	p.mu.Lock()
 	if maxEventTime > p.eventsCursorMs {
 		p.eventsCursorMs = maxEventTime

@@ -614,30 +614,29 @@ func (p *CASLCloudProvider) appendRealtimeRows(ctx context.Context, rows []CASLO
 	startGate := p.eventsStartAtMs
 	p.mu.RUnlock()
 
+	// 1. Обробка для загального журналу подій
 	events, maxEventTime := p.mapCASLRowsToEvents(ctx, rows, startGate)
-	if len(events) == 0 {
-		// Якщо тег tape — оновлюємо тривоги навіть якщо подій немає (наприклад, видалення)
-		p.updateRealtimeAlarmsFromRows(ctx, rows)
-		return nil
+	if len(events) > 0 {
+		p.mu.Lock()
+		added := p.mergeCachedEventsLocked(events)
+		if maxEventTime > p.eventsCursorMs {
+			p.eventsCursorMs = maxEventTime
+		}
+		if added > 0 {
+			p.eventsRevision++
+		}
+		p.mu.Unlock()
 	}
 
-	p.mu.Lock()
-	added := p.mergeCachedEventsLocked(events)
-	if maxEventTime > p.eventsCursorMs {
-		p.eventsCursorMs = maxEventTime
-	}
-	if added > 0 {
-		p.eventsRevision++
-	}
-	p.mu.Unlock()
-
-	// Оновлюємо тривоги тільки якщо події стосуються стрічки (tape)
+	// 2. Обробка виключно для стрічки тривог (tape)
 	tapeRows := make([]CASLObjectEvent, 0, len(rows))
 	for _, row := range rows {
+		// Фільтруємо суворо: тільки події з тегу/типу tape
 		if strings.Contains(strings.ToLower(row.Type), "tape") {
 			tapeRows = append(tapeRows, row)
 		}
 	}
+
 	if len(tapeRows) > 0 {
 		p.updateRealtimeAlarmsFromRows(ctx, tapeRows)
 	}

@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"sort"
 	"strconv"
 	"strings"
@@ -135,7 +136,7 @@ func (p *CombinedDataProvider) GetObjects() []models.Object {
 	}
 
 	sort.SliceStable(deduped, func(i, j int) bool {
-		return strconv.Itoa(deduped[i].ID) < strconv.Itoa(deduped[j].ID)
+		return viewmodels.ObjectDisplayNumber(deduped[i]) < viewmodels.ObjectDisplayNumber(deduped[j])
 	})
 	return deduped
 }

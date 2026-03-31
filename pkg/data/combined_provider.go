@@ -135,7 +135,7 @@ func (p *CombinedDataProvider) GetObjects() []models.Object {
 	}
 
 	sort.SliceStable(deduped, func(i, j int) bool {
-		return deduped[i].ID < deduped[j].ID
+		return strconv.Itoa(deduped[i].ID) < strconv.Itoa(deduped[j].ID)
 	})
 	return deduped
 }

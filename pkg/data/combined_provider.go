@@ -136,7 +136,18 @@ func (p *CombinedDataProvider) GetObjects() []models.Object {
 	}
 
 	sort.SliceStable(deduped, func(i, j int) bool {
-		return viewmodels.ObjectDisplayNumber(deduped[i]) < viewmodels.ObjectDisplayNumber(deduped[j])
+		sourceI := viewmodels.IsCASLObjectID(deduped[i].ID)
+		sourceJ := viewmodels.IsCASLObjectID(deduped[j].ID)
+
+		// Спочатку за джерелом (Bridge спочатку, CASL потім)
+		if sourceI != sourceJ {
+			return !sourceI // Якщо I - Bridge (false), а J - CASL (true), то I < J
+		}
+
+		// Всередині кожної групи сортуємо за номером об'єкта (як текст)
+		numI := viewmodels.ObjectDisplayNumber(deduped[i])
+		numJ := viewmodels.ObjectDisplayNumber(deduped[j])
+		return numI < numJ
 	})
 	return deduped
 }

@@ -13,7 +13,7 @@ func classifyCASLEventType(code string) models.EventType {
 
 	switch {
 	case strings.Contains(value, "GRD_OBJ_NOTIF"):
-		return models.EventBurglary
+		return models.EventType(models.AlarmBurglary)
 	case strings.Contains(value, "GRD_OBJ_MGR_CANCEL"), strings.Contains(value, "GRD_OBJ_FINISH"):
 		return models.EventRestore
 	case strings.Contains(value, "GRD_OBJ_PICK"), strings.Contains(value, "GRD_OBJ_ASS_MGR"), strings.Contains(value, "GRD_OBJ_"):
@@ -1110,6 +1110,8 @@ func mapEventTypeToAlarmType(eventType models.EventType) (models.AlarmType, bool
 		return models.AlarmSystemEvent, true
 	case models.EventFault:
 		return models.AlarmFault, true
+	case models.EventNotification:
+		return models.AlarmNotification, true
 	default:
 		return "", false
 	}

@@ -632,7 +632,8 @@ func formatDBObjectName(objN *int64, shortName *string) string {
 		}
 	}
 
-	return number + " | " + title
+	// return number + " | " + title
+	return title
 }
 
 func ptrToString(p *string) string {

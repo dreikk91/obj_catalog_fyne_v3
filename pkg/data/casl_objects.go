@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -44,8 +45,30 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 		p.enrichCASLObjectWithDeviceMeta(ctx, &obj, hasDevice, device)
 		objects = append(objects, obj)
 	}
+	// sortCASLObjectsByNumber(objects)
 	return objects
 }
+
+// func sortCASLObjectsByNumber(objects []models.Object) {
+// 	sort.SliceStable(objects, func(i, j int) bool {
+// 		ni := extractLeadingCASLNumber(objects[i].Name)
+// 		nj := extractLeadingCASLNumber(objects[j].Name)
+// 		if ni != "" && nj != "" {
+// 			vi, _ := strconv.Atoi(ni)
+// 			vj, _ := strconv.Atoi(nj)
+// 			if vi != vj {
+// 				return vi < vj
+// 			}
+// 		}
+// 		if ni != "" && nj == "" {
+// 			return true
+// 		}
+// 		if ni == "" && nj != "" {
+// 			return false
+// 		}
+// 		return objects[i].Name < objects[j].Name
+// 	})
+// }
 
 func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 	objectID, ok := parseObjectID(idStr)
@@ -219,6 +242,8 @@ func (p *CASLCloudProvider) applyCASLCoreSnapshot(objects []caslGrdObject, devic
 		p.cachedObjectsAt = now
 		p.objectByInternalID = buildCASLObjectIndex(copiedObjects)
 	}
+
+	
 
 	if len(devices) > 0 {
 		copiedDevices := append([]caslDevice(nil), devices...)

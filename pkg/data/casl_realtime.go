@@ -854,7 +854,7 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		eventType := classifyCASLEventTypeWithContext(classifierCode, strings.TrimSpace(row.ContactID), strings.TrimSpace(row.Type), details)
 		alarmType, include := mapEventTypeToAlarmType(eventType)
 		if !include && action == "GRD_OBJ_NOTIF" {
-			alarmType = models.AlarmFault
+			alarmType = models.AlarmNotification
 			include = true
 		}
 
@@ -862,12 +862,16 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		if row.Time > 0 {
 			alarmTime = time.UnixMilli(row.Time).Local()
 		}
+		objectNumint, err := strconv.Atoi(objectNum)
+		if err != nil {
+			log.Error().Err(err).Msg("CASL: не вдалося перетворити objectNum на int")
+		}
 
 		if action == "GRD_OBJ_NOTIF" {
 			seed := action + "|" + strings.TrimSpace(row.AlarmType) + "|" + strconv.Itoa(zoneNumber)
 			p.realtimeAlarmByObjID[cacheKey] = models.Alarm{
 				ID:         stableCASLEventID(cacheKey, alarmTime.UnixMilli(), seed, 0),
-				ObjectID:   objectID,
+				ObjectID:   objectNumint,
 				ObjectName: objectName,
 				Address:    strings.TrimSpace(row.ObjAddr),
 				Time:       alarmTime,
@@ -915,7 +919,7 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		seed := strings.TrimSpace(row.Code) + "|" + strings.TrimSpace(row.ContactID) + "|" + strconv.Itoa(zoneNumber)
 		p.realtimeAlarmByObjID[cacheKey] = models.Alarm{
 			ID:         stableCASLEventID(cacheKey, alarmTime.UnixMilli(), seed, 0),
-			ObjectID:   objectID,
+			ObjectID:   objectNumint,
 			ObjectName: objectName,
 			Address:    strings.TrimSpace(row.ObjAddr),
 			Time:       alarmTime,

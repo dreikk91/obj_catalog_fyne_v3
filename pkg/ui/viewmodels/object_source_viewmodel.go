@@ -1,6 +1,7 @@
 package viewmodels
 
 import (
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -46,22 +47,22 @@ func NormalizeObjectSourceFilter(selected string) string {
 
 func BuildObjectSourceOptions(countAll int, countBridge int, countCASL int) []string {
 	return []string{
-		ObjectSourceAll + " (" + itoa(countAll) + ")",
-		ObjectSourceBridge + " (" + itoa(countBridge) + ")",
-		ObjectSourceCASL + " (" + itoa(countCASL) + ")",
+		ObjectSourceAll + " (" + strconv.Itoa(countAll) + ")",
+		ObjectSourceBridge + " (" + strconv.Itoa(countBridge) + ")",
+		ObjectSourceCASL + " (" + strconv.Itoa(countCASL) + ")",
 	}
 }
 
 func SourceBadgeForObjectID(id int) string {
 	if IsCASLObjectID(id) {
-		return "[CASL]"
+		return "[C]"
 	}
-	return "[МІСТ]"
+	return "[М]"
 }
 
 func ObjectDisplayNumber(object models.Object) string {
 	if !IsCASLObjectID(object.ID) {
-		return itoa(object.ID)
+		return strconv.Itoa(object.ID)
 	}
 
 	if number := numberFromPanelMark(object.PanelMark); number != "" {
@@ -70,7 +71,7 @@ func ObjectDisplayNumber(object models.Object) string {
 	if number := leadingDigits(strings.TrimSpace(object.Name)); number != "" {
 		return number
 	}
-	return itoa(object.ID)
+	return strconv.Itoa(object.ID)
 }
 
 func sourceMatchesFilter(source string, selectedSource string) bool {
@@ -118,24 +119,24 @@ func leadingDigits(value string) string {
 	return b.String()
 }
 
-func itoa(v int) string {
-	if v == 0 {
-		return "0"
-	}
-	neg := v < 0
-	if neg {
-		v = -v
-	}
-	var buf [20]byte
-	i := len(buf)
-	for v > 0 {
-		i--
-		buf[i] = byte('0' + (v % 10))
-		v /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
+// func itoa(v int) string {
+// 	if v == 0 {
+// 		return "0"
+// 	}
+// 	neg := v < 0
+// 	if neg {
+// 		v = -v
+// 	}
+// 	var buf [20]byte
+// 	i := len(buf)
+// 	for v > 0 {
+// 		i--
+// 		buf[i] = byte('0' + (v % 10))
+// 		v /= 10
+// 	}
+// 	if neg {
+// 		i--
+// 		buf[i] = '-'
+// 	}
+// 	return string(buf[i:])
+// }

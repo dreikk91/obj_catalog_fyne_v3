@@ -8,7 +8,7 @@ type AlarmType string
 
 const (
 	AlarmFire        AlarmType = "fire"         // Пожежа
-	AlarmBurglary    AlarmType = "burglary"     // Проникнення/охоронна тривога
+	// AlarmBurglary    AlarmType = "burglary"     // Проникнення/охоронна тривога
 	AlarmPanic       AlarmType = "panic"        // Тривожна кнопка/напад
 	AlarmMedical     AlarmType = "medical"      // Медична тривога
 	AlarmGas         AlarmType = "gas"          // Газова тривога
@@ -18,6 +18,17 @@ const (
 	AlarmBatteryLow  AlarmType = "battery_low"  // Низький заряд АКБ
 	AlarmOffline     AlarmType = "offline"      // Втрата зв'язку
 	AlarmSystemEvent AlarmType = "system_event" // Системна подія
+	AlarmOperator    AlarmType = "ALARM_TYPE_OPERATOR"     // Операторська тривога
+	AlarmDevice      AlarmType = "ALARM_TYPE_DEVICE"     // Пристроєва тривога
+	AlarmMobile      AlarmType = "ALARM_TYPE_MOBILE"     // Мобільна тривога
+	AlarmBurglary    AlarmType = "BURGLARY_ALARM"    // Охоронна тривога
+	AlarmEliminated  AlarmType = "ALARM_ELIMINATED"  // Ліквідована тривога
+	AlarmAcTrouble   AlarmType = "AC_TROUBLE"      // Проблеми з живленням
+	AlarmExit        AlarmType = "EXIT_ALARM"        // Вихідна тривога
+	// AlarmFire        AlarmType = "FIRE_ALARM"        // Пожежна тривога
+	AlarmFireTrouble AlarmType = "FIRE_TROUBLE"    // Проблеми з пожежною сигналізацією
+	AlarmNotification AlarmType = "notification" // Повідомлення
+	
 )
 
 // Alarm представляє активну тривогу, що потребує обробки
@@ -62,6 +73,22 @@ func (a *Alarm) GetTypeDisplay() string {
 		return "ВТРАТА ЗВ'ЯЗКУ"
 	case AlarmSystemEvent:
 		return "СИСТЕМА"
+	case AlarmOperator:
+		return "Тривога від оператора"
+	case AlarmDevice:
+		return "Тривога від пристрою"
+	case AlarmMobile:
+		return "Тривога від мобільного додатку"
+	case AlarmEliminated:
+		return "Ліквідована тривога"
+	case AlarmAcTrouble:
+		return "Проблеми з живленням"
+	case AlarmExit:
+		return "Вихідна тривога"
+	case AlarmFireTrouble:
+		return "Проблеми з пожежною сигналізацією"
+	case AlarmNotification:
+		return "Попадання тривоги в стрічку"
 	default:
 		return "ПОДІЯ"
 	}
@@ -80,7 +107,7 @@ func (a *Alarm) GetDateTimeDisplay() string {
 // IsCritical повертає true якщо тривога критична і має підсвічуватись як пріоритетна.
 func (a *Alarm) IsCritical() bool {
 	switch a.Type {
-	case AlarmFire, AlarmBurglary, AlarmPanic, AlarmMedical, AlarmGas, AlarmTamper, AlarmFault, AlarmOffline:
+	case AlarmFire, AlarmBurglary, AlarmPanic, AlarmMedical, AlarmGas, AlarmTamper, AlarmFault, AlarmOffline, AlarmOperator, AlarmDevice, AlarmMobile:
 		return true
 	default:
 		return false

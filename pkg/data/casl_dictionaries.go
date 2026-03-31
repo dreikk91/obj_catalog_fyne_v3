@@ -27,6 +27,7 @@ func (p *CASLCloudProvider) lookupCASLDeviceTypeInDictionary(ctx context.Context
 	if !ok || len(dict) == 0 {
 		return ""
 	}
+	
 
 	deviceTypes := extractCASLDeviceTypesMap(dict)
 	if len(deviceTypes) == 0 {
@@ -68,15 +69,16 @@ func extractCASLDeviceTypesMap(value any) map[string]string {
 		return nil
 	}
 
-	if raw, exists := root["device_types"]; exists {
+	// Старий формат: user_device_types — це map[string]string
+	if raw, exists := root["user_device_types"]; exists {
 		if mapped := flattenStringMap(raw); len(mapped) > 0 {
 			return mapped
 		}
 	}
 
 	if nestedRaw, exists := root["dictionary"]; exists {
-		if nested, okNested := nestedRaw.(map[string]any); okNested {
-			if raw, exists := nested["device_types"]; exists {
+		if nested, ok := nestedRaw.(map[string]any); ok {
+			if raw, exists := nested["user_device_types"]; exists {
 				if mapped := flattenStringMap(raw); len(mapped) > 0 {
 					return mapped
 				}
@@ -84,8 +86,39 @@ func extractCASLDeviceTypesMap(value any) map[string]string {
 		}
 	}
 
-	return nil
+	// Новий формат: user_device_types — це []string (ключі),
+	// переклади лежать у translate.uk (або dictionary.translate.uk)
+	ukMap := extractCASLDictionaryLanguageMap(root, "uk")
+	if len(ukMap) == 0 {
+		return nil
+	}
+
+	// Якщо є явний список ключів — повертаємо лише ті, що є в ньому
+	if raw, exists := root["user_device_types"]; exists {
+		if arr, ok := raw.([]any); ok && len(arr) > 0 {
+			result := make(map[string]string, len(arr))
+			for _, item := range arr {
+				key := strings.TrimSpace(asString(item))
+				if key == "" {
+					continue
+				}
+				for _, candidate := range []string{key, strings.ToUpper(key), strings.ToLower(key)} {
+					if v, found := ukMap[candidate]; found && v != "" {
+						result[key] = v
+						break
+					}
+				}
+			}
+			if len(result) > 0 {
+				return result
+			}
+		}
+	}
+
+	// Немає явного списку — повертаємо весь ukMap як є
+	return ukMap
 }
+
 
 func (p *CASLCloudProvider) loadDictionaryMap(ctx context.Context) map[string]string {
 	p.mu.RLock()

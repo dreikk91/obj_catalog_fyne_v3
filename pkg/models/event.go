@@ -7,23 +7,24 @@ import "time"
 type EventType string
 
 const (
-	EventFire       EventType = "fire"       // Пожежа
-	EventBurglary   EventType = "burglary"   // Проникнення/охоронна тривога
-	EventPanic      EventType = "panic"      // Тривожна кнопка/напад
-	EventMedical    EventType = "medical"    // Медична тривога
-	EventGas        EventType = "gas"        // Газова тривога
-	EventTamper     EventType = "tamper"     // Саботаж/тампер
-	EventFault      EventType = "fault"      // Несправність
-	EventRestore    EventType = "restore"    // Відновлення
-	EventArm        EventType = "arm"        // Постановка під охорону
-	EventDisarm     EventType = "disarm"     // Зняття з охорони
-	EventTest       EventType = "test"       // Тестовий сигнал
-	EventPowerFail  EventType = "power_fail" // Втрата 220В
-	EventPowerOK    EventType = "power_ok"   // Відновлення 220В
-	EventBatteryLow EventType = "batt_low"   // Низький заряд АКБ
-	EventOnline     EventType = "online"     // Прилад на зв'язку
-	EventOffline    EventType = "offline"    // Втрата зв'язку
-	SystemEvent     EventType = "system"     // Системна подія
+	EventFire         EventType = "fire"         // Пожежа
+	EventBurglary     EventType = "burglary"     // Проникнення/охоронна тривога
+	EventPanic        EventType = "panic"        // Тривожна кнопка/напад
+	EventMedical      EventType = "medical"      // Медична тривога
+	EventGas          EventType = "gas"          // Газова тривога
+	EventTamper       EventType = "tamper"       // Саботаж/тампер
+	EventFault        EventType = "fault"        // Несправність
+	EventRestore      EventType = "restore"      // Відновлення
+	EventArm          EventType = "arm"          // Постановка під охорону
+	EventDisarm       EventType = "disarm"       // Зняття з охорони
+	EventTest         EventType = "test"         // Тестовий сигнал
+	EventPowerFail    EventType = "power_fail"   // Втрата 220В
+	EventPowerOK      EventType = "power_ok"     // Відновлення 220В
+	EventBatteryLow   EventType = "batt_low"     // Низький заряд АКБ
+	EventOnline       EventType = "online"       // Прилад на зв'язку
+	EventOffline      EventType = "offline"      // Втрата зв'язку
+	SystemEvent       EventType = "system"       // Системна подія
+	EventNotification EventType = "notification" // Повідомлення
 )
 
 // Event представляє подію в журналі

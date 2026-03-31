@@ -32,6 +32,8 @@ func ShowCASLReportsDialog(parent fyne.Window, provider CASLReportsProvider) {
 	reportNameEntry := widget.NewEntry()
 	reportNameEntry.SetText("stats_events")
 	reportNameEntry.SetPlaceHolder("Назва звіту, наприклад: stats_events")
+	avalaibleCommands := widget.NewLabel("Доступні команди: stats_events, stats_objects, stats_activity, stats_mgr_status, stats_device_blocked, stats_users, stats_devices_v2, stats_devices_offline, stats_connection")
+
 
 	limitEntry := widget.NewEntry()
 	limitEntry.SetText("500")
@@ -44,7 +46,8 @@ func ShowCASLReportsDialog(parent fyne.Window, provider CASLReportsProvider) {
 	output := widget.NewMultiLineEntry()
 	output.SetText("[]")
 	output.Wrapping = fyne.TextWrapOff
-	output.Disable()
+	output.MultiLine = true
+	// output.Disable()
 
 	parseLimit := func(raw string) int {
 		value := strings.TrimSpace(raw)
@@ -120,6 +123,7 @@ func ShowCASLReportsDialog(parent fyne.Window, provider CASLReportsProvider) {
 
 	top := container.NewVBox(
 		widget.NewCard("Параметри звіту", "", form),
+		widget.NewCard("Доступні команди", "", avalaibleCommands),
 		container.NewHBox(loadBtn, layout.NewSpacer(), statusLabel),
 		widget.NewCard("Зведення", "", summaryLabel),
 	)

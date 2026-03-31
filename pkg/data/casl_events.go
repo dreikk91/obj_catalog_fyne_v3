@@ -282,7 +282,7 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 			eventTS = eventTime.UnixMilli()
 		}
 
-		seed := code + "|" + contactID + "|" + strconv.Itoa(number) + "|" + strings.TrimSpace(row.HozUserID)
+		seed := stableCASLAlarmSeed(code, contactID, number)
 		events = append(events, models.Event{
 			ID:         stableCASLEventID(strconv.FormatInt(ppkNum, 10), eventTS, seed, 0),
 			Time:       eventTime,
@@ -626,16 +626,14 @@ func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context) ([]model
 			tsValue = time.Now()
 		}
 
-		seed := code + "|" + contactID + "|" + strconv.Itoa(number)
-		seedObjectID := strconv.FormatInt(ppkNum, 10)
-		if strings.TrimSpace(seedObjectID) == "" || seedObjectID == "0" {
-			seedObjectID = objectNum
+		seed := stableCASLAlarmSeed(code, contactID, number)
+		objectKey := canonicalCASLRealtimeObjectKey(rawObjID, objectNum, objectID)
+		if objectKey == "" {
+			objectKey = "casl"
 		}
-		if seedObjectID == "" {
-			seedObjectID = "casl"
-		}
+
 		alarms = append(alarms, models.Alarm{
-			ID:           stableCASLEventID(seedObjectID, tsValue.UnixMilli(), seed, 0),
+			ID:           stableCASLAlarmID(objectKey, tsValue.UnixMilli(), seed),
 			ObjectID:     objectID,
 			ObjectNumber: objectNum,
 			ObjectName:   objectName,
@@ -699,8 +697,16 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 
 	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
 	defer cancel()
+
 	if _, err := p.readEventsJournalAsEvents(ctx); err != nil {
 		log.Debug().Err(err).Msg("CASL: read_events недоступний під час формування активних тривог")
+	}
+
+	basketAlarms, err := p.readFromBasketAsAlarms(ctx)
+	if err != nil {
+		log.Debug().Err(err).Msg("CASL: read_from_basket недоступний під час формування активних тривог")
+	} else {
+		p.syncRealtimeAlarmsFromBasket(basketAlarms)
 	}
 
 	alarms := p.snapshotRealtimeAlarms()
@@ -719,6 +725,28 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 	}
 	sortCASLAlarms(alarms)
 	return alarms
+}
+
+func (p *CASLCloudProvider) syncRealtimeAlarmsFromBasket(basket []models.Alarm) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	activeIDs := make(map[int]struct{}, len(basket))
+	for _, alarm := range basket {
+		activeIDs[alarm.ID] = struct{}{}
+
+		objectKey := canonicalCASLRealtimeObjectKey("", alarm.ObjectNumber, alarm.ObjectID)
+		cacheKey := canonicalCASLRealtimeAlarmKey(objectKey, alarm.ZoneNumber)
+		if existing, exists := p.realtimeAlarmByObjID[cacheKey]; !exists || alarm.Time.After(existing.Time) {
+			p.realtimeAlarmByObjID[cacheKey] = alarm
+		}
+	}
+
+	for key, cached := range p.realtimeAlarmByObjID {
+		if _, active := activeIDs[cached.ID]; !active {
+			delete(p.realtimeAlarmByObjID, key)
+		}
+	}
 }
 
 func (p *CASLCloudProvider) readGeneralTapeItemRows(ctx context.Context) ([]CASLObjectEvent, error) {

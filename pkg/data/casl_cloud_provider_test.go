@@ -316,7 +316,7 @@ func TestClassifyCASLEventType_CASLCategories(t *testing.T) {
 		{code: "GAS_ALARM", expected: models.EventGas},
 		{code: "SABOTAGE_AD", expected: models.EventTamper},
 		{code: "NO_220", expected: models.EventPowerFail},
-		{code: "OO_OK_220", expected: models.EventRestore},
+		{code: "OO_OK_220", expected: models.EventPowerOK},
 		{code: "UPD_START", expected: models.SystemEvent},
 		{code: "E627", expected: models.SystemEvent},
 	}
@@ -999,6 +999,8 @@ func TestCASLProvider_GetAlarms_FromReadEventsRows(t *testing.T) {
 			switch cmdType {
 			case "read_events":
 				_, _ = w.Write([]byte(readEventsPayload))
+			case "read_from_basket":
+				_, _ = w.Write([]byte(readEventsPayload))
 			case "read_grd_object":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","device_id":"23","device_number":1003}]}`))
 			case "read_device":
@@ -1046,6 +1048,8 @@ func TestCASLProvider_GetAlarms_FromReadEventsRowsWithoutPPK(t *testing.T) {
 			switch cmdType {
 			case "read_events":
 				_, _ = w.Write([]byte(readEventsPayload))
+			case "read_from_basket":
+				_, _ = w.Write([]byte(readEventsPayload))
 			case "read_grd_object":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","device_id":"23","device_number":1003}]}`))
 			case "read_device":
@@ -1089,6 +1093,8 @@ func TestCASLProvider_GetAlarms_FallbackToGeneralTapeItem(t *testing.T) {
 			switch cmdType {
 			case "read_events":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_from_basket":
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"ok","data":{"215":[{"code":62221,"time":%d,"contact_id":"E130","number":13}]}}`, nowMs)))
 			case "read_grd_object":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"215","name":"Object 215","device_id":"23","device_number":1003}]}`))
 			case "read_device":
@@ -1138,8 +1144,12 @@ func TestCASLProvider_GetAlarms_UsesRealtimeCacheWhenReadEventsFails(t *testing.
 			case "read_events":
 				w.WriteHeader(http.StatusInternalServerError)
 				_, _ = w.Write([]byte(`{"status":"error","error":"INTERNAL"}`))
+			case "read_from_basket":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","code":"FIRE_ALARM","contact_id":"E110","number":0,"time":1774970891649}]}`))
+			case "read_grd_object", "read_connections", "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
 			default:
-				t.Fatalf("unexpected command type: %s", cmdType)
+				t.Fatalf("unexpected command type: %s (payload: %v)", cmdType, payload)
 			}
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -1148,12 +1158,14 @@ func TestCASLProvider_GetAlarms_UsesRealtimeCacheWhenReadEventsFails(t *testing.
 	defer server.Close()
 
 	provider := NewCASLCloudProvider(server.URL, "token", 1)
+	nowTS := int64(1774970891649)
+	seed := stableCASLAlarmSeed("FIRE_ALARM", "E110", 0)
 	provider.mu.Lock()
-	provider.realtimeAlarmByObjID["24"] = models.Alarm{
-		ID:         1,
+	provider.realtimeAlarmByObjID["24|z0"] = models.Alarm{
+		ID:         stableCASLAlarmID("24", nowTS, seed),
 		ObjectID:   mapCASLObjectID("24"),
 		ObjectName: "24 | Object 24",
-		Time:       time.Now(),
+		Time:       time.UnixMilli(nowTS).Local(),
 		Details:    "Нова тривога",
 		Type:       models.AlarmFire,
 	}

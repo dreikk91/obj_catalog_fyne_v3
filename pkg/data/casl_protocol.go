@@ -97,9 +97,13 @@ func classifyCASLEventType(code string) models.EventType {
 		return models.EventOffline
 	case strings.Contains(valueLower, "нема зв"), strings.Contains(valueLower, "втрата зв"), strings.Contains(valueLower, "відсутн") && strings.Contains(valueLower, "зв"):
 		return models.EventOffline
-	case strings.Contains(value, "RECOVER"), strings.Contains(value, "RESTORE"),
-		strings.HasPrefix(value, "OK_"), strings.Contains(value, "OK_220"), strings.Contains(value, "POWER_OK"),
-		strings.HasSuffix(value, "_OK"), strings.HasPrefix(value, "R"):
+	case strings.Contains(value, "RECOVER"), strings.Contains(value, "RESTORE"):
+		return models.EventRestore
+	case strings.Contains(value, "OK_220"), strings.Contains(value, "POWER_OK"):
+		return models.EventPowerOK
+	case strings.Contains(value, "ONLINE"), strings.Contains(value, "PPK_CONN_OK"):
+		return models.EventOnline
+	case strings.HasPrefix(value, "OK_"), strings.HasSuffix(value, "_OK"), strings.HasPrefix(value, "R"):
 		return models.EventRestore
 	case strings.Contains(valueLower, "віднов"), strings.Contains(valueLower, "норма"):
 		return models.EventRestore
@@ -127,9 +131,9 @@ func classifyCASLEventType(code string) models.EventType {
 func mapCASLTapeEventType(raw string) models.EventType {
 	value := strings.ToLower(strings.TrimSpace(raw))
 	switch value {
-	case "fire", "FIRE_ALARM":
+	case "fire":
 		return models.EventFire
-	case "burglary", "BURGLARY_ALARM":
+	case "burglary":
 		return models.EventBurglary
 	case "panic":
 		return models.EventPanic
@@ -151,7 +155,7 @@ func mapCASLTapeEventType(raw string) models.EventType {
 		return models.EventTest
 	case "poll":
 		return models.EventTest
-	case "power_fail", "AC_TROUBLE":
+	case "power_fail":
 		return models.EventPowerFail
 	case "power_ok":
 		return models.EventPowerOK
@@ -161,18 +165,22 @@ func mapCASLTapeEventType(raw string) models.EventType {
 		return models.EventOffline
 	case "online":
 		return models.EventOnline
-	case "system", "ppk_action", "ppk_service", "system_event", "system_action", "m3_in":
+	case "system":
 		return models.SystemEvent
 	case "user_action":
-		return models.EventOperator
-	case "mob_user_action", "ALARM_TYPE_MOBILE":
-		return models.EventMobile
-	case "ALARM_TYPE_OPERATOR":
-		return models.EventOperator
-	case "ALARM_ELIMINATED":
-		return models.EventEliminated
-	case "FIRE_TROUBLE":
-		return models.EventFireTrouble
+		return models.SystemEvent
+	case "ppk_action":
+		return models.SystemEvent
+	case "ppk_service":
+		return models.SystemEvent
+	case "system_event":
+		return models.SystemEvent
+	case "system_action":
+		return models.SystemEvent
+	case "m3_in":
+		return models.SystemEvent
+	case "mob_user_action":
+		return models.SystemEvent
 	default:
 		return classifyCASLEventType(value)
 	}
@@ -1108,14 +1116,6 @@ func mapEventTypeToAlarmType(eventType models.EventType) (models.AlarmType, bool
 		return models.AlarmFault, true
 	case models.EventNotification:
 		return models.AlarmNotification, true
-	case models.EventOperator:
-		return models.AlarmOperator, true
-	case models.EventMobile:
-		return models.AlarmMobile, true
-	case models.EventEliminated:
-		return models.AlarmEliminated, true
-	case models.EventFireTrouble:
-		return models.AlarmFireTrouble, true
 	default:
 		return "", false
 	}
@@ -1135,32 +1135,22 @@ func mapCASLEventSC1(eventType models.EventType) int {
 		return 24
 	case models.EventTamper:
 		return 25
-	case models.EventRestore, models.EventPowerOK:
+	case models.EventPowerFail:
+		return 3
+	case models.EventBatteryLow:
+		return 4
+	case models.EventRestore, models.EventPowerOK, models.EventOnline:
 		return 5
 	case models.EventArm:
 		return 10
 	case models.EventDisarm:
-		return 14
-	case models.EventPowerFail:
-		return 26
-	case models.EventBatteryLow:
-		return 27
-	case models.EventOnline:
-		return 28
+		return 11
 	case models.EventOffline:
-		return 29
+		return 12
 	case models.EventTest:
 		return 16
-	case models.SystemEvent:
-		return 30
-	case models.EventOperator:
-		return 31
-	case models.EventMobile:
-		return 32
-	case models.EventEliminated:
-		return 34
-	case models.EventFireTrouble:
-		return 35
+	case models.SystemEvent, models.EventNotification:
+		return 6
 	default:
 		return 2
 	}

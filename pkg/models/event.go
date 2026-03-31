@@ -25,10 +25,6 @@ const (
 	EventOffline      EventType = "offline"      // Втрата зв'язку
 	SystemEvent       EventType = "system"       // Системна подія
 	EventNotification EventType = "notification" // Повідомлення
-	EventOperator     EventType = "operator"     // Дія оператора
-	EventMobile       EventType = "mobile"       // Мобільний додаток
-	EventEliminated   EventType = "eliminated"   // Ліквідовано
-	EventFireTrouble  EventType = "fire_trouble" // Несправність пожежної частини
 )
 
 // Event представляє подію в журналі
@@ -81,14 +77,6 @@ func (e *Event) GetTypeDisplay() string {
 		return "ВТРАТА ЗВ'ЯЗКУ"
 	case SystemEvent:
 		return "СИСТЕМА"
-	case EventOperator:
-		return "ОПЕРАТОР"
-	case EventMobile:
-		return "МОБІЛЬНИЙ"
-	case EventEliminated:
-		return "ЛІКВІДОВАНО"
-	case EventFireTrouble:
-		return "НЕСПР. ПОЖЕЖІ"
 	default:
 		return "ПОДІЯ"
 	}
@@ -107,7 +95,7 @@ func (e *Event) GetDateTimeDisplay() string {
 // IsCritical повертає true якщо подія критична (пожежа, несправність)
 func (e *Event) IsCritical() bool {
 	switch e.Type {
-	case EventFire, EventBurglary, EventPanic, EventMedical, EventGas, EventTamper, EventFault, EventOffline, EventMobile, EventFireTrouble:
+	case EventFire, EventBurglary, EventPanic, EventMedical, EventGas, EventTamper, EventFault, EventOffline:
 		return true
 	default:
 		return false
@@ -116,5 +104,5 @@ func (e *Event) IsCritical() bool {
 
 // IsWarning повертає true якщо подія є попередженням
 func (e *Event) IsWarning() bool {
-	return e.Type == EventPowerFail || e.Type == EventBatteryLow || e.Type == EventOperator
+	return e.Type == EventPowerFail || e.Type == EventBatteryLow
 }

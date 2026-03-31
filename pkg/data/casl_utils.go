@@ -774,15 +774,34 @@ func stableCASLID(parts ...string) int {
 	return id
 }
 
-func stableCASLEventID(objID string, ts int64, code string, index int) int {
+func stableCASLEventID(objID string, ts int64, seed string, index int) int {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(strings.TrimSpace(objID)))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(strconv.FormatInt(ts, 10)))
 	_, _ = h.Write([]byte{0})
-	_, _ = h.Write([]byte(strings.TrimSpace(code)))
+	_, _ = h.Write([]byte(strings.TrimSpace(seed)))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(strconv.Itoa(index)))
+
+	base := int(h.Sum32() & 0x7fffffff)
+	if base == 0 {
+		return nextCASLEventID()
+	}
+	return caslObjectIDNamespaceStart + (base % caslObjectIDNamespaceSize)
+}
+
+func stableCASLAlarmSeed(code string, contactID string, zoneNumber int) string {
+	return strings.TrimSpace(code) + "|" + strings.TrimSpace(contactID) + "|" + strconv.Itoa(zoneNumber)
+}
+
+func stableCASLAlarmID(objKey string, ts int64, seed string) int {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(strings.TrimSpace(objKey)))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(strconv.FormatInt(ts, 10)))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(strings.TrimSpace(seed)))
 
 	base := int(h.Sum32() & 0x7fffffff)
 	if base == 0 {

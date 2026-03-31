@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"sort"
 	"strconv"
 	"strings"
@@ -124,20 +125,21 @@ func (p *CombinedDataProvider) GetObjects() []models.Object {
 		return nil
 	}
 
-	seen := make(map[int]struct{}, len(objects))
-	deduped := objects[:0]
-	for _, obj := range objects {
-		if _, exists := seen[obj.ID]; exists {
-			continue
-		}
-		seen[obj.ID] = struct{}{}
-		deduped = append(deduped, obj)
-	}
+	sort.SliceStable(objects, func(i, j int) bool {
+		sourceI := viewmodels.IsCASLObjectID(objects[i].ID)
+		sourceJ := viewmodels.IsCASLObjectID(objects[j].ID)
 
-	sort.SliceStable(deduped, func(i, j int) bool {
-		return deduped[i].ID < deduped[j].ID
+		// Спочатку за джерелом (Bridge спочатку, CASL потім)
+		if sourceI != sourceJ {
+			return !sourceI // Якщо I - Bridge (false), а J - CASL (true), то I < J
+		}
+
+		// Всередині кожної групи сортуємо за номером об'єкта (як текст)
+		numI := viewmodels.ObjectDisplayNumber(objects[i])
+		numJ := viewmodels.ObjectDisplayNumber(objects[j])
+		return numI < numJ
 	})
-	return deduped
+	return objects
 }
 
 func (p *CombinedDataProvider) GetObjectByID(id string) *models.Object {

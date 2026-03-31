@@ -1046,7 +1046,19 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 		contactID := strings.TrimSpace(item.ContactID.String())
 		sourceType := strings.TrimSpace(item.Type)
 
-		details := decodeCASLEventDescription(translator, dictMap, code, contactID, zoneNumber, deviceType)
+		details := buildCASLUserActionDetails(CASLObjectEvent{
+			Action:    item.Action.String(),
+			Code:      item.Code.String(),
+			ObjID:     record.ObjID,
+			ObjName:   record.Name,
+			UserFIO:   item.UserFIO.String(),
+			UserID:    item.UserID.String(),
+			MgrID:     item.MgrID.String(),
+			AlarmType: item.AlarmType.String(),
+		})
+		if details == "" {
+			details = decodeCASLEventDescription(translator, dictMap, code, contactID, zoneNumber, deviceType)
+		}
 		if details == "" {
 			switch {
 			case contactID != "" && code != "":

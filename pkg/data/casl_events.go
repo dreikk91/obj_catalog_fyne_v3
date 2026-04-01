@@ -251,12 +251,15 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 			details = decodeCASLEventDescription(translator, dictMap, code, contactID, number, deviceType)
 		}
 		if details == "" {
+			rawAction := strings.TrimSpace(row.Action)
 			switch {
-			case contactID != "" && code != "":
+			case !isCASLPlaceholder(rawAction):
+				details = rawAction
+			case contactID != "" && !isCASLPlaceholder(code):
 				details = fmt.Sprintf("%s (%s)", contactID, code)
 			case contactID != "":
 				details = contactID
-			case code != "":
+			case !isCASLPlaceholder(code):
 				details = code
 			default:
 				details = "CASL подія"
@@ -595,12 +598,18 @@ func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context) ([]model
 			details = decodeCASLEventDescription(translator, dictMap, code, contactID, number, deviceType)
 		}
 		if details == "" {
+			rawAction := strings.TrimSpace(asString(row["action"]))
+			if isCASLPlaceholder(rawAction) {
+				rawAction = strings.TrimSpace(asString(row["msg"]))
+			}
 			switch {
-			case contactID != "" && code != "":
+			case !isCASLPlaceholder(rawAction):
+				details = rawAction
+			case contactID != "" && !isCASLPlaceholder(code):
 				details = fmt.Sprintf("%s (%s)", contactID, code)
 			case contactID != "":
 				details = contactID
-			case code != "":
+			case !isCASLPlaceholder(code):
 				details = code
 			default:
 				details = "CASL тривога"
@@ -1088,13 +1097,18 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 			details = decodeCASLEventDescription(translator, dictMap, code, contactID, zoneNumber, deviceType)
 		}
 		if details == "" {
+			rawAction := item.Action.String()
 			switch {
-			case contactID != "" && code != "":
+			case !isCASLPlaceholder(rawAction):
+				details = rawAction
+			case contactID != "" && !isCASLPlaceholder(code):
 				details = fmt.Sprintf("%s (%s)", contactID, code)
 			case contactID != "":
 				details = contactID
-			default:
+			case !isCASLPlaceholder(code):
 				details = code
+			default:
+				details = "CASL подія"
 			}
 		}
 		eventType := classifyCASLEventTypeWithContext(code, contactID, sourceType, details)

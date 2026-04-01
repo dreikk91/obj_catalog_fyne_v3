@@ -1,0 +1,648 @@
+Минимальный набор таблиц с обязательными для заполнения полями и порядок заполнения для создания охраняемого объекта в системе Феникс 4
+
+1. Panel(Panel_id, Disabled)
+2. Company(company_id)
+3. Groups(Panel_id, Group_, Message, company_id)
+4. MPhone(Panel_id, CurrentSIM, RadioType)
+5. Sims(SimNumber, Mphone_id)
+6. Channels(ChannelNo, ChannelNoForState, SIM_id, ChannelType_id)
+
+orlanbuses 
+Bus_number	int	ID
+Bus_name	nvarchar(15)	Название источника событий
+COM	varchar(6)	Последовательный порт
+Orlans	smallint	Количество орланов
+OrlanArmed	smallint	№ Орлан-М для удаленной постановки под охрану (основной оператор)
+OrlanAUX	smallint	№ Орлан-М для выключения AUX / выключения выхода 1 (основной оператор)
+OrlanReport	smallint	№ Орлан-М для отчета и снятия запрета (основной оператор)
+OrlanBan	smallint	№ Орлан-М для запрета постановки (основной оператор)
+OrlanChangeSim	smallint	№ Орлан-М для принудительной смены оператора (основной оператор)
+ReserveOperator	bit	Указать параметры для резервного оператора: 1 - да; 0 - нет
+OrlanArmedSim2	smallint	№ Орлан-М для удаленной постановки под охрану (резервный оператор)
+OrlanAUXSim2	smallint	№ Орлан-М для выключения AUX / выключения выхода 1 (резервный оператор)
+OrlanReportSim2	smallint	№ Орлан-М для отчета и снятия запрета (резервный оператор)
+OrlanBanSim2	smallint	№ Орлан-М для запрета постановки (резервный оператор)
+OrlanChangeSimSim2	smallint	№ Орлан-М для принудительной смены оператора (резервный оператор)
+InstallComputer	nvarchar(70)	Источник событий включен (указывается имя компьютера)
+ParentBus_id	int	Является расширением шины (OrlanBuses.Bus_number)
+OrlanOut	smallint	№ Орлан-М для выключения выхода 2 (основной оператор)
+OrlanOut2	smallint	№ Орлан-М для выключения выхода 2 (резервный оператор)
+Status	smallint	
+		
+avalable states
+State_id	int	Текущее состояние события (States.State_id)
+AvailableState_id	int	Допустимое состояние события при переходе из состояния State_id (States.State_id)
+idTCode	int	TypeCode.idTCode
+		
+States
+State_id	int	ID
+StateName	nvarchar(60)	Наименование
+isOverProcess	bit	1 - завершение обработки
+IsChangeStateEvent	bit	1 - изменение состояния
+	
+Operators 
+Operator_id	int	ID
+OperatorName	varchar(200)	Оператор услуг мобильной связи
+VoiceOrlansBus_id	int	
+SimPhoneNumberRequest	nvarchar(30)	
+			
+ObjectAddinfo
+Operator_id	int	ID
+OperatorName	varchar(200)	Оператор услуг мобильной связи
+VoiceOrlansBus_id	int	
+SimPhoneNumberRequest	nvarchar(30)	
+		
+		
+dictentattrval 
+DictID	int	ID: 0 - Тип атрибута; 1 - Сущность; 4 - Значение
+DictLevel	int	Уровень абстакции (DictEntAttrVal.DictID)
+DictParentID	int	Родитель группы (DictEntAttrVal.DictID)
+DictValue	nvarchar(50)	Значение
+DictDescription	nvarchar(4000)	Описание
+Zones 
+Panel_id	varchar(15)	Groups.Panel_id
+Zone	int	Номер
+Group_	int	Groups.Group_
+Message	nvarchar(250)	Описание шлейфа
+Status	int	Состояние шлейфа: 1 - норма; 2 - тревога; 3 - норма без тревоги; 4 - пожар; 5 - норма без пожара; 6 - неисправность; 7 - шлейф выключен; 8 - шлейф включен
+StatusTime	datetime	Дата и время изменения состояния шлейфа
+IsPatrol	bit	Патруль: 1 - да; 0 - нет
+IsAlarmButton	bit	Тревожная кнопка
+RadioZoneTypeid	int	
+IsPatrolInspectionSystem	bit	
+LastPatrolInspection	datetime	
+IsViolationPatrolControl	bit	
+IsBypass	bit	
+SignalLevel	int	
+
+Tracking
+Tracking_id	int	ID
+Name_Tracking	nvarchar(100)	Описание
+DefaultIncrementTracking	tinyint	Через сколько истекает
+DefaultIncrementTypePeriod	tinyint	Единица измерения: 0 - год; 1 - месяц; 2 - день
+DeafultPeriodBeforeDateTracking	tinyint	Через сколько попадает в список
+DefaultTypePeriod	tinyint	Единица измерения: 0 - год; 1 - месяц; 2 - день
+IsSystem	bit	1 - напоминание добавляется автоматически для новых объектов
+		
+Panel Tracking
+Panel_id	varchar(15)	Panel.Panel_id
+Tracking_id	int	Tracking.Tracking_id
+TrackingDate	datetime	Дата
+TrackIdPostponed	int	
+		
+Areas 
+Area_id	int	ID
+Area_name	nvarchar(200)	Название района
+				
+Panel
+Panel_id	varchar(15)	Номер объекта
+Password_	varchar(12)	Пароль
+CreateDate	datetime	Дата создания
+Disabled	bit	1 - Объект отключен
+Remarks	nvarchar(100)	Тип сигнализации
+computer	nvarchar(50)	Имя компьютера, на котором изменялась данная запись последний раз
+DateLastChange	datetime	Дата последнего изменения данной записи
+engineer_id	int	engineers.engineer_id
+Area_id	int	Areas.Area_id
+AdditionalTechnicalInformation	nvarchar(2000)	Дополнительная техническая информация
+OneTestEqualAll	bit	Приход теста от любого прибора считать тестированием всех приборов: 1 - да; 0 - нет
+master_id	int	Masters.Master_id
+installer_id	int	Installers.Installer_id
+CompEditing	nvarchar(20)	Имя компьютера, на котором данная запись редактируется в текущий момент
+TestPanel	bit	1 - Постоянный стенд
+Partial	nvarchar(500)	Частичные отключения
+Latitude	varchar(20)	GPS координаты - Широта
+Longtitude	varchar(20)	GPS координаты - Долгота
+isGPSConfirm	bit	GPS координаты подтверждены
+CompLastEditGPS	nvarchar(70)	Имя компьютера, на котором изменялась GPS координаты данной записи последний раз
+Engine	bit	Для подвижного объекта состояние включения зажигания: 1 - включено; 0 - выключено
+Track	int	vwPanelMobileGPS.TrackID
+isAlwaysSendGPS	bit	Объект постоянно шлет GPS координаты: 1 - да; 0 - нет
+Movable_Object	bit	1 - подвижный объект
+Panel_type	smallint	1 - пожарный объект
+Pult_id	int	Pults.Pult_id
+UserName	nvarchar(200)	Имя пользователя, который изменял данную запись последний раз
+RegionID	int	RegionsTable.RegionID
+IsContactIDRedirect	bit	
+ContactIDObjectNumber	varchar(15)	
+TechPanel	bit	
+IsUseCameras	bit	
+ObjectID	int	
+UserEditing	nvarchar(200)	
+FreeArrivalsCount	int	
+		
+		
+Central 
+panel_id	varchar(15)	Panel.Panel_id
+Central_id	varchar(15)	Передаваемый номер
+Device_id	int	TypeDevices.Device_id
+PhoneNumber	varchar(15)	Номер телефона
+MainPower	bit	Основное питание: 1 - есть; 0 - нет
+BackupPower	bit	Резервное питание: 1 - есть; 0 - нет
+MPTime	datetime	Время последнего изменения состояния основного питания
+BPTime	datetime	Время последнего изменения состояния резервного питания
+LastTest	datetime	Время последнего теста
+TestTimeout	datetime	Период тестирования
+CodeGroup	int	Набор кодов
+typeTest	int	Тип тестирования: 0 - 1 раз в сутки; 1 - не тестируется; 2 - индивидуальный период тестирования
+StatusZ1	bit	Был ли сгенерирован код Z1: 1 - да; 0 - нет
+Npack	int	Номер пакета от прибора (только VIRIAL), который прислал корректное событие
+AlarmDelay	int	
+LastOpenAlarmTime	datetime	
+AlarmCode	varchar(10)	
+TestTimeOutClose	datetime	
+token	varchar(MAX)	
+refresh_token	varchar(MAX)	
+record_id	int	
+		
+TypeDevices
+Device_id	int	ID
+TypeDevice	varchar(200)	Тип ППК
+UseAlarmDelay	bit	
+		
+Installers
+Installer_id	int	ID
+InstallerName	varchar(200)	ФИО монтажника
+
+MPhones
+Mphone_id	int	ID
+Panel_id	varchar(15)	Panel.Panel_id
+RStartDate	datetime	Дата подключения
+RadioVersion	varchar(50)	Версия прибора
+RadioType	int	MphoneRadioType.RadioType_id
+CodeGroup	smallint	Указанный вручную набор кодов
+MainPower	bit	Основное питание: 1 - есть; 0 - нет
+BackupPower	bit	Резервное питание: 1 - есть; 0 - нет
+MPTime	datetime	Время последнего изменения состояния основного питания
+BPTime	datetime	Время последнего изменения состояния резервного питания
+TypeTransmitter	int	MphoneTypeTransmitter.TypeTransmitter_id
+IsJablotron	bit	К прибору подключен ППК Jablotron
+DOT3	bit	Использовать короткий протокол DOT3
+LastTest	datetime	Дата и время последнего теста
+LastGPRSCount	int	Текущий счетчик события
+SignalLevel	tinyint	Уровень сигнала
+SignalDate	datetime	Дата уровня сигнала
+IsReference	int	Сделать прибор "эталонным": 1 - да; 0 - нет
+WorkMode	tinyint	Режим работы прибора: 0 - только GPRS; 1 - только голосовой канал; 2 - оба канала; 3 -  только ТК-7; 4 - только LanCom
+CurrentChannel_id	tinyint	Channels.ChannelType_id
+CurrentTemperature	varchar(10)	Температура модуля
+StatusZ2___39	bit	Было ли событие Z2: 1 - да; 0 - нет
+isLindConnect	bit	Состояние Линда: 1 - подключен; 0 - нет
+isLindConnectTime	datetime	Время последнего состояния
+isSafePPKP	bit	Целостность ППК: 1 - да; 0 - нет
+isSafePPKPTime	datetime	Дата и время последнего изменения состояния целостности ППК
+isSirenaConnect	bit	Сирена подключена: 1 - да; 0 - нет
+isSirenaConnectTime	datetime	Дата и время последнего изменения состояния сирены
+isPultConnect	bit	Связь с пультом: 1 - есть; 0 - нет
+isPultConnectTime	datetime	Дата и время последнего изменения состояния связи с пультом
+FuncMainPower	bit	Включение функции основного питания: 1 - да; 0 - нет
+FuncMainPowerTime	datetime	Дата и время изменения состояния функции основного питания
+FuncBackupPower	bit	Включение функции резервного питания: 1 - да; 0 - нет
+FuncBackupPowerTime	datetime	Дата и время изменения состояния функции резервного питания
+FuncRele2	bit	Включение функции Реле2: 1 - да; 0 - нет
+FuncRele2Time	datetime	Дата и время последенего состояния функции Реле2
+FuncRele1	bit	Включение функции Реле1: 1 - да; 0 - нет
+FuncRele1Time	datetime	Дата и время последенего состояния функции Реле1
+FuncSensorsPower	bit	Включение функции датчика питания: 1 - да; 0 - нет
+FuncSensorsPowerTime	datetime	Дата и время последнего изменения состояния функции датчика питания
+FuncSirenaState	bit	Включение функции сирена: 1 - да; 0 - нет
+FuncSirenaStateTime	datetime	Дата и время последнего изменения состояния функции сирена
+FuncPultConnect	bit	Включение функции соединения с пультом: 1 - да; 0 - нет
+FuncPultConnectTime	datetime	Дата и время последнего изменения состояния функции соединения с пультом
+levelAcs	int	Вход на уровень доступа
+levelAcsTime	datetime	Время входа на уровень доступа
+isSirenaSounding	bit	Звук сирены включен: 1 - да; 0 - нет
+isSirenaSoundingTime	datetime	Дата и время последнего изменения состояния звука сирены
+isSensorsPower	bit	Датчик питания включен: 1 - да; 0 - нет
+isSensorsPowerTime	datetime	Дата и время последнего изменения состояния датчика питания
+Rele1State	bit	Состояние Реле1: 1 - включено; 0 - отключено
+Rele1StateTime	datetime	Дата и время последнего изменения состояния Реле1
+Rele2State	bit	Состояние Реле2: 1 - включено; 0 - отключено
+Rele2StateTime	datetime	Дата и время последнего изменения состояния Реле2
+LastResetKeyBoardTime	datetime	Дата и время последнего сброса с клавиатуры
+LastResetPultTime	datetime	Дата и время последнего сброса с пульта
+isLineTAN	bit	Признак линии TAN: 1 - да; 0 - нет
+isLineTANTime	datetime	Дата и время последнего изменения признака линии TAN
+CurrentSIM	int	Текущая Sim карта, на которой работает прибор
+IsReportWaiting	tinyint	Ожидание отчета
+MeterCount	varchar(50)	Показание электросчетчика
+TimeMeterCount	datetime	Дата и время последнего показания электросчетчика
+IsProhibited	bit	Признак запрета постановки под охрану
+FilinVersion	varchar(50)	Версия ТК
+CompatibilityData	tinyint	Системное поле
+DeviceVersion	tinyint	Реальная версия прибора
+CompatibilityIsWaiting	tinyint	Системное поле
+ProtocolType	tinyint	Тип протокола: 0 - для всех луней 5,7-й серии и 9-й, кроме Лунь-9С; 1 - ContactID; 2 - Franklin
+MacAddress	varchar(10)	MAC-адрес
+LastLatitude	varchar(20)	Последенее значение GPS координаты широты для подвижного объекта
+LastLongtitude	varchar(20)	Последенее значение GPS координаты долготы для подвижного объекта
+GPSArriveTime	datetime	Время последнего прихода GPS координат
+isGPSValid	bit	Валидность координат: 1 - да; 0 - нет
+isAllowBatteryCharging	bit	Разрешена ли зарядка АКБ Алета: 1 - да; 0 - нет
+PowerGPS	bit	Включен ли GPS приемник: 1 - да; 0 - нет
+AletBatteryChargeLevel	varchar(3)	Уровень заряда батареи Алета в процентах
+AletBatteryVoltage	varchar(5)	Уровень заряда батареи Алета в Вольтах
+TimeGetAletBatteryState	datetime	Время последнего опроса уровня заряда батареи Алета
+InSecureLat	varchar(20)	Координаты широты при постановке под охрану
+InSecureLon	varchar(20)	Координаты долготы при постановке под охрану
+InSecureStatus	varchar(1)	Тип полученных координат:
+L - координаты получены Алетом до постановки под охрану;
+A - координаты получены Алетом во время постановки под охрану
+InSecureTime	datetime	Дата и время последнего получения типа координат
+LastCourseOverGround	varchar(10)	Последнее направление движения подвижного объекта
+LanComVersion	varchar(50)	Версия LanCom
+TestTimeoutReserved	datetime	Период тестирования резервной Sim-карты
+AletAkbDate	datetime	
+AletMod	varchar(10)	
+AletBlackBox	bit	
+IsGPSTracker	int	
+CpId	varchar(16)	
+CurrentSim2Channel_id	tinyint	
+UseAlternativeTesting	bit	
+NotTested	bit	
+IsZStatusDevice	bit	
+CentralOutputType	int	
+DeviceState	int	
+DeviceStateGUID	uniqueidentifier	
+ServiceKey	int	
+BootVer	varchar(20)	
+token	varchar(MAX)	
+refresh_token	varchar(MAX)	
+RadioSystemTypeID	int	
+		
+
+engineers
+engineer_id	int	ID
+engineer_name	nvarchar(200)	ФИО инженера
+IP	varchar(15)	IP адрес
+Work_panel_id	varchar(15)	Номер объекта в стендах, на котором работает данный инженер
+OrlanPairNumber	smallint	Номер пары GPRS Орланов, на которые будет слать события Центр управления (по умолчанию записывается номер пары полученный от программы Феникс-Техник)
+CarPanel_id	varchar(15)	Номер объекта машины инженера
+mobileUser_id	int	
+		
+stands
+id	int	ID
+Panel_id	varchar(15)	Groups.Panel_id
+Group_	int	Groups.Group_
+Zone	int	Шлейф
+TimeBegin	datetime	Начальное время
+TimeEnd	datetime	Конечное время
+Type_Stand	bit	0 - временный; 1 - постоянный
+standorkey	tinyint	0 - стенд; 1- запрещенный ключ; 4 - игнорируемый.
+Engineer_id	int	engineers.engineer_id
+	
+Replaces 
+Replace_id	int	ID
+Description	nvarchar(200)	Описание замены
+Replace_Date	datetime	Дата замены
+Panel_id	varchar(15)	Panel.Panel_id
+		
+Masters
+Master_id	int	ID
+MasterName	nvarchar(200)	ФИО мастера
+		
+
+MphoneTypeTransmitter
+TypeTransmitter_id	int	ID
+Message	nvarchar(50)	Тип передатчика
+		
+ChannelType_id	tinyint	ID
+ChannelType	nvarchar(100)	Режим работы прибора
+priority	int	Приоритет
+				
+LunProblemStatus
+id	int	ID
+Mphone_id	int	MPhone.Mphone_id
+Type_device	tinyint	Типы устройств Луня 11: 0 - Лунь; 1 - расширитель; 2 - клавиатура; 3 - Линд; 4 - ТК7; 5 - LanCom; 6 - беспроводное устройство
+Num	int	Порядковый номер
+Type_Problem	tinyint	Тип проблемы: 1 - неисправность АКБ; 2 - отсутствие 220; 3 - неисправность сирены; 4 - потеря связи; 5 - проблема линии (короткое замыкание)
+Problem_Date	datetime	Дата и время
+		
+MphoneRadioType
+RadioType_id	int	ID
+Message	nvarchar(50)	Тип прибора
+Series_id	tinyint	Серия приборов: 1 - 5-ая серия; 2 - 7-ая серия; 3 - 9-ая серия; 4 - 11-ая серия; 5 - GPS трекеры; 7 - 15-я серия
+IsUse	bit	Доступен: 1 - да; 0 - нет
+DeviceId	tinyint	Типы луней (TLunList)
+VersionUpdateAllowed	tinyint	Минимальная версия, с которой можно давать команду DI
+	
+
+GroupResponse
+Group_id	int	ID
+Description	nvarchar(100)	Название
+StartTime	datetime	Начало работы
+EndTime	datetime	Конец работы
+Status_id	int	StatusGroupResponse.status_id
+Event_id	int	Текущее событие, пришедшее от данной группы
+Panel_id	varchar(15)	Groups.Panel_id
+Group_	int	Groups.Group_
+Engine	bit	Зажигание включено: 1 - да; 0 - нет
+Track	int	ID трека (FK на базу данных GPS)
+Mphone_id	int	MPhone.Mphone_id
+LastGPSIdFromMobile	int	Координаты от Киевстара (не используется)
+Disabled	bit	Прибор отключен: 1 - да; 0 - нет
+Category	int	GroupResponseCategory.CategoryID
+callsign	varchar(50)	Позывной группы
+GeoZone_id	int	Не используется
+DislocationPointLat	varchar(15)	Широта точки дислокации группы
+DislocationPointLon	varchar(15)	Долгота точки дислокации группы
+TimeArriveToObject	datetime	
+TimeStayOnObj	datetime	
+TabletInstalled	bit	
+		
+Zone_GroupResponse
+Group_id	int	GroupResponse.Group_id
+Zone	int	Номер шлейфа
+Message	nvarchar(250)	Описание шлейфа
+Status	int	Состояние шлейфа: 1 - норма; 2 - тревога; 3 - норма без тревоги; 4 - пожар; 5 - норма без пожара; 6 - неисправность; 7 - шлейф выключен; 8 - шлейф включен
+StatusTime	datetime	Время изменения состояние шлейфа
+IsAlarmButton	bit	Тревожная кнопка: 1 - да; 0 - нет
+		
+
+StatusGroupResponse
+status_id	int	ID
+status	int	Дополнительный статус группы: 0 - состояние недоступно для изменения пользователем; 1,2 - состояние доступно для изменения пользователем
+reason	nvarchar(150)	Описание
+IsSystem	bit	Системное состояние: 1 - да; 0 - нет
+				
+				
+PersonPermitOnGrRespCategory
+ID	int	ID
+Person_ID	int	Personal.Person_Id
+GroupRespCategory_ID	int	GroupResponseCategory.CategoryID
+		
+		
+GroupRespCategory
+CategoryID	int	ID
+Description	nvarchar(100)	Описание
+SendIdCategory	int	
+		
+GroupRespGroup
+id	int	ID
+Group_id	int	GroupResponse.Group_id
+Panel_id	varchar(15)	Groups.Panel_id
+group_	int	Groups.Group_
+StartTime	datetime	Начало работы
+EndTime	datetime	Конец работы
+MainGroup	bit	1 - Основная; 0 - Резервная
+	
+Personal
+Person_Id	int	ID
+Person_Name	nvarchar(200)	ФИО сотрудника
+Person_Role_id	int	Person_Role.Role_ID
+Person_Login	nvarchar(15)	Логин
+Person_Psw	varchar(50)	Пароль
+Work_Status	bit	Пользователь залогинен: 1 - да; 0 - нет
+Computer	nvarchar(70)	Имя компьютера, на котором залогинен пользователь (не используется)
+Deleted	bit	Запись удалена: 1 - да; 0 - нет
+	
+Personal_Role
+Role_ID	int	ID
+Role_Name	nvarchar(50)	Должность
+Message	nvarchar(500)	Описание
+		
+Personal_Auth
+ID	int	ID
+Person_Login	nvarchar(15)	Personal.Person_Login
+Computer	nvarchar(70)	Имя компьютера, на котором залогинен пользователь
+Program	varchar(50)	Имя программы, из которой залогинен пользователь
+
+Marks
+Panel_id	varchar(15)	Groups.Panel_id
+group_	int	Groups.Group_
+Mark_Message	nvarchar(2000)	?
+Mark_Date	datetime	?
+Mark_ElapsedDate	datetime	?
+Mark_Type_id	smallint	?
+Person_id	int	Personal.Person_Id
+PersonNameDeleted	nvarchar(200)	
+		
+Person_Permissions
+Person_Id	int	ID
+CanEditDB	bit	Редактирование базы данных
+CanProcessEvent	bit	Прием событий
+CanStands	bit	Добавление объекта в стенды
+CanRemoteReport	bit	Отчет снятия запрета
+CanRemoteArmed	bit	Удаленная постановка под охрану
+CanRemoteAUX	bit	Выключение AUX
+CanRemoteBanGuarding	bit	Запрет постановки
+CanRemoteSignalLvl	bit	Запрос уровня сигнала
+CanRemoteElCount	bit	Запрос показаний электросчетчика
+CanRemoteReset	bit	Выполнять команду "Сброс"
+CanRemoteReleOperations	bit	Операции вкл./выкл. реле
+CanAddStolenKey	bit	Добавление запрещенных ключей
+CanRemoveStolenKey	bit	Удаление запрещенных ключей
+CanRemoteUpdate	bit	Дистанционное обновление прибора
+CanChangeSim	bit	Смена Sim
+CanRemoteVideo	bit	Управление Лунь-Видео
+CanGPSCommand	bit	Управление Алет
+CanEditGPSData	bit	Редактировать GPS координаты
+CanViewSettings	bit	Просмотр настроек
+CanEditSettings	bit	Редактирование настроек
+CanCancelAlarmButton	bit	Отменять тревожные кнопки через "Phoenix-GPS"
+CanChangeGrRespCategory	bit	Редактировать просмотр категорий для групп реагирования в "Phoenix-GPS"
+CanAddToIgnoredStands	bit	Добавление объекта в игнорируемые стенды
+CanRemoteArmedLun11	bit	
+CanRemoteDisarmed	bit	
+CanBulkChanges	bit	
+CanCommentJournalResponseGroup	bit	
+CanPrintJournalResponseGroup	bit	
+CanEditObjCards	bit	
+CanEditEquipment	bit	
+CanEditObjWorkSchedule	bit	
+CanEditRespTeams	bit	
+CanEditZones	bit	
+CanEditKeys	bit	
+CanEditRespPersonsList	bit	
+CanEditSchemes	bit	
+CanEditPhotos	bit	
+CanEditSMSNotifications	bit	
+CanEditPowerState	bit	
+CanEditManuals	bit	
+CanEditMobileUsers	bit	
+CanLockDevice	bit	
+CanSendAutodialerNotification	bit	
+				
+				
+Groups
+Panel_id	varchar(15)	Panel.Panel_id
+Group_	int	Номер
+Message	nvarchar(150)	Описание
+IsOpen	bit	Группа под охраной: 0 - да; 1 - нет
+TimeEvent	datetime	Время прихода последнего события
+OpenControl	bit	1 - Контроль открытий по расписанию
+Z8Timeout	datetime	Ожидание звонка с объекта при открытии в течении ЧЧ:ММ
+info_id	int	MoreAboutLun7.info_id
+typeSchedule	int	Тип работы группы: 1 - свободный график работы; 2 ->  круглосуточно под охраной; 3 - постановки и снятия отсутствуют (только тревожная кнопка); 4 - индивидуальное расписание; 5 - неизвестно
+ArmedCall	bit	Ставятся под охрану по звонку: 1 - да; 0 - нет (не используется)
+disabled	bit	Группа отключена
+mustCall	bit	Обязательный прозвон, при нарушении режима работы
+TimeForClose	datetime	Контроль закрытий круглосуточных объектов, интервал ЧЧ:ММ
+Partial	nvarchar(150)	Не используется
+OperatorPrompt	nvarchar(2000)	Инструкция по реагированию для оператора
+IsProhibited	bit	Признак запрет постановки для группы (с приборами Лунь-11,15): 1 - да; 0 - нет
+AutoArmDisarm	bit	
+alarmButtonPhMk	bit	
+IsOpenByAccess	bit	
+IntervalPatrolInspection	datetime	
+CompanyID	int	
+		
+		
+Zones
+Panel_id	varchar(15)	Groups.Panel_id
+Zone	int	Номер
+Group_	int	Groups.Group_
+Message	nvarchar(250)	Описание шлейфа
+Status	int	Состояние шлейфа: 1 - норма; 2 - тревога; 3 - норма без тревоги; 4 - пожар; 5 - норма без пожара; 6 - неисправность; 7 - шлейф выключен; 8 - шлейф включен
+StatusTime	datetime	Дата и время изменения состояния шлейфа
+IsPatrol	bit	Патруль: 1 - да; 0 - нет
+IsAlarmButton	bit	Тревожная кнопка
+RadioZoneTypeid	int	
+IsPatrolInspectionSystem	bit	
+LastPatrolInspection	datetime	
+IsViolationPatrolControl	bit	
+IsBypass	bit	
+SignalLevel	int	
+		
+		
+DictEntAttrVal
+DictID	int	ID: 0 - Тип атрибута; 1 - Сущность; 4 - Значение
+DictLevel	int	Уровень абстакции (DictEntAttrVal.DictID)
+DictParentID	int	Родитель группы (DictEntAttrVal.DictID)
+DictValue	nvarchar(50)	Значение
+DictDescription	nvarchar(4000)	Описание
+
+ObjectAddinfo
+ObjectAddInfoID	int	ID
+PanelID	varchar(15)	Groups.Panel_id
+GroupID	int	Groups.Group_
+AttributeID	int	Атрибут (DictEntAttrVal.DictID)
+ValueID	int	Значение (DictEntAttrVal.DictID)
+Value	nvarchar(4000)	Значение (произвольное)
+	
+MoreAboutLun7
+info_id	int	ID
+MainPower	bit	Основное питание: 1 - есть; 0 - нет
+BackupPower	bit	Резервное питание: 1 - есть; 0 - нет
+MPTime	datetime	Время последнего изменения состояния основного питания
+BPTime	datetime	Время последнего изменения состояния резервного питания
+version	varchar(20)	Версия
+CodeGroup_unused	tinyint	Набор кодов
+isConnected	bit	Есть соединение: 1 - да; 0 - нет
+DateChangeConnect	datetime	Дата последнего изменения состояния соединения
+ExType_id	int	Подключенное расширение
+		
+
+Group_SMS_Code
+id	int	ID
+Panel_id	varchar(15)	Groups.Panel_id
+Code	varchar(6)	Code.Code
+CodeGroup	smallint	Code.CodeGroup
+Group_	int	Groups.Group_
+Recipient_id	int	EventsRecipients.Recipient_id
+typeSentSMS	bit	Не используется
+typeSMS	bit	0 - кодированное сообщение; 1 - текстовое сообщение
+Recipient_type	tinyint	Получатель: 1 - Хозяйственник; 2 - Удаленный пульт (SMS); 3 - Пожарная служба; 4 - Звонок; 5 - Удаленный пульт (GPRS)
+TypeAddCodes	bit	0 - коды выбраны по типам кодов; 1 - коды выбраны вручную
+ZoneID	int	
+		
+EventsRecipients
+Recipient_id	int	ID
+RecipientIPorPhone	varchar(15)	Номер телефона или IP адрес
+OrlanPairNumber	smallint	Номер пары GPRS Орланов, с которых будет производиться пересылка событий
+ResponsibleTel_id	int	
+ResponsibleEmail_id	int	
+		
+ResponsibleTel
+PhoneNo	varchar(25)	Номер телефона
+TypeTel_id	smallint	ResponsibleTypeTel.TypeTel_id
+ResponsiblesList_id	int	
+ResponsibleTel_id	int	
+		
+ResponsibleTypeTel
+TypeTel_id	smallint	ID
+TypeTel	nvarchar(50)	Тип телефона
+		
+
+Responsibles
+Responsible_id	int	ID
+panel_id	varchar(15)	Groups.Panel_id
+Group_	int	Groups.Group_
+Responsible_Number	int	Порядковый номер
+ResponsiblesList_id	int	
+		
+Remarks
+Remarks_id	int	ID
+panel_id	varchar(15)	Groups.Panel_id
+group_id	int	Groups.Group_
+message	nvarchar(300)	Текст примечания
+EndTime	datetime	Конечная дата действия примечания
+RemarkNo	int	Порядковый номер примечания
+autodel	bit	1 - временное примечание
+		
+Users
+Panel_id	varchar(15)	Groups.Panel_id
+Group_	int	Groups.Group_
+UserCode	int	Номер кода доступа
+UserName	nvarchar(200)	Ф.И.О. владельца кода доступа
+		
+
+ObjSchedule
+RecordID	int	ID
+PanelID	varchar(15)	Groups.Panel_id
+Group_	int	Groups.Group_
+DayNumber	int	День недели (1 - пн.; 2 - вт.;, 3 - ср.; 4 - чт.; 5 - пт.; 6 - сб.; 7 - вс.)
+IntervalNumber	int	Порядковый номер расписания в пределах одной группы
+StartDT	datetime	Начальное время, когда объект под охраной
+StopDT	datetime	Конечное время, когда объект под охраной
+
+Company
+CompanyName	nvarchar(150)	Название
+address	nvarchar(150)	Адрес
+Telephones	nvarchar(100)	Телефоны
+Director	nvarchar(150)	Директор
+Director2	nvarchar(150)	Ответственный
+Computer	nvarchar(100)	Имя компьютера, на котором изменялась данная запись последний раз
+Memo	nvarchar(MAX)	Дополнительная информация
+LastEditDate	datetime	Дата последнего изменения записи
+UserName	nvarchar(200)	Имя пользователя, который изменял данную запись последний раз
+ServiceID	int	ServiceOrganization.ID
+CustomerID	int	Customers.ID
+ID	int	
+TypeID	int	
+		
+Customers
+ID	int	ID
+Organization	nvarchar(500)	Название
+OrganizationAddress	nvarchar(500)	Адрес
+Director	nvarchar(500)	Ф.И.О.
+		
+
+ServiceOrganization
+ID	int	ID
+ServiceName	nvarchar(500)	Название
+IDCode	nvarchar(50)	Код
+		
+Company_Contracts
+Contract_id	varchar(50)	Contracts.Contract_id
+ContractRent	nvarchar(500)	Оборудование в аренде
+Remarks	nvarchar(1000)	Примечания
+Doc	bit	
+CompanyID	int	
+
+Contracts
+Contract_id	varchar(50)	ID
+ContractDate	datetime	Начальная дата
+Firm_id	int	Firms.Firm_id
+ContractDateTo	datetime	Конечная дата
+		
+Firms
+Firm_id	int	ID
+firm_name	nvarchar(200)	Юридическое лицо
+payment_unique_ID	varchar(500)	
+payment_description_template	nvarchar(2000)	
+currency	varchar(5)	
+percentage	money	
+				
+				
+		

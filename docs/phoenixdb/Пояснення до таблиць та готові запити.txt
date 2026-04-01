@@ -1,0 +1,513 @@
+проаналізуй цей проект. Напиши технічне завдання на додавання підтримки Фенікс, бази даних mssql. 
+Тут об'єкти мають додаткові поля з інформацією
+Отримання саиску об'єктів 
+SELECT 
+	DISTINCT RealPanel.panel_id, 
+	groups.group_, 
+	groups.message, 
+	Company.Address AS Address, 
+	engineers.engineer_name, 
+	CASE 
+		WHEN  
+Mphone.RadioType <> 16 THEN MphoneRadioType.Message 
+	END AS MphoneRadioTypeMessage, 
+	CASE 
+		WHEN Mphone.RadioType = 16 THEN MphoneRadioType.Message 
+	END AS MphoneRadioTypeMessage1, 
+	CASE 
+		WHEN Mphone.RadioType <> 16 THEN MphoneTypeTransmitter.Message 
+	END AS MphoneTypeTransmitterMessage, 
+	TypeDevices.TypeDevice AS CentralName, 
+	Company.Director, 
+	Company.CompanyName, 
+	Masters.MasterName, 
+	RealPanel.TestPanel, 
+	ISDisabled = CASE 
+		WHEN RealPanel.disabled = 1 THEN CAST(1 AS bit) 
+		WHEN groups.disabled = 1 THEN CAST(1 AS bit) 
+		ELSE CAST (0 AS bit) 
+	END, 
+	RealPanel.CreateDate, 
+	RealPanel.Movable_Object, 
+	RealPanel.Panel_Type, 
+	LEN(RealPanel.panel_id) AS PanelIdLen, 
+	CompanyType.Name AS CompanyType, 
+	RealPanel.FreeArrivalsCount, 
+	Groups.isOpen AS [status], 
+	Groups.TimeEvent AS status_time 
+FROM 
+	vwRealPanel AS RealPanel WITH (NOLOCK) 
+LEFT OUTER JOIN Groups WITH(NOLOCK) ON 
+	RealPanel.Realpanel_id = groups.panel_id 
+LEFT OUTER JOIN company WITH(NOLOCK) ON 
+	groups.companyID = company.ID 
+LEFT OUTER JOIN CompanyType WITH(NOLOCK) ON 
+	CompanyType.ID = company.TypeID 
+LEFT OUTER JOIN engineers WITH(NOLOCK) ON 
+	engineers.engineer_id = RealPanel.engineer_id 
+LEFT OUTER JOIN Masters WITH(NOLOCK) ON 
+	Masters.Master_id = RealPanel.Master_id 
+LEFT OUTER JOIN Mphone WITH(NOLOCK) ON 
+	Mphone.panel_id = RealPanel.Realpanel_id 
+LEFT OUTER JOIN MphoneRadioType WITH(NOLOCK) ON 
+	MphoneRadioType.RadioType_id = Mphone.RadioType 
+LEFT OUTER JOIN MphoneTypeTransmitter WITH(NOLOCK) ON 
+	MphoneTypeTransmitter.TypeTransmitter_id = MPhone.TypeTransmitter 
+LEFT OUTER JOIN Central WITH(NOLOCK) ON 
+	Central.Panel_id = RealPanel.Realpanel_id 
+LEFT OUTER JOIN TypeDevices WITH(NOLOCK) ON 
+	TypeDevices.Device_id = central.Device_id 
+LEFT OUTER JOIN Pults WITH(NOLOCK) ON 
+	Pults.Id = RealPanel.Pult_id 
+WHERE 
+	COALESCE(Pults.IsOutPult, 0) = 0 
+ORDER BY 
+	RealPanel.panel_id, 
+	groups.group_ 
+Кожен об'єкт може мати декілька груп, з різними назвами
+panel_id номер об'єкту
+group_	номер групи
+message	назва групи
+Address	адрес
+engineer_name	ім'я інженера обслуговування (розширена інформація)
+MphoneRadioTypeMessage	тип приладу
+MphoneRadioTypeMessage1	не використовується
+MphoneTypeTransmitterMessage	назва радіомодулю (додати до назви приладу)
+CentralName	не використовується
+Director	група реагування (розширена інформація)
+CompanyName	Назва об'єкту
+MasterName 	(розширена інформація)
+TestPanel чи заблоковано об'єкт, 1 так 2 ні
+ISDisabled	чи заблоковано об'єкт, 1 так 2 ні
+CreateDate дата створення
+Movable_Object	не використовується
+Panel_Type	1 якщо пожежний об'єкт, 0 охоронний
+PanelIdLen не використовується
+CompanyType	тип об'єкту
+FreeArrivalsCount	не використовується
+status	1 або 0
+status_time час останньої події
+
+Отримання розширеної інформції про об'єкт 
+SELECT
+	panel.*,
+	Engineers.engineer_name,
+	Masters.MasterName,
+	Installers.InstallerName,
+	CONVERT(VARCHAR(10), CreateDate, 104) AS CD,
+	central.panel_id AS central_id,
+	mphone.panel_id AS mphone,
+	stands.panel_id AS stand ,
+	ISNULL(Groups.group_,-1) AS group_,
+	Areas.Area_name,
+	Pults.*,
+	COALESCE(MPhone.LastTest, Central.LastTest) AS LastTest
+FROM
+	Panel WITH (NOLOCK)
+LEFT OUTER JOIN Engineers WITH (NOLOCK) ON
+	panel.engineer_id = engineers.engineer_id
+LEFT OUTER JOIN Masters WITH (NOLOCK) ON
+	panel.master_id = Masters.master_id
+LEFT OUTER JOIN Installers WITH (NOLOCK) ON
+	panel.installer_id = Installers.installer_id
+LEFT JOIN Central WITH (NOLOCK) ON
+	Central.panel_id = Panel.panel_id
+LEFT OUTER JOIN groups WITH (NOLOCK) ON
+	Panel.panel_id = Groups.panel_id
+LEFT OUTER JOIN mphone WITH (NOLOCK) ON
+	Panel.panel_id = mphone.panel_id
+LEFT OUTER JOIN stands WITH (NOLOCK) ON
+	((Panel.panel_id = stands.panel_id)
+		AND(Stands.standorkey = 0))
+LEFT OUTER JOIN Areas WITH (NOLOCK) ON
+	Panel.Area_id = Areas.Area_id
+LEFT OUTER JOIN Pults WITH (NOLOCK) ON
+	Panel.Pult_id = Pults.id
+WHERE
+	panel.panel_id = 'L00001
+
+тут важливо 
+CreateDate дата створення об'єкту
+Disabled чи заблоковано 0 або 1
+DateLastChange Дата останньої зміни об'єкту
+LastTest остання подія
+
+Загальна інформація про об'єкт 
+SELECT
+	a.*,
+	b.CompanyName,
+	b.address,
+	Telephones = b.Telephones,
+	b.Director,
+	b.Director2,
+	b.Memo,
+	b.TypeID,
+	ct.Name AS TypeName,
+	MoreAboutLun7.info_id,
+	MoreAboutLun7.version,
+	MoreAboutLun7.ExType_id,
+	ExtensionTypes.Name AS ExtensionName,
+	CONVERT(VARCHAR(5), Z8Timeout, 108) AS z8,
+	CONVERT(VARCHAR(5), TimeForClose, 108) AS tfc ,
+	engineers.engineer_name ,
+	Customers.Organization,
+	Customers.OrganizationAddress,
+	Customers.Director AS CustomerDirector,
+	ServiceOrganization.ServiceName,
+	ISNULL(b.ServiceID,-1) AS ServiceID ,
+	ISNULL(b.CustomerID,-1) AS CustomerID,
+	NeedSendMessage = CASE
+		WHEN EXISTS(SELECT * FROM dbo.Group_SMS_Code WHERE dbo.Group_SMS_Code.Panel_id = a.Panel_id AND dbo.Group_SMS_Code.Group_ = a.Group_) THEN 1
+		ELSE 0
+	END
+FROM
+	groups AS a WITH (NOLOCK)
+INNER JOIN company AS b WITH (NOLOCK) ON
+	a.CompanyID = b.ID
+LEFT JOIN CompanyType AS ct WITH (NOLOCK) ON
+	ct.ID = b.TypeID
+LEFT JOIN MoreAboutLun7 WITH (NOLOCK) ON
+	a.info_id = MoreAboutLun7.info_id
+LEFT JOIN ExtensionTypes WITH (NOLOCK) ON
+	MoreAboutLun7.ExType_id = ExtensionTypes.ExType_id
+LEFT JOIN engineers WITH (NOLOCK) ON
+	engineers.Work_Panel_id = a.Panel_id
+LEFT JOIN vwRealPanel WITH (NOLOCK) ON
+	vwRealPanel.Panel_id = a.panel_id
+LEFT JOIN Pults WITH (NOLOCK) ON
+	Pults.Id = vwRealPanel.Pult_Id
+LEFT OUTER JOIN dbo.Customers ON
+	b.CustomerID = dbo.Customers.ID
+LEFT OUTER JOIN dbo.ServiceOrganization ON
+	b.ServiceID = dbo.ServiceOrganization.ID
+WHERE
+	a.panel_id = 'L00028'
+	AND group_ = 0
+
+Отримання інформації по договору 
+SELECT
+	Company_Contracts.Contract_id,
+	firms.Firm_name,
+	Contracts.ContractDate,
+	Contracts.ContractDateTo,
+	RTRIM(Company_Contracts.ContractRent) AS ContractRent,
+	Company_Contracts.CompanyID,
+	Company_Contracts.Remarks,
+	Company_Contracts.Doc,
+	mub.balance
+FROM
+	Company WITH (NOLOCK)
+INNER JOIN Groups WITH (NOLOCK) ON
+	groups.CompanyID = Company.ID
+INNER JOIN Company_Contracts WITH (NOLOCK) ON
+	Company_Contracts.CompanyID = groups.CompanyID
+INNER JOIN Contracts WITH (NOLOCK) ON
+	Contracts.contract_id = Company_contracts.Contract_id
+LEFT OUTER JOIN firms WITH (NOLOCK) ON
+	firms.firm_id = Contracts.firm_id
+LEFT OUTER JOIN MobileUserBalance mub ON
+	mub.contractId = Company_contracts.Contract_id
+	AND groups.group_ = 0
+
+Отримання інформації про договір
+select  Company_Contracts.Contract_id, firms.Firm_name, Contracts.ContractDate, Contracts.ContractDateTo, RTRIM(Company_Contracts.ContractRent) as ContractRent,Company_Contracts.CompanyID,Company_Contracts.Remarks, Company_Contracts.Doc,mub.balance from Company WITH (nolock)       inner join Groups WITH (nolock) on groups.CompanyID = Company.ID       inner join Company_Contracts WITH (nolock) on Company_Contracts.CompanyID = groups.CompanyID       inner join Contracts WITH (nolock) on Contracts.contract_id=Company_contracts.Contract_id       LEFT OUTER join firms WITH (nolock) on firms.firm_id=Contracts.firm_id      LEFT OUTER JOIN MobileUserBalance mub ON mub.contractId=Company_contracts.Contract_id
+where groups.panel_id='L00028'
+and groups.group_=0
+
+Отримання id приладу 
+SELECT Mphone_id FROM MPhone WHERE Panel_id = N'L00028'
+
+Отримання назви приладу та версії прошивки
+select rt.Message as lunTypeName, DeviceId from Mphone as mp INNER JOIN MphoneRadioType as rt on rt.RadioType_id = mp.RadioType where mp.mphone_id = 47
+
+Отримання Номеру панелі (Вона ж номер об'єкту) Дати запуску, Реальної версії прошивки, Типу радіомодуля, Групи кодів(тип протоколу), Стану живлення, Стану акумулятора, , , Типу трансміттера, , , Часу останнього тесту, , Рівня сигналу, Чи є еталонним приладом, , , Температура модуля, DeviceVersion версія приладу, ProtocolType, MacAddress, Назва приладу RadioTypeMessage, ТИп трансміттера
+SELECT
+	p.* ,
+	pt.[Message] AS RadioTypeMessage ,
+	ptt.[Message] AS TypeTransmitterMessage ,
+	rst.[Name] AS RadioSystemTypeName
+FROM
+	MPhone AS p WITH(NOLOCK)
+LEFT JOIN MphoneRadioType AS pt WITH(NOLOCK) ON
+	pt.RadioType_id = p.RadioType
+LEFT JOIN MphoneTypeTransmitter AS ptt WITH(NOLOCK) ON
+	ptt.TypeTransmitter_id = p.TypeTransmitter
+LEFT JOIN RadioSystemType AS rst WITH(NOLOCK) ON
+	rst.ID = p.RadioSystemTypeID
+WHERE
+	p.mphone_id = 47
+	Mphone_id	Panel_id	RStartDate	RadioVersion	RadioType	CodeGroup	MainPower	BackupPower	MPTime	BPTime	TypeTransmitter	IsJablotron	DOT3	LastTest	LastGPRSCount	SignalLevel	SignalDate	IsReference	WorkMode	CurrentChannel_id	CurrentTemperature	StatusZ2___39	isLindConnect	isLindConnectTime	isSafePPKP	isSafePPKPTime	isSirenaConnect	isSirenaConnectTime	isPultConnect	isPultConnectTime	FuncMainPower	FuncMainPowerTime	FuncBackupPower	FuncBackupPowerTime	FuncRele2	FuncRele2Time	FuncRele1	FuncRele1Time	FuncSensorsPower	FuncSensorsPowerTime	FuncSirenaState	FuncSirenaStateTime	FuncPultConnect	FuncPultConnectTime	levelAcs	levelAcsTime	isSirenaSounding	isSirenaSoundingTime	isSensorsPower	isSensorsPowerTime	Rele1State	Rele1StateTime	Rele2State	Rele2StateTime	LastResetKeyBoardTime	LastResetPultTime	isLineTAN	isLineTANTime	CurrentSIM	IsReportWaiting	MeterCount	TimeMeterCount	IsProhibited	FilinVersion	CompatibilityData	DeviceVersion	CompatibilityIsWaiting	ProtocolType	MacAddress	LastLatitude	LastLongtitude	GPSArriveTime	isGPSValid	isAllowBatteryCharging	PowerGPS	AletBatteryChargeLevel	AletBatteryVoltage	TimeGetAletBatteryState	InSecureLat	InSecureLon	InSecureStatus	InSecureTime	LastCourseOverGround	LanComVersion	TestTimeoutReserved	AletAkbDate	AletMod	AletBlackBox	IsGPSTracker	CpId	CurrentSim2Channel_id	UseAlternativeTesting	NotTested	IsZStatusDevice	CentralOutputType	DeviceState	DeviceStateGUID	ServiceKey	BootVer	token	refresh_token	RadioSystemTypeID	RadioTypeMessage	TypeTransmitterMessage	RadioSystemTypeName
+	47	L00028	2024-01-04 00:00:00.000	71	14	5	1	1			10	0	0	2026-04-01 15:39:28.000	1	6	2025-09-11 11:07:45.987	0			24																								1																		0		5	71	0	1	77710C00																			0	0	C00028		0	0	0		-1	C03233AF-CC0E-43BA-90FD-C0EAAFD41E4B	567681					Лунь-9С	SIM800C	
+
+	Отримання версії приладу, Id типу приладу, останнього тесту
+	select top 1 d.*, dt.Enum from OnBoardDevice as d 	 INNER JOIN OnBoardDeviceType as dt on dt.OnBoardDeviceType_ID = d.OnBoardDeviceType_ID where d.MPhone_ID = 47 and dt.Enum = 0
+	OnBoardDevice_ID	MPhone_ID	OnBoardDeviceType_ID	LastTest	IsZStatus	TestTimeout	TestTimeoutReserved	Version	Enum
+	67	47	1	2026-04-01 15:44:23.000	0				0
+
+Отримання номеру сім карт, та назви оператора
+select top 1 sim.*, op.OperatorName from Sim as sim 	 INNER JOIN Operators as op on op.Operator_id = sim.Operator_ID where Sim.OnBoardDevice_ID = 67
+Sim_ID	OnBoardDevice_ID	Operator_ID	VauchLoad	SimNumber	IsMainSim	IsCurrentSim	RealSimNumber	OperatorName
+64	67	3		380631411294	1	1		Lifecell
+
+Отримання id каналу
+select Channel_ID, ChannelType_ID from Channel where OnBoardDevice_id = 67
+74	6
+
+Отримання додаткової інформації про канал зв'язку 
+SELECT
+	c.* ,
+	cno.ChannelNo ,
+	CASE
+		WHEN i.OpenInternetChannel_ID IS NULL THEN crch.CentralReceiverChannel_ID
+		ELSE i.OpenInternetChannel_ID
+	END AS OpenInternetChannel_ID ,
+	ct.ChannelType AS ChannelTypeName
+FROM
+	Channel AS c
+INNER JOIN ChannelNo AS cno ON
+	cno.ChannelNo_ID = c.ChannelNo_ID
+INNER JOIN ChannelTypes AS ct ON
+	ct.ChannelType_id = c.ChannelType_id
+LEFT JOIN OpenInternetChannel AS i ON
+	i.Channel_ID = c.Channel_ID
+LEFT JOIN CentralReceiverChannel AS crch ON
+	crch.Channel_ID = c.Channel_ID
+WHERE
+	c.Channel_ID = 74
+
+Channel_ID	OnBoardDevice_ID	ChannelType_ID	ChannelNo_ID	TestTimeout	TestTimeoutReserved	LastTest	IsActive	IsZStatus	ChannelNo	OpenInternetChannel_ID	ChannelTypeName
+"Channel_ID","OnBoardDevice_ID","ChannelType_ID","ChannelNo_ID","TestTimeout","TestTimeoutReserved","LastTest","IsActive","IsZStatus","ChannelNo","OpenInternetChannel_ID","ChannelTypeName"
+74,67,6,53,1900-01-01 00:10:00.000,,2026-04-01 15:49:22.000,1,0,C00028,53,Відкритий Інтернет
+
+Отримання назви, id прилада
+select rt.Message as lunTypeName, DeviceId from Mphone as mp INNER JOIN MphoneRadioType as rt on rt.RadioType_id = mp.RadioType where mp.mphone_id = 47
+
+lunTypeName	DeviceId
+"lunTypeName","DeviceId"
+Лунь-9С,62
+
+
+Базова інформація про об'єкт
+select a.*,b.CompanyName, b.address,Telephones = b.Telephones,b.Director, b.Director2, b.Memo, b.TypeID, ct.Name as TypeName, MoreAboutLun7.info_id,MoreAboutLun7.version,MoreAboutLun7.ExType_id,ExtensionTypes.Name as ExtensionName,CONVERT(VARCHAR(5),Z8Timeout,108) as z8,CONVERT(VARCHAR(5),TimeForClose,108) as tfc  ,engineers.engineer_name  ,Customers.Organization,Customers.OrganizationAddress,Customers.Director as CustomerDirector,ServiceOrganization.ServiceName,ISNULL(b.ServiceID,-1) as ServiceID ,ISNULL(b.CustomerID,-1) as CustomerID,NeedSendMessage = CASE WHEN  EXISTS(SELECT * FROM dbo.Group_SMS_Code       WHERE dbo.Group_SMS_Code.Panel_id=a.Panel_id AND dbo.Group_SMS_Code.Group_=a.Group_) THEN 1 ELSE 0 END   from groups as a WITH (nolock)       INNER JOIN company  as b WITH (nolock) ON a.CompanyID = b.ID        LEFT JOIN CompanyType as ct WITH (nolock) ON ct.ID = b.TypeID      LEFT JOIN MoreAboutLun7 WITH (nolock) ON a.info_id = MoreAboutLun7.info_id        LEFT JOIN ExtensionTypes WITH (nolock) ON MoreAboutLun7.ExType_id = ExtensionTypes.ExType_id        LEFT JOIN engineers WITH (nolock) ON engineers.Work_Panel_id = a.Panel_id        LEFT JOIN vwRealPanel WITH (nolock) ON vwRealPanel.Panel_id=a.panel_id        LEFT JOIN Pults WITH (nolock) ON Pults.Id=vwRealPanel.Pult_Id        LEFT OUTER JOIN dbo.Customers ON b.CustomerID = dbo.Customers.ID        LEFT OUTER JOIN dbo.ServiceOrganization ON b.ServiceID = dbo.ServiceOrganization.ID
+where a.panel_id ='L00028'
+and group_ = 0
+Panel_id	Group_	Message	IsOpen	TimeEvent	OpenControl	Z8Timeout	info_id	typeSchedule	ArmedCall	disabled	mustCall	TimeForClose	[Partial]	OperatorPrompt	IsProhibited	AutoArmDisarm	alarmButtonPhMk	IsOpenByAccess	IntervalPatrolInspection	CompanyID	CompanyName	address	Telephones	Director	Director2	Memo	TypeID	TypeName	info_id	version	ExType_id	ExtensionName	z8	tfc	engineer_name	Organization	OrganizationAddress	CustomerDirector	ServiceName	ServiceID	CustomerID	NeedSendMessage
+"Panel_id","Group_","Message","IsOpen","TimeEvent","OpenControl","Z8Timeout","info_id","typeSchedule","ArmedCall","disabled","mustCall","TimeForClose","Partial","OperatorPrompt","IsProhibited","AutoArmDisarm","alarmButtonPhMk","IsOpenByAccess","IntervalPatrolInspection","CompanyID","CompanyName","address","Telephones","Director","Director2","Memo","TypeID","TypeName","info_id","version","ExType_id","ExtensionName","z8","tfc","engineer_name","Organization","OrganizationAddress","CustomerDirector","ServiceName","ServiceID","CustomerID","NeedSendMessage"
+L00028,0,Приміщення ТОВ Альфа-Віта,,,0,,,5,0,0,0,,,"
+
+",,0,0,,,51,ПОЖЕЖНА Приміщення ТОВ Альфа-Віта,"Львів м., Княгині Ольги вул., 99","067-679-14-56 Притула Анатолій","","","",,,,,,,,,,,,,,-1,-1,0
+
+Інформація про канал зв'язку
+SELECT
+	*
+FROM
+	vwMPhoneDeviceChannels MDC WITH(NOLOCK)
+JOIN MPhone M WITH(NOLOCK) ON
+	M.Mphone_id = MDC.Mphone_id
+LEFT JOIN Sim S WITH(NOLOCK) ON
+	S.OnBoardDevice_ID = MDC.OnBoardDevice_ID
+WHERE
+	MDC.IsActive = 1
+	AND (S.IsCurrentSim = 1
+		OR S.IsCurrentSim IS NULL)
+	AND MDC.Panel_id = 'L00028'
+ORDER BY
+	MDC.Mphone_id,
+	CASE
+		MDC.ChannelType_id WHEN 2 THEN 1
+		WHEN 6 THEN 2
+		WHEN 4 THEN 3
+		WHEN 1 THEN 4
+		WHEN 5 THEN 5
+		WHEN 3 THEN 6
+	END
+
+Mphone_id	Panel_id	CpId	WorkMode	LastGPRSCount	IsZStatusDevice	CodeGroup	DeviceVersion	RadioVersion	RadioType	Message	IsUse	DeviceId	VersionUpdateAllowed	Series_id	SeriesName	OnBoardDevice_ID	TestTimeoutBoardDevice	OnBoardDeviceType_ID	OnBoardDeviceTypeName	OnBoardDeviceTypeEnum	Channel_ID	TestTimeout	TestTimeoutReserved	LastTest	IsActive	IsZStatus	ChannelType_id	ChannelType	priority	ChannelNo_ID	ChannelNo	VPN_ID	BootVer	Mphone_id	Panel_id	RStartDate	RadioVersion	RadioType	CodeGroup	MainPower	BackupPower	MPTime	BPTime	TypeTransmitter	IsJablotron	DOT3	LastTest	LastGPRSCount	SignalLevel	SignalDate	IsReference	WorkMode	CurrentChannel_id	CurrentTemperature	StatusZ2___39	isLindConnect	isLindConnectTime	isSafePPKP	isSafePPKPTime	isSirenaConnect	isSirenaConnectTime	isPultConnect	isPultConnectTime	FuncMainPower	FuncMainPowerTime	FuncBackupPower	FuncBackupPowerTime	FuncRele2	FuncRele2Time	FuncRele1	FuncRele1Time	FuncSensorsPower	FuncSensorsPowerTime	FuncSirenaState	FuncSirenaStateTime	FuncPultConnect	FuncPultConnectTime	levelAcs	levelAcsTime	isSirenaSounding	isSirenaSoundingTime	isSensorsPower	isSensorsPowerTime	Rele1State	Rele1StateTime	Rele2State	Rele2StateTime	LastResetKeyBoardTime	LastResetPultTime	isLineTAN	isLineTANTime	CurrentSIM	IsReportWaiting	MeterCount	TimeMeterCount	IsProhibited	FilinVersion	CompatibilityData	DeviceVersion	CompatibilityIsWaiting	ProtocolType	MacAddress	LastLatitude	LastLongtitude	GPSArriveTime	isGPSValid	isAllowBatteryCharging	PowerGPS	AletBatteryChargeLevel	AletBatteryVoltage	TimeGetAletBatteryState	InSecureLat	InSecureLon	InSecureStatus	InSecureTime	LastCourseOverGround	LanComVersion	TestTimeoutReserved	AletAkbDate	AletMod	AletBlackBox	IsGPSTracker	CpId	CurrentSim2Channel_id	UseAlternativeTesting	NotTested	IsZStatusDevice	CentralOutputType	DeviceState	DeviceStateGUID	ServiceKey	BootVer	token	refresh_token	RadioSystemTypeID	Sim_ID	OnBoardDevice_ID	Operator_ID	VauchLoad	SimNumber	IsMainSim	IsCurrentSim	RealSimNumber
+"Mphone_id","Panel_id","CpId","WorkMode","LastGPRSCount","IsZStatusDevice","CodeGroup","DeviceVersion","RadioVersion","RadioType","Message","IsUse","DeviceId","VersionUpdateAllowed","Series_id","SeriesName","OnBoardDevice_ID","TestTimeoutBoardDevice","OnBoardDeviceType_ID","OnBoardDeviceTypeName","OnBoardDeviceTypeEnum","Channel_ID","TestTimeout","TestTimeoutReserved","LastTest","IsActive","IsZStatus","ChannelType_id","ChannelType","priority","ChannelNo_ID","ChannelNo","VPN_ID","BootVer","Mphone_id","Panel_id","RStartDate","RadioVersion","RadioType","CodeGroup","MainPower","BackupPower","MPTime","BPTime","TypeTransmitter","IsJablotron","DOT3","LastTest","LastGPRSCount","SignalLevel","SignalDate","IsReference","WorkMode","CurrentChannel_id","CurrentTemperature","StatusZ2___39","isLindConnect","isLindConnectTime","isSafePPKP","isSafePPKPTime","isSirenaConnect","isSirenaConnectTime","isPultConnect","isPultConnectTime","FuncMainPower","FuncMainPowerTime","FuncBackupPower","FuncBackupPowerTime","FuncRele2","FuncRele2Time","FuncRele1","FuncRele1Time","FuncSensorsPower","FuncSensorsPowerTime","FuncSirenaState","FuncSirenaStateTime","FuncPultConnect","FuncPultConnectTime","levelAcs","levelAcsTime","isSirenaSounding","isSirenaSoundingTime","isSensorsPower","isSensorsPowerTime","Rele1State","Rele1StateTime","Rele2State","Rele2StateTime","LastResetKeyBoardTime","LastResetPultTime","isLineTAN","isLineTANTime","CurrentSIM","IsReportWaiting","MeterCount","TimeMeterCount","IsProhibited","FilinVersion","CompatibilityData","DeviceVersion","CompatibilityIsWaiting","ProtocolType","MacAddress","LastLatitude","LastLongtitude","GPSArriveTime","isGPSValid","isAllowBatteryCharging","PowerGPS","AletBatteryChargeLevel","AletBatteryVoltage","TimeGetAletBatteryState","InSecureLat","InSecureLon","InSecureStatus","InSecureTime","LastCourseOverGround","LanComVersion","TestTimeoutReserved","AletAkbDate","AletMod","AletBlackBox","IsGPSTracker","CpId","CurrentSim2Channel_id","UseAlternativeTesting","NotTested","IsZStatusDevice","CentralOutputType","DeviceState","DeviceStateGUID","ServiceKey","BootVer","token","refresh_token","RadioSystemTypeID","Sim_ID","OnBoardDevice_ID","Operator_ID","VauchLoad","SimNumber","IsMainSim","IsCurrentSim","RealSimNumber"
+47,L00028,C00028,,5,0,5,71,"71",14,Лунь-9С,1,62,15,3,"9-а серія",67,,1,SIM1,0,74,1900-01-01 00:10:00.000,,2026-04-01 15:59:14.000,1,0,6,Відкритий Інтернет,5,53,C00028,,"",47,L00028,2024-01-04 00:00:00.000,"71",14,5,1,1,,,10,0,0,2026-04-01 15:59:14.000,5,6,2025-09-11 11:07:45.987,0,,,"24",,,,,,,,,,,,,,,,,,,,,,,,1,,,,,,,,,,,,,,,,,,0,,5,71,0,1,"77710C00",,,,,,,,,,,,,,,,,,,0,0,C00028,,0,0,0,,-1,C03233AF-CC0E-43BA-90FD-C0EAAFD41E4B,567685,"",,,,64,67,3,,"380631411294",1,1,
+
+select a.*,b.CompanyName, b.address,Telephones = b.Telephones,b.Director, b.Director2, b.Memo, b.TypeID, ct.Name as TypeName, MoreAboutLun7.info_id,MoreAboutLun7.version,MoreAboutLun7.ExType_id,ExtensionTypes.Name as ExtensionName,CONVERT(VARCHAR(5),Z8Timeout,108) as z8,CONVERT(VARCHAR(5),TimeForClose,108) as tfc  ,engineers.engineer_name  ,Customers.Organization,Customers.OrganizationAddress,Customers.Director as CustomerDirector,ServiceOrganization.ServiceName,ISNULL(b.ServiceID,-1) as ServiceID ,ISNULL(b.CustomerID,-1) as CustomerID,NeedSendMessage = CASE WHEN  EXISTS(SELECT * FROM dbo.Group_SMS_Code       WHERE dbo.Group_SMS_Code.Panel_id=a.Panel_id AND dbo.Group_SMS_Code.Group_=a.Group_) THEN 1 ELSE 0 END   from groups as a WITH (nolock)       INNER JOIN company  as b WITH (nolock) ON a.CompanyID = b.ID        LEFT JOIN CompanyType as ct WITH (nolock) ON ct.ID = b.TypeID      LEFT JOIN MoreAboutLun7 WITH (nolock) ON a.info_id = MoreAboutLun7.info_id        LEFT JOIN ExtensionTypes WITH (nolock) ON MoreAboutLun7.ExType_id = ExtensionTypes.ExType_id        LEFT JOIN engineers WITH (nolock) ON engineers.Work_Panel_id = a.Panel_id        LEFT JOIN vwRealPanel WITH (nolock) ON vwRealPanel.Panel_id=a.panel_id        LEFT JOIN Pults WITH (nolock) ON Pults.Id=vwRealPanel.Pult_Id        LEFT OUTER JOIN dbo.Customers ON b.CustomerID = dbo.Customers.ID        LEFT OUTER JOIN dbo.ServiceOrganization ON b.ServiceID = dbo.ServiceOrganization.ID
+where a.panel_id ='L00028'
+and group_ = 0
+
+"Panel_id","Group_","Message","IsOpen","TimeEvent","OpenControl","Z8Timeout","info_id","typeSchedule","ArmedCall","disabled","mustCall","TimeForClose","Partial","OperatorPrompt","IsProhibited","AutoArmDisarm","alarmButtonPhMk","IsOpenByAccess","IntervalPatrolInspection","CompanyID","CompanyName","address","Telephones","Director","Director2","Memo","TypeID","TypeName","info_id","version","ExType_id","ExtensionName","z8","tfc","engineer_name","Organization","OrganizationAddress","CustomerDirector","ServiceName","ServiceID","CustomerID","NeedSendMessage"
+L00028,0,Приміщення ТОВ Альфа-Віта,,,0,,,5,0,0,0,,,"
+
+",,0,0,,,51,ПОЖЕЖНА Приміщення ТОВ Альфа-Віта,"Львів м., Княгині Ольги вул., 99","067-679-14-56 Притула Анатолій","","","",,,,,,,,,,,,,,-1,-1,0
+
+Отримання зон першої групи 
+select zones.zone, zones.message, zones.status, 
+ zones.IsPatrol, zones.IsAlarmButton, zones.panel_id, zones.group_, zones.RadioZoneTypeid , 
+ zones.IsPatrolInspectionSystem, groups.IntervalPatrolInspection,  
+ (select count(1) from Zones_IPCameras where Zones_IPCameras.panel_id = zones.panel_id  
+ and Zones_IPCameras.group_ = zones.group_ and Zones_IPCameras.Zone = zones.Zone) as IPCamerasExists 
+, IsBypass
+, SignalLevel
+ from zones 
+ inner join groups on groups.panel_id = zones.panel_id and groups.group_ = zones.group_  
+ where zones.panel_id = 'L00028'
+ and zones.group_ = 0
+ order by Zone 
+
+ "zone","message","status","IsPatrol","IsAlarmButton","panel_id","group_","RadioZoneTypeid","IsPatrolInspectionSystem","IntervalPatrolInspection","IPCamerasExists","IsBypass","SignalLevel"
+1,Пожежна тривога,1,0,0,L00028,0,0,0,,0,0,
+2,Пожежна несправність,1,0,0,L00028,0,0,0,,0,0,
+
+Отримання відповідальних
+ SELECT
+	s.ResponsiblesList_id,
+	sort,
+	s.Responsible_Name,
+	s.Responsible_Address,
+	s.PhoneNo,
+	s.TypeTel,
+	s.ResponsibleTel_id,
+	s.EmailAddr,
+	s.ResponsibleEmail_id
+FROM
+	(
+	SELECT
+		DISTINCT ResponsiblesList.ResponsiblesList_id,
+		1 sort,
+		Responsible_Name,
+		Responsible_Address,
+		PhoneNo,
+		TypeTel,
+		ResponsibleTel_id,
+		'' EmailAddr,
+		-1 ResponsibleEmail_id
+	FROM
+		ResponsiblesList
+	LEFT JOIN ResponsibleTel ON
+		ResponsibleTel.ResponsiblesList_id = ResponsiblesList.ResponsiblesList_id
+	LEFT JOIN ResponsibleTypeTel ON
+		ResponsibleTypeTel.TypeTel_id = ResponsibleTel.TypeTel_id
+UNION ALL
+	SELECT
+		DISTINCT ResponsiblesList.ResponsiblesList_id,
+		2 sort,
+		Responsible_Name,
+		Responsible_Address,
+		'' PhoneNo,
+		'' TypeTel,
+		-1 ResponsibleTel_id,
+		ResponsibleEmail.EmailAddr,
+		ResponsibleEmail.ResponsibleEmail_id
+	FROM
+		ResponsiblesList
+	INNER JOIN ResponsibleEmail ON
+		ResponsibleEmail.ResponsiblesList_id = ResponsiblesList.ResponsiblesList_id ) s
+LEFT JOIN (/*vwResp*/
+	SELECT
+		R.Responsible_id,
+		R.panel_id,
+		R.Group_,
+		R.Responsible_Number ,
+		RL.ResponsiblesList_id,
+		RL.Responsible_Name,
+		RL.Responsible_Address ,
+		RT.ResponsibleTel_id,
+		RT.TypeTel_id,
+		RT.PhoneNo ,
+		RTD.[Description],
+		RTD.AsteriskAutodial,
+		RTD.CallOrder,
+		RTD.ClientInfoSms,
+		RTD.ControlLun,
+		RTD.FireAlarm
+	FROM
+		Responsibles R WITH (NOLOCK)
+	JOIN ResponsiblesList RL WITH (NOLOCK) ON
+		RL.ResponsiblesList_id = R.ResponsiblesList_id
+	JOIN ResponsibleTel RT WITH (NOLOCK) ON
+		RT.ResponsiblesList_id = RL.ResponsiblesList_id
+	LEFT JOIN ResponsibleTelDescription RTD WITH (NOLOCK) ON
+		RTD.Responsible_id = R.Responsible_id
+			AND RTD.ResponsibleTel_id = RT.ResponsibleTel_id) AS vwResp ON
+	vwResp.ResponsiblesList_id = S.ResponsiblesList_id
+	AND vwResp.ResponsibleTel_id = S.ResponsibleTel_id
+	AND vwResp.panel_id = 'L00028'
+	AND vwResp.Group_ = 0
+WHERE
+	S.ResponsiblesList_id IN (
+	SELECT
+		ResponsiblesList_id
+	FROM
+		Responsibles
+	WHERE
+		panel_id = 'L00028'
+		AND Group_ = 0)
+ORDER BY
+	S.ResponsiblesList_id,
+	sort,
+	CASE
+		sort WHEN 1 THEN ISNULL(vwResp.CallOrder, 2147483647)
+		WHEN 2 THEN S.ResponsibleEmail_id
+	END
+
+"ResponsiblesList_id","sort","Responsible_Name","Responsible_Address","PhoneNo","TypeTel","ResponsibleTel_id","EmailAddr","ResponsibleEmail_id"
+90,1,Притула Анатолій,"","0676791456",мобільний,98,"",-1
+
+Отримання id відповідального
+SELECT Responsible_Number, Responsible_id FROM Responsibles
+WHERE panel_id = 'L00028'
+AND group_ = 0
+AND ResponsiblesList_id = 90
+
+"Responsible_Number","Responsible_id"
+1,736
+
+
+Ортимання журналу подій 
+
+select 
+vwArchives.Event_id, vwArchives.Panel_id,CONVERT(varchar,vwArchives.TimeEvent,3) as TEvent,
+CONVERT(VARCHAR(10), vwArchives.TimeEvent , 108) as DEvent, vwArchives.Group_,
+ CASE
+WHEN vwArchives.Code in ('LIN','LOFF') THEN NULL
+WHEN COALESCE(Groups.Message, '') <> '' THEN Groups.Message
+WHEN COALESCE(GroupResponse.DESCRIPTION, '') <> '' THEN GroupResponse.DESCRIPTION
+ELSE NULL END as GMessage,
+TypeCode.Message, vwArchives.Event_Parent_id, vwArchives.Zone, TypeCode.idTCode, vwArchives.Line,
+vwArchives.StateEvent,
+vwArchives.Date_Key,
+ CASE
+WHEN Code.Code in ('Z34','Z35') THEN Code.Message
+WHEN TypeCode.idTCode IN (1,2,14,105,126)
+AND COALESCE(Zones.Message, '') <> '' THEN Zones.Message
+WHEN TypeCode.idTCode IN (26,27,131) THEN Code.Message + COALESCE(SPACE(1) + Zones.Message, '')
+WHEN COALESCE(vwArchives.Zone,0) = 0 THEN Code.Message + COALESCE(SPACE(1) + vwArchives.MeterCount, '')
+WHEN TypeCode.idTCode IN (20,36,41,42) THEN Code.Message + COALESCE(SPACE(1) + vwArchives.MeterCount, '')
+WHEN (Code.AccessCode = '1') and COALESCE(Users.UserName,'') <> '' THEN Users.UserName
+WHEN (Code.AccessCode = '0') and COALESCE(Zones_GroupResponse.Message, '') <> '' THEN Zones_GroupResponse.Message
+WHEN TypeCode.idTCode IN (151,152) THEN Code.Message + COALESCE(SPACE(1) + (SELECT LunOutput.OutputName FROM Mphone WITH(nolock)  inner join LunOutput WITH(nolock) on LunOutput.Mphone_id = Mphone.Mphone_id  WHERE Mphone.Panel_id = vwArchives.Panel_id  and LunOutput.OutputNum = vwArchives.Zone), '')
+ELSE Code.Message + COALESCE(SPACE(1) + vwArchives.MeterCount, '') END as CodeMessage
+,vwArchives.Code
+,vwArchives.Phone, Code.FileName as CodeFileName, TypeCode.TypeCodeFileName
+, CASE
+WHEN vwArchives.BitMask & 2 = 2 THEN 5
+WHEN COALESCE(Temp.StateEvent, 0) in (2,3) THEN 1
+WHEN COALESCE(Panel.TestPanel, '0') = '1' THEN 2
+WHEN COALESCE(Panel.Disabled, '0') = '1' THEN 3
+ELSE 0 END as Object_Status
+,CONVERT(VARCHAR,vwArchives.DeviceEventTime,3)+' '+CONVERT(VARCHAR,vwArchives.DeviceEventTime,108) as DeviceEventTime
+, Company.address
+, CASE
+WHEN vwArchives.BitMask & 4 = 4 THEN 1
+ELSE 0 END as UnknownObject
+from vwArchives WITH(nolock)
+LEFT JOIN Temp WITH(NOLOCK) ON temp.Event_id = vwArchives.Event_id
+LEFT OUTER JOIN Groups WITH(nolock) ON vwArchives.Panel_id = Groups.Panel_id and vwArchives.Group_ = Groups.Group_
+LEFT OUTER JOIN Code WITH(NOLOCK) ON Code.Code = vwArchives.Code and Code.CodeGroup = vwArchives.CodeGroup
+LEFT OUTER JOIN TypeCode WITH(NOLOCK) ON TypeCode.idTCode = Code.idTCode
+LEFT OUTER JOIN Users WITH(nolock) ON Users.Panel_id = vwArchives.Panel_id and Users.Group_ = vwArchives.Group_ and Users.UserCode = vwArchives.Zone
+LEFT OUTER JOIN Zones WITH(nolock) ON Zones.Panel_id = vwArchives.Panel_id and Zones.Group_ = vwArchives.Group_ and Zones.Zone = vwArchives.Zone
+LEFT OUTER JOIN GroupResponse WITH(NOLOCK) ON vwArchives.Panel_id = CAST(dbo.GroupResponse.Group_id AS VARCHAR(15))
+LEFT OUTER JOIN vwRealPanel as Panel WITH(nolock) ON Panel.Panel_id = vwArchives.Panel_id
+LEFT OUTER JOIN dbo.Company WITH(nolock) on Company.ID = Groups.companyID
+LEFT OUTER JOIN dbo.Zones_GroupResponse WITH(NOLOCK) ON GroupResponse.Group_id = Zones_GroupResponse.Group_id AND
+(vwArchives.Zone = Zones_GroupResponse.Zone AND  vwArchives.Panel_id = CAST(Zones_GroupResponse.Group_id AS VARCHAR(15)))
+where vwArchives.Date_Key BETWEEN 20260319 and 20260401 and vwArchives.TimeEvent BETWEEN '20260319 00:00:00' and '20260401 23:59:59'  and (vwArchives.Panel_id LIKE 'L00028')
+order by vwArchives.Event_id
+
+

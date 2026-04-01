@@ -8,7 +8,6 @@ wasm/*
 obj_catalog_fyne_v3
 *.pdf
 *.xlsx
-docs
 scripts
 tmp
 *agent*

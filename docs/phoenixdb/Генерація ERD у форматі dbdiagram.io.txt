@@ -1,0 +1,2084 @@
+Table __MigrationHistory {
+  MigrationId nvarchar
+  ContextKey nvarchar
+  Model varbinary
+  ProductVersion nvarchar
+}
+
+Table AdditionalArchiveInfo {
+  Archive_id int
+  AdditionalText nvarchar
+}
+
+Table AdditionalStandInfo {
+  ID int
+  ArchiveID int
+  Group int
+  Zone int
+}
+
+Table AdvanceSearchTemplates {
+  id int
+  TypeOptions smallint
+  TemplateName nvarchar
+  SQLString nvarchar
+}
+
+Table AlarmEventForComputers {
+  Event_id int
+  ComputerName nvarchar
+}
+
+Table android_device {
+  device_id int
+  ip_addr varchar
+  device_descr nvarchar
+  enabled tinyint
+  ping_time datetime
+  version_id int
+  device_sign nvarchar
+  Description nvarchar
+  NetworkType tinyint
+  TestTimeout datetime
+  VPN_id int
+  LossConnectionGenerated bit
+  LastLatitude nvarchar
+  LastLongtitude nvarchar
+  GPSArriveTime datetime
+  IsGPSSource bit
+  Platform nvarchar
+  Version nvarchar
+  LastLoginDate datetime
+  WebPing datetime
+  ConnectionState tinyint
+  LastCourseOverGround nvarchar
+}
+
+Table android_device_link {
+  device_id int
+  group_id int
+  device_group_id int
+}
+
+Table android_gps_redirect {
+  event_id int
+  device_id int
+}
+
+Table android_history {
+  history_id int
+  history_time datetime
+  package_id int
+  direction smallint
+  device_id int
+  event_id int
+  command varchar
+  description varchar
+  status int
+  errors varchar
+  sender varchar
+  From_ varchar
+}
+
+Table android_update_file {
+  file_id int
+  file_name varchar
+  sourceid int
+  version_id int
+  file_size int
+  last_modify datetime
+  isdeleted bit
+  panel_id varchar
+}
+
+Table android_version {
+  version_id int
+  version_time datetime
+}
+
+Table ArchiveAdditionInfo {
+  ArchiveEventID int
+  info varchar
+}
+
+Table ArchiveGroupResponse {
+  id int
+  Group_id int
+  StartTime datetime
+  EndTime datetime
+  Status_id int
+  Panel_id varchar
+  Group_ int
+}
+
+Table ArchiveID {
+  Current_ID int
+  Error_Base_Jurnal int
+  CurrentPictureID int
+  CurrentGPSID int
+}
+
+Table Areas {
+  Area_id int
+  Area_name nvarchar
+}
+
+Table AspNetRoles {
+  Id nvarchar
+  Name nvarchar
+  Discriminator nvarchar
+}
+
+Table AspNetUserClaims {
+  Id int
+  UserId nvarchar
+  ClaimType nvarchar
+  ClaimValue nvarchar
+}
+
+Table AspNetUserDevices {
+  UserId nvarchar
+  DeviceId int
+}
+
+Table AspNetUserLogins {
+  LoginProvider nvarchar
+  ProviderKey nvarchar
+  UserId nvarchar
+}
+
+Table AspNetUserRoles {
+  UserId nvarchar
+  RoleId nvarchar
+}
+
+Table AspNetUsers {
+  Id nvarchar
+  Email nvarchar
+  EmailConfirmed bit
+  PasswordHash nvarchar
+  SecurityStamp nvarchar
+  PhoneNumber nvarchar
+  PhoneNumberConfirmed bit
+  TwoFactorEnabled bit
+  LockoutEndDateUtc datetime
+  LockoutEnabled bit
+  AccessFailedCount int
+  UserName nvarchar
+  IsLoggedIn bit
+  IsBlocked bit
+  ParentId nvarchar
+}
+
+Table AsteriskAutodialer {
+  AsteriskAutodialerID bigint
+  CreateDate datetime
+  PanelID varchar
+  GroupNum int
+  RespName nvarchar
+  RespPhone varchar
+  NotificationText nvarchar
+  DialResult int
+  ResultDate datetime
+  Person_Id int
+  MarkType_id smallint
+  Reset int
+}
+
+Table AuditGeoZone {
+  GeoZone_Id int
+  ActionType varchar
+  ActionDate datetime
+  ActionUser varchar
+}
+
+Table AuditRunning {
+  Computer nvarchar
+  ProgramTitle nvarchar
+  RunTime datetime
+  RunOrClose nvarchar
+}
+
+Table AutoProcessBeginOpenByCompanyType {
+  CompanyTypeID int
+  TypeCodeID int
+  IsScheduled bit
+  TimeFrom time
+  TimeTo time
+}
+
+Table AutoSendGBRByCompanyType {
+  CompanyTypeID int
+  TypeCodeID int
+}
+
+Table AvailableStates {
+  State_id int
+  AvailableState_id int
+  idTCode int
+}
+
+Table backup_sysdiagrams {
+  name sysname
+  principal_id int
+  diagram_id int
+  version int
+  definition varbinary
+}
+
+Table BlackListChannel {
+  ID int
+  ChannelNo varchar
+  VPN_ID int
+  ChannelType_ID tinyint
+  TimeBegin datetime
+  TimeEnd datetime
+}
+
+Table Central {
+  panel_id varchar
+  Central_id varchar
+  Device_id int
+  PhoneNumber varchar
+  MainPower bit
+  BackupPower bit
+  MPTime datetime
+  BPTime datetime
+  LastTest datetime
+  TestTimeout datetime
+  CodeGroup int
+  typeTest int
+  StatusZ1 bit
+  Npack int
+  AlarmDelay int
+  LastOpenAlarmTime datetime
+  AlarmCode varchar
+  TestTimeOutClose datetime
+  token varchar
+  refresh_token varchar
+  record_id int
+}
+
+Table CentralAlarmsDelayList {
+  id int
+  panel_id varchar
+  group int
+  AlarmCode varchar
+  AlarmTime datetime
+  AlarmZone int
+  AlarmCodeGroup int
+}
+
+Table CentralReceiver {
+  CentralReceiver_ID int
+  ReceiverNumber int
+  ReceiverName nvarchar
+  Host varchar
+  Port int
+  ProtocolType int
+  ComputerName nvarchar
+  IsEnabled bit
+  RetranslatorIP varchar
+  RetranslatorPort int
+  RetranslatorLogin varchar
+  RetranslatorPassword varchar
+  PingTimeout int
+  LastPing datetime
+  TimeDontAcceptEvent int
+  CpIDPrefix nvarchar
+}
+
+Table CentralReceiverChannel {
+  CentralReceiverChannel_ID int
+  Channel_ID int
+  CentralReceiver_ID int
+}
+
+Table ChangeData_Log {
+  id int
+  operation tinyint
+  object nvarchar
+  panel_id varchar
+  Group_ int
+  Table_Name nvarchar
+  Table_Field int
+  ValueBefore nvarchar
+  ValueAfter nvarchar
+  Operation_Date datetime
+  UserName nvarchar
+  Computer nvarchar
+}
+
+Table ChangeIPCameraData_Log {
+  id int
+  operation tinyint
+  object nvarchar
+  camera_id nvarchar
+  Table_Field int
+  ValueBefore nvarchar
+  ValueAfter nvarchar
+  Operation_Date datetime
+  UserName nvarchar
+  Computer nvarchar
+}
+
+Table Channel {
+  Channel_ID int
+  OnBoardDevice_ID int
+  ChannelType_ID tinyint
+  ChannelNo_ID int
+  TestTimeout datetime
+  TestTimeoutReserved datetime
+  LastTest datetime
+  IsActive bit
+  IsZStatus bit
+}
+
+Table ChannelNo {
+  ChannelNo_ID int
+  ChannelNo varchar
+  VPN_ID int
+}
+
+Table Channels___39 {
+  SIM_id int
+  ChannelType_id tinyint
+  TestTimeout datetime
+  LastTestChannel datetime
+  StatusZ222 bit
+  id int
+}
+
+Table Channels_ChannelNo___39 {
+  channel_id int
+  ChannelNo varchar
+  ChannelNoForState varchar
+  VPN_id int
+}
+
+Table ChannelTypes {
+  ChannelType_id tinyint
+  ChannelType nvarchar
+  priority int
+}
+
+Table ClientData {
+  CompanyName nvarchar
+  Country nvarchar
+  City nvarchar
+  address nvarchar
+  FIO nvarchar
+  telephone nvarchar
+  email nvarchar
+  otherContacts nvarchar
+  RegKey varchar
+}
+
+Table ClientSettings {
+  ComputerName nvarchar
+  IdTCode int
+}
+
+Table ClientSettingsRDP {
+  ComputerName nvarchar
+  Person_Id int
+  IdTCode int
+}
+
+Table ClusterStatistics {
+  ClusterStatistics_ID bigint
+  TimeStampID datetime
+  ServerID nvarchar
+  ServerType smallint
+  CountAll int
+  ccCount int
+}
+
+Table Code_T {
+  Code varchar
+  CodeGroup smallint
+  Message nvarchar
+  AutoReset bit
+  GroupSent bit
+  Flag int
+  Zoneno int
+  Svet tinyint
+  AccessCode bit
+  FileName nvarchar
+  idTCode int
+  System bit
+  IsNeedReport bit
+  contactId_code varchar
+  CodeMes_RU nvarchar
+  CodeMes_EN nvarchar
+  CodeMes_ES nvarchar
+  CodeMes_UK nvarchar
+  CodeMes_PL nvarchar
+  CodeMes_FR nvarchar
+  CodeMes_TR nvarchar
+  CodeMes_LV nvarchar
+}
+
+Table Company {
+  CompanyName nvarchar
+  address nvarchar
+  Telephones nvarchar
+  Director nvarchar
+  Director2 nvarchar
+  Computer nvarchar
+  Memo nvarchar
+  LastEditDate datetime
+  UserName nvarchar
+  ServiceID int
+  CustomerID int
+  ID int
+  TypeID int
+}
+
+Table Company_Contracts {
+  Contract_id varchar
+  ContractRent nvarchar
+  Remarks nvarchar
+  Doc bit
+  CompanyID int
+}
+
+Table CompanyType {
+  ID int
+  Name nvarchar
+  Description nvarchar
+  AlterNames nvarchar
+}
+
+Table ContactIDEmulationChannelType {
+  ID int
+  ChannelType varchar
+}
+
+Table ContactIDEmulationSetting {
+  ID int
+  ChannelType_ID int
+  EventSourceName nvarchar
+  IP varchar
+  Port varchar
+  COMPort varchar
+  COM_Speed int
+  COM_Byte_size tinyint
+  COM_Parity tinyint
+  COM_Stop_bit varchar
+  ComputerName nvarchar
+  SwitchOn bit
+  IsIncludedDateTime bit
+  IsUseFiltersByPults bit
+}
+
+Table ContactIDEventsFilterByPults {
+  ID int
+  ContactIDSettingID int
+  PultID int
+}
+
+Table ContactIDPhoenixCodes {
+  ID int
+  ContactIDCode nvarchar
+  Description nvarchar
+}
+
+Table ContactIDViaCOMEvents {
+  ID int
+  EventID int
+  ContactIDPacket varchar
+  ComputerName nvarchar
+  COMPort varchar
+  SendStatus int
+  EventDate datetime
+}
+
+Table ContactIDViaTCPEvents {
+  ID int
+  EventID int
+  ContactIDPacket varchar
+  ComputerName nvarchar
+  IP varchar
+  Port varchar
+  SendStatus int
+  EventDate datetime
+}
+
+Table Contracts {
+  Contract_id varchar
+  ContractDate datetime
+  Firm_id int
+  ContractDateTo datetime
+}
+
+Table CurrentAlarms {
+  ID int
+  Recipient_ChannelNo varchar
+  Recipient_Type tinyint
+  Panel_id varchar
+  Group_ int
+  Zone int
+  Code varchar
+  CodeGroup smallint
+  TimeEvent datetime
+  TimeSendEvent datetime
+  TimeAcceptEvent datetime
+  MeterCount nvarchar
+  Result tinyint
+  NCDS_SMS int
+  Text nvarchar
+  ComputerName nvarchar
+  TimePutWebServerEvent datetime
+  TimeSendAfter datetime
+  ViberDeliveryId uniqueidentifier
+  Photo image
+  PictureId int
+}
+
+Table CurrentConnection {
+  ComputerName nvarchar
+  send bit
+}
+
+Table Customers {
+  ID int
+  Organization nvarchar
+  OrganizationAddress nvarchar
+  Director nvarchar
+}
+
+Table DataBaseVersion {
+  version int
+  versionDate datetime
+}
+
+Table Device_Modification {
+  id int
+  Device_id tinyint
+  Modifications varchar
+}
+
+Table DictEntAttrVal {
+  DictID int
+  DictLevel int
+  DictParentID int
+  DictValue nvarchar
+  DictDescription nvarchar
+}
+
+Table DSO_Events {
+  id int
+  PhoenixEventId bigint
+  DTime datetime
+  AlarmCode nvarchar
+  Status nvarchar
+  BuildingName nvarchar
+  BuildingAddress nvarchar
+  FreeText nvarchar
+  AlarmType int
+  AlarmUrgency int
+  Latitude float
+  Longitude float
+  MQTTPublishID int
+}
+
+Table dtproperties {
+  id int
+  objectid int
+  property varchar
+  value varchar
+  uvalue nvarchar
+  lvalue image
+  version int
+}
+
+Table engineers {
+  engineer_id int
+  engineer_name nvarchar
+  IP varchar
+  Work_panel_id varchar
+  OrlanPairNumber smallint
+  CarPanel_id varchar
+  mobileUser_id int
+}
+
+Table EngineersPhMk {
+  engineer_id int
+  userGrId int
+}
+
+Table EventsRecipients {
+  Recipient_id int
+  RecipientIPorPhone varchar
+  OrlanPairNumber smallint
+  ResponsibleTel_id int
+  ResponsibleEmail_id int
+}
+
+Table EventsSendLog {
+  log_id int
+  LogType_id int
+  Panel_id varchar
+  Group_ int
+  Zone int
+  Code varchar
+  CodeGroup int
+  DateTimeSend datetime
+  DateTimeRecived datetime
+  result tinyint
+  MeterCount nvarchar
+  TextSMS nvarchar
+  AddressRemotePult varchar
+  TimePutWebServerEvent datetime
+}
+
+Table ExtensionTypes {
+  ExType_id int
+  Name nvarchar
+}
+
+Table FieldDictionary {
+  id int
+  DBName varchar
+  Name nvarchar
+}
+
+Table Firms {
+  Firm_id int
+  firm_name nvarchar
+  payment_unique_ID varchar
+  payment_description_template nvarchar
+  currency varchar
+  percentage money
+}
+
+Table GeoZone {
+  id int
+  Name nvarchar
+  Description nvarchar
+  ZoneType int
+  Base64Points varchar
+  Points varchar
+}
+
+Table GeoZoneType {
+  id int
+  Description nvarchar
+  Color varchar
+}
+
+Table GPRSRequest {
+  Request_id int
+  IP varchar
+  OrlanPair tinyint
+  Request_type tinyint
+  Zone int
+  DeviceID tinyint
+  TimeForCommand datetime
+  Panel_id varchar
+  Group_ int
+  OpenInternetNumber int
+  VPN_id int
+  CentralReceiver_ID int
+  RequestData nvarchar
+}
+
+Table GPSObjectData {
+  TableID varchar
+  name nvarchar
+  Description nvarchar
+  Longtitude varchar
+  Latitude varchar
+  category varchar
+  engine bit
+  panel_id varchar
+  StatusZ2 bit
+  isGPSValid bit
+  PowerGPS bit
+  GPSArriveTime datetime
+  reason nvarchar
+  group_id int
+  status_id int
+  CourseOverGround varchar
+  address nvarchar
+  director nvarchar
+  director2 nvarchar
+  memo nvarchar
+  telephones nvarchar
+  isAlarm bit
+  AlarmTime datetime
+  MainPower bit
+  BackUpPower bit
+  CurrentChannel nvarchar
+  isOpen bit
+  CoordStatus varchar
+}
+
+Table Granat2_Actual_Config {
+  panel_id varchar
+  zone_no int
+  device_type int
+  group_ int
+  device_ver int
+  signal_lvl int
+  battery_lvl float
+}
+
+Table Group_SMS_Code {
+  id int
+  Panel_id varchar
+  Code varchar
+  CodeGroup smallint
+  Group_ int
+  Recipient_id int
+  typeSentSMS bit
+  typeSMS bit
+  Recipient_type tinyint
+  TypeAddCodes bit
+  ZoneID int
+}
+
+Table Group_SMS_Code_Zones {
+  id int
+  ZoneId int
+  ZoneNumber int
+}
+
+Table GroupResponse {
+  Group_id int
+  Description nvarchar
+  StartTime datetime
+  EndTime datetime
+  Status_id int
+  Event_id int
+  Panel_id varchar
+  Group_ int
+  Engine bit
+  Track int
+  Mphone_id int
+  LastGPSIdFromMobile int
+  Disabled bit
+  Category int
+  callsign varchar
+  GeoZone_id int
+  DislocationPointLat varchar
+  DislocationPointLon varchar
+  TimeArriveToObject datetime
+  TimeStayOnObj datetime
+  TabletInstalled bit
+}
+
+Table GroupResponse_Group {
+  id int
+  Group_id int
+  Panel_id varchar
+  group_ int
+  StartTime datetime
+  EndTime datetime
+  MainGroup bit
+}
+
+Table GroupResponse_Panel {
+  Group_id int
+  Panel_id varchar
+  StartTime datetime
+  EndTime datetime
+  MainGroup bit
+}
+
+Table GroupResponseAlter {
+  GroupResponse_id int
+  GroupResponseAlter_id int
+}
+
+Table GroupResponseCategory {
+  CategoryID int
+  Description nvarchar
+  SendIdCategory int
+}
+
+Table GroupResponseGeoZone {
+  id int
+  Group_id int
+  GeoZone_id int
+}
+
+Table GroupResponseGPSData {
+  ID int
+  GPSObjectID varchar
+  TrackID int
+  MessageID varchar
+  UTCTime varchar
+  Status varchar
+  Latitude varchar
+  NSIndicator varchar
+  Longtitude varchar
+  EWIndicator varchar
+  SpeedOverGround varchar
+  CourseOverGround varchar
+  Date varchar
+  MagneticVariation varchar
+  ArriveDate datetime
+}
+
+Table GroupResponseGPSDataFromMobile {
+  id int
+  Group_id int
+  CoordX varchar
+  CoordY varchar
+  StartAngle varchar
+  StopAngle varchar
+  InRadius varchar
+  OutRadius varchar
+  TimeReceived datetime
+}
+
+Table Groups {
+  Panel_id varchar
+  Group_ int
+  Message nvarchar
+  IsOpen bit
+  TimeEvent datetime
+  OpenControl bit
+  Z8Timeout datetime
+  info_id int
+  typeSchedule int
+  ArmedCall bit
+  disabled bit
+  mustCall bit
+  TimeForClose datetime
+  Partial nvarchar
+  OperatorPrompt nvarchar
+  IsProhibited bit
+  AutoArmDisarm bit
+  alarmButtonPhMk bit
+  IsOpenByAccess bit
+  IntervalPatrolInspection datetime
+  CompanyID int
+}
+
+Table ImageList {
+  ImageId int
+  CatId int
+  ImageType int
+  ImageName varchar
+  ImageData image
+}
+
+Table ImageListType {
+  TypeId int
+  TypeText varchar
+}
+
+Table Installers {
+  Installer_id int
+  InstallerName varchar
+}
+
+Table IPCameras {
+  Id int
+  Name nvarchar
+  IPCameraServiceId int
+  SerialNumber varchar
+  VerificationCode varchar
+  ServiceLogin varchar
+  ServicePassword varchar
+  RTSPLink varchar
+  RTSPLinkLow varchar
+  RTSPOverTcp bit
+}
+
+Table IPCameraService {
+  Id int
+  Name varchar
+  InUse bit
+}
+
+Table JournalCategories {
+  Category_id int
+  CategoryName nvarchar
+}
+
+Table JournalInvisibleColumns {
+  JournalInvisibleColumnID int
+  Journal_id int
+  FieldName varchar
+}
+
+Table JournalParameters {
+  id int
+  Journal_id int
+  ParamName varchar
+  ParamValue varchar
+  ParamType int
+  isDefault bit
+  isMin bit
+  isMax bit
+}
+
+Table JournalResponseGroupsComments {
+  JournalResponseGroupsCommentsID int
+  Event_id int
+  Service_id int
+  Comment varchar
+  Person_id int
+  CreateDate datetime
+  Date_Key int
+}
+
+Table Journals {
+  Journal_id int
+  JournalName nvarchar
+  Category_id int
+  ViewName varchar
+  TopCount int
+  isDynamic bit
+  ViewText nvarchar
+  Aviable bit
+  OrderBy nvarchar
+}
+
+Table Lock_timer_state {
+  Name nvarchar
+  Computer nvarchar
+  Result int
+  Is_shutdown int
+  Is_message int
+  Date datetime
+  Date_wd datetime
+}
+
+Table LunOutput {
+  ID int
+  Mphone_id int
+  OutputNum int
+  OutputName nvarchar
+  State bit
+}
+
+Table LunProblemStatus {
+  id int
+  Mphone_id int
+  Type_device tinyint
+  Num int
+  Type_Problem tinyint
+  Problem_Date datetime
+}
+
+Table Lurking {
+  Lurking_id int
+  TypeCode_id int
+  Timer datetime
+  Condition_id int
+  GeneratedCode varchar
+  GeneratedCodeGroup smallint
+  Cancel_idTCode int
+  NeedDropOld bit
+  IsCentral bit
+  RepetitiveTimer bit
+  CancelSame int
+}
+
+Table LurkingConditions {
+  Condition_id int
+  ConditionText varchar
+  ConditionXml varchar
+}
+
+Table MailSettings {
+  ComputerName nvarchar
+  Host varchar
+  Port int
+  Username varchar
+  Password varchar
+  Protocol int
+  Enabled bit
+  CntMailsToConn int
+  MailSubject nvarchar
+  SenderName nvarchar
+}
+
+Table ManualAddedAlarmObject {
+  ObjectID int
+  Panel_id varchar
+  lat varchar
+  lon varchar
+  CreateDate datetime
+  CompCreate nvarchar
+  DeleteDate datetime
+  CompDelete nvarchar
+  isEnded bit
+}
+
+Table Marks {
+  Panel_id varchar
+  group_ int
+  Mark_Message nvarchar
+  Mark_Date datetime
+  Mark_ElapsedDate datetime
+  Mark_Type_id smallint
+  Person_id int
+  PersonNameDeleted nvarchar
+}
+
+Table MarkTypes {
+  MarkType_id smallint
+  MarkTypeMessage nvarchar
+}
+
+Table Masters {
+  Master_id int
+  MasterName nvarchar
+}
+
+Table MobileEvents {
+  archiveId int
+  userId int
+  panel varchar
+  group int
+  zone int
+  typeCode int
+  eventMessage nvarchar
+  timeEvent datetime
+}
+
+Table MobileRemoteControl {
+  remControlId int
+  userId int
+  callId varchar
+  commandId int
+  PanelId varchar
+  Group int
+  Zone int
+}
+
+Table MobileSettings {
+  CompName nvarchar
+  serverIp varchar
+  port int
+  allowUnconditionalArmed bit
+  Enabled bit
+  allowSendTestChanged bit
+  imgServerIp varchar
+  imgServerPort int
+  IsIgnoreForcedDisarmFromOldMobik bit
+  IsAutoLoginLink bit
+  MobisServerIP varchar
+  MobisServerPort int
+}
+
+Table MobileUser {
+  userId int
+  login varchar
+  password varchar
+  imei varchar
+  banState bit
+  evtCounter int
+  onlineState int
+  currentPackage nvarchar
+  roleId int
+  forcePassword varchar
+  eventForAllGr int
+  language varchar
+  ResponsiblesList_id int
+  devicename nvarchar
+  osversion nvarchar
+  appversion nvarchar
+}
+
+Table MobileUser_Groups {
+  userGrId int
+  userId int
+  panelId varchar
+  group int
+}
+
+Table MobileUserBalance {
+  contractId varchar
+  balance money
+  CustomerName nvarchar
+  IsBan bit
+}
+
+Table MobileUserChanged {
+  changedId int
+  userId int
+  login varchar
+}
+
+Table MobileUserOnlineState {
+  stateId int
+  Description nvarchar
+}
+
+Table MobileUserRole {
+  roleId int
+  roleName nvarchar
+}
+
+Table MobileUserSubscribe {
+  userGrId int
+  typeCodeId int
+}
+
+Table MobileUserSubscribeAll {
+  ID int
+  idTCode int
+}
+
+Table MobileUserSubscribeExcluded {
+  ID int
+  userGrId int
+  idTCode int
+}
+
+Table MoreAboutLun7 {
+  info_id int
+  MainPower bit
+  BackupPower bit
+  MPTime datetime
+  BPTime datetime
+  version varchar
+  CodeGroup_unused tinyint
+  isConnected bit
+  DateChangeConnect datetime
+  ExType_id int
+}
+
+Table MPhone {
+  Mphone_id int
+  Panel_id varchar
+  RStartDate datetime
+  RadioVersion varchar
+  RadioType int
+  CodeGroup smallint
+  MainPower bit
+  BackupPower bit
+  MPTime datetime
+  BPTime datetime
+  TypeTransmitter int
+  IsJablotron bit
+  DOT3 bit
+  LastTest datetime
+  LastGPRSCount int
+  SignalLevel tinyint
+  SignalDate datetime
+  IsReference int
+  WorkMode tinyint
+  CurrentChannel_id tinyint
+  CurrentTemperature varchar
+  StatusZ2___39 bit
+  isLindConnect bit
+  isLindConnectTime datetime
+  isSafePPKP bit
+  isSafePPKPTime datetime
+  isSirenaConnect bit
+  isSirenaConnectTime datetime
+  isPultConnect bit
+  isPultConnectTime datetime
+  FuncMainPower bit
+  FuncMainPowerTime datetime
+  FuncBackupPower bit
+  FuncBackupPowerTime datetime
+  FuncRele2 bit
+  FuncRele2Time datetime
+  FuncRele1 bit
+  FuncRele1Time datetime
+  FuncSensorsPower bit
+  FuncSensorsPowerTime datetime
+  FuncSirenaState bit
+  FuncSirenaStateTime datetime
+  FuncPultConnect bit
+  FuncPultConnectTime datetime
+  levelAcs int
+  levelAcsTime datetime
+  isSirenaSounding bit
+  isSirenaSoundingTime datetime
+  isSensorsPower bit
+  isSensorsPowerTime datetime
+  Rele1State bit
+  Rele1StateTime datetime
+  Rele2State bit
+  Rele2StateTime datetime
+  LastResetKeyBoardTime datetime
+  LastResetPultTime datetime
+  isLineTAN bit
+  isLineTANTime datetime
+  CurrentSIM int
+  IsReportWaiting tinyint
+  MeterCount varchar
+  TimeMeterCount datetime
+  IsProhibited bit
+  FilinVersion varchar
+  CompatibilityData tinyint
+  DeviceVersion tinyint
+  CompatibilityIsWaiting tinyint
+  ProtocolType tinyint
+  MacAddress varchar
+  LastLatitude varchar
+  LastLongtitude varchar
+  GPSArriveTime datetime
+  isGPSValid bit
+  isAllowBatteryCharging bit
+  PowerGPS bit
+  AletBatteryChargeLevel varchar
+  AletBatteryVoltage varchar
+  TimeGetAletBatteryState datetime
+  InSecureLat varchar
+  InSecureLon varchar
+  InSecureStatus varchar
+  InSecureTime datetime
+  LastCourseOverGround varchar
+  LanComVersion varchar
+  TestTimeoutReserved datetime
+  AletAkbDate datetime
+  AletMod varchar
+  AletBlackBox bit
+  IsGPSTracker int
+  CpId varchar
+  CurrentSim2Channel_id tinyint
+  UseAlternativeTesting bit
+  NotTested bit
+  IsZStatusDevice bit
+  CentralOutputType int
+  DeviceState int
+  DeviceStateGUID uniqueidentifier
+  ServiceKey int
+  BootVer varchar
+  token varchar
+  refresh_token varchar
+  RadioSystemTypeID int
+}
+
+Table MPhoneRadioSeries {
+  Series_id tinyint
+  SeriesName nvarchar
+}
+
+Table MphoneRadioType {
+  RadioType_id int
+  Message nvarchar
+  Series_id tinyint
+  IsUse bit
+  DeviceId tinyint
+  VersionUpdateAllowed tinyint
+}
+
+Table MphoneRadioTypeUpdate {
+  MphoneRadioTypeUpdate_ID int
+  RadioType_id int
+  IsAutoUpdate bit
+  VersionMin int
+  VersionMax int
+}
+
+Table MphoneTypeTransmitter {
+  TypeTransmitter_id int
+  Message nvarchar
+}
+
+Table MqttIndexses {
+  MqttId uniqueidentifier
+  Mphone_id int
+}
+
+Table ObjectAddInfo {
+  ObjectAddInfoID int
+  PanelID varchar
+  GroupID int
+  AttributeID int
+  ValueID int
+  Value nvarchar
+}
+
+Table ObjSchedule {
+  RecordID int
+  PanelID varchar
+  Group_ int
+  DayNumber int
+  IntervalNumber int
+  StartDT datetime
+  StopDT datetime
+}
+
+Table OnBoardDevice {
+  OnBoardDevice_ID int
+  MPhone_ID int
+  OnBoardDeviceType_ID int
+  LastTest datetime
+  IsZStatus bit
+  TestTimeout datetime
+  TestTimeoutReserved datetime
+  Version nvarchar
+}
+
+Table OnBoardDeviceType {
+  OnBoardDeviceType_ID int
+  Enum int
+  Name varchar
+}
+
+Table OnlineAccessUsers {
+  User_Id int
+  User_Login nvarchar
+  User_Password varchar
+  SaltForPwd varchar
+  Company_Name nvarchar
+  Contract_Number varchar
+  ResponsiblesList_id int
+}
+
+Table OnlineAccessUsers_Panel {
+  ID int
+  User_id int
+  Panel_id varchar
+  Group_ int
+}
+
+Table OnlineMapSetting {
+  Host varchar
+  Settings varchar
+  CheckGPS varchar
+}
+
+Table OpenInternetChannel {
+  OpenInternetChannel_ID int
+  Channel_ID int
+  OpenInternetDevices_Number int
+}
+
+Table OpenInternetDevices {
+  Number int
+  InternetDeviceName nvarchar
+  IP varchar
+  isEmizonType bit
+  CustomerNum varchar
+  CustomerLeg varchar
+  CustomerKey varchar
+  CustomerPort varchar
+  Port int
+  FtpIp varchar
+  FtpPort varchar
+  ComputerName nvarchar
+  Status smallint
+}
+
+Table Operation {
+  id tinyint
+  OperationName nvarchar
+}
+
+Table Operator {
+  Name varchar
+  Password varchar
+}
+
+Table Operators {
+  Operator_id int
+  OperatorName varchar
+  VoiceOrlansBus_id int
+  SimPhoneNumberRequest nvarchar
+}
+
+Table OrlanBuses {
+  Bus_number int
+  Bus_name nvarchar
+  COM varchar
+  Orlans smallint
+  OrlanArmed smallint
+  OrlanAUX smallint
+  OrlanReport smallint
+  OrlanBan smallint
+  OrlanChangeSim smallint
+  ReserveOperator bit
+  OrlanArmedSim2 smallint
+  OrlanAUXSim2 smallint
+  OrlanReportSim2 smallint
+  OrlanBanSim2 smallint
+  OrlanChangeSimSim2 smallint
+  InstallComputer nvarchar
+  ParentBus_id int
+  OrlanOut smallint
+  OrlanOut2 smallint
+  Status smallint
+}
+
+Table OrlanChecking {
+  BusNumber_From tinyint
+  OrlanNumber_From tinyint
+  BusNumber_To tinyint
+  OrlanNumber_To tinyint
+  CheckCSD bit
+}
+
+Table OrlanGPRSList {
+  PairNumber smallint
+  OrlanNumber smallint
+  VPNName nvarchar
+  IP varchar
+  Port varchar
+  ConnectionName varchar
+  COMPort varchar
+  EnableControlConnection bit
+  EnableControlPower bit
+  PeriodChecking datetime
+  DisconnectOnRun bit
+  DisconnectOnExit bit
+  VideoOrlan bit
+  ComputerName nvarchar
+  EnableLogging bit
+  SignalLevel smallint
+  SignalLevelDate datetime
+  vpn_id int
+  FtpIp varchar
+  FtpPort varchar
+  OrlanGPRSList_ID int
+  Status smallint
+  PingHost varchar
+}
+
+Table OrlanList {
+  BusNumber tinyint
+  OrlanNumber tinyint
+  MobileNo varchar
+  MobileForState varchar
+  LastEvent datetime
+  LastCheck datetime
+  CheckPeriod datetime
+  NumberOfTry tinyint
+}
+
+Table Panel {
+  Panel_id varchar
+  Password_ varchar
+  CreateDate datetime
+  Disabled bit
+  Remarks nvarchar
+  computer nvarchar
+  DateLastChange datetime
+  engineer_id int
+  Area_id int
+  AdditionalTechnicalInformation nvarchar
+  OneTestEqualAll bit
+  master_id int
+  installer_id int
+  CompEditing nvarchar
+  TestPanel bit
+  Partial nvarchar
+  Latitude varchar
+  Longtitude varchar
+  isGPSConfirm bit
+  CompLastEditGPS nvarchar
+  Engine bit
+  Track int
+  isAlwaysSendGPS bit
+  Movable_Object bit
+  Panel_type smallint
+  Pult_id int
+  UserName nvarchar
+  RegionID int
+  IsContactIDRedirect bit
+  ContactIDObjectNumber varchar
+  TechPanel bit
+  IsUseCameras bit
+  ObjectID int
+  UserEditing nvarchar
+  FreeArrivalsCount int
+}
+
+Table Panel_Tracking {
+  Panel_id varchar
+  Tracking_id int
+  TrackingDate datetime
+  TrackIdPostponed int
+}
+
+Table PanelMobileGPSData {
+  ID int
+  GPSObjectID varchar
+  TrackID int
+  MessageID varchar
+  UTCTime varchar
+  Status varchar
+  Latitude varchar
+  NSIndicator varchar
+  Longtitude varchar
+  EWIndicator varchar
+  SpeedOverGround varchar
+  CourseOverGround varchar
+  Date varchar
+  MagneticVariation varchar
+  ArriveDate datetime
+}
+
+Table Person_Auth {
+  ID int
+  Person_Login nvarchar
+  Computer nvarchar
+  Program varchar
+}
+
+Table Person_Permissions {
+  Person_Id int
+  CanEditDB bit
+  CanProcessEvent bit
+  CanStands bit
+  CanRemoteReport bit
+  CanRemoteArmed bit
+  CanRemoteAUX bit
+  CanRemoteBanGuarding bit
+  CanRemoteSignalLvl bit
+  CanRemoteElCount bit
+  CanRemoteReset bit
+  CanRemoteReleOperations bit
+  CanAddStolenKey bit
+  CanRemoveStolenKey bit
+  CanRemoteUpdate bit
+  CanChangeSim bit
+  CanRemoteVideo bit
+  CanGPSCommand bit
+  CanEditGPSData bit
+  CanViewSettings bit
+  CanEditSettings bit
+  CanCancelAlarmButton bit
+  CanChangeGrRespCategory bit
+  CanAddToIgnoredStands bit
+  CanRemoteArmedLun11 bit
+  CanRemoteDisarmed bit
+  CanBulkChanges bit
+  CanCommentJournalResponseGroup bit
+  CanPrintJournalResponseGroup bit
+  CanEditObjCards bit
+  CanEditEquipment bit
+  CanEditObjWorkSchedule bit
+  CanEditRespTeams bit
+  CanEditZones bit
+  CanEditKeys bit
+  CanEditRespPersonsList bit
+  CanEditSchemes bit
+  CanEditPhotos bit
+  CanEditSMSNotifications bit
+  CanEditPowerState bit
+  CanEditManuals bit
+  CanEditMobileUsers bit
+  CanLockDevice bit
+  CanSendAutodialerNotification bit
+}
+
+Table Person_Role {
+  Role_ID int
+  Role_Name nvarchar
+  Message nvarchar
+}
+
+Table Personal {
+  Person_Id int
+  Person_Name nvarchar
+  Person_Role_id int
+  Person_Login nvarchar
+  Person_Psw varchar
+  Work_Status bit
+  Computer nvarchar
+  Deleted bit
+}
+
+Table PersonPermitOnGrRespCategory {
+  ID int
+  Person_ID int
+  GroupRespCategory_ID int
+}
+
+Table PESvcLoadBalancer {
+  Mphone_ID int
+  ServiceName nvarchar
+}
+
+Table PhoenixSettings {
+  ID int
+  SettingKey nvarchar
+  SettingValue sql_variant
+}
+
+Table PortSettings {
+  id int
+  Field nvarchar
+  Value int
+}
+
+Table PULTAVAILABILITY {
+  id int
+  OrlanPair int
+  OrlanNumber int
+  OrlanName nchar
+  ComputerName nchar
+  TimeFail datetime
+  TimeSuccess datetime
+  Diff bigint
+}
+
+Table PultBindPerson {
+  bind_id int
+  person_id int
+  pult_id int
+}
+
+Table Pults {
+  Id int
+  Pult_Name nvarchar
+  Pult_Director nvarchar
+  Pult_Adres nvarchar
+  Pult_Phone nvarchar
+  Pult_Description nvarchar
+  Pult_IDNumber varchar
+  RES_Name nvarchar
+  RES_Address nvarchar
+  RES_Phone nvarchar
+  IsOutPult bit
+}
+
+Table RadioSystemType {
+  id int
+  name nvarchar
+}
+
+Table RadioZoneType {
+  typeId int
+  typeName nvarchar
+}
+
+Table ReceivedEvent {
+  ID int
+  serverIp varchar
+  serverPort int
+  eventTime datetime
+  packageHeader int
+  package varchar
+  packageNum int
+  remoteIp varchar
+  remotePort int
+  cpId varchar
+  onBoardDeviceId tinyint
+  channelType varchar
+  saveTime datetime
+  state int
+  compName nvarchar
+  error nvarchar
+}
+
+Table ReceivedPackages {
+  ReceivedPackages_ID bigint
+  OrlanNumber int
+  OrlanPairNumber int
+  ReceivedTime datetime
+  Line varchar
+  Package varchar
+  RemoteIp varchar
+  RemotePort int
+  CpId varchar
+  State bit
+  CompName nvarchar
+  ExternalProc bit
+  ProcesingEventIdName nvarchar
+  ProtocolId int
+  TimeDontAcceptEvent int
+}
+
+Table RegionsTable {
+  RegionID int
+  RegionNum varchar
+  RegionName varchar
+}
+
+Table Remarks {
+  Remarks_id int
+  panel_id varchar
+  group_id int
+  message nvarchar
+  EndTime datetime
+  RemarkNo int
+  autodel bit
+}
+
+Table Replaces {
+  Replace_id int
+  Description nvarchar
+  Replace_Date datetime
+  Panel_id varchar
+}
+
+Table Requests {
+  Request_id int
+  panel_id varchar
+  VaitTime datetime
+  command tinyint
+  Group_ int
+  ComputerName nvarchar
+  Zone int
+  Description nvarchar
+  DoneState int
+  Owner int
+  UniqueId uniqueidentifier
+}
+
+Table ResponsibleEmail {
+  ResponsibleEmail_id int
+  ResponsiblesList_id int
+  EmailAddr nvarchar
+}
+
+Table Responsibles {
+  Responsible_id int
+  panel_id varchar
+  Group_ int
+  Responsible_Number int
+  ResponsiblesList_id int
+}
+
+Table Responsibles_backup_tbl {
+  Responsible_id int
+  panel_id varchar
+  Group_ int
+  Responsible_Name varchar
+  Responsible_Number int
+  Responsible_Adress varchar
+}
+
+Table Responsibles_Tel_backup_tbl {
+  Responsible_id int
+  PhoneNo varchar
+  TypeTel_id smallint
+  Description varchar
+  FireAlarm bit
+  ClientInfoSms bit
+}
+
+Table ResponsiblesList {
+  ResponsiblesList_id int
+  Responsible_Name nvarchar
+  Responsible_Address nvarchar
+}
+
+Table ResponsibleTel {
+  PhoneNo varchar
+  TypeTel_id smallint
+  ResponsiblesList_id int
+  ResponsibleTel_id int
+}
+
+Table ResponsibleTelDescription {
+  Responsible_id int
+  ResponsibleTel_id int
+  Description nvarchar
+  FireAlarm bit
+  ClientInfoSms bit
+  ControlLun bit
+  AsteriskAutodial bit
+  CallOrder int
+}
+
+Table ResponsibleTypeTel {
+  TypeTel_id smallint
+  TypeTel nvarchar
+}
+
+Table Results {
+  Result_id int
+  message nvarchar
+  isUser bit
+  order int
+  IsAfterBeginOpen bit
+}
+
+Table ResultsGroup {
+  ResultsGroup_id int
+  message nvarchar
+  order int
+}
+
+Table ResultsGroup_Results {
+  ResultsGroup_id int
+  Result_id int
+}
+
+Table ServiceOrganization {
+  ID int
+  ServiceName nvarchar
+  IDCode nvarchar
+}
+
+Table Sim {
+  Sim_ID int
+  OnBoardDevice_ID int
+  Operator_ID int
+  VauchLoad datetime
+  SimNumber varchar
+  IsMainSim bit
+  IsCurrentSim bit
+  RealSimNumber nvarchar
+}
+
+Table Sims___39 {
+  SIM_id int
+  Operator_id int
+  VauchLoad datetime
+  Mphone_id int
+  SimNumber varchar
+  SimNumberFull varchar
+  MainSim bit
+  Bus_id int
+  OrlanGPRSPairNumber smallint
+  OrlanVideoPairNumber smallint
+  NetworkType tinyint
+  OpenInternetNumber int
+}
+
+Table SMSLog {
+  SMS_id int
+  MobileNo varchar
+  textSMS nvarchar
+  timeAdded datetime
+  timeSend datetime
+  result bit
+}
+
+Table SosAccessEvents {
+  Event_id int
+  Panel_id varchar
+  Group_ int
+  Zone int
+  idTCode tinyint
+  Code varchar
+  CodeMessage nvarchar
+  TimeEvent datetime
+  result tinyint
+  GroupMessage nvarchar
+  ZoneMessage nvarchar
+}
+
+Table Stands {
+  id int
+  Panel_id varchar
+  Group_ int
+  Zone int
+  TimeBegin datetime
+  TimeEnd datetime
+  Type_Stand bit
+  standorkey tinyint
+  Engineer_id int
+}
+
+Table States {
+  State_id int
+  StateName nvarchar
+  isOverProcess bit
+  IsChangeStateEvent bit
+}
+
+Table StatusGroupResponse {
+  status_id int
+  status int
+  reason nvarchar
+  IsSystem bit
+}
+
+Table sysdiagrams {
+  name sysname
+  principal_id int
+  diagram_id int
+  version int
+  definition varbinary
+}
+
+Table Temp {
+  Event_id int
+  Panel_id varchar
+  Group_ int
+  Line varchar
+  Zone int
+  Code varchar
+  CodeGroup smallint
+  TimeEvent datetime
+  Receiver int
+  Phone varchar
+  MeterCount nvarchar
+  StateEvent smallint
+  Event_Parent_id int
+  Date_Key int
+  Priority int
+  Computer nvarchar
+  BitMask int
+  DeviceEventTime datetime
+  Person_Id int
+}
+
+Table Templates {
+  Template_Name varchar
+  Panel_id varchar
+}
+
+Table Timers {
+  Timer_id int
+  Panel_id varchar
+  Group_ int
+  Lurking_id int
+  TimeElapse datetime
+  GrResponse_id int
+  Zone int
+}
+
+Table Tracking {
+  Tracking_id int
+  Name_Tracking nvarchar
+  DefaultIncrementTracking tinyint
+  DefaultIncrementTypePeriod tinyint
+  DeafultPeriodBeforeDateTracking tinyint
+  DefaultTypePeriod tinyint
+  IsSystem bit
+}
+
+Table TypeCode_T {
+  idTCode int
+  Message nvarchar
+  Priority smallint
+  order smallint
+  TypeCodeFileName nvarchar
+  TypeCodeMes_RU nvarchar
+  TypeCodeMes_EN nvarchar
+  TypeCodeMes_ES nvarchar
+  TypeCodeMes_UK nvarchar
+  TypeCodeMes_PL nvarchar
+  TypeCodeMes_FR nvarchar
+  TypeCodeMes_TR nvarchar
+  TypeCodeMes_LV nvarchar
+}
+
+Table TypeDevices {
+  Device_id int
+  TypeDevice varchar
+  UseAlarmDelay bit
+}
+
+Table Users {
+  Panel_id varchar
+  Group_ int
+  UserCode int
+  UserName nvarchar
+}
+
+Table ViberSettings {
+  id int
+  IP varchar
+  Port int
+  ViberHost varchar
+  ViberLogin varchar
+  SecretKey varchar
+  SenderName varchar
+  DlrTimeout int
+  CompName nvarchar
+  SendSMSIfFail bit
+  IsUseNotificationService bit
+  NotificationServiceURL varchar
+  NotificationServicePK varchar
+}
+
+Table videoarchive {
+  Picture_id int
+  ObjectId int
+  VideoZone int
+  Panel_id varchar
+  Result_id int
+  event_id int
+  TimeEvent datetime
+  Photo image
+}
+
+Table VideoChannel {
+  VideoChannel_ID int
+  Channel_ID int
+  OrlanGPRSList_ID int
+}
+
+Table VideoZones {
+  Panel_id varchar
+  VideoZone int
+  Group_ int
+  Message varchar
+  Status int
+  StatusTime datetime
+}
+
+Table VoiceChannel {
+  VoiceChannel_ID int
+  Channel_ID int
+  Bus_Number int
+  ChannelNoForState varchar
+}
+
+Table VoiceRequests {
+  Request_id int
+  Mobile varchar
+  Command tinyint
+  BusNumber tinyint
+  DeviceNumber tinyint
+  TimeForCommand datetime
+  panel_id varchar
+  Group_ int
+  isCSD bit
+  deviceId tinyint
+  Zone int
+}
+
+Table VPNChannel {
+  VPNChannel_ID int
+  Channel_ID int
+  VPN_ID int
+  OrlanGPRSList_ID int
+}
+
+Table VPNs {
+  VPN_id int
+  VPN_Name nvarchar
+}
+
+Table Z8Checking {
+  Panel_id varchar
+  Group_ int
+  TimeEvent datetime
+  TimeEnd datetime
+  Computer varchar
+}
+
+Table Zones {
+  Panel_id varchar
+  Zone int
+  Group_ int
+  Message nvarchar
+  Status int
+  StatusTime datetime
+  IsPatrol bit
+  IsAlarmButton bit
+  RadioZoneTypeid int
+  IsPatrolInspectionSystem bit
+  LastPatrolInspection datetime
+  IsViolationPatrolControl bit
+  IsBypass bit
+  SignalLevel int
+}
+
+Table Zones_GroupResponse {
+  Group_id int
+  Zone int
+  Message nvarchar
+  Status int
+  StatusTime datetime
+  IsAlarmButton bit
+}
+
+Table Zones_IPCameras {
+  Id int
+  Panel_Id varchar
+  Group_ int
+  Zone int
+  IPCamera_Id int
+}

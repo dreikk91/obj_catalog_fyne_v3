@@ -13,6 +13,77 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+func isCASLActionSource(sourceType string) bool {
+	switch strings.ToLower(strings.TrimSpace(sourceType)) {
+	case "user_action", "mob_user_action", "ppk_action", "ppk_service", "system_action", "system_event", "m3_in",
+		"mgr_action", "grd_object_action", "norm_msg_action", "db_change", "login_action", "device_action", "read_journal_action", "rtsp_action",
+		"post-proc-alarm-report":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCASLUnknownText(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case "", "unknown", "undefined", "unset", "not set", "не встановлено", "невідомо", "none", "null":
+		return true
+	default:
+		return false
+	}
+}
+
+func fallbackCASLActionDetails(row CASLObjectEvent, sourceType string) string {
+	action := strings.TrimSpace(row.Action)
+	if action == "" {
+		action = strings.TrimSpace(row.Code)
+	}
+	actionUpper := strings.ToUpper(action)
+	actionType := strings.ToLower(strings.TrimSpace(row.UserActionType))
+	if actionType == "" {
+		actionType = strings.ToLower(strings.TrimSpace(sourceType))
+	}
+
+	switch {
+	case strings.HasPrefix(actionUpper, "GRD_OBJ_"):
+		return "Дія оператора"
+	case actionUpper == "DEVICE_BLOCK":
+		return "Пристрій заблоковано"
+	case actionUpper == "DEVICE_UNBLOCK":
+		return "Пристрій розблоковано"
+	case actionType == "mgr_action":
+		return "Дія МГР"
+	case actionType == "grd_object_action":
+		return "Дія з тривогою"
+	case actionType == "norm_msg_action":
+		return "Дія із заявочним повідомленням"
+	case actionType == "db_change":
+		return "Зміна даних"
+	case actionType == "login_action":
+		return "Вхід користувача"
+	case actionType == "read_journal_action":
+		return "Перегляд журналу"
+	case actionType == "device_action":
+		return "Дія з пристроєм"
+	case actionType == "rtsp_action":
+		return "RTSP дія"
+	case actionType == "ppk_action":
+		return "Дія з ППК"
+	case isCASLActionSource(sourceType):
+		switch strings.ToLower(strings.TrimSpace(sourceType)) {
+		case "user_action", "mob_user_action":
+			return "Дія оператора"
+		case "ppk_action", "ppk_service":
+			return "Сервісна подія ППК"
+		default:
+			return "Системна подія CASL"
+		}
+	default:
+		return ""
+	}
+}
+
 func (p *CASLCloudProvider) GetEvents() []models.Event {
 	p.ensureRealtimeStream()
 
@@ -638,11 +709,11 @@ func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context) ([]model
 			ObjectNumber: objectNum,
 			ObjectName:   objectName,
 			Address:      strings.TrimSpace(asString(row["address"])),
-			Time:       tsValue.Local(),
-			Details:    details,
-			Type:       alarmType,
-			ZoneNumber: number,
-			SC1:        mapCASLEventSC1(eventType),
+			Time:         tsValue.Local(),
+			Details:      details,
+			Type:         alarmType,
+			ZoneNumber:   number,
+			SC1:          mapCASLEventSC1(eventType),
 		})
 	}
 
@@ -1059,33 +1130,31 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 	dictMap = p.loadDictionaryMap(ctx)
 
 	for idx, item := range raw {
+		row := normalizeCASLObjectEvent(item)
 		ts := item.Time.Int64()
 		eventTime := time.Now()
 		if ts > 0 {
 			eventTime = time.UnixMilli(ts).Local()
 		}
 
-		code := item.Code.String()
+		code := row.Code
 		if code == "" {
 			code = "UNKNOWN"
 		}
 
-		zoneNumber := int(item.Number.Int64())
-		contactID := strings.TrimSpace(item.ContactID.String())
-		sourceType := strings.TrimSpace(item.Type)
+		zoneNumber := int(row.Number)
+		contactID := strings.TrimSpace(row.ContactID)
+		sourceType := strings.TrimSpace(row.Type)
+		if strings.EqualFold(sourceType, "user_action") && strings.TrimSpace(row.UserActionType) != "" {
+			sourceType = strings.TrimSpace(row.UserActionType)
+		}
 
-		details := buildCASLUserActionDetails(CASLObjectEvent{
-			Action:    item.Action.String(),
-			Code:      item.Code.String(),
-			ObjID:     record.ObjID,
-			ObjName:   record.Name,
-			UserFIO:   item.UserFIO.String(),
-			UserID:    item.UserID.String(),
-			MgrID:     item.MgrID.String(),
-			AlarmType: item.AlarmType.String(),
-		})
+		details := buildCASLUserActionDetails(row)
 		if details == "" {
 			details = decodeCASLEventDescription(translator, dictMap, code, contactID, zoneNumber, deviceType)
+		}
+		if isCASLUnknownText(details) || (isCASLActionSource(sourceType) && isCASLUnknownText(code) && isCASLUnknownText(contactID)) {
+			details = fallbackCASLActionDetails(row, sourceType)
 		}
 		if details == "" {
 			switch {
@@ -1097,6 +1166,11 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 				details = code
 			}
 		}
+		if isCASLUnknownText(details) {
+			if fallback := fallbackCASLActionDetails(row, sourceType); fallback != "" {
+				details = fallback
+			}
+		}
 		eventType := classifyCASLEventTypeWithContext(code, contactID, sourceType, details)
 
 		if shouldAppendCASLLineDescription(code, contactID, details) {
@@ -1104,7 +1178,9 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 				details += " | Опис: " + lineName
 			}
 		}
-		if sourceType != "" && !strings.EqualFold(sourceType, "ppk_event") {
+		if sourceType != "" &&
+			!strings.EqualFold(sourceType, "ppk_event") &&
+			!isCASLActionSource(sourceType) {
 			details += " | src=" + sourceType
 		}
 

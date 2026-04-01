@@ -354,6 +354,24 @@ func getEventIcon(eventType models.EventType) string {
 		return "☣"
 	case models.EventTamper:
 		return "🔧"
+	case models.EventAlarmNotification:
+		return "📥"
+	case models.EventOperatorAction:
+		return "👤"
+	case models.EventManagerAssigned:
+		return "🚓"
+	case models.EventManagerArrived:
+		return "✅"
+	case models.EventManagerCanceled:
+		return "↩"
+	case models.EventAlarmFinished:
+		return "✔"
+	case models.EventDeviceBlocked:
+		return "⛔"
+	case models.EventDeviceUnblocked:
+		return "🔓"
+	case models.EventService, models.SystemEvent:
+		return "🛠"
 	case models.EventFault, models.EventOffline, models.EventPowerFail, models.EventBatteryLow:
 		return "🟡"
 	case models.EventArm, models.EventDisarm:

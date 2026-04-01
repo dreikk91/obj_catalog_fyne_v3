@@ -24,6 +24,9 @@ func messageCategoryOptions() []messageCategoryOption {
 		{Label: "Знято з охорони", SC1: i64(11)},
 		{Label: "Немає зв'язку", SC1: i64(12)},
 		{Label: "Тестове", SC1: i64(16)},
+		{Label: "На зв'язку / прибуття", SC1: i64(28)},
+		{Label: "Блокування / офлайн", SC1: i64(29)},
+		{Label: "Системна / сервісна", SC1: i64(30)},
 		{Label: "Інше / без категорії", SC1: nil},
 	}
 }
@@ -57,6 +60,12 @@ func messageTypeLabel(sc1 *int64) string {
 		return "нема зв'язку"
 	case 16:
 		return "тестове"
+	case 28:
+		return "на зв'язку"
+	case 29:
+		return "офлайн"
+	case 30:
+		return "система"
 	default:
 		return "інформація"
 	}
@@ -106,7 +115,7 @@ func sc1MatchesFamily(sc1 *int64, family string) bool {
 		if sc1 == nil {
 			return true
 		}
-		return v == 6 || v == 10 || v == 11 || v == 12 || v == 14 || v == 18
+		return v == 6 || v == 10 || v == 11 || v == 12 || v == 14 || v == 18 || v == 28 || v == 29 || v == 30
 	default:
 		return true
 	}

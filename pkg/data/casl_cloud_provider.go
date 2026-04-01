@@ -709,22 +709,29 @@ type caslPhoneNumber struct {
 }
 
 type caslObjectEvent struct {
-	PPKNum    caslInt64 `json:"ppk_num"`
-	DeviceID  caslText  `json:"device_id"`
-	ObjID     caslText  `json:"obj_id"`
-	ObjName   caslText  `json:"obj_name"`
-	ObjAddr   caslText  `json:"obj_address"`
-	Action    caslText  `json:"action"`
-	AlarmType caslText  `json:"alarm_type"`
-	MgrID     caslText  `json:"mgr_id"`
-	UserID    caslText  `json:"user_id"`
-	UserFIO   caslText  `json:"user_fio"`
-	Time      caslInt64 `json:"time"`
-	Code      caslText  `json:"code"`
-	Type      string    `json:"type"`
-	Number    caslInt64 `json:"number"`
-	ContactID caslText  `json:"contact_id"`
-	HozUserID caslText  `json:"hoz_user_id"`
+	PPKNum     caslInt64 `json:"ppk_num"`
+	DeviceID   caslText  `json:"device_id"`
+	ObjID      caslText  `json:"obj_id"`
+	ObjName    caslText  `json:"obj_name"`
+	ObjAddr    caslText  `json:"obj_address"`
+	Action     caslText  `json:"action"`
+	DictName   caslText  `json:"dict_name"`
+	AlarmType  caslText  `json:"alarm_type"`
+	MgrID      caslText  `json:"mgr_id"`
+	UserID     caslText  `json:"user_id"`
+	UserFIO    caslText  `json:"user_fio"`
+	Time       caslInt64 `json:"time"`
+	Code       caslText  `json:"code"`
+	EventCode  caslText  `json:"event_code"`
+	Type       string    `json:"type"`
+	TypeEvent  caslText  `json:"type_event"`
+	Module     caslText  `json:"module"`
+	Number     caslInt64 `json:"number"`
+	ContactID  caslText  `json:"contact_id"`
+	HozUserID  caslText  `json:"hoz_user_id"`
+	PPKAction  caslText  `json:"ppk_action_type"`
+	UserAction caslText  `json:"user_action_type"`
+	MgrAction  caslText  `json:"mgr_action_type"`
 }
 
 type caslLoginResponse struct {

@@ -280,7 +280,7 @@ func TestBuildCASLUserActionDetails(t *testing.T) {
 		ObjName:   "1004 Будинок Хіміч Н.П.",
 		AlarmType: "ALARM_TYPE_OPERATOR",
 	})
-	if !strings.Contains(details, "Нова тривога") || !strings.Contains(details, "1004 Будинок Хіміч Н.П.") {
+	if details != "Попадання тривоги в стрічку" {
 		t.Fatalf("unexpected notif details: %q", details)
 	}
 
@@ -288,8 +288,142 @@ func TestBuildCASLUserActionDetails(t *testing.T) {
 		Action:  "GRD_OBJ_PICK",
 		UserFIO: "Островська Марина",
 	})
-	if !strings.Contains(details, "взято в роботу") || !strings.Contains(details, "Островська") {
+	if !strings.Contains(details, "Взяття в роботу об'єкта") || !strings.Contains(details, "Островська") {
 		t.Fatalf("unexpected pick details: %q", details)
+	}
+}
+
+func TestNormalizeCASLObjectEvent_UserActionAliases(t *testing.T) {
+	t.Parallel()
+
+	got := normalizeCASLObjectEvent(caslObjectEvent{
+		PPKNum:     caslInt64(1003),
+		ObjID:      caslText("25"),
+		DictName:   caslText("GRD_OBJ_PICK"),
+		UserAction: caslText("grd_object_action"),
+		Type:       "user_action",
+		UserFIO:    caslText("Островська Марина"),
+		Time:       caslInt64(1774790159852),
+	})
+
+	if got.Action != "GRD_OBJ_PICK" {
+		t.Fatalf("unexpected action: %q", got.Action)
+	}
+	if got.Code != "GRD_OBJ_PICK" {
+		t.Fatalf("unexpected code: %q", got.Code)
+	}
+	if got.Type != "user_action" {
+		t.Fatalf("unexpected type: %q", got.Type)
+	}
+	if got.UserActionType != "grd_object_action" {
+		t.Fatalf("unexpected user action type: %q", got.UserActionType)
+	}
+}
+
+func TestMapCASLObjectEvents_UserActionAliasDetails(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	record := caslGrdObject{
+		ObjID:        "25",
+		Name:         "1004 Будинок Хіміч Н.П.",
+		DeviceNumber: caslInt64(1003),
+	}
+
+	events := provider.mapCASLObjectEvents(context.Background(), record, []caslObjectEvent{
+		{
+			PPKNum:     caslInt64(1003),
+			ObjID:      caslText("25"),
+			DictName:   caslText("GRD_OBJ_PICK"),
+			UserAction: caslText("grd_object_action"),
+			Type:       "user_action",
+			UserFIO:    caslText("Островська Марина"),
+			Time:       caslInt64(1774790159852),
+		},
+	})
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if !strings.Contains(events[0].Details, "Взяття в роботу об'єкта") {
+		t.Fatalf("unexpected details: %q", events[0].Details)
+	}
+	if strings.Contains(events[0].Details, "src=user_action") {
+		t.Fatalf("user_action source noise must not be shown: %q", events[0].Details)
+	}
+}
+
+func TestNormalizeCASLObjectEvent_MgrActionTypeUsesMgrSubtype(t *testing.T) {
+	t.Parallel()
+
+	got := normalizeCASLObjectEvent(caslObjectEvent{
+		PPKNum:     caslInt64(1003),
+		ObjID:      caslText("25"),
+		UserAction: caslText("mgr_action"),
+		MgrAction:  caslText("GRD_OBJ_MGR_ARRIVE"),
+		Type:       "user_action",
+		Time:       caslInt64(1774790159852),
+	})
+
+	if got.Action != "GRD_OBJ_MGR_ARRIVE" {
+		t.Fatalf("unexpected action: %q", got.Action)
+	}
+	if got.Code != "GRD_OBJ_MGR_ARRIVE" {
+		t.Fatalf("unexpected code: %q", got.Code)
+	}
+	if got.UserActionType != "mgr_action" {
+		t.Fatalf("unexpected user action type: %q", got.UserActionType)
+	}
+	if got.MgrActionType != "GRD_OBJ_MGR_ARRIVE" {
+		t.Fatalf("unexpected mgr action type: %q", got.MgrActionType)
+	}
+}
+
+func TestMapCASLObjectEvents_UserActionUnknownFallback(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	record := caslGrdObject{
+		ObjID:        "25",
+		Name:         "1004 Будинок Хіміч Н.П.",
+		DeviceNumber: caslInt64(1003),
+	}
+
+	events := provider.mapCASLObjectEvents(context.Background(), record, []caslObjectEvent{
+		{
+			PPKNum:  caslInt64(1003),
+			ObjID:   caslText("25"),
+			Code:    caslText("не встановлено"),
+			Type:    "user_action",
+			Time:    caslInt64(1774790159852),
+			UserID:  caslText("483"),
+			UserFIO: caslText("Оператор"),
+		},
+	})
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Type != models.EventOperatorAction {
+		t.Fatalf("unexpected type: %s", events[0].Type)
+	}
+	if events[0].GetTypeDisplay() == "НЕСПРАВНІСТЬ" {
+		t.Fatalf("unexpected fallback type display: %q", events[0].GetTypeDisplay())
+	}
+	if strings.Contains(strings.ToLower(events[0].Details), "не встановлено") {
+		t.Fatalf("unexpected raw unknown details: %q", events[0].Details)
+	}
+	if strings.Contains(events[0].Details, "src=user_action") {
+		t.Fatalf("unexpected source suffix: %q", events[0].Details)
+	}
+}
+
+func TestClassifyCASLEventTypeWithContext_UserActionFallback(t *testing.T) {
+	t.Parallel()
+
+	got := classifyCASLEventTypeWithContext("", "", "user_action", "не встановлено")
+	if got != models.EventOperatorAction {
+		t.Fatalf("expected EventOperatorAction fallback for user_action, got %s", got)
 	}
 }
 
@@ -297,8 +431,8 @@ func TestClassifyCASLEventTypeWithContext_UserActionByCode(t *testing.T) {
 	t.Parallel()
 
 	got := classifyCASLEventTypeWithContext("GRD_OBJ_NOTIF", "", "user_action", "")
-	if got != models.EventType(models.AlarmBurglary) {
-		t.Fatalf("expected EventBurglary for GRD_OBJ_NOTIF, got %s", got)
+	if got != models.EventAlarmNotification {
+		t.Fatalf("expected EventAlarmNotification for GRD_OBJ_NOTIF, got %s", got)
 	}
 }
 
@@ -317,6 +451,13 @@ func TestClassifyCASLEventType_CASLCategories(t *testing.T) {
 		{code: "SABOTAGE_AD", expected: models.EventTamper},
 		{code: "NO_220", expected: models.EventPowerFail},
 		{code: "OO_OK_220", expected: models.EventPowerOK},
+		{code: "GRD_OBJ_PICK", expected: models.EventOperatorAction},
+		{code: "GRD_OBJ_ASS_MGR", expected: models.EventManagerAssigned},
+		{code: "GRD_OBJ_MGR_ARRIVE", expected: models.EventManagerArrived},
+		{code: "GRD_OBJ_FINISH", expected: models.EventAlarmFinished},
+		{code: "DEVICE_BLOCK", expected: models.EventDeviceBlocked},
+		{code: "DEVICE_UNBLOCK", expected: models.EventDeviceUnblocked},
+		{code: "PPK_FW_VERSION", expected: models.EventService},
 		{code: "UPD_START", expected: models.SystemEvent},
 		{code: "E627", expected: models.SystemEvent},
 	}
@@ -354,6 +495,31 @@ func TestMapEventTypeToAlarmType_CASLCategories(t *testing.T) {
 		}
 		if alarmType != tc.alarmType {
 			t.Fatalf("unexpected alarm type for %s: got=%s want=%s", tc.eventType, alarmType, tc.alarmType)
+		}
+	}
+}
+
+func TestMapCASLEventSC1_ExtendedCASLTypes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		eventType models.EventType
+		want      int
+	}{
+		{eventType: models.EventAlarmNotification, want: 1},
+		{eventType: models.EventOperatorAction, want: 30},
+		{eventType: models.EventManagerAssigned, want: 30},
+		{eventType: models.EventManagerArrived, want: 28},
+		{eventType: models.EventManagerCanceled, want: 30},
+		{eventType: models.EventAlarmFinished, want: 5},
+		{eventType: models.EventDeviceBlocked, want: 29},
+		{eventType: models.EventDeviceUnblocked, want: 28},
+		{eventType: models.EventService, want: 30},
+	}
+
+	for _, tc := range tests {
+		if got := mapCASLEventSC1(tc.eventType); got != tc.want {
+			t.Fatalf("unexpected SC1 for %s: got=%d want=%d", tc.eventType, got, tc.want)
 		}
 	}
 }

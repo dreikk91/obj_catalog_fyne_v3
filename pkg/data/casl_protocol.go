@@ -13,11 +13,32 @@ func classifyCASLEventType(code string) models.EventType {
 
 	switch {
 	case strings.Contains(value, "GRD_OBJ_NOTIF"):
-		return models.EventType(models.AlarmBurglary)
-	case strings.Contains(value, "GRD_OBJ_MGR_CANCEL"), strings.Contains(value, "GRD_OBJ_FINISH"):
-		return models.EventRestore
-	case strings.Contains(value, "GRD_OBJ_PICK"), strings.Contains(value, "GRD_OBJ_ASS_MGR"), strings.Contains(value, "GRD_OBJ_"):
-		return models.SystemEvent
+		return models.EventAlarmNotification
+	case strings.Contains(value, "GRD_OBJ_MGR_ARRIVE"), strings.Contains(value, "GRD_OBJ_MGR_ARRIVED"):
+		return models.EventManagerArrived
+	case strings.Contains(value, "GRD_OBJ_ASS_MGR"):
+		return models.EventManagerAssigned
+	case strings.Contains(value, "GRD_OBJ_MGR_CANCEL"):
+		return models.EventManagerCanceled
+	case strings.Contains(value, "GRD_OBJ_FINISH"):
+		return models.EventAlarmFinished
+	case strings.Contains(value, "GRD_OBJ_PICK"):
+		return models.EventOperatorAction
+	case strings.Contains(value, "DEVICE_BLOCK"), strings.Contains(value, "PPK_BAD"), strings.Contains(value, "OO_PPK_BAD"):
+		return models.EventDeviceBlocked
+	case strings.Contains(value, "DEVICE_UNBLOCK"), strings.Contains(value, "ENABL_PPK_OK"), strings.Contains(value, "DISABL_PPK_OK"):
+		return models.EventDeviceUnblocked
+	case strings.Contains(value, "GRD_OBJ_"):
+		return models.EventOperatorAction
+	case strings.Contains(value, "PPK_FW_VERSION"),
+		strings.Contains(value, "PPK_SIM_"),
+		strings.Contains(value, "PPK_IMEIL_"),
+		strings.Contains(value, "PPK_COORD_"),
+		strings.Contains(value, "PPK_CSQ_"),
+		strings.Contains(value, "PPK_OK"),
+		strings.Contains(value, "STATUS_REPORT"),
+		strings.Contains(value, "SERVICE_"):
+		return models.EventService
 	case strings.Contains(value, "PANIC"), strings.Contains(value, "COERCION"), strings.Contains(value, "ATTACK"), strings.Contains(value, "ALM_BTN_PRS"):
 		return models.EventPanic
 	case strings.Contains(valueLower, "тривожна кноп"), strings.Contains(valueLower, "кнопка тривог"), strings.Contains(valueLower, "напад"), strings.Contains(valueLower, "панік"):
@@ -168,19 +189,27 @@ func mapCASLTapeEventType(raw string) models.EventType {
 	case "system":
 		return models.SystemEvent
 	case "user_action":
-		return models.SystemEvent
+		return models.EventOperatorAction
+	case "mgr_action":
+		return models.EventOperatorAction
+	case "grd_object_action", "norm_msg_action":
+		return models.EventOperatorAction
+	case "db_change", "login_action", "device_action", "read_journal_action", "rtsp_action":
+		return models.EventService
 	case "ppk_action":
-		return models.SystemEvent
+		return models.EventService
 	case "ppk_service":
-		return models.SystemEvent
+		return models.EventService
 	case "system_event":
-		return models.SystemEvent
+		return models.EventService
 	case "system_action":
-		return models.SystemEvent
+		return models.EventService
 	case "m3_in":
-		return models.SystemEvent
+		return models.EventService
 	case "mob_user_action":
-		return models.SystemEvent
+		return models.EventOperatorAction
+	case "post-proc-alarm-report":
+		return models.EventService
 	default:
 		return classifyCASLEventType(value)
 	}
@@ -1063,9 +1092,13 @@ func decodeCASLProtocolCode(code string, deviceType string) (caslDecodedEventCod
 
 func classifyCASLEventTypeWithContext(code string, contactID string, sourceType string, details string) models.EventType {
 	normalizedType := strings.TrimSpace(sourceType)
-	if normalizedType != "" && !strings.EqualFold(normalizedType, "user_action") && !strings.EqualFold(normalizedType, "mob_user_action") {
+	fallbackType := models.EventFault
+	if normalizedType != "" {
 		if mapped := mapCASLTapeEventType(normalizedType); mapped != models.EventFault || strings.EqualFold(normalizedType, "fault") {
-			return mapped
+			fallbackType = mapped
+			if !isCASLActionSource(normalizedType) {
+				return mapped
+			}
 		}
 	}
 
@@ -1087,7 +1120,7 @@ func classifyCASLEventTypeWithContext(code string, contactID string, sourceType 
 		return byDetails
 	}
 
-	return models.EventFault
+	return fallbackType
 }
 
 func mapEventTypeToAlarmType(eventType models.EventType) (models.AlarmType, bool) {
@@ -1096,6 +1129,8 @@ func mapEventTypeToAlarmType(eventType models.EventType) (models.AlarmType, bool
 		return models.AlarmFire, true
 	case models.EventBurglary:
 		return models.AlarmBurglary, true
+	case models.EventAlarmNotification, models.EventNotification:
+		return models.AlarmNotification, true
 	case models.EventPanic:
 		return models.AlarmPanic, true
 	case models.EventMedical:
@@ -1110,12 +1145,10 @@ func mapEventTypeToAlarmType(eventType models.EventType) (models.AlarmType, bool
 		return models.AlarmBatteryLow, true
 	case models.EventOffline:
 		return models.AlarmOffline, true
-	case models.SystemEvent:
+	case models.SystemEvent, models.EventOperatorAction, models.EventManagerAssigned, models.EventManagerArrived, models.EventManagerCanceled, models.EventAlarmFinished, models.EventDeviceBlocked, models.EventDeviceUnblocked, models.EventService:
 		return models.AlarmSystemEvent, true
 	case models.EventFault:
 		return models.AlarmFault, true
-	case models.EventNotification:
-		return models.AlarmNotification, true
 	default:
 		return "", false
 	}
@@ -1124,6 +1157,8 @@ func mapEventTypeToAlarmType(eventType models.EventType) (models.AlarmType, bool
 func mapCASLEventSC1(eventType models.EventType) int {
 	switch eventType {
 	case models.EventFire:
+		return 1
+	case models.EventAlarmNotification:
 		return 1
 	case models.EventBurglary:
 		return 22
@@ -1141,15 +1176,25 @@ func mapCASLEventSC1(eventType models.EventType) int {
 		return 4
 	case models.EventRestore, models.EventPowerOK, models.EventOnline:
 		return 5
+	case models.EventAlarmFinished:
+		return 5
 	case models.EventArm:
 		return 10
 	case models.EventDisarm:
 		return 11
 	case models.EventOffline:
 		return 12
+	case models.EventDeviceBlocked:
+		return 29
+	case models.EventDeviceUnblocked:
+		return 28
 	case models.EventTest:
 		return 16
-	case models.SystemEvent, models.EventNotification:
+	case models.EventManagerArrived:
+		return 28
+	case models.EventOperatorAction, models.EventManagerAssigned, models.EventManagerCanceled, models.EventService, models.SystemEvent:
+		return 30
+	case models.EventNotification:
 		return 6
 	default:
 		return 2

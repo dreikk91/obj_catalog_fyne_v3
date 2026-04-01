@@ -7,24 +7,33 @@ import "time"
 type EventType string
 
 const (
-	EventFire         EventType = "fire"         // Пожежа
-	EventBurglary     EventType = "burglary"     // Проникнення/охоронна тривога
-	EventPanic        EventType = "panic"        // Тривожна кнопка/напад
-	EventMedical      EventType = "medical"      // Медична тривога
-	EventGas          EventType = "gas"          // Газова тривога
-	EventTamper       EventType = "tamper"       // Саботаж/тампер
-	EventFault        EventType = "fault"        // Несправність
-	EventRestore      EventType = "restore"      // Відновлення
-	EventArm          EventType = "arm"          // Постановка під охорону
-	EventDisarm       EventType = "disarm"       // Зняття з охорони
-	EventTest         EventType = "test"         // Тестовий сигнал
-	EventPowerFail    EventType = "power_fail"   // Втрата 220В
-	EventPowerOK      EventType = "power_ok"     // Відновлення 220В
-	EventBatteryLow   EventType = "batt_low"     // Низький заряд АКБ
-	EventOnline       EventType = "online"       // Прилад на зв'язку
-	EventOffline      EventType = "offline"      // Втрата зв'язку
-	SystemEvent       EventType = "system"       // Системна подія
-	EventNotification EventType = "notification" // Повідомлення
+	EventFire              EventType = "fire"               // Пожежа
+	EventBurglary          EventType = "burglary"           // Проникнення/охоронна тривога
+	EventPanic             EventType = "panic"              // Тривожна кнопка/напад
+	EventMedical           EventType = "medical"            // Медична тривога
+	EventGas               EventType = "gas"                // Газова тривога
+	EventTamper            EventType = "tamper"             // Саботаж/тампер
+	EventFault             EventType = "fault"              // Несправність
+	EventRestore           EventType = "restore"            // Відновлення
+	EventArm               EventType = "arm"                // Постановка під охорону
+	EventDisarm            EventType = "disarm"             // Зняття з охорони
+	EventTest              EventType = "test"               // Тестовий сигнал
+	EventPowerFail         EventType = "power_fail"         // Втрата 220В
+	EventPowerOK           EventType = "power_ok"           // Відновлення 220В
+	EventBatteryLow        EventType = "batt_low"           // Низький заряд АКБ
+	EventOnline            EventType = "online"             // Прилад на зв'язку
+	EventOffline           EventType = "offline"            // Втрата зв'язку
+	SystemEvent            EventType = "system"             // Системна подія
+	EventNotification      EventType = "notification"       // Повідомлення
+	EventAlarmNotification EventType = "alarm_notification" // Потрапляння тривоги в стрічку
+	EventOperatorAction    EventType = "operator_action"    // Дія оператора
+	EventManagerAssigned   EventType = "manager_assigned"   // Призначено МГР
+	EventManagerArrived    EventType = "manager_arrived"    // Прибуття МГР
+	EventManagerCanceled   EventType = "manager_canceled"   // Скасування виїзду МГР
+	EventAlarmFinished     EventType = "alarm_finished"     // Завершення відпрацювання
+	EventDeviceBlocked     EventType = "device_blocked"     // Пристрій заблоковано
+	EventDeviceUnblocked   EventType = "device_unblocked"   // Пристрій розблоковано
+	EventService           EventType = "service"            // Сервісна / системна дія
 )
 
 // Event представляє подію в журналі
@@ -77,6 +86,24 @@ func (e *Event) GetTypeDisplay() string {
 		return "ВТРАТА ЗВ'ЯЗКУ"
 	case SystemEvent:
 		return "СИСТЕМА"
+	case EventAlarmNotification:
+		return "ТРИВОГА В СТРІЧЦІ"
+	case EventOperatorAction:
+		return "ОПЕРАТОР"
+	case EventManagerAssigned:
+		return "ПРИЗНАЧЕНО МГР"
+	case EventManagerArrived:
+		return "ПРИБУТТЯ МГР"
+	case EventManagerCanceled:
+		return "СКАСУВАННЯ МГР"
+	case EventAlarmFinished:
+		return "ЗАВЕРШЕНО"
+	case EventDeviceBlocked:
+		return "БЛОКУВАННЯ ПРИСТРОЮ"
+	case EventDeviceUnblocked:
+		return "РОЗБЛОКУВАННЯ ПРИСТРОЮ"
+	case EventService:
+		return "СЕРВІС"
 	default:
 		return "ПОДІЯ"
 	}
@@ -95,7 +122,7 @@ func (e *Event) GetDateTimeDisplay() string {
 // IsCritical повертає true якщо подія критична (пожежа, несправність)
 func (e *Event) IsCritical() bool {
 	switch e.Type {
-	case EventFire, EventBurglary, EventPanic, EventMedical, EventGas, EventTamper, EventFault, EventOffline:
+	case EventFire, EventBurglary, EventPanic, EventMedical, EventGas, EventTamper, EventFault, EventOffline, EventAlarmNotification, EventDeviceBlocked:
 		return true
 	default:
 		return false
@@ -104,5 +131,10 @@ func (e *Event) IsCritical() bool {
 
 // IsWarning повертає true якщо подія є попередженням
 func (e *Event) IsWarning() bool {
-	return e.Type == EventPowerFail || e.Type == EventBatteryLow
+	switch e.Type {
+	case EventPowerFail, EventBatteryLow, EventManagerAssigned, EventManagerCanceled, EventService:
+		return true
+	default:
+		return false
+	}
 }

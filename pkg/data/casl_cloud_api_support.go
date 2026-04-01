@@ -44,22 +44,26 @@ type CASLAlarmEventDefinition struct {
 
 // CASLObjectEvent is an exported shape of read_events_by_id records.
 type CASLObjectEvent struct {
-	PPKNum    int64
-	DeviceID  string
-	ObjID     string
-	ObjName   string
-	ObjAddr   string
-	Action    string
-	AlarmType string
-	MgrID     string
-	UserID    string
-	UserFIO   string
-	Time      int64
-	Code      string
-	Type      string
-	Number    int64
-	ContactID string
-	HozUserID string
+	PPKNum         int64
+	DeviceID       string
+	ObjID          string
+	ObjName        string
+	ObjAddr        string
+	Action         string
+	AlarmType      string
+	MgrID          string
+	UserID         string
+	UserFIO        string
+	Time           int64
+	Code           string
+	Type           string
+	UserActionType string
+	MgrActionType  string
+	PPKActionType  string
+	Subtype        string
+	Number         int64
+	ContactID      string
+	HozUserID      string
 }
 
 // CASLDeviceStateInfo is an exported shape of read_device_state.state.
@@ -509,24 +513,7 @@ func (p *CASLCloudProvider) ReadEventsJournal(ctx context.Context, req CASLReadE
 
 	result := make([]CASLObjectEvent, 0, len(rows))
 	for _, item := range rows {
-		result = append(result, CASLObjectEvent{
-			PPKNum:    item.PPKNum.Int64(),
-			DeviceID:  strings.TrimSpace(item.DeviceID.String()),
-			ObjID:     strings.TrimSpace(item.ObjID.String()),
-			ObjName:   strings.TrimSpace(item.ObjName.String()),
-			ObjAddr:   strings.TrimSpace(item.ObjAddr.String()),
-			Action:    strings.TrimSpace(item.Action.String()),
-			AlarmType: strings.TrimSpace(item.AlarmType.String()),
-			MgrID:     strings.TrimSpace(item.MgrID.String()),
-			UserID:    strings.TrimSpace(item.UserID.String()),
-			UserFIO:   strings.TrimSpace(item.UserFIO.String()),
-			Time:      item.Time.Int64(),
-			Code:      strings.TrimSpace(item.Code.String()),
-			Type:      strings.TrimSpace(item.Type),
-			Number:    item.Number.Int64(),
-			ContactID: strings.TrimSpace(item.ContactID.String()),
-			HozUserID: strings.TrimSpace(item.HozUserID.String()),
-		})
+		result = append(result, normalizeCASLObjectEvent(item))
 	}
 	return result, nil
 }
@@ -574,27 +561,78 @@ func (p *CASLCloudProvider) ReadEventsByID(ctx context.Context, req CASLReadEven
 
 	result := make([]CASLObjectEvent, 0, len(rawEvents))
 	for _, item := range rawEvents {
-		result = append(result, CASLObjectEvent{
-			PPKNum:    item.PPKNum.Int64(),
-			DeviceID:  strings.TrimSpace(item.DeviceID.String()),
-			ObjID:     strings.TrimSpace(item.ObjID.String()),
-			ObjName:   strings.TrimSpace(item.ObjName.String()),
-			ObjAddr:   strings.TrimSpace(item.ObjAddr.String()),
-			Action:    strings.TrimSpace(item.Action.String()),
-			AlarmType: strings.TrimSpace(item.AlarmType.String()),
-			MgrID:     strings.TrimSpace(item.MgrID.String()),
-			UserID:    strings.TrimSpace(item.UserID.String()),
-			UserFIO:   strings.TrimSpace(item.UserFIO.String()),
-			Time:      item.Time.Int64(),
-			Code:      strings.TrimSpace(item.Code.String()),
-			Type:      strings.TrimSpace(item.Type),
-			Number:    item.Number.Int64(),
-			ContactID: strings.TrimSpace(item.ContactID.String()),
-			HozUserID: strings.TrimSpace(item.HozUserID.String()),
-		})
+		result = append(result, normalizeCASLObjectEvent(item))
 	}
 
 	return result, nil
+}
+
+func normalizeCASLObjectEvent(item caslObjectEvent) CASLObjectEvent {
+	userActionType := strings.TrimSpace(item.UserAction.String())
+	mgrActionType := strings.TrimSpace(item.MgrAction.String())
+	ppkActionType := strings.TrimSpace(item.PPKAction.String())
+
+	action := firstCASLValue(
+		item.Action.String(),
+		item.DictName.String(),
+		mgrActionType,
+		ppkActionType,
+	)
+	code := firstCASLValue(
+		item.Code.String(),
+		item.EventCode.String(),
+		action,
+		mgrActionType,
+		ppkActionType,
+		item.TypeEvent.String(),
+	)
+	if code == "" {
+		code = userActionType
+	}
+	rowType := firstCASLValue(
+		item.Type,
+		item.Module.String(),
+	)
+	if rowType == "" {
+		switch {
+		case userActionType != "", mgrActionType != "", ppkActionType != "":
+			rowType = "user_action"
+		case strings.HasPrefix(strings.ToUpper(action), "GRD_OBJ_"):
+			rowType = "user_action"
+		}
+	}
+
+	return CASLObjectEvent{
+		PPKNum:         item.PPKNum.Int64(),
+		DeviceID:       strings.TrimSpace(item.DeviceID.String()),
+		ObjID:          strings.TrimSpace(item.ObjID.String()),
+		ObjName:        strings.TrimSpace(item.ObjName.String()),
+		ObjAddr:        strings.TrimSpace(item.ObjAddr.String()),
+		Action:         action,
+		AlarmType:      strings.TrimSpace(item.AlarmType.String()),
+		MgrID:          strings.TrimSpace(item.MgrID.String()),
+		UserID:         strings.TrimSpace(item.UserID.String()),
+		UserFIO:        strings.TrimSpace(item.UserFIO.String()),
+		Time:           item.Time.Int64(),
+		Code:           code,
+		Type:           rowType,
+		UserActionType: userActionType,
+		MgrActionType:  mgrActionType,
+		PPKActionType:  ppkActionType,
+		Subtype:        strings.TrimSpace(item.TypeEvent.String()),
+		Number:         item.Number.Int64(),
+		ContactID:      strings.TrimSpace(item.ContactID.String()),
+		HozUserID:      strings.TrimSpace(item.HozUserID.String()),
+	}
+}
+
+func firstCASLValue(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // ReadDeviceStateByID executes read_device_state for the given device id.

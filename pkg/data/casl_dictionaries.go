@@ -27,7 +27,6 @@ func (p *CASLCloudProvider) lookupCASLDeviceTypeInDictionary(ctx context.Context
 	if !ok || len(dict) == 0 {
 		return ""
 	}
-	
 
 	deviceTypes := extractCASLDeviceTypesMap(dict)
 	if len(deviceTypes) == 0 {
@@ -118,7 +117,6 @@ func extractCASLDeviceTypesMap(value any) map[string]string {
 	// Немає явного списку — повертаємо весь ukMap як є
 	return ukMap
 }
-
 
 func (p *CASLCloudProvider) loadDictionaryMap(ctx context.Context) map[string]string {
 	p.mu.RLock()
@@ -740,22 +738,11 @@ func buildCASLUserActionDetails(row CASLObjectEvent) string {
 		return ""
 	}
 
-	objectLabel := strings.TrimSpace(row.ObjName)
-	if objectLabel == "" {
-		if objID := strings.TrimSpace(row.ObjID); objID != "" {
-			objectLabel = "Об'єкт #" + objID
-		}
-	}
-
 	switch action {
 	case "GRD_OBJ_NOTIF":
-		parts := []string{"Нова тривога"}
-		if objectLabel != "" {
-			parts = append(parts, objectLabel)
-		}
-		return strings.Join(parts, " | ")
+		return "Попадання тривоги в стрічку"
 	case "GRD_OBJ_PICK":
-		base := "Тривогу взято в роботу оператором"
+		base := "Взяття в роботу об'єкта"
 		who := strings.TrimSpace(row.UserFIO)
 		if who == "" {
 			who = strings.TrimSpace(row.UserID)
@@ -765,21 +752,28 @@ func buildCASLUserActionDetails(row CASLObjectEvent) string {
 		}
 		return base
 	case "GRD_OBJ_ASS_MGR":
-		base := "На тривогу призначено ГМР"
+		base := "Призначення МГР"
+		mgrID := strings.TrimSpace(row.MgrID)
+		if mgrID != "" {
+			return base + " #" + mgrID
+		}
+		return base
+	case "GRD_OBJ_MGR_ARRIVE", "GRD_OBJ_MGR_ARRIVED":
+		base := "Прибула МГР"
 		mgrID := strings.TrimSpace(row.MgrID)
 		if mgrID != "" {
 			return base + " #" + mgrID
 		}
 		return base
 	case "GRD_OBJ_MGR_CANCEL":
-		base := "Тривогу скасовано оператором"
+		base := "Скасування виїзду МГР"
 		mgrID := strings.TrimSpace(row.MgrID)
 		if mgrID != "" {
-			return base + " (ГМР #" + mgrID + ")"
+			return base + " #" + mgrID
 		}
 		return base
 	case "GRD_OBJ_FINISH":
-		base := "Обробку тривоги завершено оператором"
+		base := "Завершення відпрацювання тривоги"
 		who := strings.TrimSpace(row.UserFIO)
 		if who == "" {
 			who = strings.TrimSpace(row.UserID)

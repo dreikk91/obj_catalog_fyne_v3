@@ -131,9 +131,9 @@ func classifyCASLEventType(code string) models.EventType {
 func mapCASLTapeEventType(raw string) models.EventType {
 	value := strings.ToLower(strings.TrimSpace(raw))
 	switch value {
-	case "fire":
+	case "fire", "FIRE_ALARM":
 		return models.EventFire
-	case "burglary":
+	case "burglary", "BURGLARY_ALARM":
 		return models.EventBurglary
 	case "panic":
 		return models.EventPanic
@@ -155,7 +155,7 @@ func mapCASLTapeEventType(raw string) models.EventType {
 		return models.EventTest
 	case "poll":
 		return models.EventTest
-	case "power_fail":
+	case "power_fail", "AC_TROUBLE":
 		return models.EventPowerFail
 	case "power_ok":
 		return models.EventPowerOK
@@ -165,22 +165,18 @@ func mapCASLTapeEventType(raw string) models.EventType {
 		return models.EventOffline
 	case "online":
 		return models.EventOnline
-	case "system":
+	case "system", "ppk_action", "ppk_service", "system_event", "system_action", "m3_in":
 		return models.SystemEvent
 	case "user_action":
-		return models.SystemEvent
-	case "ppk_action":
-		return models.SystemEvent
-	case "ppk_service":
-		return models.SystemEvent
-	case "system_event":
-		return models.SystemEvent
-	case "system_action":
-		return models.SystemEvent
-	case "m3_in":
-		return models.SystemEvent
-	case "mob_user_action":
-		return models.SystemEvent
+		return models.EventOperator
+	case "mob_user_action", "ALARM_TYPE_MOBILE":
+		return models.EventMobile
+	case "ALARM_TYPE_OPERATOR":
+		return models.EventOperator
+	case "ALARM_ELIMINATED":
+		return models.EventEliminated
+	case "FIRE_TROUBLE":
+		return models.EventFireTrouble
 	default:
 		return classifyCASLEventType(value)
 	}
@@ -1116,6 +1112,14 @@ func mapEventTypeToAlarmType(eventType models.EventType) (models.AlarmType, bool
 		return models.AlarmFault, true
 	case models.EventNotification:
 		return models.AlarmNotification, true
+	case models.EventOperator:
+		return models.AlarmOperator, true
+	case models.EventMobile:
+		return models.AlarmMobile, true
+	case models.EventEliminated:
+		return models.AlarmEliminated, true
+	case models.EventFireTrouble:
+		return models.AlarmFireTrouble, true
 	default:
 		return "", false
 	}
@@ -1135,22 +1139,32 @@ func mapCASLEventSC1(eventType models.EventType) int {
 		return 24
 	case models.EventTamper:
 		return 25
-	case models.EventPowerFail:
-		return 3
-	case models.EventBatteryLow:
-		return 4
-	case models.EventRestore, models.EventPowerOK, models.EventOnline:
+	case models.EventRestore, models.EventPowerOK:
 		return 5
 	case models.EventArm:
 		return 10
 	case models.EventDisarm:
-		return 11
+		return 14
+	case models.EventPowerFail:
+		return 26
+	case models.EventBatteryLow:
+		return 27
+	case models.EventOnline:
+		return 28
 	case models.EventOffline:
-		return 12
+		return 29
 	case models.EventTest:
 		return 16
-	case models.SystemEvent, models.EventNotification:
-		return 6
+	case models.SystemEvent:
+		return 30
+	case models.EventOperator:
+		return 31
+	case models.EventMobile:
+		return 32
+	case models.EventEliminated:
+		return 34
+	case models.EventFireTrouble:
+		return 35
 	default:
 		return 2
 	}

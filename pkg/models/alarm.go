@@ -33,9 +33,10 @@ const (
 
 // Alarm представляє активну тривогу, що потребує обробки
 type Alarm struct {
-	ID          int       // Унікальний ID тривоги
-	ObjectID    int       // ID об'єкта
-	ObjectName  string    // Назва об'єкта (для швидкого відображення)
+	ID           int       // Унікальний ID тривоги
+	ObjectID     int       // ID об'єкта
+	ObjectNumber string    // Номер об'єкта (людський формат)
+	ObjectName   string    // Назва об'єкта (для швидкого відображення)
 	Address     string    // Адреса об'єкта
 	Time        time.Time // Час виникнення
 	Details     string    // Деталі тривоги

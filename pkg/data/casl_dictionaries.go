@@ -778,6 +778,20 @@ func buildCASLUserActionDetails(row CASLObjectEvent) string {
 			return base + " (ГМР #" + mgrID + ")"
 		}
 		return base
+	case "GRD_OBJ_FINISH":
+		base := "Обробку тривоги завершено оператором"
+		who := strings.TrimSpace(row.UserFIO)
+		if who == "" {
+			who = strings.TrimSpace(row.UserID)
+		}
+		if who != "" {
+			return base + ": " + who
+		}
+		return base
+	case "DEVICE_BLOCK":
+		return "Пристрій заблоковано"
+	case "DEVICE_UNBLOCK":
+		return "Пристрій розблоковано"
 	default:
 		return ""
 	}

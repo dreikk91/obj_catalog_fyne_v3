@@ -21,6 +21,14 @@ func defaultLightColorMapping() map[int]ColorPair {
 			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},      // rgb(0,0,0)
 			Row:  color.NRGBA{R: 250, G: 182, B: 69, A: 255}, // rgb(250,182,69)
 		},
+		3: { // PowerFail
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
+			Row:  color.NRGBA{R: 255, G: 160, B: 0, A: 255},
+		},
+		4: { // BatteryLow
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
+			Row:  color.NRGBA{R: 255, G: 230, B: 100, A: 255},
+		},
 		5: { // Restore
 			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
 			Row:  color.NRGBA{R: 160, G: 160, B: 164, A: 255}, // rgb(160,160,164)
@@ -126,6 +134,14 @@ func defaultDarkColorMapping() map[int]ColorPair {
 		2: { // Tech alarm
 			Text: color.NRGBA{R: 255, G: 220, B: 170, A: 255}, // rgb(255,220,170)
 			Row:  color.NRGBA{R: 80, G: 60, B: 30, A: 255},    // rgb(80,60,30)
+		},
+		3: { // PowerFail
+			Text: color.NRGBA{R: 255, G: 200, B: 150, A: 255},
+			Row:  color.NRGBA{R: 100, G: 60, B: 0, A: 255},
+		},
+		4: { // BatteryLow
+			Text: color.NRGBA{R: 255, G: 240, B: 170, A: 255},
+			Row:  color.NRGBA{R: 80, G: 80, B: 0, A: 255},
 		},
 		5: { // Restore
 			Text: color.NRGBA{R: 210, G: 210, B: 215, A: 255}, // rgb(210,210,215)

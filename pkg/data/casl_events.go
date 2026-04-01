@@ -282,7 +282,7 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 			eventTS = eventTime.UnixMilli()
 		}
 
-		seed := code + "|" + contactID + "|" + strconv.Itoa(number) + "|" + strings.TrimSpace(row.HozUserID)
+		seed := stableCASLAlarmSeed(code, contactID, number)
 		events = append(events, models.Event{
 			ID:         stableCASLEventID(strconv.FormatInt(ppkNum, 10), eventTS, seed, 0),
 			Time:       eventTime,
@@ -626,19 +626,18 @@ func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context) ([]model
 			tsValue = time.Now()
 		}
 
-		seed := code + "|" + contactID + "|" + strconv.Itoa(number)
-		seedObjectID := strconv.FormatInt(ppkNum, 10)
-		if strings.TrimSpace(seedObjectID) == "" || seedObjectID == "0" {
-			seedObjectID = objectNum
+		seed := stableCASLAlarmSeed(code, contactID, number)
+		objectKey := canonicalCASLRealtimeObjectKey(rawObjID, objectNum, objectID)
+		if objectKey == "" {
+			objectKey = "casl"
 		}
-		if seedObjectID == "" {
-			seedObjectID = "casl"
-		}
+
 		alarms = append(alarms, models.Alarm{
-			ID:         stableCASLEventID(seedObjectID, tsValue.UnixMilli(), seed, 0),
-			ObjectID:   objectID,
-			ObjectName: objectName,
-			Address:    strings.TrimSpace(asString(row["address"])),
+			ID:           stableCASLAlarmID(objectKey, tsValue.UnixMilli(), seed),
+			ObjectID:     objectID,
+			ObjectNumber: objectNum,
+			ObjectName:   objectName,
+			Address:      strings.TrimSpace(asString(row["address"])),
 			Time:       tsValue.Local(),
 			Details:    details,
 			Type:       alarmType,
@@ -699,6 +698,17 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
 	defer cancel()
 
+	if _, err := p.readEventsJournalAsEvents(ctx); err != nil {
+		log.Debug().Err(err).Msg("CASL: read_events недоступний під час формування активних тривог")
+	}
+
+	basketAlarms, err := p.readFromBasketAsAlarms(ctx)
+	if err != nil {
+		log.Debug().Err(err).Msg("CASL: read_from_basket недоступний під час формування активних тривог")
+	} else {
+		p.syncRealtimeAlarmsFromBasket(basketAlarms)
+	}
+
 	alarms := p.snapshotRealtimeAlarms()
 	if len(alarms) == 0 {
 		// Оновлюємо стрічку (tape) при першому запиті через get_general_tape_objects
@@ -715,6 +725,28 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 	}
 	sortCASLAlarms(alarms)
 	return alarms
+}
+
+func (p *CASLCloudProvider) syncRealtimeAlarmsFromBasket(basket []models.Alarm) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	activeIDs := make(map[int]struct{}, len(basket))
+	for _, alarm := range basket {
+		activeIDs[alarm.ID] = struct{}{}
+
+		objectKey := canonicalCASLRealtimeObjectKey("", alarm.ObjectNumber, alarm.ObjectID)
+		cacheKey := canonicalCASLRealtimeAlarmKey(objectKey, alarm.ZoneNumber)
+		if existing, exists := p.realtimeAlarmByObjID[cacheKey]; !exists || alarm.Time.After(existing.Time) {
+			p.realtimeAlarmByObjID[cacheKey] = alarm
+		}
+	}
+
+	for key, cached := range p.realtimeAlarmByObjID {
+		if _, active := activeIDs[cached.ID]; !active {
+			delete(p.realtimeAlarmByObjID, key)
+		}
+	}
 }
 
 func (p *CASLCloudProvider) readGeneralTapeItemRows(ctx context.Context) ([]CASLObjectEvent, error) {
@@ -812,7 +844,45 @@ func logCASLGeneralTapeItemRows(rows []CASLObjectEvent) {
 }
 
 func (p *CASLCloudProvider) ProcessAlarm(id string, user string, note string) {
-	log.Warn().Str("alarmID", id).Str("user", user).Msg("CASL: ProcessAlarm не підтримується API інтеграцією")
+	alarmID, _ := strconv.Atoi(id)
+	if alarmID <= 0 {
+		return
+	}
+
+	var foundObjectID int
+	var foundCacheKey string
+
+	p.mu.Lock()
+	for key, alarm := range p.realtimeAlarmByObjID {
+		if alarm.ID == alarmID {
+			foundObjectID = alarm.ObjectID
+			foundCacheKey = key
+			break
+		}
+	}
+
+	if foundCacheKey != "" {
+		delete(p.realtimeAlarmByObjID, foundCacheKey)
+	}
+
+	record, hasRecord := p.objectByInternalID[foundObjectID]
+	p.mu.Unlock()
+
+	if hasRecord && strings.TrimSpace(record.ObjID) != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+		defer cancel()
+
+		caslObjID := strings.TrimSpace(record.ObjID)
+		// Для grd_obj_pick/finish у CASL API достатньо obj_id, якщо ми не маємо event_id.
+		if err := p.PickGuardObject(ctx, caslObjID, ""); err != nil {
+			log.Debug().Err(err).Str("objID", caslObjID).Msg("CASL: PickGuardObject failed")
+		}
+		if err := p.FinishGuardObject(ctx, caslObjID, "", "CAUSES_FALSE_ALARM", note); err != nil {
+			log.Debug().Err(err).Str("objID", caslObjID).Msg("CASL: FinishGuardObject failed")
+		}
+	} else {
+		log.Debug().Int("alarmID", alarmID).Int("objectID", foundObjectID).Msg("CASL: record not found for ProcessAlarm or not a CASL alarm")
+	}
 }
 
 func (p *CASLCloudProvider) GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time) {
@@ -1004,7 +1074,19 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 		contactID := strings.TrimSpace(item.ContactID.String())
 		sourceType := strings.TrimSpace(item.Type)
 
-		details := decodeCASLEventDescription(translator, dictMap, code, contactID, zoneNumber, deviceType)
+		details := buildCASLUserActionDetails(CASLObjectEvent{
+			Action:    item.Action.String(),
+			Code:      item.Code.String(),
+			ObjID:     record.ObjID,
+			ObjName:   record.Name,
+			UserFIO:   item.UserFIO.String(),
+			UserID:    item.UserID.String(),
+			MgrID:     item.MgrID.String(),
+			AlarmType: item.AlarmType.String(),
+		})
+		if details == "" {
+			details = decodeCASLEventDescription(translator, dictMap, code, contactID, zoneNumber, deviceType)
+		}
 		if details == "" {
 			switch {
 			case contactID != "" && code != "":

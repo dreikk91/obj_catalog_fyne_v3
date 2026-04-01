@@ -752,7 +752,7 @@ func (p *CASLCloudProvider) PickGuardObject(ctx context.Context, objID string, e
 }
 
 // FinishGuardObject executes grd_obj_finish action command.
-func (p *CASLCloudProvider) FinishGuardObject(ctx context.Context, objID string, eventID string) error {
+func (p *CASLCloudProvider) FinishGuardObject(ctx context.Context, objID string, eventID string, cause string, note string) error {
 	payload := map[string]any{"type": "grd_obj_finish"}
 	if strings.TrimSpace(objID) != "" {
 		payload["obj_id"] = strings.TrimSpace(objID)
@@ -763,6 +763,17 @@ func (p *CASLCloudProvider) FinishGuardObject(ctx context.Context, objID string,
 	if len(payload) == 1 {
 		return fmt.Errorf("casl grd_obj_finish: objID or eventID is required")
 	}
+
+	if strings.TrimSpace(cause) != "" {
+		payload["cause"] = strings.TrimSpace(cause)
+	} else {
+		payload["cause"] = "CAUSES_FALSE_ALARM"
+	}
+
+	if strings.TrimSpace(note) != "" {
+		payload["note"] = strings.TrimSpace(note)
+	}
+
 	_, err := p.ExecuteCASLCommand(ctx, payload, true)
 	return err
 }

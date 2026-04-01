@@ -21,9 +21,9 @@ type ProcessAlarmResult struct {
 func ShowProcessAlarmDialog(parent fyne.Window, alarm models.Alarm, onConfirm func(result ProcessAlarmResult)) {
 	// Варіанти дій
 	actions := []string{
+		"Помилкова тривога",
 		"Виклик пожежників",
 		"Виклик ГШР",
-		"Помилкова тривога",
 		"Технічна несправність",
 		"Контрольна перевірка",
 		"Інше",

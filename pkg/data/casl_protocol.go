@@ -97,9 +97,13 @@ func classifyCASLEventType(code string) models.EventType {
 		return models.EventOffline
 	case strings.Contains(valueLower, "нема зв"), strings.Contains(valueLower, "втрата зв"), strings.Contains(valueLower, "відсутн") && strings.Contains(valueLower, "зв"):
 		return models.EventOffline
-	case strings.Contains(value, "RECOVER"), strings.Contains(value, "RESTORE"),
-		strings.HasPrefix(value, "OK_"), strings.Contains(value, "OK_220"), strings.Contains(value, "POWER_OK"),
-		strings.HasSuffix(value, "_OK"), strings.HasPrefix(value, "R"):
+	case strings.Contains(value, "RECOVER"), strings.Contains(value, "RESTORE"):
+		return models.EventRestore
+	case strings.Contains(value, "OK_220"), strings.Contains(value, "POWER_OK"):
+		return models.EventPowerOK
+	case strings.Contains(value, "ONLINE"), strings.Contains(value, "PPK_CONN_OK"):
+		return models.EventOnline
+	case strings.HasPrefix(value, "OK_"), strings.HasSuffix(value, "_OK"), strings.HasPrefix(value, "R"):
 		return models.EventRestore
 	case strings.Contains(valueLower, "віднов"), strings.Contains(valueLower, "норма"):
 		return models.EventRestore
@@ -1131,24 +1135,22 @@ func mapCASLEventSC1(eventType models.EventType) int {
 		return 24
 	case models.EventTamper:
 		return 25
-	case models.EventRestore, models.EventPowerOK:
+	case models.EventPowerFail:
+		return 3
+	case models.EventBatteryLow:
+		return 4
+	case models.EventRestore, models.EventPowerOK, models.EventOnline:
 		return 5
 	case models.EventArm:
 		return 10
 	case models.EventDisarm:
-		return 14
-	case models.EventPowerFail:
-		return 26
-	case models.EventBatteryLow:
-		return 27
-	case models.EventOnline:
-		return 28
+		return 11
 	case models.EventOffline:
-		return 29
+		return 12
 	case models.EventTest:
 		return 16
-	case models.SystemEvent:
-		return 30
+	case models.SystemEvent, models.EventNotification:
+		return 6
 	default:
 		return 2
 	}

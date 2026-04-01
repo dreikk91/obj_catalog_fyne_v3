@@ -515,4 +515,29 @@ LEFT OUTER JOIN dbo.Zones_GroupResponse WITH(NOLOCK) ON GroupResponse.Group_id =
 where vwArchives.Date_Key BETWEEN 20260319 and 20260401 and vwArchives.TimeEvent BETWEEN '20260319 00:00:00' and '20260401 23:59:59'  and (vwArchives.Panel_id LIKE 'L00028')
 order by vwArchives.Event_id
 
+Список об'єктів зі статусом охорони
+select distinct Groups.Panel_id, Groups.Group_, Groups.Message, Company.Address, IsOpen, Groups.TimeEvent
+, Temp.Panel_id HasAlarms
+,  CASE WHEN IsOpen = '0' THEN N'ПІД ОХОРОНОЮ'
+WHEN IsOpen = '1' THEN N'БЕЗ ОХОРОНИ'
+ELSE N'Невідомо' END as OpenStatus, Company.CompanyName
+, CASE
+WHEN COALESCE(Temp.StateEvent, 0) in (2,3) THEN 1
+WHEN COALESCE(Panel.TestPanel, '0') = '1' THEN 2
+WHEN COALESCE(Panel.Disabled, '0') = '1' THEN 3
+WHEN COALESCE(groups.Disabled,'0') = '1' THEN 3
+WHEN COALESCE(case when (MphoneRadioType.DeviceId in (79,107,120,128,132,134,137,138,149,151,166,177,179,191,197,199)) then groups.IsProhibited else Mphone.IsProhibited end,'0') = '1' THEN 4
+WHEN COALESCE((SELECT top 1 engineers.engineer_id FROM dbo.engineers WHERE Work_panel_id = Panel.Panel_id  /*IN POSTGRES*/), -1) <> -1 THEN 5
+ELSE 0 END as Object_Status
+from groups WITH(nolock)
+LEFT OUTER JOIN Company WITH(nolock) ON groups.CompanyID = Company.ID
+LEFT JOIN Temp ON Temp.Panel_id = Groups.Panel_id and Temp.Group_ = Groups.Group_
+JOIN vwRealPanel as Panel WITH(nolock) ON Panel.Panel_id = Groups.Panel_id
+LEFT JOIN Mphone WITH(nolock) ON Mphone.Panel_id = Panel.Panel_id
+LEFT JOIN MphoneRadioType WITH(NOLOCK) ON MphoneRadioType.RadioType_id = MPhone.RadioType
+ LEFT JOIN pults ON pults.id = panel.Pult_id 
+ WHERE (1=1) 
+AND (COALESCE(panel.Pult_id, 0)  in (0,1,2) )
+ AND COALESCE(Pults.IsOutPult, 0) = 0
+order by Groups.Panel_id, Groups.Group_
 

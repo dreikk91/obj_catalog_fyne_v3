@@ -1,0 +1,771 @@
+"schema_name","view_name","definition"
+dbo,Code,"CREATE VIEW [dbo].[Code]
+WITH SCHEMABINDING
+AS
+SELECT Code, CodeGroup, CodeMes_UK AS Message, AutoReset, GroupSent, Flag, Zoneno, Svet, AccessCode, FileName, idTCode, System, IsNeedReport, contactId_code
+FROM dbo.Code_T"
+dbo,TypeCode,"CREATE VIEW [dbo].[TypeCode]
+WITH SCHEMABINDING
+AS
+SELECT idTCode, TypeCodeMes_UK AS Message, Priority, [order], TypeCodeFileName
+FROM dbo.TypeCode_T"
+dbo,vw_ClientSettings,"
+CREATE VIEW [dbo].[vw_ClientSettings]
+AS
+select TypeCode.idTCode, ClientSettings.ComputerName
+  from ClientSettings,
+       TypeCode 
+where (ClientSettings.idTCode = 0 or ClientSettings.idTCode = TypeCode.idTCode)
+"
+dbo,vw_ClientSettingsRDP,"
+CREATE VIEW [dbo].[vw_ClientSettingsRDP]
+AS
+SELECT dbo.ClientSettingsRDP.ComputerName, dbo.ClientSettingsRDP.Person_Id, dbo.TypeCode.idTCode, IsAllTypeCode = CASE WHEN dbo.ClientSettingsRDP.idTCode = 0 THEN CONVERT(bit, 1) ELSE CONVERT(bit, 0) END
+FROM dbo.ClientSettingsRDP
+CROSS JOIN dbo.TypeCode
+WHERE (dbo.ClientSettingsRDP.IdTCode = dbo.TypeCode.idTCode) OR (dbo.ClientSettingsRDP.IdTCode = 0)
+"
+dbo,vw_ObjectRedactionInfo,"
+
+--dbo.vw_ObjectRedactionInfo
+CREATE   VIEW dbo.vw_ObjectRedactionInfo
+AS
+SELECT dbo.Operation.OperationName AS [Дія],
+ChangeData.object AS [Об'єкт],
+CASE
+WHEN (CHARINDEX('**', ChangeData.panel_id) = 1) THEN SUBSTRING(ChangeData.panel_id, 3, CHARINDEX('_', ChangeData.panel_id) - 3)
+ELSE ChangeData.panel_id END AS [№ об'єкта],
+CASE Group_
+WHEN -1 THEN ''
+ELSE CONVERT(VARCHAR(5), Group_) END AS [№ групы],
+ChangeData.Table_Name AS Сутність,
+dbo.FieldDictionary.Name AS Поле,
+CASE ValueBefore
+WHEN 'False' THEN 'ні'
+WHEN 'True' THEN 'так'
+WHEN '0:00:00' THEN ''
+WHEN 'NULL' THEN ''
+ELSE ValueBefore END AS [Cтаре значення],
+CASE ValueAfter
+WHEN 'False' THEN 'ні'
+WHEN 'True' THEN 'так'
+WHEN '0:00:00' THEN ''
+WHEN 'NULL' THEN ''
+ELSE ValueAfter END AS [Нове значення],
+ChangeData.Operation_Date AS Дата,
+ChangeData.UserName AS Користувач,
+ChangeData.Computer AS [Комп'ютер]
+FROM pult4db_ChangeDataLog.dbo.vwChangeDataLog AS ChangeData
+LEFT OUTER JOIN dbo.Operation ON ChangeData.operation = dbo.Operation.id
+LEFT OUTER JOIN dbo.FieldDictionary ON ChangeData.Table_Field = dbo.FieldDictionary.id
+"
+dbo,vw_TypeCodeForOnlineUsers,"
+
+--dbo.vw_TypeCodeForOnlineUsers
+CREATE   VIEW dbo.vw_TypeCodeForOnlineUsers
+AS
+SELECT     Message AS [Тип події]
+FROM         dbo.TypeCode
+WHERE        (idTCode IN (1, 2, 3, 4, 6, 7, 8, 9, 13, 14, 93, 125, 143, 144, 145, 146, 147, 148, 149, 150))
+"
+dbo,vwarchives,"CREATE VIEW vwarchives AS SELECT * FROM pult4db_archives..vwarchives;
+"
+dbo,vwArchivesOnline,"
+--изменение представления vwArchivesOnline
+CREATE   VIEW [dbo].[vwArchivesOnline]
+AS
+SELECT dbo.vwArchives.Date_Key, dbo.vwArchives.Event_id, dbo.vwArchives.TimeEvent, dbo.vwArchives.Panel_id AS Объект, dbo.vwArchives.Group_ AS Группа,
+dbo.Company.CompanyName AS Название, dbo.Groups.Message AS [Описание группы], dbo.TypeCode.Message AS [Тип события], CONVERT(varchar,
+dbo.vwArchives.TimeEvent, 104) AS Дата, CONVERT(varchar, dbo.vwArchives.TimeEvent, 108) AS Время, dbo.vwArchives.Zone AS [Шлейф/ключ],
+dbo.Code.Message AS [Описание события], CASE WHEN (vwVideoArchives.Photo IS NULL) THEN 0 ELSE 1 END AS PhotoIsPresent,
+CASE WHEN (dbo.TypeCode.idTCode in (1,2,7,9,10,14,19,22,29,30,34,35,53,57,65,92)) THEN isNull(dbo.Zones.Message,'' )
+WHEN (dbo.TypeCode.idTCode in (3,4, 23, 89)) THEN isNull(dbo.Users.UserName, '')
+ELSE '' END AS [Описание шлейфа]
+FROM         dbo.vwArchives WITH (nolock) INNER JOIN
+dbo.Code WITH (nolock) ON dbo.vwArchives.Code = dbo.Code.Code AND dbo.vwArchives.CodeGroup = dbo.Code.CodeGroup INNER JOIN
+dbo.TypeCode WITH (nolock) ON dbo.TypeCode.idTCode = dbo.Code.idTCode INNER JOIN
+dbo.Groups WITH (nolock) ON dbo.vwArchives.Panel_id = dbo.Groups.Panel_id AND dbo.vwArchives.Group_ = dbo.Groups.Group_ INNER JOIN
+dbo.Company WITH (nolock) ON dbo.Groups.CompanyID = dbo.Company.ID LEFT OUTER JOIN
+dbo.vwVideoArchives WITH (nolock) ON dbo.vwArchives.Event_id = dbo.vwVideoArchives.event_id LEFT OUTER JOIN
+dbo.Users WITH (nolock) ON dbo.Users.Panel_id = dbo.vwArchives.Panel_id  and dbo.Users.Group_ = dbo.vwArchives.Group_ and dbo.Users.UserCode = dbo.vwArchives.Zone LEFT OUTER JOIN
+dbo.Zones WITH (nolock) ON dbo.Zones.Zone = dbo.vwArchives.Zone and dbo.Zones.Panel_id = dbo.vwArchives.Panel_id and dbo.Zones.Group_ = dbo.vwArchives.Group_ 
+"
+dbo,vwChangeIPCameraDataLog,"
+
+--dbo.vwChangeIPCameraDataLog
+CREATE VIEW dbo.vwChangeIPCameraDataLog
+AS
+SELECT
+dbo.Operation.OperationName AS [Дія],
+dbo.ChangeIPCameraData_Log.object AS [Об'єкт],
+ChangeIPCameraData_Log.camera_id AS [Номер камери],
+dbo.FieldDictionary.Name AS [Поле],
+CASE ValueBefore
+WHEN 'False' THEN 'ні'
+WHEN 'True' THEN 'так'
+WHEN '0:00:00' THEN ''
+WHEN 'NULL' THEN ''
+ELSE ValueBefore
+END AS [Cтаре значення],
+CASE ValueAfter
+WHEN 'False' THEN 'ні'
+WHEN 'True' THEN 'так'
+WHEN '0:00:00' THEN ''
+WHEN 'NULL' THEN ''
+ELSE ValueAfter
+END AS [Нове значення],
+dbo.ChangeIPCameraData_Log.Operation_Date AS [Дата],
+dbo.ChangeIPCameraData_Log.UserName AS [Користувач],
+dbo.ChangeIPCameraData_Log.Computer AS [Комп'ютер]
+FROM dbo.ChangeIPCameraData_Log
+LEFT OUTER JOIN dbo.Operation
+ON dbo.ChangeIPCameraData_Log.operation = dbo.Operation.id
+LEFT OUTER JOIN dbo.FieldDictionary
+ON dbo.ChangeIPCameraData_Log.Table_Field = dbo.FieldDictionary.id
+"
+dbo,vwDictLevels,"CREATE VIEW [dbo].[vwDictLevels]
+AS
+SELECT     L.DictValue AS DictLevelName, A.DictID, A.DictValue AS DictName, A.DictParentID
+FROM         dbo.DictEntAttrVal AS L WITH (NOLOCK) INNER JOIN
+                      dbo.DictEntAttrVal AS A WITH (NOLOCK) ON A.DictLevel = L.DictID
+"
+dbo,vwEntAttr,"CREATE VIEW [dbo].[vwEntAttr]
+AS
+SELECT     E.DictValue AS EntityName, COALESCE (SA1.DictParentID, A.DictParentID) AS AttrParentID, COALESCE (SA1.DictID, A.DictID) AS AttrID, COALESCE (SA1.DictValue, 
+                      A.DictValue) AS AttrName, A.DictValue AS AttrGroupName1
+FROM         dbo.DictEntAttrVal AS D WITH (NOLOCK) INNER JOIN
+                      dbo.DictEntAttrVal AS E WITH (NOLOCK) ON E.DictParentID = D.DictID AND D.DictLevel IS NULL AND D.DictValue = 'Entity' AND E.DictLevel = 1 INNER JOIN
+                      dbo.DictEntAttrVal AS A WITH (NOLOCK) ON A.DictParentID = E.DictID INNER JOIN
+                      dbo.DictEntAttrVal AS L WITH (NOLOCK) ON L.DictID = A.DictLevel AND L.DictLevel = 0 AND L.DictParentID IS NULL LEFT OUTER JOIN
+                      dbo.DictEntAttrVal AS SA1 WITH (NOLOCK) INNER JOIN
+                      dbo.DictEntAttrVal AS L1 WITH (NOLOCK) ON L1.DictID = SA1.DictLevel AND L1.DictLevel = 0 AND L1.DictParentID IS NULL ON SA1.DictParentID = A.DictID
+"
+dbo,vwEventsRecipients,"
+CREATE VIEW [dbo].[vwEventsRecipients] AS
+SELECT [Recipient_id]
+,isNull(isNull(ResponsibleEmail.EmailAddr, EventsRecipients.RecipientIPorPhone), ResponsibleTel.PhoneNo) as RecipientIPorPhone
+,[OrlanPairNumber]
+,[EventsRecipients].[ResponsibleTel_id]
+FROM [EventsRecipients]
+Left join ResponsibleTel on ResponsibleTel.ResponsibleTel_id=EventsRecipients.ResponsibleTel_id
+Left join ResponsibleEmail on ResponsibleEmail.ResponsibleEmail_id=EventsRecipients.ResponsibleEmail_id
+"
+dbo,vwEventsRecipientsPanels,"  
+  create view vwEventsRecipientsPanels as
+  select distinct Panel_id,Recipient_id,Group_ From Group_SMS_Code"
+dbo,vwEventsSMSRecipientsList,"
+
+--dbo.vwEventsSMSRecipientsList
+CREATE   VIEW dbo.vwEventsSMSRecipientsList
+AS
+select distinct isNull(e.RecipientIPorPhone, ResponsibleTel.PhoneNo) as [Номер телефону],g.Panel_id as [Номер об'єкта],g.Group_ as [Номер групи],g.Message as [Назва],c.address as [Адреса]
+from vwRealPanel
+inner join groups g ON vwRealPanel.Panel_id=g.Panel_id
+inner join Group_SMS_Code gsc ON gsc.Panel_id=g.Panel_id and gsc.Group_=g.Group_
+inner join EventsRecipients e ON e.Recipient_id=gsc.Recipient_id
+Left join ResponsibleTel on ResponsibleTel.ResponsibleTel_id=e.ResponsibleTel_id
+left outer join company c ON c.ID = g.CompanyID
+where gsc.Recipient_type=1
+"
+dbo,vwFirePanel,"CREATE VIEW [dbo].[vwFirePanel]
+AS
+SELECT *, Panel_id AS FirePanel_id
+FROM vwRealPanel
+WHERE Panel_Type = 1
+"
+dbo,vwFirePreventionOffObjects,"
+
+--vwFirePreventionOffObjects
+CREATE   VIEW dbo.vwFirePreventionOffObjects
+AS
+SELECT     MAX(CASE WHEN EA.AttrName = 'Дата і час зняття' THEN COALESCE (V.DictValue, I.Value) END) AS [Дата і час зняття], G.Panel_id AS [Номер об'єкта],
+G.Message AS [Найменування об'єкта], C.address AS [Адреса об'єкту], MAX(CASE WHEN EA.AttrName = 'Причина зняття' THEN COALESCE (V.DictValue, I.Value)
+END) AS [Причина зняття], MAX(CASE WHEN EA.AttrName = 'Інформація про зняття передана' THEN COALESCE (V.DictValue, I.Value) END) AS [Інформація про зняття передана],
+MAX(CASE WHEN EA.AttrName = 'Дата інформування' THEN COALESCE (V.DictValue, I.Value) END) AS [Дата інформування],
+MAX(CASE WHEN EA.AttrName = 'Дата повторної постановки' THEN COALESCE (V.DictValue, I.Value) END) AS [Дата повторної постановки],
+MAX(CASE WHEN EA.AttrName = 'Об''єкт знято з спостереження' THEN COALESCE (V.DictValue, I.Value) END) AS [Об'єкт знято з спостереження]
+FROM         dbo.Groups AS G WITH (NOLOCK) INNER JOIN
+dbo.Company AS C WITH (NOLOCK) ON C.ID = G.companyID INNER JOIN
+dbo.ObjectAddInfo AS I WITH (NOLOCK) ON I.PanelID = G.Panel_id AND I.GroupID = G.Group_ INNER JOIN
+dbo.vwEntAttr AS EA WITH (NOLOCK) ON EA.AttrID = I.AttributeID AND EA.AttrGroupName1 = 'Зняття з спостереження' AND EA.EntityName = 'Objects' LEFT OUTER JOIN
+dbo.DictEntAttrVal AS V WITH (NOLOCK) ON V.DictID = I.ValueID
+GROUP BY G.Panel_id, G.Message, C.address
+"
+dbo,vwFirePreventionOffObjectsConst,"
+
+--vwFirePreventionOffObjectsConst
+CREATE   VIEW dbo.vwFirePreventionOffObjectsConst
+AS
+SELECT     [Дата і час зняття], [Номер об'єкта], [Найменування об'єкта], [Адреса об'єкту], [Причина зняття], [Інформація про зняття передана], [Дата інформування]
+FROM         dbo.vwFirePreventionOffObjects
+WHERE     ([Об'єкт знято з спостереження] = 'Постійно')
+"
+dbo,vwFirePreventionOffObjectsTemp,"
+
+--vwFirePreventionOffObjectsTemp
+CREATE   VIEW dbo.vwFirePreventionOffObjectsTemp
+AS
+SELECT [Дата і час зняття], [Номер об'єкта], [Найменування об'єкта], [Адреса об'єкту], [Причина зняття], [Дата повторної постановки]
+FROM         dbo.vwFirePreventionOffObjects
+WHERE     ([Об'єкт знято з спостереження] = 'Тимчасово')
+"
+dbo,vwGroupDrivingTime,"
+
+--dbo.vwGroupDrivingTime
+CREATE   VIEW dbo.vwGroupDrivingTime
+AS
+SELECT  Group_id AS 'Група',
+StartTime AS 'Час виїзду',
+EndTime AS 'Час прибуття',
+Panel_id AS 'Об''єкт',
+CONVERT(VARCHAR(8), EndTime - StartTime, 8)
+AS 'Час у дорозі'
+FROM dbo.ArchiveGroupResponse with (nolock)
+WHERE Status_id = 2
+"
+dbo,vwgroupresponsegps,"CREATE VIEW vwgroupresponsegps AS 
+select * from gps_20211101.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20211201.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20220101.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20220201.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20220301.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20220401.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20220501.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20220601.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20220701.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20220801.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20220901.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20221001.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20221101.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20221201.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20230101.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20230201.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20230301.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20230401.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20230501.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20230601.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20230701.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20230801.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20230901.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20231001.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20231101.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20231201.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20240101.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20240201.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20240301.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20240401.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20240501.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20240601.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20240701.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20240801.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20240901.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20241001.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20241101.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20241201.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20250101.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20250201.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20250301.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20250401.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20250501.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20250601.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20250701.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20250801.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20250901.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20251001.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20251101.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20251201.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20260101.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20260201.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20260301.dbo.vwgroupresponsegps
+UNION ALL
+select * from gps_20260401.dbo.vwgroupresponsegps
+"
+dbo,vwListForArmDisarmBySchedule,"CREATE VIEW [dbo].[vwListForArmDisarmBySchedule]
+AS
+SELECT OS.PanelID
+,OS.Group_
+,OS.DayNumber
+,OS.Command
+,OS.DT
+,DeviceType = vwMPhoneDeviceChannels.DeviceId
+,ChannelNoForState = vwMPhoneDeviceChannels.ChannelNo
+,vwMPhoneDeviceChannels.VPN_ID
+,vwMPhoneDeviceChannels.ChannelType_id
+,MainSim = ISNULL(Sim.IsMainSim, 0)
+,vwMPhoneDeviceChannels.OnBoardDeviceTypeEnum
+FROM (
+SELECT PanelID, Group_, DayNumber
+,Command = 'Arm'
+,DT = CONVERT(time(0), StartDT)
+FROM ObjSchedule WITH(NOLOCK)
+WHERE CONVERT(time(0), StartDT) <> '00:00:00.000'
+UNION ALL
+SELECT PanelID, Group_, DayNumber
+,Command = 'Disarm'
+,DT = CONVERT(time(0), StopDT)
+FROM ObjSchedule WITH(NOLOCK)
+WHERE CONVERT(time(0), StopDT) <> '23:59:59.000'
+) OS
+JOIN Groups WITH(NOLOCK)
+ON Groups.Panel_id = OS.PanelID
+AND Groups.Group_ = OS.Group_
+JOIN vwRealPanel WITH(NOLOCK)
+ON vwRealPanel.Panel_id = Groups.Panel_id
+JOIN vwMPhoneDeviceChannels WITH(NOLOCK)
+ON vwMPhoneDeviceChannels.Panel_id = vwRealPanel.Panel_id
+LEFT JOIN Sim WITH(NOLOCK)
+ON Sim.OnBoardDevice_ID = vwMPhoneDeviceChannels.OnBoardDevice_ID
+JOIN (
+SELECT MDC.Mphone_id, MAX(MDC.LastTest) AS LastTest
+FROM vwMPhoneDeviceChannels MDC WITH(NOLOCK)
+WHERE MDC.IsActive = 1
+AND MDC.LastTest IS NOT NULL
+GROUP BY MDC.Mphone_id
+) LT
+ON LT.Mphone_id = vwMPhoneDeviceChannels.Mphone_id
+AND LT.LastTest = vwMPhoneDeviceChannels.LastTest
+WHERE Groups.AutoArmDisarm = 1
+AND vwMPhoneDeviceChannels.IsActive = 1
+AND (Sim.IsCurrentSim = 1 OR Sim.IsCurrentSim IS NULL)"
+dbo,vwListForArmDisarmBySchedule___39,"
+
+CREATE VIEW [dbo].[vwListForArmDisarmBySchedule]
+AS
+SELECT     PanelID,
+ObjSchedule.Group_,
+DayNumber,
+Command = 'Arm',
+DT = CAST(StartDT AS time(0)),
+DeviceType = DeviceId,
+ChannelNoForState = CASE
+WHEN ChannelNoForState <> '' THEN ChannelNoForState
+ELSE CpId END,
+VPN_id,
+Channels.ChannelType_id,
+MainSim
+FROM ObjSchedule
+INNER JOIN Groups WITH (NOLOCK) ON groups.Panel_id = ObjSchedule.PanelID AND Groups.Group_ = ObjSchedule.Group_
+INNER JOIN vwRealPanel WITH (NOLOCK) ON vwRealPanel.Panel_id = groups.Panel_id
+INNER JOIN MPhone WITH (NOLOCK) ON vwRealPanel.Panel_id = MPhone.Panel_id
+INNER JOIN MphoneRadioType WITH (NOLOCK) ON MPhone.RadioType = MphoneRadioType.RadioType_id
+INNER JOIN Sims WITH (nolock) ON Mphone.CurrentSim = Sims.Sim_id
+INNER JOIN Channels WITH (nolock) ON Sims.SIM_id = Channels.Sim_id  AND MPhone.CurrentChannel_id = Channels.ChannelType_id
+LEFT JOIN dbo.Channels_ChannelNo WITH (NOLOCK) ON dbo.Channels_ChannelNo.channel_id = Channels.id
+WHERE     StartDT <> '18991230 00:00:00.000' AND Groups.AutoArmDisarm = 1
+UNION
+SELECT     PanelID,
+ObjSchedule.Group_,
+DayNumber,
+Command = 'Disarm',
+DT = CAST(StopDT AS time(0)),
+DeviceType = DeviceId,
+ChannelNoForState = CASE
+WHEN ChannelNoForState <> '' THEN ChannelNoForState
+ELSE CpId END,
+VPN_ID,
+Channels.ChannelType_id,
+MainSim
+FROM  ObjSchedule
+INNER JOIN Groups WITH (NOLOCK) ON groups.Panel_id = ObjSchedule.PanelID AND Groups.Group_ = ObjSchedule.Group_
+INNER JOIN vwRealPanel WITH (NOLOCK) ON vwRealPanel.Panel_id = groups.Panel_id
+INNER JOIN MPhone WITH (NOLOCK) ON vwRealPanel.Panel_id = MPhone.Panel_id
+INNER JOIN MphoneRadioType WITH (NOLOCK) ON MPhone.RadioType = MphoneRadioType.RadioType_id
+INNER JOIN Sims WITH (nolock) ON Mphone.CurrentSim = Sims.Sim_id
+INNER JOIN Channels WITH (nolock) ON Sims.SIM_id = Channels.Sim_id  AND MPhone.CurrentChannel_id = Channels.ChannelType_id
+LEFT JOIN dbo.Channels_ChannelNo WITH (NOLOCK) ON dbo.Channels_ChannelNo.channel_id = Channels.id
+WHERE     StopDT <> '18991230 23:59:59.000' AND Groups.AutoArmDisarm = 1
+
+
+"
+dbo,vwMobileUserSubscribeAvailable,"CREATE VIEW [dbo].[vwMobileUserSubscribeAvailable]
+AS
+SELECT MUG.userGrId, MUG.userId, MUG.panelId, MUG.[group], SA.ID, SA.idTCode, CONVERT(bit, CASE WHEN SE.idTCode IS NOT NULL THEN 0 ELSE 1 END) AS isAvailable
+FROM dbo.MobileUser_Groups AS MUG WITH (NOLOCK)
+CROSS JOIN dbo.MobileUserSubscribeAll AS SA WITH (NOLOCK)
+LEFT OUTER JOIN dbo.MobileUserSubscribeExcluded AS SE WITH (NOLOCK)
+ON SE.idTCode = SA.idTCode AND SE.userGrId = MUG.userGrId
+"
+dbo,vwMPhoneDeviceChannels,"
+CREATE   VIEW vwMPhoneDeviceChannels
+WITH SCHEMABINDING
+AS
+SELECT M.Mphone_id, M.Panel_id, M.CpId, M.WorkMode, M.LastGPRSCount
+,M.IsZStatusDevice, M.CodeGroup, M.DeviceVersion, M.RadioVersion
+,M.RadioType, MRT.Message, MRT.IsUse, MRT.DeviceId, MRT.VersionUpdateAllowed
+,MRS.Series_id, MRS.SeriesName
+,BD.OnBoardDevice_ID, BD.TestTimeout AS TestTimeoutBoardDevice
+,BD.OnBoardDeviceType_ID, BDT.Name AS OnBoardDeviceTypeName, BDT.Enum AS OnBoardDeviceTypeEnum
+,C.Channel_ID, C.TestTimeout, C.TestTimeoutReserved, C.LastTest, C.IsActive, C.IsZStatus
+,C.ChannelType_id, CT.ChannelType, CT.priority
+,C.ChannelNo_ID, CN.ChannelNo, CN.VPN_ID, M.BootVer
+FROM dbo.MPhone AS M WITH(NOLOCK)
+JOIN dbo.MphoneRadioType AS MRT WITH(NOLOCK) ON MRT.RadioType_id = M.RadioType
+JOIN dbo.MPhoneRadioSeries AS MRS WITH(NOLOCK) ON MRS.Series_id = MRT.Series_id
+JOIN dbo.OnBoardDevice AS BD WITH(NOLOCK) ON BD.MPhone_ID = M.Mphone_id
+JOIN dbo.OnBoardDeviceType AS BDT WITH(NOLOCK) ON BDT.OnBoardDeviceType_ID = BD.OnBoardDeviceType_ID
+JOIN dbo.Channel AS C WITH(NOLOCK) ON C.OnBoardDevice_ID = BD.OnBoardDevice_ID
+JOIN dbo.ChannelTypes AS CT WITH(NOLOCK) ON CT.ChannelType_id = C.ChannelType_ID
+JOIN dbo.ChannelNo AS CN WITH(NOLOCK) ON CN.ChannelNo_ID = C.ChannelNo_ID
+"
+dbo,vwpanelmobilegps,"CREATE VIEW vwpanelmobilegps AS 
+select * from gps_20211101.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20211201.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20220101.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20220201.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20220301.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20220401.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20220501.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20220601.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20220701.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20220801.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20220901.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20221001.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20221101.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20221201.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20230101.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20230201.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20230301.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20230401.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20230501.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20230601.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20230701.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20230801.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20230901.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20231001.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20231101.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20231201.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20240101.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20240201.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20240301.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20240401.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20240501.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20240601.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20240701.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20240801.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20240901.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20241001.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20241101.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20241201.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20250101.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20250201.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20250301.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20250401.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20250501.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20250601.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20250701.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20250801.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20250901.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20251001.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20251101.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20251201.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20260101.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20260201.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20260301.dbo.vwpanelmobilegps
+UNION ALL
+select * from gps_20260401.dbo.vwpanelmobilegps
+"
+dbo,vwPersonal,"CREATE VIEW vwPersonal AS 
+
+select * from Personal
+
+where Person_id <> 1 and deleted = 0
+
+"
+dbo,vwPersonRole,"--вьюха ролей пользователей исключая систему
+
+CREATE VIEW vwPersonRole
+
+AS SELECT *  FROM dbo.Person_Role
+
+WHERE Role_ID <> 1
+
+"
+dbo,vwRealContractNo,"--вьюха реальных №договоров
+
+CREATE VIEW vwRealContractNo
+
+AS SELECT dbo.Contracts.Contract_id FROM dbo.Contracts
+
+WHERE Contract_id NOT LIKE '**%'
+
+"
+dbo,vwRealPanel,"CREATE VIEW [dbo].[vwRealPanel]
+AS
+SELECT *, Panel_id AS RealPanel_id
+FROM dbo.Panel
+WHERE NOT (Panel_id LIKE '**%')
+"
+dbo,vwservices,"CREATE VIEW vwservices AS SELECT * FROM pult4db_archives..vwservices;
+"
+dbo,vwSMSQueue,"
+
+--dbo.vwSMSQueue
+CREATE   VIEW dbo.vwSMSQueue
+AS
+SELECT        CA.ID AS SMS_ID, CA.Result AS [Стан SMS], CA.Text AS [Текст SMS], CA.Recipient_ChannelNo AS Отримувач, CA.TimeEvent AS Час,
+CA.Panel_id AS [Номер об'єкта], CA.Group_ AS Група, G.Message AS [Опис групи], CA.CodeGroup AS [Набір кодів], CA.Code AS [Код події],
+C.Message AS [Опис коду], TC.Message AS [Тип коду], CA.Recipient_Type AS [Тип отримувача]
+FROM            dbo.CurrentAlarms AS CA WITH (NOLOCK) LEFT OUTER JOIN
+dbo.Group_SMS_Code AS SMS WITH (NOLOCK) ON SMS.Panel_id = CA.Panel_id AND SMS.Group_ = CA.Group_ AND SMS.Recipient_type = CA.Recipient_Type AND
+SMS.Code = CA.Code AND SMS.CodeGroup = CA.CodeGroup LEFT OUTER JOIN
+dbo.EventsRecipients AS ER WITH (NOLOCK) ON ER.Recipient_id = SMS.Recipient_id AND ER.RecipientIPorPhone = CA.Recipient_ChannelNo LEFT OUTER JOIN
+dbo.Groups AS G WITH (NOLOCK) ON G.Panel_id = CA.Panel_id AND G.Group_ = CA.Group_ LEFT OUTER JOIN
+dbo.Panel AS P WITH (NOLOCK) ON P.Panel_id = CA.Panel_id LEFT OUTER JOIN
+dbo.Code AS C WITH (NOLOCK) ON C.Code = CA.Code AND C.CodeGroup = CA.CodeGroup LEFT OUTER JOIN
+dbo.TypeCode AS TC WITH (NOLOCK) ON TC.idTCode = C.idTCode
+"
+dbo,vwTrashPanel,"
+
+CREATE   VIEW dbo.vwTrashPanel
+AS
+SELECT
+SUBSTRING(Panel_id, 3, LEN(Panel_id) - 9) AS panel_id,
+CAST(RIGHT(Panel_id, 6) AS datetime) AS CreateDate,
+Password_,
+Disabled,
+Remarks,
+computer,
+DateLastChange,
+engineer_id,
+Area_id,
+AdditionalTechnicalInformation,
+OneTestEqualAll,
+master_id,
+installer_id,
+CompEditing,
+TestPanel,
+Partial,
+Panel_id AS RealPanel_id,
+Pult_id,
+Movable_Object,
+isGPSConfirm,
+Panel_Type,
+FreeArrivalsCount,
+IsContactIDRedirect
+FROM dbo.Panel
+WHERE (Panel_id LIKE '**%')
+"
+dbo,vwTypeCode,"CREATE VIEW dbo.vwTypeCode
+
+AS
+
+SELECT     *
+
+FROM         dbo.TypeCode
+
+WHERE     (idTCode > 0)
+
+"
+dbo,vwvideoarchives,"CREATE VIEW vwvideoarchives AS 
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20211101.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20211201.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20220101.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20220201.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20220301.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20220401.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20220501.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20220601.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20220701.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20220801.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20220901.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20221001.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20221101.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20221201.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20230101.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20230201.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20230301.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20230401.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20230501.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20230601.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20230701.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20230801.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20230901.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20231001.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20231101.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20231201.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20240101.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20240201.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20240301.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20240401.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20240501.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20240601.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20240701.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20240801.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20240901.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20241001.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20241101.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20241201.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20250101.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20250201.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20250301.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20250401.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20250501.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20250601.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20250701.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20250801.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20250901.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20251001.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20251101.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20251201.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20260101.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20260201.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20260301.dbo.vwvideoarchive
+UNION ALL
+select [PictureId],[ObjectId],[VideoZone],[Panel_id],[Result_id],[event_id],[TimeEvent],[Date_Key],[Photo],[BitMask],[DeviceEventTime] from video_20260401.dbo.vwvideoarchive
+"

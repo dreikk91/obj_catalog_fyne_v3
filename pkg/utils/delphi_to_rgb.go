@@ -101,6 +101,26 @@ func defaultLightColorMapping() map[int]ColorPair {
 			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
 			Row:  color.NRGBA{R: 255, G: 150, B: 70, A: 255},
 		},
+		26: { // PowerFail
+			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+			Row:  color.NRGBA{R: 0, G: 0, B: 128, A: 255},
+		},
+		27: { // BatteryLow
+			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+			Row:  color.NRGBA{R: 139, G: 69, B: 19, A: 255},
+		},
+		28: { // Online
+			Text: color.NRGBA{R: 0, G: 100, B: 0, A: 255},
+			Row:  color.NRGBA{R: 144, G: 238, B: 144, A: 255},
+		},
+		29: { // Offline
+			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
+			Row:  color.NRGBA{R: 105, G: 105, B: 105, A: 255},
+		},
+		30: { // System/Service
+			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
+			Row:  color.NRGBA{R: 173, G: 216, B: 230, A: 255},
+		},
 	}
 }
 
@@ -194,6 +214,26 @@ func defaultDarkColorMapping() map[int]ColorPair {
 		25: { // Tamper
 			Text: color.NRGBA{R: 255, G: 230, B: 190, A: 255},
 			Row:  color.NRGBA{R: 95, G: 60, B: 30, A: 255},
+		},
+		26: { // PowerFail
+			Text: color.NRGBA{R: 200, G: 200, B: 255, A: 255},
+			Row:  color.NRGBA{R: 15, G: 15, B: 70, A: 255},
+		},
+		27: { // BatteryLow
+			Text: color.NRGBA{R: 255, G: 220, B: 180, A: 255},
+			Row:  color.NRGBA{R: 70, G: 40, B: 15, A: 255},
+		},
+		28: { // Online
+			Text: color.NRGBA{R: 180, G: 255, B: 180, A: 255},
+			Row:  color.NRGBA{R: 20, G: 60, B: 20, A: 255},
+		},
+		29: { // Offline
+			Text: color.NRGBA{R: 220, G: 220, B: 220, A: 255},
+			Row:  color.NRGBA{R: 50, G: 50, B: 50, A: 255},
+		},
+		30: { // System/Service
+			Text: color.NRGBA{R: 200, G: 240, B: 255, A: 255},
+			Row:  color.NRGBA{R: 25, G: 55, B: 75, A: 255},
 		},
 	}
 }

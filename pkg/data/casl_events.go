@@ -100,7 +100,7 @@ func (p *CASLCloudProvider) readEventsJournalAsEvents(ctx context.Context) ([]mo
 	logCASLReadEventsRows(start, now, rows)
 
 	events, maxEventTime := p.mapCASLRowsToEvents(ctx, rows, startGate)
-	p.updateRealtimeAlarmsFromRows(ctx, rows)
+	// p.updateRealtimeAlarmsFromRows(ctx, rows) // ВИДАЛЕНО: події з журналу не повинні потрапляти в тривоги
 	p.mu.Lock()
 	if maxEventTime > p.eventsCursorMs {
 		p.eventsCursorMs = maxEventTime
@@ -711,12 +711,12 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 
 	alarms := p.snapshotRealtimeAlarms()
 	if len(alarms) == 0 {
-		rows, err := p.readGeneralTapeItemRows(ctx)
+		// Оновлюємо стрічку (tape) при першому запиті через get_general_tape_objects
+		tapeEvents, err := p.readGeneralTapeAsEvents(ctx)
 		if err != nil {
-			log.Debug().Err(err).Msg("CASL: get_general_tape_item недоступний під час формування активних тривог")
-		} else if len(rows) > 0 {
-			logCASLGeneralTapeItemRows(rows)
-			p.updateRealtimeAlarmsFromRows(ctx, rows)
+			log.Debug().Err(err).Msg("CASL: get_general_tape_objects недоступний під час формування активних тривог")
+		} else if len(tapeEvents) > 0 {
+			p.updateRealtimeAlarmsFromEvents(ctx, tapeEvents)
 			alarms = p.snapshotRealtimeAlarms()
 		}
 	}

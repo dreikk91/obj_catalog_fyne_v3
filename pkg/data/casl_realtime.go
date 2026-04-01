@@ -883,13 +883,19 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			details = decodeCASLEventDescription(nil, dictMap, row.Code, row.ContactID, int(row.Number), deviceType)
 		}
 		if details == "" {
-			details = strings.TrimSpace(row.Action)
-		}
-		if details == "" {
-			details = strings.TrimSpace(row.Code)
-		}
-		if details == "" {
-			details = "CASL подія"
+			rawAction := strings.TrimSpace(row.Action)
+			switch {
+			case !isCASLPlaceholder(rawAction):
+				details = rawAction
+			case row.ContactID != "" && !isCASLPlaceholder(row.Code):
+				details = fmt.Sprintf("%s (%s)", row.ContactID, row.Code)
+			case row.ContactID != "":
+				details = row.ContactID
+			case !isCASLPlaceholder(row.Code):
+				details = row.Code
+			default:
+				details = "CASL подія"
+			}
 		}
 
 		classifierCode := strings.TrimSpace(row.Code)

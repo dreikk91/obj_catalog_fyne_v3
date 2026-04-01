@@ -938,3 +938,8 @@ func asString(value any) string {
 		return strings.TrimSpace(fmt.Sprintf("%v", value))
 	}
 }
+
+func isCASLPlaceholder(s string) bool {
+	val := strings.ToLower(strings.TrimSpace(s))
+	return val == "" || val == "не встановлено" || val == "undefined" || val == "null" || val == "none"
+}

@@ -733,10 +733,10 @@ func decodeCASLEventDescription(translator map[string]string, dictionary map[str
 
 func buildCASLUserActionDetails(row CASLObjectEvent) string {
 	action := strings.ToUpper(strings.TrimSpace(row.Action))
-	if action == "" {
+	if isCASLPlaceholder(action) {
 		action = strings.ToUpper(strings.TrimSpace(row.Code))
 	}
-	if action == "" {
+	if isCASLPlaceholder(action) {
 		return ""
 	}
 
@@ -749,13 +749,9 @@ func buildCASLUserActionDetails(row CASLObjectEvent) string {
 
 	switch action {
 	case "GRD_OBJ_NOTIF":
-		parts := []string{"Нова тривога"}
-		if objectLabel != "" {
-			parts = append(parts, objectLabel)
-		}
-		return strings.Join(parts, " | ")
+		return "Попадання тривоги в стрічку"
 	case "GRD_OBJ_PICK":
-		base := "Тривогу взято в роботу оператором"
+		base := "Взяття в роботу об`єкта"
 		who := strings.TrimSpace(row.UserFIO)
 		if who == "" {
 			who = strings.TrimSpace(row.UserID)
@@ -765,21 +761,28 @@ func buildCASLUserActionDetails(row CASLObjectEvent) string {
 		}
 		return base
 	case "GRD_OBJ_ASS_MGR":
-		base := "На тривогу призначено ГМР"
-		mgrID := strings.TrimSpace(row.MgrID)
-		if mgrID != "" {
-			return base + " #" + mgrID
+		base := "Призначення МГР"
+		mgr := strings.TrimSpace(row.MgrID)
+		if mgr != "" {
+			return base + " " + mgr
 		}
 		return base
-	case "GRD_OBJ_MGR_CANCEL":
-		base := "Тривогу скасовано оператором"
-		mgrID := strings.TrimSpace(row.MgrID)
-		if mgrID != "" {
-			return base + " (ГМР #" + mgrID + ")"
+	case "GRD_OBJ_MGR_ARR", "GRD_OBJ_MGR_ARRIVED", "MGR_ARRIVED", "MGR_ARR":
+		base := "Прибула"
+		mgr := strings.TrimSpace(row.MgrID)
+		if mgr != "" {
+			return base + " " + mgr
+		}
+		return base
+	case "GRD_OBJ_MGR_CANCEL", "GRD_OBJ_MGR_RECALL", "MGR_RECALL":
+		base := "Відкликання МГР"
+		mgr := strings.TrimSpace(row.MgrID)
+		if mgr != "" {
+			return base + " (" + mgr + ")"
 		}
 		return base
 	case "GRD_OBJ_FINISH":
-		base := "Обробку тривоги завершено оператором"
+		base := "Завершення відпрацювання тривоги"
 		who := strings.TrimSpace(row.UserFIO)
 		if who == "" {
 			who = strings.TrimSpace(row.UserID)

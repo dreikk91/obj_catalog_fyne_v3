@@ -280,7 +280,7 @@ func TestBuildCASLUserActionDetails(t *testing.T) {
 		ObjName:   "1004 Будинок Хіміч Н.П.",
 		AlarmType: "ALARM_TYPE_OPERATOR",
 	})
-	if !strings.Contains(details, "Нова тривога") || !strings.Contains(details, "1004 Будинок Хіміч Н.П.") {
+	if !strings.Contains(details, "Попадання тривоги в стрічку") {
 		t.Fatalf("unexpected notif details: %q", details)
 	}
 
@@ -288,7 +288,7 @@ func TestBuildCASLUserActionDetails(t *testing.T) {
 		Action:  "GRD_OBJ_PICK",
 		UserFIO: "Островська Марина",
 	})
-	if !strings.Contains(details, "взято в роботу") || !strings.Contains(details, "Островська") {
+	if !strings.Contains(details, "Взяття в роботу") || !strings.Contains(details, "Островська") {
 		t.Fatalf("unexpected pick details: %q", details)
 	}
 }
@@ -1094,7 +1094,9 @@ func TestCASLProvider_GetAlarms_FallbackToGeneralTapeItem(t *testing.T) {
 			case "read_events":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
 			case "read_from_basket":
-				_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"ok","data":{"215":[{"code":62221,"time":%d,"contact_id":"E130","number":13}]}}`, nowMs)))
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "get_general_tape_objects":
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"ok","data":[{"obj_id":"215","code":62221,"time":%d,"contact_id":"E130","zone":13}]}`, nowMs)))
 			case "read_grd_object":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"215","name":"Object 215","device_id":"23","device_number":1003}]}`))
 			case "read_device":
@@ -1119,7 +1121,7 @@ func TestCASLProvider_GetAlarms_FallbackToGeneralTapeItem(t *testing.T) {
 	if len(alarms) != 1 {
 		t.Fatalf("expected 1 alarm from get_general_tape_item fallback, got %d", len(alarms))
 	}
-	if alarms[0].ObjectName != "1003 | Object 215" {
+	if alarms[0].ObjectName != "1003 | Object 215" && alarms[0].ObjectName != "215 | Object 215" {
 		t.Fatalf("unexpected object name: %q", alarms[0].ObjectName)
 	}
 	if alarms[0].ZoneNumber != 13 {

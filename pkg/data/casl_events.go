@@ -474,6 +474,7 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]mode
 	}
 
 	objectNames := map[string]string{}
+	objectNums := map[string]string{}
 	if records, loadErr := p.loadObjects(ctx); loadErr == nil {
 		for _, record := range records {
 			objID := strings.TrimSpace(record.ObjID)
@@ -485,6 +486,7 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]mode
 				name = "Об'єкт #" + objID
 			}
 			objectNames[objID] = name
+			objectNums[objID] = preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
 		}
 	}
 	dictMap := p.loadDictionaryMap(ctx)
@@ -509,14 +511,9 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]mode
 		}
 		objectName = formatCASLJournalObjectName(rawObjID, objectName)
 
-		objectNum := rawObjID
-		if records, loadErr := p.loadObjects(ctx); loadErr == nil {
-			for _, record := range records {
-				if strings.TrimSpace(record.ObjID) == rawObjID {
-					objectNum = preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
-					break
-				}
-			}
+		objectNum := objectNums[rawObjID]
+		if objectNum == "" {
+			objectNum = rawObjID
 		}
 
 		eventTime := parseCASLAnyTime(row["time"])

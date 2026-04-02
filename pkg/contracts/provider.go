@@ -10,6 +10,7 @@ import (
 type ObjectProvider interface {
 	GetObjects() []models.Object
 	GetObjectByID(id string) *models.Object
+	GetDisplayNumber(id int) string
 }
 
 type DetailProvider interface {

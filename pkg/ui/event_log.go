@@ -174,8 +174,8 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 			}
 
 			objectNum := event.ObjectNumber
-			if objectNum == "" {
-				objectNum = viewmodels.GetObjectNumber(event.ObjectID)
+			if objectNum == "" && panel.Data != nil {
+				objectNum = panel.Data.GetDisplayNumber(event.ObjectID)
 			}
 
 			displayTitle := objectName

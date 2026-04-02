@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/models"
-	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,12 +24,20 @@ type DBDataProvider struct {
 	cachedEvents []models.Event
 	eventMutex   sync.RWMutex
 
+	// Кеш номерів об'єктів
+	numberCache map[int]string
+	numberMutex sync.RWMutex
+
 	// Базовий DSN для підключення до інших БД на тому ж сервері
 	baseDSN string
 }
 
 func NewDBDataProvider(db *sqlx.DB, baseDSN string) *DBDataProvider {
-	provider := &DBDataProvider{db: db, baseDSN: baseDSN}
+	provider := &DBDataProvider{
+		db:          db,
+		baseDSN:     baseDSN,
+		numberCache: make(map[int]string),
+	}
 	log.Debug().Msg("DBDataProvider ініціалізовано з підключенням до БД")
 	return provider
 }
@@ -53,16 +60,29 @@ func (p *DBDataProvider) GetObjects() []models.Object {
 	}
 
 	var objects []models.Object
+	p.numberMutex.Lock()
 	for _, row := range rows {
 		obj := mapObjectRowToModel(row)
-		viewmodels.RegisterObjectNumber(obj.ID, strconv.Itoa(obj.ID))
+		num := strconv.Itoa(obj.ID)
+		p.numberCache[obj.ID] = num
 		objects = append(objects, obj)
 	}
+	p.numberMutex.Unlock()
 	log.Debug().Int("objectsCount", len(objects)).Msg("Список об'єктів завантажено")
 	return objects
 }
 
 // GetObjectByID отримує базову інформацію про об'єкт
+func (p *DBDataProvider) GetDisplayNumber(id int) string {
+	p.numberMutex.RLock()
+	num, ok := p.numberCache[id]
+	p.numberMutex.RUnlock()
+	if ok {
+		return num
+	}
+	return strconv.Itoa(id)
+}
+
 func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 	if p.db == nil {
 		log.Warn().Str("id", idStr).Msg("Спроба отримати об'єкт без активного з'єднання БД")

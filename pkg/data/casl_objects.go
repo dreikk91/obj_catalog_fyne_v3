@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"strconv"
 	"strings"
 	"time"
@@ -44,9 +43,6 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 		obj := mapCASLGrdObjectToObject(record, selectCASLDevice(hasDevice, device))
 		p.enrichCASLObjectWithDeviceMeta(ctx, &obj, hasDevice, device)
 
-		objectNum := preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
-		viewmodels.RegisterObjectNumber(obj.ID, objectNum)
-
 		objects = append(objects, obj)
 	}
 	// sortCASLObjectsByNumber(objects)
@@ -73,6 +69,18 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 // 		return objects[i].Name < objects[j].Name
 // 	})
 // }
+
+func (p *CASLCloudProvider) GetDisplayNumber(internalID int) string {
+	p.mu.RLock()
+	record, ok := p.objectByInternalID[internalID]
+	p.mu.RUnlock()
+
+	if !ok {
+		return ""
+	}
+
+	return preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
+}
 
 func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 	objectID, ok := parseObjectID(idStr)
@@ -406,7 +414,6 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 	hasAssignment := len(normalizeContactIDs(record.InCharge, record.ManagerID)) > 0
 
 	objectNum := preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
-	viewmodels.RegisterObjectNumber(id, objectNum)
 
 	return models.Object{
 		ID:             id,

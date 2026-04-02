@@ -3,7 +3,6 @@ package viewmodels
 import (
 	"strconv"
 	"strings"
-	"sync"
 	"unicode"
 
 	"obj_catalog_fyne_v3/pkg/models"
@@ -61,27 +60,6 @@ func SourceBadgeForObjectID(id int) string {
 	return "[М]"
 }
 
-var (
-	objectNumberCache = make(map[int]string)
-	objectNumberMu    sync.RWMutex
-)
-
-// RegisterObjectNumber зберігає зв'язок ID об'єкта та його номера в глобальному кеші.
-func RegisterObjectNumber(id int, number string) {
-	if number == "" {
-		return
-	}
-	objectNumberMu.Lock()
-	objectNumberCache[id] = number
-	objectNumberMu.Unlock()
-}
-
-// GetObjectNumber повертає номер об'єкта за його ID з кешу.
-func GetObjectNumber(id int) string {
-	objectNumberMu.RLock()
-	defer objectNumberMu.RUnlock()
-	return objectNumberCache[id]
-}
 
 func ObjectDisplayNumber(object models.Object) string {
 	if !IsCASLObjectID(object.ID) {

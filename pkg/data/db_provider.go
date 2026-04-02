@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,7 +54,9 @@ func (p *DBDataProvider) GetObjects() []models.Object {
 
 	var objects []models.Object
 	for _, row := range rows {
-		objects = append(objects, mapObjectRowToModel(row))
+		obj := mapObjectRowToModel(row)
+		viewmodels.RegisterObjectNumber(obj.ID, strconv.Itoa(obj.ID))
+		objects = append(objects, obj)
 	}
 	log.Debug().Int("objectsCount", len(objects)).Msg("Список об'єктів завантажено")
 	return objects
@@ -547,11 +550,12 @@ func mapEventRowToModel(row database.EventRow, objID int) models.Event {
 	}
 
 	e := models.Event{
-		ID:         int(row.ID),
-		ObjectID:   id,
-		ObjectName: formatDBObjectName(row.ObjN, row.ObjShortName1),
-		Details:    ptrToString(row.Ukr1),
-		SC1:        0,
+		ID:           int(row.ID),
+		ObjectID:     id,
+		ObjectNumber: strconv.FormatInt(ptrToInt64(row.ObjN), 10),
+		ObjectName:   formatDBObjectName(row.ObjN, row.ObjShortName1),
+		Details:      ptrToString(row.Ukr1),
+		SC1:          0,
 	}
 
 	if row.Sc1 != nil {

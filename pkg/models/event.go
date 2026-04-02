@@ -38,11 +38,12 @@ const (
 
 // Event представляє подію в журналі
 type Event struct {
-	ID         int       // Унікальний ID події
-	Time       time.Time // Час події
-	ObjectID   int       // ID об'єкта
-	ObjectName string    // Назва об'єкта
-	Type       EventType // Тип події
+	ID           int       // Унікальний ID події
+	Time         time.Time // Час події
+	ObjectID     int       // ID об'єкта
+	ObjectNumber string    // Номер об'єкта
+	ObjectName   string    // Назва об'єкта
+	Type         EventType // Тип події
 	ZoneNumber int       // Номер зони (якщо застосовно)
 	Details    string    // Додаткові деталі
 	UserName   string    // Користувач (для постановки/зняття)

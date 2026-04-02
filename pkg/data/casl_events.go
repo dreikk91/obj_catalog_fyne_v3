@@ -355,14 +355,15 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 
 		seed := stableCASLAlarmSeed(code, contactID, number)
 		events = append(events, models.Event{
-			ID:         stableCASLEventID(strconv.FormatInt(ppkNum, 10), eventTS, seed, 0),
-			Time:       eventTime,
-			ObjectID:   objectID,
-			ObjectName: objectName,
-			Type:       eventType,
-			ZoneNumber: number,
-			Details:    details,
-			SC1:        mapCASLEventSC1(eventType),
+			ID:           stableCASLEventID(strconv.FormatInt(ppkNum, 10), eventTS, seed, 0),
+			Time:         eventTime,
+			ObjectID:     objectID,
+			ObjectNumber: objectNum,
+			ObjectName:   objectName,
+			Type:         eventType,
+			ZoneNumber:   number,
+			Details:      details,
+			SC1:          mapCASLEventSC1(eventType),
 		})
 	}
 
@@ -508,6 +509,16 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]mode
 		}
 		objectName = formatCASLJournalObjectName(rawObjID, objectName)
 
+		objectNum := rawObjID
+		if records, loadErr := p.loadObjects(ctx); loadErr == nil {
+			for _, record := range records {
+				if strings.TrimSpace(record.ObjID) == rawObjID {
+					objectNum = preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
+					break
+				}
+			}
+		}
+
 		eventTime := parseCASLAnyTime(row["time"])
 		if eventTime.IsZero() {
 			eventTime = time.Now()
@@ -539,15 +550,16 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]mode
 		}
 
 		events = append(events, models.Event{
-			ID:         eventID,
-			Time:       eventTime,
-			ObjectID:   objectID,
-			ObjectName: objectName,
-			Type:       eventType,
-			ZoneNumber: parseCASLAnyInt(row["zone"]),
-			Details:    details,
-			UserName:   strings.TrimSpace(asString(row["user_id"])),
-			SC1:        mapCASLEventSC1(eventType),
+			ID:           eventID,
+			Time:         eventTime,
+			ObjectID:     objectID,
+			ObjectNumber: objectNum,
+			ObjectName:   objectName,
+			Type:         eventType,
+			ZoneNumber:   parseCASLAnyInt(row["zone"]),
+			Details:      details,
+			UserName:     strings.TrimSpace(asString(row["user_id"])),
+			SC1:          mapCASLEventSC1(eventType),
 		})
 	}
 
@@ -1185,14 +1197,15 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 		}
 
 		result = append(result, models.Event{
-			ID:         stableCASLEventID(record.ObjID, ts, code, idx),
-			Time:       eventTime,
-			ObjectID:   objectID,
-			ObjectName: objectName,
-			Type:       eventType,
-			ZoneNumber: zoneNumber,
-			Details:    details,
-			SC1:        mapCASLEventSC1(eventType),
+			ID:           stableCASLEventID(record.ObjID, ts, code, idx),
+			Time:         eventTime,
+			ObjectID:     objectID,
+			ObjectNumber: objectNum,
+			ObjectName:   objectName,
+			Type:         eventType,
+			ZoneNumber:   zoneNumber,
+			Details:      details,
+			SC1:          mapCASLEventSC1(eventType),
 		})
 	}
 

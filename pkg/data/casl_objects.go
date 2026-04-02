@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +43,10 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 		device, hasDevice := p.resolveDeviceForObject(record)
 		obj := mapCASLGrdObjectToObject(record, selectCASLDevice(hasDevice, device))
 		p.enrichCASLObjectWithDeviceMeta(ctx, &obj, hasDevice, device)
+
+		objectNum := preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
+		viewmodels.RegisterObjectNumber(obj.ID, objectNum)
+
 		objects = append(objects, obj)
 	}
 	// sortCASLObjectsByNumber(objects)
@@ -400,8 +405,12 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 
 	hasAssignment := len(normalizeContactIDs(record.InCharge, record.ManagerID)) > 0
 
+	objectNum := preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
+	viewmodels.RegisterObjectNumber(id, objectNum)
+
 	return models.Object{
 		ID:             id,
+		DisplayNumber:  objectNum,
 		Name:           name,
 		Address:        address,
 		ContractNum:    strings.TrimSpace(record.Contract),

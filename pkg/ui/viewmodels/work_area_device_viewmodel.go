@@ -17,6 +17,10 @@ type WorkAreaDevicePresentation struct {
 	GroupsText       string
 	PowerText        string
 	SIMText          string
+	SIM1Text         string
+	SIM2Text         string
+	SIM1Value        string
+	SIM2Value        string
 	SIMCopyText      string
 	AutoTestText     string
 	GuardText        string
@@ -55,13 +59,17 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 	sim1 := strings.TrimSpace(obj.SIM1)
 	sim2 := strings.TrimSpace(obj.SIM2)
 	simText := "SIM1: —"
+	sim1Text := "📱 SIM1: —"
+	sim2Text := "📱 SIM2: —"
 	copySimText := ""
 	if sim1 != "" {
 		simText = "SIM1: " + sim1
+		sim1Text = "📱 SIM1: " + sim1
 		copySimText = sim1
 	}
 	if sim2 != "" {
 		simText += " | SIM2: " + sim2
+		sim2Text = "📱 SIM2: " + sim2
 		if copySimText != "" {
 			copySimText += " / " + sim2
 		} else {
@@ -127,6 +135,10 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 		GroupsText:       groupsText,
 		PowerText:        "🔌 " + powerText,
 		SIMText:          "📱 " + simText,
+		SIM1Text:         sim1Text,
+		SIM2Text:         sim2Text,
+		SIM1Value:        sim1,
+		SIM2Value:        sim2,
 		SIMCopyText:      copySimText,
 		AutoTestText:     fmt.Sprintf("⏱️ Автотест: кожні %d год", obj.AutoTestHours),
 		GuardText:        guardText,

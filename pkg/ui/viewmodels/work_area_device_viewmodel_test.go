@@ -37,6 +37,12 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation(t *testing.T) {
 	if presentation.SIMText != "📱 SIM1: 111 | SIM2: 222" {
 		t.Fatalf("unexpected sim text: %q", presentation.SIMText)
 	}
+	if presentation.SIM1Text != "📱 SIM1: 111" || presentation.SIM2Text != "📱 SIM2: 222" {
+		t.Fatalf("unexpected split sim texts: sim1=%q sim2=%q", presentation.SIM1Text, presentation.SIM2Text)
+	}
+	if presentation.SIM1Value != "111" || presentation.SIM2Value != "222" {
+		t.Fatalf("unexpected split sim values: sim1=%q sim2=%q", presentation.SIM1Value, presentation.SIM2Value)
+	}
 	if presentation.SIMCopyText != "111 / 222" {
 		t.Fatalf("unexpected sim copy text: %q", presentation.SIMCopyText)
 	}
@@ -85,6 +91,9 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLFallbacks(t *testin
 	}
 	if presentation.SIMText != "📱 SIM1: —" {
 		t.Fatalf("unexpected sim text: %q", presentation.SIMText)
+	}
+	if presentation.SIM1Text != "📱 SIM1: —" || presentation.SIM2Text != "📱 SIM2: —" {
+		t.Fatalf("unexpected split sim defaults: sim1=%q sim2=%q", presentation.SIM1Text, presentation.SIM2Text)
 	}
 	if presentation.PhoneText != "☎️ Тел. об'єкта: —" {
 		t.Fatalf("unexpected phone text: %q", presentation.PhoneText)

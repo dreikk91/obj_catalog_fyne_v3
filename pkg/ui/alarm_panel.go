@@ -164,7 +164,7 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 			}
 			objNum := alarm.ObjectNumber
 			if objNum == "" {
-				objNum = itoa(alarm.ObjectID)
+				objNum = alarm.ObjectNumber
 			}
 			displayText := alarm.GetTimeDisplay() + " — " + alarm.GetTypeDisplay() + " — №" + objNum
 			if alarm.ZoneNumber > 0 {
@@ -254,14 +254,13 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 // Refresh оновлює панель асинхронно
 func (p *AlarmPanelWidget) Refresh() {
 	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
-	p.OnThemeChanged(uiCfg.FontSizeAlarms)
+
 	if p.Data == nil {
 		return
 	}
 	if p.ViewModel == nil {
 		p.ViewModel = viewmodels.NewAlarmListViewModel()
 	}
-	// Провайдер може змінюватися після Reconnect.
 	p.UseCase = usecases.NewAlarmListUseCase(p.Data)
 
 	p.mutex.Lock()
@@ -299,7 +298,6 @@ func (p *AlarmPanelWidget) Refresh() {
 		SelectedSource: currentSource,
 	})
 
-	// Оновлюємо кеш та UI
 	p.mutex.Lock()
 	p.AllAlarms = result.CurrentAlarms
 	p.CurrentAlarms = result.FilteredAlarms
@@ -322,6 +320,13 @@ func (p *AlarmPanelWidget) Refresh() {
 	p.mutex.Unlock()
 
 	fyne.Do(func() {
+		// Оновлюємо розмір шрифту та UI-елементи теми — тільки на GUI-треді
+		p.lastFontSize = uiCfg.FontSizeAlarms
+		if p.TitleText != nil {
+			p.TitleText.TextSize = uiCfg.FontSizeAlarms + 1
+			p.TitleText.Refresh()
+		}
+
 		if p.SourceSelect != nil {
 			options := viewmodels.BuildObjectSourceOptions(result.CountAll, result.CountBridge, result.CountCASL)
 			p.SourceSelect.Options = options
@@ -356,17 +361,20 @@ func (p *AlarmPanelWidget) Refresh() {
 }
 
 func (p *AlarmPanelWidget) OnThemeChanged(fontSize float32) {
-	p.lastFontSize = fontSize
-	if p.TitleText != nil {
-		p.TitleText.TextSize = fontSize + 1
-		p.TitleText.Refresh()
-	}
-	if p.List != nil {
-		p.List.Refresh()
-	}
-	if p.SourceSelect != nil {
-		p.SourceSelect.Refresh()
-	}
+	p.lastFontSize = fontSize // safe: just a float32, no UI call
+
+	fyne.Do(func() {
+		if p.TitleText != nil {
+			p.TitleText.TextSize = fontSize + 1
+			p.TitleText.Refresh()
+		}
+		if p.List != nil {
+			p.List.Refresh()
+		}
+		if p.SourceSelect != nil {
+			p.SourceSelect.Refresh()
+		}
+	})
 }
 
 // adjustAlarmRowColor трохи змінює яскравість кольору рядка,

@@ -9,6 +9,8 @@ type WorkAreaDeviceStateViewModel struct {
 	groups      binding.String
 	power       binding.String
 	sim         binding.String
+	sim1        binding.String
+	sim2        binding.String
 	autoTest    binding.String
 	guard       binding.String
 	channel     binding.String
@@ -26,6 +28,8 @@ func NewWorkAreaDeviceStateViewModel() *WorkAreaDeviceStateViewModel {
 		groups:      binding.NewString(),
 		power:       binding.NewString(),
 		sim:         binding.NewString(),
+		sim1:        binding.NewString(),
+		sim2:        binding.NewString(),
 		autoTest:    binding.NewString(),
 		guard:       binding.NewString(),
 		channel:     binding.NewString(),
@@ -44,6 +48,8 @@ func (vm *WorkAreaDeviceStateViewModel) PanelMarkBinding() binding.String  { ret
 func (vm *WorkAreaDeviceStateViewModel) GroupsBinding() binding.String     { return vm.groups }
 func (vm *WorkAreaDeviceStateViewModel) PowerBinding() binding.String      { return vm.power }
 func (vm *WorkAreaDeviceStateViewModel) SIMBinding() binding.String        { return vm.sim }
+func (vm *WorkAreaDeviceStateViewModel) SIM1Binding() binding.String       { return vm.sim1 }
+func (vm *WorkAreaDeviceStateViewModel) SIM2Binding() binding.String       { return vm.sim2 }
 func (vm *WorkAreaDeviceStateViewModel) AutoTestBinding() binding.String   { return vm.autoTest }
 func (vm *WorkAreaDeviceStateViewModel) GuardBinding() binding.String      { return vm.guard }
 func (vm *WorkAreaDeviceStateViewModel) ChannelBinding() binding.String    { return vm.channel }
@@ -61,6 +67,8 @@ func (vm *WorkAreaDeviceStateViewModel) Reset() {
 	_ = vm.groups.Set("🔐 Групи: —")
 	_ = vm.power.Set("🔌 Живлення: —")
 	_ = vm.sim.Set("📱 SIM: —")
+	_ = vm.sim1.Set("📱 SIM1: —")
+	_ = vm.sim2.Set("📱 SIM2: —")
 	_ = vm.autoTest.Set("⏱️ Автотест: —")
 	_ = vm.guard.Set("🔒 Стан: —")
 	_ = vm.channel.Set("📡 Канал: —")
@@ -77,6 +85,8 @@ func (vm *WorkAreaDeviceStateViewModel) Apply(p WorkAreaDevicePresentation) {
 	_ = vm.groups.Set(p.GroupsText)
 	_ = vm.power.Set(p.PowerText)
 	_ = vm.sim.Set(p.SIMText)
+	_ = vm.sim1.Set(p.SIM1Text)
+	_ = vm.sim2.Set(p.SIM2Text)
 	_ = vm.autoTest.Set(p.AutoTestText)
 	_ = vm.guard.Set(p.GuardText)
 	_ = vm.channel.Set(p.ChannelText)

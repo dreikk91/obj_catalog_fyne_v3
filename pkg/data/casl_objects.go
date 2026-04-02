@@ -69,6 +69,18 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 // 	})
 // }
 
+func (p *CASLCloudProvider) GetDisplayNumber(internalID int) string {
+	p.mu.RLock()
+	record, ok := p.objectByInternalID[internalID]
+	p.mu.RUnlock()
+
+	if !ok {
+		return ""
+	}
+
+	return preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
+}
+
 func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 	objectID, ok := parseObjectID(idStr)
 	if !ok {
@@ -375,10 +387,10 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 		notes = strings.TrimSpace(record.Description)
 	}
 
-	displayNubmer := ""
-	if record.DeviceNumber.Int64() > 0 {
-	displayNubmer = strconv.FormatInt(record.DeviceNumber.Int64(), 10)
-	}
+	// displayNubmer := ""
+	// if record.DeviceNumber.Int64() > 0 {
+	// displayNubmer = strconv.FormatInt(record.DeviceNumber.Int64(), 10)
+	// }
 
 	panelMark := ""
 	if record.DeviceNumber.Int64() > 0 {
@@ -402,11 +414,13 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 	}
 
 	hasAssignment := len(normalizeContactIDs(record.InCharge, record.ManagerID)) > 0
+	objectNum := preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
+
 
 	return models.Object{
 		ID:             id,
 		Name:           name,
-		DisplayNumber:  displayNubmer,
+		DisplayNumber:  objectNum,
 		Address:        address,
 		ContractNum:    strings.TrimSpace(record.Contract),
 		Status:         statusState.Status,

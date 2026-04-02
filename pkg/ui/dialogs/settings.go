@@ -3,9 +3,12 @@ package dialogs
 import (
 	"fmt"
 	"obj_catalog_fyne_v3/pkg/config"
+	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -15,6 +18,7 @@ import (
 
 func ShowSettingsDialog(
 	win fyne.Window,
+	vodafoneProvider contracts.AdminObjectVodafoneService,
 	pref fyne.Preferences,
 	isDarkTheme bool,
 	onSave func(config.DBConfig, config.UIConfig),
@@ -22,6 +26,8 @@ func ShowSettingsDialog(
 ) {
 	dbCfg := config.LoadDBConfig(pref)
 	uiCfg := config.LoadUIConfig(pref)
+	vfCfg := config.LoadVodafoneConfig(pref)
+	vfAuthVM := viewmodels.NewVodafoneAuthViewModel()
 
 	// Database fields
 	userEntry := widget.NewEntry()
@@ -61,6 +67,116 @@ func ShowSettingsDialog(
 	caslPultIDEntry.SetPlaceHolder("0 = авто")
 	caslEnabledCheck := widget.NewCheck("Увімкнути CASL Cloud паралельно з БД/мостом", nil)
 	caslEnabledCheck.SetChecked(dbCfg.CASLEnabled || dbCfg.NormalizedMode() == config.BackendModeCASLCloud)
+
+	vodafonePhoneEntry := widget.NewEntry()
+	vodafonePhoneEntry.SetText(strings.TrimSpace(vfCfg.Phone))
+	vodafonePhoneEntry.SetPlaceHolder("380501234567")
+
+	vodafoneCodeEntry := widget.NewPasswordEntry()
+	vodafoneCodeEntry.SetPlaceHolder("SMS-код")
+
+	vodafoneStatusLabel := widget.NewLabel(vfAuthVM.BuildStatusText(contracts.VodafoneAuthState{
+		Phone:          vfCfg.Phone,
+		Authorized:     vfCfg.TokenUsableAt(timeNow()),
+		TokenExpiresAt: vfCfg.TokenExpiryTime(),
+	}))
+	vodafoneStatusLabel.Wrapping = fyne.TextWrapWord
+
+	setVodafoneBusy := func(busy bool) {
+		if busy {
+			vodafonePhoneEntry.Disable()
+			vodafoneCodeEntry.Disable()
+			return
+		}
+		vodafonePhoneEntry.Enable()
+		vodafoneCodeEntry.Enable()
+	}
+
+	refreshVodafoneStatus := func() {
+		state := contracts.VodafoneAuthState{
+			Phone:          strings.TrimSpace(vodafonePhoneEntry.Text),
+			Authorized:     vfCfg.TokenUsableAt(timeNow()),
+			TokenExpiresAt: vfCfg.TokenExpiryTime(),
+		}
+		if vodafoneProvider != nil {
+			if liveState, err := vodafoneProvider.GetVodafoneAuthState(); err == nil {
+				state = liveState
+				if strings.TrimSpace(liveState.Phone) != "" {
+					vodafonePhoneEntry.SetText(strings.TrimSpace(liveState.Phone))
+				}
+				vfCfg.Phone = liveState.Phone
+			}
+		}
+		vodafoneStatusLabel.SetText(vfAuthVM.BuildStatusText(state))
+	}
+
+	requestVodafoneSMSBtn := widget.NewButton("Надіслати SMS", func() {
+		if vodafoneProvider == nil {
+			vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
+			return
+		}
+		phone := strings.TrimSpace(vodafonePhoneEntry.Text)
+		setVodafoneBusy(true)
+		vodafoneStatusLabel.SetText("Vodafone: надсилання SMS-коду...")
+		go func() {
+			err := vodafoneProvider.RequestVodafoneLoginSMS(phone)
+			fyne.Do(func() {
+				setVodafoneBusy(false)
+				if err != nil {
+					vodafoneStatusLabel.SetText(err.Error())
+					return
+				}
+				vodafoneStatusLabel.SetText("Vodafone: SMS-код надіслано")
+			})
+		}()
+	})
+
+	verifyVodafoneCodeBtn := widget.NewButton("Підтвердити код", func() {
+		if vodafoneProvider == nil {
+			vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
+			return
+		}
+		phone := strings.TrimSpace(vodafonePhoneEntry.Text)
+		code := strings.TrimSpace(vodafoneCodeEntry.Text)
+		setVodafoneBusy(true)
+		vodafoneStatusLabel.SetText("Vodafone: перевірка коду...")
+		go func() {
+			state, err := vodafoneProvider.VerifyVodafoneLogin(phone, code)
+			fyne.Do(func() {
+				setVodafoneBusy(false)
+				if err != nil {
+					vodafoneStatusLabel.SetText(err.Error())
+					return
+				}
+				vfCfg.Phone = state.Phone
+				vfCfg.AccessToken = config.LoadVodafoneConfig(pref).AccessToken
+				vfCfg.TokenExpiry = config.LoadVodafoneConfig(pref).TokenExpiry
+				vodafoneCodeEntry.SetText("")
+				vodafoneStatusLabel.SetText(vfAuthVM.BuildStatusText(state))
+			})
+		}()
+	})
+
+	clearVodafoneTokenBtn := widget.NewButton("Очистити токен", func() {
+		if vodafoneProvider == nil {
+			vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
+			return
+		}
+		setVodafoneBusy(true)
+		go func() {
+			err := vodafoneProvider.ClearVodafoneLogin()
+			fyne.Do(func() {
+				setVodafoneBusy(false)
+				if err != nil {
+					vodafoneStatusLabel.SetText(err.Error())
+					return
+				}
+				latestCfg := config.LoadVodafoneConfig(pref)
+				vfCfg = latestCfg
+				refreshVodafoneStatus()
+			})
+		}()
+	})
 
 	// UI fields
 	fontEntry := widget.NewEntry()
@@ -137,6 +253,15 @@ func ShowSettingsDialog(
 			widget.NewFormItem("Password", caslPassEntry),
 			widget.NewFormItem("Pult ID", caslPultIDEntry),
 		)),
+		container.NewTabItem("Vodafone", container.NewVBox(
+			widget.NewLabel("Авторизація тільки через SMS-код для батьківського номера Vodafone."),
+			widget.NewForm(
+				widget.NewFormItem("Номер входу", vodafonePhoneEntry),
+				widget.NewFormItem("SMS-код", vodafoneCodeEntry),
+			),
+			container.NewHBox(requestVodafoneSMSBtn, verifyVodafoneCodeBtn, clearVodafoneTokenBtn),
+			vodafoneStatusLabel,
+		)),
 		container.NewTabItem("Інтерфейс", widget.NewForm(
 			widget.NewFormItem("Загальний шрифт", fontEntry),
 			widget.NewFormItem("Шрифт об'єктів", fontObjEntry),
@@ -202,8 +327,12 @@ func ShowSettingsDialog(
 					ObjectLogLimit:  objLimit,
 				}
 
+				newVodafoneCfg := config.LoadVodafoneConfig(pref)
+				newVodafoneCfg.Phone = strings.TrimSpace(vodafonePhoneEntry.Text)
+
 				config.SaveDBConfig(pref, newDbCfg)
 				config.SaveUIConfig(pref, newUiCfg)
+				config.SaveVodafoneConfig(pref, newVodafoneCfg)
 
 				if onSave != nil {
 					onSave(newDbCfg, newUiCfg)
@@ -214,7 +343,12 @@ func ShowSettingsDialog(
 	)
 
 	d.Resize(fyne.NewSize(560, 520))
+	refreshVodafoneStatus()
 	d.Show()
+}
+
+func timeNow() time.Time {
+	return time.Now()
 }
 
 func uriPathToLocalPath(path string) string {

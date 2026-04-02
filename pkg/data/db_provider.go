@@ -4,6 +4,7 @@ package data
 import (
 	"context"
 	"fmt"
+	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/models"
 	"strconv"
@@ -26,10 +27,28 @@ type DBDataProvider struct {
 
 	// Базовий DSN для підключення до інших БД на тому ж сервері
 	baseDSN string
+
+	vodafone *VodafoneService
 }
 
-func NewDBDataProvider(db *sqlx.DB, baseDSN string) *DBDataProvider {
+type DBProviderOption func(*DBDataProvider)
+
+func WithVodafoneConfigStore(store config.VodafoneConfigStore) DBProviderOption {
+	return func(p *DBDataProvider) {
+		if p == nil || store == nil {
+			return
+		}
+		p.vodafone = NewVodafoneService(store)
+	}
+}
+
+func NewDBDataProvider(db *sqlx.DB, baseDSN string, opts ...DBProviderOption) *DBDataProvider {
 	provider := &DBDataProvider{db: db, baseDSN: baseDSN}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(provider)
+		}
+	}
 	log.Debug().Msg("DBDataProvider ініціалізовано з підключенням до БД")
 	return provider
 }

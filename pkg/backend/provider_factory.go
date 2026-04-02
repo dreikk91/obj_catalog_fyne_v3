@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/data"
 
@@ -8,8 +9,8 @@ import (
 )
 
 // NewDBProvider creates backend data provider implementation and returns it as GUI-facing contract.
-func NewDBProvider(db *sqlx.DB, dsn string) contracts.DataProvider {
-	return data.NewDBDataProvider(db, dsn)
+func NewDBProvider(db *sqlx.DB, dsn string, opts ...data.DBProviderOption) contracts.DataProvider {
+	return data.NewDBDataProvider(db, dsn, opts...)
 }
 
 // NewCASLCloudProvider creates CASL Cloud API backend provider.
@@ -59,3 +60,4 @@ var _ contracts.DataProvider = (*data.DBDataProvider)(nil)
 var _ contracts.AdminProvider = (*data.DBDataProvider)(nil)
 var _ contracts.DataProvider = (*data.CASLCloudProvider)(nil)
 var _ contracts.DataProvider = (*data.CombinedDataProvider)(nil)
+var _ config.VodafoneConfigStore = (*config.PreferencesVodafoneConfigStore)(nil)

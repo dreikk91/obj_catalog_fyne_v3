@@ -27,6 +27,17 @@ type AdminObjectSIMLookupService interface {
 	FindObjectsBySIMPhone(phone string, excludeObjN *int64) ([]AdminSIMPhoneUsage, error)
 }
 
+// AdminObjectVodafoneService керує Vodafone IoT функціями для SIM-карток об'єкта.
+type AdminObjectVodafoneService interface {
+	GetVodafoneAuthState() (VodafoneAuthState, error)
+	RequestVodafoneLoginSMS(phone string) error
+	VerifyVodafoneLogin(phone string, code string) (VodafoneAuthState, error)
+	ClearVodafoneLogin() error
+	GetVodafoneSIMStatus(msisdn string) (VodafoneSIMStatus, error)
+	RebootVodafoneSIM(msisdn string) (VodafoneSIMRebootResult, error)
+	UpdateVodafoneSIMMetadata(msisdn string, name string, comment string) error
+}
+
 // AdminObjectPersonalService керує відповідальними особами об'єкта.
 type AdminObjectPersonalService interface {
 	ListObjectPersonals(objn int64) ([]AdminObjectPersonal, error)
@@ -109,6 +120,7 @@ type AdminObjectAdditionalTabProvider interface {
 type AdminObjectCardProvider interface {
 	AdminObjectReferenceService
 	AdminObjectCardService
+	AdminObjectVodafoneService
 	AdminObjectPersonalTabProvider
 	AdminObjectZonesTabProvider
 	AdminObjectAdditionalTabProvider
@@ -118,6 +130,7 @@ type AdminObjectCardProvider interface {
 type AdminObjectDialogProvider interface {
 	AdminObjectReferenceService
 	AdminObjectCardService
+	AdminObjectVodafoneService
 	AdminObjectPersonalService
 	AdminObjectZoneService
 	AdminObjectCoordinatesService

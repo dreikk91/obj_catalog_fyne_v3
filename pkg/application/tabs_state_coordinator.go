@@ -3,6 +3,7 @@ package application
 import (
 	"fmt"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 )
 
@@ -19,7 +20,9 @@ func (a *Application) configureTabsState(detailsTab *container.TabItem, eventsTa
 	a.lastEventsCount = 0
 
 	if rightTabs != nil && detailsTab != nil {
-		rightTabs.Select(detailsTab)
+		fyne.Do(func() {
+			rightTabs.Select(detailsTab)
+		})
 	}
 }
 
@@ -37,30 +40,32 @@ func (a *Application) updateTabBadges(alarmsCount int, criticalCount int, events
 		a.lastEventsCount = eventsCount
 	}
 
-	if a.alarmsTab != nil {
-		alarmTitle := "АКТИВНІ ТРИВОГИ"
-		if a.lastAlarmsCount > 0 {
-			alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d)", a.lastAlarmsCount)
-			if a.lastCriticalCount > 0 {
-				alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d, КРИТИЧНІ: %d)", a.lastAlarmsCount, a.lastCriticalCount)
-			}
-		}
-		a.alarmsTab.Text = alarmTitle
-	}
-
-	if a.eventsTab != nil {
-		eventsTitle := "ЖУРНАЛ ПОДІЙ"
-		if a.lastEventsCount > 0 {
-			eventsTitle = fmt.Sprintf("ЖУРНАЛ ПОДІЙ (%d)", a.lastEventsCount)
-		}
-		a.eventsTab.Text = eventsTitle
-	}
-
-	if a.rightTabs != nil {
-		a.rightTabs.Refresh()
-	}
-
-	// Оновлюємо заголовок вікна з урахуванням кількості тривог.
 	a.currentAlarmsTotal = a.lastAlarmsCount
-	a.updateWindowTitle()
+
+	fyne.Do(func() {
+		if a.alarmsTab != nil {
+			alarmTitle := "АКТИВНІ ТРИВОГИ"
+			if a.lastAlarmsCount > 0 {
+				alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d)", a.lastAlarmsCount)
+				if a.lastCriticalCount > 0 {
+					alarmTitle = fmt.Sprintf("АКТИВНІ ТРИВОГИ (%d, КРИТИЧНІ: %d)", a.lastAlarmsCount, a.lastCriticalCount)
+				}
+			}
+			a.alarmsTab.Text = alarmTitle
+		}
+
+		if a.eventsTab != nil {
+			eventsTitle := "ЖУРНАЛ ПОДІЙ"
+			if a.lastEventsCount > 0 {
+				eventsTitle = fmt.Sprintf("ЖУРНАЛ ПОДІЙ (%d)", a.lastEventsCount)
+			}
+			a.eventsTab.Text = eventsTitle
+		}
+
+		if a.rightTabs != nil {
+			a.rightTabs.Refresh()
+		}
+
+		a.updateWindowTitle()
+	})
 }

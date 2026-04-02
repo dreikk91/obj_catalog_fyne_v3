@@ -17,6 +17,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/backend"
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/eventbus"
 	applogger "obj_catalog_fyne_v3/pkg/logger"
@@ -181,7 +182,11 @@ func NewApplication() *Application {
 	db = database.InitDB(dsn)
 	log.Info().Msg("БД підключена, запуск перевірки здоров'я...")
 	healthCancel = database.StartHealthCheck(db)
-	dbProvider = backend.NewDBProvider(db, dsn)
+	dbProvider = backend.NewDBProvider(
+		db,
+		dsn,
+		data.WithVodafoneConfigStore(config.NewPreferencesVodafoneConfigStore(fyneApp.Preferences())),
+	)
 	dataProvider = dbProvider
 	log.Debug().Msg("Провайдер даних БД створено")
 
@@ -346,6 +351,7 @@ func (a *Application) buildUI() {
 		log.Debug().Msg("Відкриття діалогу налаштувань...")
 		dialogs.ShowSettingsDialog(
 			a.mainWindow,
+			a.resolveVodafoneAdminProvider(),
 			a.fyneApp.Preferences(),
 			a.isDarkTheme,
 			func(dbCfg config.DBConfig, uiCfg config.UIConfig) {
@@ -555,6 +561,21 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	return fyne.NewMainMenu(menus...)
 }
 
+func (a *Application) resolveVodafoneAdminProvider() contracts.AdminObjectVodafoneService {
+	if a == nil {
+		return nil
+	}
+	provider := a.getDataProvider()
+	if provider == nil {
+		return nil
+	}
+	admin, ok := backend.AsAdminProvider(provider)
+	if !ok || admin == nil {
+		return nil
+	}
+	return admin
+}
+
 // Run запускає додаток
 func (a *Application) Run() {
 	log.Info().Msg("Запуск основного цикла додатку (UI loop)...")
@@ -607,7 +628,11 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 	}
 	log.Debug().Msg("✓ Нове з'єднання з БД успішне")
 	newHealthCheck = database.StartHealthCheck(newDB)
-	dbProvider = backend.NewDBProvider(newDB, dsn)
+	dbProvider = backend.NewDBProvider(
+		newDB,
+		dsn,
+		data.WithVodafoneConfigStore(config.NewPreferencesVodafoneConfigStore(a.fyneApp.Preferences())),
+	)
 	newProvider = dbProvider
 	if caslEnabled {
 		caslProvider := backend.NewCASLCloudProvider(

@@ -84,6 +84,39 @@ func fallbackCASLActionDetails(row CASLObjectEvent, sourceType string) string {
 	}
 }
 
+func (p *CASLCloudProvider) buildSharedObjectContext(ctx context.Context) (
+	byPPK map[int64]caslEventContext,
+	byObject map[string]caslEventContext,
+	err error,
+) {
+	records, err := p.loadObjects(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	_, _ = p.loadDevices(ctx) // прогріваємо кеш пристроїв
+
+	ppkFilter := make(map[int64]struct{}, len(records))
+	objFilter := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		if objID := strings.TrimSpace(record.ObjID); objID != "" {
+			objFilter[objID] = struct{}{}
+		}
+		if ppkNum := record.DeviceNumber.Int64(); ppkNum > 0 {
+			ppkFilter[ppkNum] = struct{}{}
+		}
+	}
+
+	byPPK, err = p.loadEventContextsByPPK(ctx, ppkFilter)
+	if err != nil {
+		log.Debug().Err(err).Msg("CASL: не вдалося побудувати PPK контексти")
+		byPPK = make(map[int64]caslEventContext)
+		err = nil // не фатально — продовжуємо з порожнім byPPK
+	}
+
+	byObject = p.loadEventContextsByObjectNum(ctx, objFilter, byPPK)
+	return byPPK, byObject, nil
+}
+
 func (p *CASLCloudProvider) GetEvents() []models.Event {
 	p.ensureRealtimeStream()
 
@@ -128,14 +161,14 @@ func (p *CASLCloudProvider) getEventsFromBasketFallback(ctx context.Context) []m
 		}
 
 		event := models.Event{
-			ID:         nextCASLEventID(),
-			Time:       time.Now(),
-			ObjectID:   objectID,
+			ID:           nextCASLEventID(),
+			Time:         time.Now(),
+			ObjectID:     objectID,
 			ObjectNumber: strconv.Itoa(objectID),
-			ObjectName: objectName,
-			Type:       eventType,
-			Details:    fmt.Sprintf("CASL Cloud: активних тривог у кошику %d (було %d)", basketCount, p.lastBasketCount),
-			SC1:        eventSC1,
+			ObjectName:   objectName,
+			Type:         eventType,
+			Details:      fmt.Sprintf("CASL Cloud: активних тривог у кошику %d (було %d)", basketCount, p.lastBasketCount),
+			SC1:          eventSC1,
 		}
 
 		p.cachedEvents = append([]models.Event{event}, p.cachedEvents...)
@@ -355,15 +388,21 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 		}
 
 		seed := stableCASLAlarmSeed(code, contactID, number)
+		// objectNum := objectNums[rawObjID]
+		if objectNum == "" {
+			objectNum = rawObjID
+		}
+
 		events = append(events, models.Event{
-			ID:         stableCASLEventID(strconv.FormatInt(ppkNum, 10), eventTS, seed, 0),
-			Time:       eventTime,
-			ObjectID:   objectID,
-			ObjectName: objectName,
-			Type:       eventType,
-			ZoneNumber: number,
-			Details:    details,
-			SC1:        mapCASLEventSC1(eventType),
+			ID:           stableCASLEventID(strconv.FormatInt(ppkNum, 10), eventTS, seed, 0),
+			Time:         eventTime,
+			ObjectID:     objectID,
+			ObjectNumber: objectNum,
+			ObjectName:   objectName,
+			Type:         eventType,
+			ZoneNumber:   number,
+			Details:      details,
+			SC1:          mapCASLEventSC1(eventType),
 		})
 	}
 
@@ -437,6 +476,85 @@ func (p *CASLCloudProvider) loadEventContextsByObjectNum(ctx context.Context, ob
 	return contexts
 }
 
+func (p *CASLCloudProvider) loadEventContextsByPPK(ctx context.Context, ppkFilter map[int64]struct{}) (map[int64]caslEventContext, error) {
+	if len(ppkFilter) == 0 {
+		return nil, nil
+	}
+
+	contexts := make(map[int64]caslEventContext, len(ppkFilter))
+
+	// Завантажуємо об'єкти щоб отримати інформацію про них
+	records, err := p.loadObjects(ctx)
+	if err != nil {
+		log.Debug().Err(err).Msg("CASL: не вдалося завантажити об'єкти для PPK context")
+		records = nil
+	}
+
+	// Завантажуємо пристрої для інформації про тип та лінії
+	devices, devErr := p.loadDevices(ctx)
+	if devErr != nil {
+		log.Debug().Err(devErr).Msg("CASL: не вдалося завантажити пристрої для PPK context")
+		return contexts, devErr
+	}
+
+	// Будуємо індекс об'єктів за їх DeviceNumber для швидкого пошуку
+	objectByPPK := make(map[int64]caslGrdObject)
+	for _, record := range records {
+		ppkNum := record.DeviceNumber.Int64()
+		if ppkNum > 0 {
+			if _, exists := objectByPPK[ppkNum]; !exists {
+				objectByPPK[ppkNum] = record
+			}
+		}
+	}
+
+	// Для кожного потрібного ППК номера будуємо контекст
+	for _, device := range devices {
+		ppkNum := device.Number.Int64()
+		if ppkNum <= 0 {
+			continue
+		}
+
+		if _, need := ppkFilter[ppkNum]; !need {
+			continue
+		}
+
+		if _, exists := contexts[ppkNum]; exists {
+			continue
+		}
+
+		ctxItem := caslEventContext{
+			ObjectID:   0, // За замовчуванням
+			ObjectNum:  strconv.FormatInt(ppkNum, 10),
+			DeviceType: strings.TrimSpace(device.Type.String()),
+		}
+
+		// Якщо є об'єкт з цим DeviceNumber, заповнюємо ObjectID та ObjectNum з нього
+		if objRecord, hasObj := objectByPPK[ppkNum]; hasObj {
+			ctxItem.ObjectID = mapCASLObjectID(objRecord.ObjID, objRecord.Name, strconv.FormatInt(ppkNum, 10))
+			ctxItem.ObjectNum = preferredCASLObjectNumber(objRecord.ObjID, objRecord.Name, ppkNum)
+			ctxItem.ObjectName = strings.TrimSpace(objRecord.Name)
+			if ctxItem.ObjectName == "" {
+				ctxItem.ObjectName = "Об'єкт #" + ctxItem.ObjectNum
+			}
+		} else {
+			// Якщо немає об'єкту, використовуємо ім'я пристрою
+			ctxItem.ObjectName = strings.TrimSpace(device.Name.String())
+			if ctxItem.ObjectName == "" {
+				ctxItem.ObjectName = "Пристрій ППК #" + ctxItem.ObjectNum
+			}
+		}
+		ctxItem.ObjectName = formatCASLJournalObjectName(ctxItem.ObjectNum, ctxItem.ObjectName)
+
+		ctxItem.LineNames = buildCASLLineNameIndex(device.Lines)
+		ctxItem.Translator = p.loadTranslatorMap(ctx, ctxItem.DeviceType)
+
+		contexts[ppkNum] = ctxItem
+	}
+
+	return contexts, nil
+}
+
 func (p *CASLCloudProvider) mergeCachedEventsLocked(events []models.Event) int {
 	if len(events) == 0 {
 		return 0
@@ -464,7 +582,7 @@ func (p *CASLCloudProvider) mergeCachedEventsLocked(events []models.Event) int {
 	return added
 }
 
-func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]models.Event, error) {
+func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context, byObject map[string]caslEventContext) ([]models.Event, error) {
 	rows, err := p.ReadGeneralTapeObjects(ctx)
 	if err != nil {
 		return nil, err
@@ -473,20 +591,6 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]mode
 		return nil, nil
 	}
 
-	objectNames := map[string]string{}
-	if records, loadErr := p.loadObjects(ctx); loadErr == nil {
-		for _, record := range records {
-			objID := strings.TrimSpace(record.ObjID)
-			if objID == "" {
-				continue
-			}
-			name := strings.TrimSpace(record.Name)
-			if name == "" {
-				name = "Об'єкт #" + objID
-			}
-			objectNames[objID] = name
-		}
-	}
 	dictMap := p.loadDictionaryMap(ctx)
 
 	events := make([]models.Event, 0, len(rows))
@@ -495,19 +599,31 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]mode
 		if rawObjID == "" {
 			rawObjID = strings.TrimSpace(asString(row["object_id"]))
 		}
-		objectID := mapCASLObjectID(rawObjID, asString(row["number"]), asString(row["device_number"]))
 
-		objectName := strings.TrimSpace(objectNames[rawObjID])
-		if objectName == "" {
-			objectName = strings.TrimSpace(asString(row["obj_name"]))
-		}
+		// Використання дефолтних значень
+		objectID := mapCASLObjectID(rawObjID, asString(row["number"]), asString(row["device_number"]))
+		objectName := strings.TrimSpace(asString(row["obj_name"]))
 		if objectName == "" {
 			objectName = strings.TrimSpace(asString(row["name"]))
 		}
 		if objectName == "" {
 			objectName = "Об'єкт #" + strings.TrimSpace(rawObjID)
 		}
-		objectName = formatCASLJournalObjectName(rawObjID, objectName)
+		objectNum := rawObjID
+		translator := map[string]string(nil)
+		deviceType := strings.TrimSpace(asString(row["device_type"]))
+
+		// Збагачення даними з попередньо побудованого контексту
+		if ctxItem, hasCtx := byObject[rawObjID]; hasCtx {
+			objectID = ctxItem.ObjectID
+			objectNum = ctxItem.ObjectNum
+			objectName = ctxItem.ObjectName
+			translator = ctxItem.Translator
+			if ctxItem.DeviceType != "" {
+				deviceType = ctxItem.DeviceType
+			}
+		}
+		objectName = formatCASLJournalObjectName(objectNum, objectName)
 
 		eventTime := parseCASLAnyTime(row["time"])
 		if eventTime.IsZero() {
@@ -518,9 +634,8 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]mode
 		code := strings.TrimSpace(asString(row["code"]))
 		contactID := strings.TrimSpace(asString(row["contact_id"]))
 		details := strings.TrimSpace(asString(row["description"]))
-		deviceType := strings.TrimSpace(asString(row["device_type"]))
 		if details == "" {
-			details = decodeCASLEventDescription(nil, dictMap, code, contactID, parseCASLAnyInt(row["zone"]), deviceType)
+			details = decodeCASLEventDescription(translator, dictMap, code, contactID, parseCASLAnyInt(row["zone"]), deviceType)
 		}
 		if details == "" {
 			reason := strings.TrimSpace(asString(row["reasonAlarm"]))
@@ -540,15 +655,16 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]mode
 		}
 
 		events = append(events, models.Event{
-			ID:         eventID,
-			Time:       eventTime,
-			ObjectID:   objectID,
-			ObjectName: objectName,
-			Type:       eventType,
-			ZoneNumber: parseCASLAnyInt(row["zone"]),
-			Details:    details,
-			UserName:   strings.TrimSpace(asString(row["user_id"])),
-			SC1:        mapCASLEventSC1(eventType),
+			ID:           eventID,
+			Time:         eventTime,
+			ObjectID:     objectID,
+			ObjectNumber: objectNum,
+			ObjectName:   objectName,
+			Type:         eventType,
+			ZoneNumber:   parseCASLAnyInt(row["zone"]),
+			Details:      details,
+			UserName:     strings.TrimSpace(asString(row["user_id"])),
+			SC1:          mapCASLEventSC1(eventType),
 		})
 	}
 
@@ -559,7 +675,7 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context) ([]mode
 	return events, nil
 }
 
-func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context) ([]models.Alarm, error) {
+func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context, byPPK map[int64]caslEventContext, byObject map[string]caslEventContext) ([]models.Alarm, error) {
 	rows, err := p.ReadFromBasket(ctx, 0, 10_000)
 	if err != nil {
 		return nil, err
@@ -568,30 +684,6 @@ func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context) ([]model
 		return nil, nil
 	}
 
-	ppkFilter := make(map[int64]struct{}, len(rows))
-	objFilter := make(map[string]struct{}, len(rows))
-	for _, row := range rows {
-		ppkNum := int64(parseCASLAnyInt(row["ppk_num"]))
-		if ppkNum <= 0 {
-			ppkNum = int64(parseCASLAnyInt(row["device_number"]))
-		}
-		if ppkNum > 0 {
-			ppkFilter[ppkNum] = struct{}{}
-		}
-		rawObjID := strings.TrimSpace(asString(row["obj_id"]))
-		if rawObjID == "" {
-			rawObjID = strings.TrimSpace(asString(row["object_id"]))
-		}
-		if rawObjID != "" {
-			objFilter[rawObjID] = struct{}{}
-		}
-	}
-
-	contextByPPK, ctxErr := p.loadEventContextsByPPK(ctx, ppkFilter)
-	if ctxErr != nil {
-		log.Debug().Err(ctxErr).Msg("CASL: не вдалося побудувати контексти ППК для кошика тривог")
-	}
-	contextByObject := p.loadEventContextsByObjectNum(ctx, objFilter, contextByPPK)
 	dictMap := p.loadDictionaryMap(ctx)
 
 	alarms := make([]models.Alarm, 0, len(rows))
@@ -619,9 +711,9 @@ func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context) ([]model
 		}
 		description := strings.TrimSpace(asString(row["description"]))
 
-		ctxItem, hasCtx := contextByPPK[ppkNum]
+		ctxItem, hasCtx := byPPK[ppkNum]
 		if !hasCtx && rawObjID != "" {
-			if objCtx, ok := contextByObject[rawObjID]; ok {
+			if objCtx, ok := byObject[rawObjID]; ok {
 				ctxItem = objCtx
 				hasCtx = true
 			}
@@ -770,11 +862,18 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
 	defer cancel()
 
+	// 1. БУДУЄМО СПІЛЬНИЙ КОНТЕКСТ ОДИН РАЗ
+	byPPK, byObject, ctxErr := p.buildSharedObjectContext(ctx)
+	if ctxErr != nil {
+		log.Debug().Err(ctxErr).Msg("CASL: не вдалося побудувати спільний контекст об'єктів")
+	}
+
 	if _, err := p.readEventsJournalAsEvents(ctx); err != nil {
 		log.Debug().Err(err).Msg("CASL: read_events недоступний під час формування активних тривог")
 	}
 
-	basketAlarms, err := p.readFromBasketAsAlarms(ctx)
+	// 2. ПЕРЕДАЄМО КОНТЕКСТ В БАСКЕТ
+	basketAlarms, err := p.readFromBasketAsAlarms(ctx, byPPK, byObject)
 	if err != nil {
 		log.Debug().Err(err).Msg("CASL: read_from_basket недоступний під час формування активних тривог")
 	} else {
@@ -783,8 +882,8 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 
 	alarms := p.snapshotRealtimeAlarms()
 	if len(alarms) == 0 {
-		// Оновлюємо стрічку (tape) при першому запиті через get_general_tape_objects
-		tapeEvents, err := p.readGeneralTapeAsEvents(ctx)
+		// 3. ПЕРЕДАЄМО КОНТЕКСТ В ТЕЙП
+		tapeEvents, err := p.readGeneralTapeAsEvents(ctx, byObject)
 		if err != nil {
 			log.Debug().Err(err).Msg("CASL: get_general_tape_objects недоступний під час формування активних тривог")
 		} else if len(tapeEvents) > 0 {
@@ -798,7 +897,6 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 	sortCASLAlarms(alarms)
 	return alarms
 }
-
 func (p *CASLCloudProvider) syncRealtimeAlarmsFromBasket(basket []models.Alarm) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -1198,49 +1296,4 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 	}
 
 	return result
-}
-
-func (p *CASLCloudProvider) loadEventContextsByPPK(ctx context.Context, ppkFilter map[int64]struct{}) (map[int64]caslEventContext, error) {
-	records, err := p.loadObjects(ctx)
-	if err != nil {
-		return nil, err
-	}
-	_, devicesErr := p.loadDevices(ctx)
-	if devicesErr != nil {
-		log.Debug().Err(devicesErr).Msg("CASL: read_device недоступний для event context")
-	}
-
-	contexts := make(map[int64]caslEventContext, len(records))
-	for _, record := range records {
-		ppkNum := record.DeviceNumber.Int64()
-		if ppkNum <= 0 {
-			continue
-		}
-		if len(ppkFilter) > 0 {
-			if _, ok := ppkFilter[ppkNum]; !ok {
-				continue
-			}
-		}
-
-		objectNum := preferredCASLObjectNumber(record.ObjID, record.Name, ppkNum)
-		ctxItem := caslEventContext{
-			ObjectID:  mapCASLObjectID(record.ObjID, record.Name, strconv.FormatInt(ppkNum, 10)),
-			ObjectNum: objectNum,
-		}
-		ctxItem.ObjectName = strings.TrimSpace(record.Name)
-		if ctxItem.ObjectName == "" {
-			ctxItem.ObjectName = "Об'єкт #" + objectNum
-		}
-		ctxItem.ObjectName = formatCASLJournalObjectName(ctxItem.ObjectNum, ctxItem.ObjectName)
-
-		device, hasDevice := p.resolveDeviceForObject(record)
-		if hasDevice {
-			ctxItem.DeviceType = strings.TrimSpace(device.Type.String())
-			ctxItem.LineNames = buildCASLLineNameIndex(device.Lines)
-			ctxItem.Translator = p.loadTranslatorMap(ctx, ctxItem.DeviceType)
-		}
-		contexts[ppkNum] = ctxItem
-	}
-
-	return contexts, nil
 }

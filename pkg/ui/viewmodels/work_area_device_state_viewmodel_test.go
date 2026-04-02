@@ -15,6 +15,8 @@ func TestWorkAreaDeviceStateViewModel_DefaultState(t *testing.T) {
 	deviceType, _ := vm.DeviceTypeBinding().Get()
 	groups, _ := vm.GroupsBinding().Get()
 	guard, _ := vm.GuardBinding().Get()
+	sim1, _ := vm.SIM1Binding().Get()
+	sim2, _ := vm.SIM2Binding().Get()
 	notes, _ := vm.NotesBinding().Get()
 
 	if deviceType != "🔧 Тип: —" {
@@ -25,6 +27,9 @@ func TestWorkAreaDeviceStateViewModel_DefaultState(t *testing.T) {
 	}
 	if groups != "🔐 Групи: —" {
 		t.Fatalf("unexpected default groups: %q", groups)
+	}
+	if sim1 != "📱 SIM1: —" || sim2 != "📱 SIM2: —" {
+		t.Fatalf("unexpected default sims: sim1=%q sim2=%q", sim1, sim2)
 	}
 	if notes != "" {
 		t.Fatalf("unexpected default notes: %q", notes)
@@ -42,6 +47,8 @@ func TestWorkAreaDeviceStateViewModel_ApplyAndReset(t *testing.T) {
 		GroupsText:      "🔐 Групи:\nГрупа 1: ПІД ОХОРОНОЮ",
 		PowerText:       "🔌 🔋 АКБ (резерв)",
 		SIMText:         "📱 SIM1: 111",
+		SIM1Text:        "📱 SIM1: 111",
+		SIM2Text:        "📱 SIM2: 222",
 		AutoTestText:    "⏱️ Автотест: кожні 12 год",
 		GuardText:       "🔓 ЗНЯТО З ОХОРОНИ",
 		ChannelText:     "📡 Канал: GPRS",
@@ -59,6 +66,10 @@ func TestWorkAreaDeviceStateViewModel_ApplyAndReset(t *testing.T) {
 	gotNotes, _ := vm.NotesBinding().Get()
 	if gotNotes != "note" {
 		t.Fatalf("unexpected applied notes: %q", gotNotes)
+	}
+	gotSIM2, _ := vm.SIM2Binding().Get()
+	if gotSIM2 != "📱 SIM2: 222" {
+		t.Fatalf("unexpected applied sim2: %q", gotSIM2)
 	}
 
 	vm.Reset()

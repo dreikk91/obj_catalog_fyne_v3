@@ -62,6 +62,8 @@ type WorkAreaPanel struct {
 	GSMLabel             *widget.Label
 	PowerLabel           *widget.Label
 	SIMLabel             *widget.Label
+	SIM1Label            *widget.Label
+	SIM2Label            *widget.Label
 	AutoTestLabel        *widget.Label
 	GuardLabel           *widget.Label
 	ChanLabel            *widget.Label
@@ -80,6 +82,10 @@ type WorkAreaPanel struct {
 	CopyNameBtn     *widget.Button
 	CopyAddressBtn  *widget.Button
 	CopySimBtn      *widget.Button
+	CopySIM1Btn     *widget.Button
+	CopySIM2Btn     *widget.Button
+	VodafoneSIM1Btn *widget.Button
+	VodafoneSIM2Btn *widget.Button
 	CopyPhonesBtn   *widget.Button
 	CopyNotesBtn    *widget.Button
 	CopyLocationBtn *widget.Button
@@ -186,10 +192,16 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 	// w.GSMLabel = widget.NewLabel("📶 GSM: —")
 	w.PowerLabel = widget.NewLabelWithData(w.DeviceStateVM.PowerBinding())
 	w.SIMLabel = widget.NewLabelWithData(w.DeviceStateVM.SIMBinding())
+	w.SIM1Label = widget.NewLabelWithData(w.DeviceStateVM.SIM1Binding())
+	w.SIM2Label = widget.NewLabelWithData(w.DeviceStateVM.SIM2Binding())
 	w.AutoTestLabel = widget.NewLabelWithData(w.DeviceStateVM.AutoTestBinding())
 	w.GuardLabel = widget.NewLabelWithData(w.DeviceStateVM.GuardBinding())
 	w.GuardLabel.TextStyle = fyne.TextStyle{Bold: true}
 	w.CopySimBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
+	w.CopySIM1Btn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
+	w.CopySIM2Btn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
+	w.VodafoneSIM1Btn = widget.NewButton("Vodafone", nil)
+	w.VodafoneSIM2Btn = widget.NewButton("Vodafone", nil)
 	w.ChanLabel = widget.NewLabelWithData(w.DeviceStateVM.ChannelBinding())
 	w.PhoneLabel = widget.NewLabelWithData(w.DeviceStateVM.PhoneBinding())
 	w.CopyPhonesBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
@@ -222,7 +234,9 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 			container.NewVBox(w.DeviceTypeLabel, w.PanelMarkLabel, w.SignalLabel, w.PowerLabel, w.ChanLabel),
 			widget.NewSeparator(),
 			container.NewVBox(
-				container.NewBorder(nil, nil, nil, w.CopySimBtn, w.SIMLabel),
+				container.NewBorder(nil, nil, nil, container.NewHBox(w.CopySimBtn), w.SIMLabel),
+				container.NewBorder(nil, nil, nil, container.NewHBox(w.VodafoneSIM1Btn, w.CopySIM1Btn), w.SIM1Label),
+				container.NewBorder(nil, nil, nil, container.NewHBox(w.VodafoneSIM2Btn, w.CopySIM2Btn), w.SIM2Label),
 				container.NewBorder(nil, nil, nil, w.CopyPhonesBtn, w.PhoneLabel),
 				w.AkbLabel,
 				w.AutoTestLabel,
@@ -668,6 +682,45 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 		w.Window.Clipboard().SetContent(presentation.SIMCopyText)
 		ShowToast(w.Window, "Скопійовано SIM")
 	}
+	w.CopySIM1Btn.OnTapped = func() {
+		if strings.TrimSpace(presentation.SIM1Value) == "" {
+			ShowToast(w.Window, "SIM1 не вказана")
+			return
+		}
+		w.Window.Clipboard().SetContent(presentation.SIM1Value)
+		ShowToast(w.Window, "Скопійовано SIM1")
+	}
+	w.CopySIM2Btn.OnTapped = func() {
+		if strings.TrimSpace(presentation.SIM2Value) == "" {
+			ShowToast(w.Window, "SIM2 не вказана")
+			return
+		}
+		w.Window.Clipboard().SetContent(presentation.SIM2Value)
+		ShowToast(w.Window, "Скопійовано SIM2")
+	}
+
+	configureVodafoneButton := func(btn *widget.Button, simValue string) {
+		if btn == nil {
+			return
+		}
+		simValue = strings.TrimSpace(simValue)
+		btn.OnTapped = func() {
+			provider := w.resolveVodafoneProvider()
+			if provider == nil {
+				dialogs.ShowInfoDialog(w.Window, "Vodafone", "Vodafone сервіс недоступний.")
+				return
+			}
+			dialogs.ShowVodafoneSIMDialog(w.Window, provider, simValue, obj.ID, obj.Name)
+		}
+		if !isVodafonePhone(simValue) {
+			btn.Disable()
+			return
+		}
+		btn.Enable()
+	}
+
+	configureVodafoneButton(w.VodafoneSIM1Btn, presentation.SIM1Value)
+	configureVodafoneButton(w.VodafoneSIM2Btn, presentation.SIM2Value)
 
 	// Скидаємо динамічні дані перед завантаженням нових
 	loading := w.DeviceVM.BuildLoadingExternalPresentation()
@@ -708,6 +761,63 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 		w.Window.Clipboard().SetContent(presentation.LocationCopyText)
 		ShowToast(w.Window, "Скопійовано розташування")
 	}
+}
+
+func (w *WorkAreaPanel) resolveVodafoneProvider() contracts.AdminObjectVodafoneService {
+	if w == nil || w.Data == nil {
+		return nil
+	}
+	if provider, ok := any(w.Data).(contracts.AdminObjectVodafoneService); ok {
+		return provider
+	}
+	if resolver, ok := any(w.Data).(interface {
+		AdminProvider() contracts.AdminProvider
+	}); ok {
+		admin := resolver.AdminProvider()
+		if admin != nil {
+			return admin
+		}
+	}
+	return nil
+}
+
+func isVodafonePhone(raw string) bool {
+	digits := digitsOnly(raw)
+	switch {
+	case len(digits) >= 5 && strings.HasPrefix(digits, "38050"):
+		return true
+	case len(digits) >= 5 && strings.HasPrefix(digits, "38066"):
+		return true
+	case len(digits) >= 5 && strings.HasPrefix(digits, "38075"):
+		return true
+	case len(digits) >= 5 && strings.HasPrefix(digits, "38095"):
+		return true
+	case len(digits) >= 5 && strings.HasPrefix(digits, "38099"):
+		return true
+	case len(digits) >= 3 && strings.HasPrefix(digits, "050"):
+		return true
+	case len(digits) >= 3 && strings.HasPrefix(digits, "066"):
+		return true
+	case len(digits) >= 3 && strings.HasPrefix(digits, "075"):
+		return true
+	case len(digits) >= 3 && strings.HasPrefix(digits, "095"):
+		return true
+	case len(digits) >= 3 && strings.HasPrefix(digits, "099"):
+		return true
+	default:
+		return false
+	}
+}
+
+func digitsOnly(raw string) string {
+	var b strings.Builder
+	b.Grow(len(raw))
+	for _, r := range raw {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func (w *WorkAreaPanel) showTestMessages(objectID string) {

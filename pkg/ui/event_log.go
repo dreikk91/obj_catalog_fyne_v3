@@ -167,12 +167,23 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 			txt.Color = textColor
 
 			// Для непідготовленого користувача: стабільний читабельний формат рядка.
-			// [дата/час] — [назва об'єкта] — [тип] — [зона/деталі]
+			// [дата/час] — [номер | назва об'єкта] — [тип] — [зона/деталі]
 			objectName := strings.TrimSpace(event.ObjectName)
 			if objectName == "" {
 				objectName = "Об'єкт"
 			}
-			text := event.GetDateTimeDisplay() + " — " + objectName + " — " + event.GetTypeDisplay()
+
+			objectNum := event.ObjectNumber
+			if objectNum == "" && panel.Data != nil {
+				objectNum = panel.Data.GetDisplayNumber(event.ObjectID)
+			}
+
+			displayTitle := objectName
+			if objectNum != "" && !strings.HasPrefix(objectName, objectNum) {
+				displayTitle = objectNum + " | " + objectName
+			}
+
+			text := event.GetDateTimeDisplay() + " — " + displayTitle + " — " + event.GetTypeDisplay()
 			if event.ZoneNumber > 0 {
 				text += " — Зона " + itoa(event.ZoneNumber)
 			}

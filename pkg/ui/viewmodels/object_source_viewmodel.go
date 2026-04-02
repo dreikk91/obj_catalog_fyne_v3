@@ -60,6 +60,7 @@ func SourceBadgeForObjectID(id int) string {
 	return "[М]"
 }
 
+
 func ObjectDisplayNumber(object models.Object) string {
 	if !IsCASLObjectID(object.ID) {
 		return strconv.Itoa(object.ID)

@@ -146,6 +146,17 @@ func (p *CombinedDataProvider) GetObjects() []models.Object {
 	return objects
 }
 
+func (p *CombinedDataProvider) GetDisplayNumber(id int) string {
+	if p == nil {
+		return ""
+	}
+	source := p.sourceForObjectID(id)
+	if source != nil {
+		return source.Provider.GetDisplayNumber(id)
+	}
+	return strconv.Itoa(id)
+}
+
 func (p *CombinedDataProvider) GetObjectByID(id string) *models.Object {
 	if p == nil {
 		return nil

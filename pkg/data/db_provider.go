@@ -24,12 +24,20 @@ type DBDataProvider struct {
 	cachedEvents []models.Event
 	eventMutex   sync.RWMutex
 
+	// Кеш номерів об'єктів
+	numberCache map[int]string
+	numberMutex sync.RWMutex
+
 	// Базовий DSN для підключення до інших БД на тому ж сервері
 	baseDSN string
 }
 
 func NewDBDataProvider(db *sqlx.DB, baseDSN string) *DBDataProvider {
-	provider := &DBDataProvider{db: db, baseDSN: baseDSN}
+	provider := &DBDataProvider{
+		db:          db,
+		baseDSN:     baseDSN,
+		numberCache: make(map[int]string),
+	}
 	log.Debug().Msg("DBDataProvider ініціалізовано з підключенням до БД")
 	return provider
 }
@@ -52,14 +60,29 @@ func (p *DBDataProvider) GetObjects() []models.Object {
 	}
 
 	var objects []models.Object
+	p.numberMutex.Lock()
 	for _, row := range rows {
-		objects = append(objects, mapObjectRowToModel(row))
+		obj := mapObjectRowToModel(row)
+		num := strconv.Itoa(obj.ID)
+		p.numberCache[obj.ID] = num
+		objects = append(objects, obj)
 	}
+	p.numberMutex.Unlock()
 	log.Debug().Int("objectsCount", len(objects)).Msg("Список об'єктів завантажено")
 	return objects
 }
 
 // GetObjectByID отримує базову інформацію про об'єкт
+func (p *DBDataProvider) GetDisplayNumber(id int) string {
+	p.numberMutex.RLock()
+	num, ok := p.numberCache[id]
+	p.numberMutex.RUnlock()
+	if ok {
+		return num
+	}
+	return strconv.Itoa(id)
+}
+
 func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 	if p.db == nil {
 		log.Warn().Str("id", idStr).Msg("Спроба отримати об'єкт без активного з'єднання БД")
@@ -547,11 +570,12 @@ func mapEventRowToModel(row database.EventRow, objID int) models.Event {
 	}
 
 	e := models.Event{
-		ID:         int(row.ID),
-		ObjectID:   id,
-		ObjectName: formatDBObjectName(row.ObjN, row.ObjShortName1),
-		Details:    ptrToString(row.Ukr1),
-		SC1:        0,
+		ID:           int(row.ID),
+		ObjectID:     id,
+		ObjectNumber: strconv.FormatInt(ptrToInt64(row.ObjN), 10),
+		ObjectName:   formatDBObjectName(row.ObjN, row.ObjShortName1),
+		Details:      ptrToString(row.Ukr1),
+		SC1:          0,
 	}
 
 	if row.Sc1 != nil {

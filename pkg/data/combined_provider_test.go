@@ -71,6 +71,10 @@ func (s *combinedStubProvider) GetLatestEventID() (int64, error) {
 	return s.latestID, s.latestErr
 }
 
+func (s *combinedStubProvider) GetDisplayNumber(id int) string {
+	return strconv.Itoa(id)
+}
+
 func TestCombinedDataProvider_MergesObjectsAndAlarms(t *testing.T) {
 	t.Parallel()
 

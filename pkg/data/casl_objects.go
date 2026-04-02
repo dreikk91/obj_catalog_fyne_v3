@@ -242,8 +242,6 @@ func (p *CASLCloudProvider) applyCASLCoreSnapshot(objects []caslGrdObject, devic
 		p.objectByInternalID = buildCASLObjectIndex(copiedObjects)
 	}
 
-	
-
 	if len(devices) > 0 {
 		copiedDevices := append([]caslDevice(nil), devices...)
 		p.deviceByDeviceID, p.deviceByObjectID, p.deviceByNumber = buildCASLDeviceIndexes(copiedDevices)
@@ -377,6 +375,11 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 		notes = strings.TrimSpace(record.Description)
 	}
 
+	displayNubmer := ""
+	if record.DeviceNumber.Int64() > 0 {
+	displayNubmer = strconv.FormatInt(record.DeviceNumber.Int64(), 10)
+	}
+
 	panelMark := ""
 	if record.DeviceNumber.Int64() > 0 {
 		panelMark = fmt.Sprintf("CASL #%d", record.DeviceNumber.Int64())
@@ -403,6 +406,7 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 	return models.Object{
 		ID:             id,
 		Name:           name,
+		DisplayNumber:  displayNubmer,
 		Address:        address,
 		ContractNum:    strings.TrimSpace(record.Contract),
 		Status:         statusState.Status,

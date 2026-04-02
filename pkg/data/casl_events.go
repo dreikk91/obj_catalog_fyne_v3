@@ -131,6 +131,7 @@ func (p *CASLCloudProvider) getEventsFromBasketFallback(ctx context.Context) []m
 			ID:         nextCASLEventID(),
 			Time:       time.Now(),
 			ObjectID:   objectID,
+			ObjectNumber: strconv.Itoa(objectID),
 			ObjectName: objectName,
 			Type:       eventType,
 			Details:    fmt.Sprintf("CASL Cloud: активних тривог у кошику %d (було %d)", basketCount, p.lastBasketCount),

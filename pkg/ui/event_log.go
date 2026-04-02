@@ -63,7 +63,8 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	}
 
 	// Заголовок
-	panel.TitleText = canvas.NewText("📜 ЖУРНАЛ ПОДІЙ", nil)
+	// panel.TitleText = canvas.NewText("📜 ЖУРНАЛ ПОДІЙ", nil)
+	panel.TitleText = canvas.NewText("📜", nil)
 	themeSize := fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
 	panel.TitleText.TextSize = themeSize + 1
 	panel.TitleText.TextStyle = fyne.TextStyle{Bold: true}
@@ -93,12 +94,12 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	panel.SourceSelect.SetSelected(panel.SourceSelect.Options[0])
 	panel.SourceSelect.PlaceHolder = "Джерело"
 
-	panel.ImportantOnly = widget.NewCheck("Тільки важливі", func(bool) {
+	panel.ImportantOnly = widget.NewCheck("Важливі", func(bool) {
 		panel.applyFilters()
 	})
 
 	// Перемикач контексту: всі події / по вибраному об'єкту
-	contextToggle := widget.NewCheck("Тільки по вибраному об'єкту", func(checked bool) {
+	contextToggle := widget.NewCheck("По вибраному", func(checked bool) {
 		panel.showForCurrentOnly = checked
 		panel.applyFilters()
 	})
@@ -167,12 +168,13 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 			txt.Color = textColor
 
 			// Для непідготовленого користувача: стабільний читабельний формат рядка.
-			// [дата/час] — [назва об'єкта] — [тип] — [зона/деталі]
+			// [дата/час] — [# об'єкта] - [назва об'єкта] — [тип] — [зона/деталі]
+			objectID := strings.TrimSpace(event.ObjectNumber)
 			objectName := strings.TrimSpace(event.ObjectName)
 			if objectName == "" {
 				objectName = "Об'єкт"
 			}
-			text := event.GetDateTimeDisplay() + " — " + objectName + " — " + event.GetTypeDisplay()
+			text := event.GetDateTimeDisplay() + " — " + objectID + " — " + objectName + " — " + event.GetTypeDisplay()
 			if event.ZoneNumber > 0 {
 				text += " — Зона " + itoa(event.ZoneNumber)
 			}

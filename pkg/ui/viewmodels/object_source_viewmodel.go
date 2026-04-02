@@ -65,13 +65,13 @@ func ObjectDisplayNumber(object models.Object) string {
 		return strconv.Itoa(object.ID)
 	}
 
-	if number := numberFromPanelMark(object.PanelMark); number != "" {
-		return number
-	}
-	if number := leadingDigits(strings.TrimSpace(object.Name)); number != "" {
-		return number
-	}
-	return strconv.Itoa(object.ID)
+	// if number := numberFromPanelMark(object.PanelMark); number != "" {
+	// 	return number
+	// }
+	// if number := leadingDigits(strings.TrimSpace(object.Name)); number != "" {
+	// 	return number
+	// }
+	return object.DisplayNumber
 }
 
 func sourceMatchesFilter(source string, selectedSource string) bool {

@@ -339,10 +339,10 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 			ObjectNumber: strconv.FormatInt(ptrToInt64(row.ObjN), 10),
 			ObjectName:   formatDBObjectName(row.ObjN, row.ObjShortName1),
 			Address:      ptrToString(row.Address1),
-			Details:    details,
-			Time:       ptrToTime(row.EvTime1),
-			Type:       alarmType,
-			SC1:        ptrToInt(row.Sc1),
+			Details:      details,
+			Time:         ptrToTime(row.EvTime1),
+			Type:         alarmType,
+			SC1:          ptrToInt(row.Sc1),
 		}
 		alarms = append(alarms, alarm)
 	}
@@ -547,11 +547,12 @@ func mapEventRowToModel(row database.EventRow, objID int) models.Event {
 	}
 
 	e := models.Event{
-		ID:         int(row.ID),
-		ObjectID:   id,
-		ObjectName: formatDBObjectName(row.ObjN, row.ObjShortName1),
-		Details:    ptrToString(row.Ukr1),
-		SC1:        0,
+		ID:           int(row.ID),
+		ObjectID:     id,
+		ObjectNumber: strconv.Itoa(id),
+		ObjectName:   formatDBObjectName(row.ObjN, row.ObjShortName1),
+		Details:      ptrToString(row.Ukr1),
+		SC1:          0,
 	}
 
 	if row.Sc1 != nil {

@@ -34,6 +34,7 @@ type ObjectListFilterOutput struct {
 	CountOffline          int
 	CountDisarmed         int
 	CountBridge           int
+	CountPhoenix          int
 	CountCASL             int
 	NewSelectedRow        int
 	SelectedObject        models.Object
@@ -84,6 +85,7 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 	countOffline := 0
 	countDisarmed := 0
 	countBridge := 0
+	countPhoenix := 0
 	countCASL := 0
 
 	terms := splitSearchTerms(query)
@@ -95,9 +97,12 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 		}
 
 		countAll++
-		if source == ObjectSourceCASL {
+		switch source {
+		case ObjectSourceCASL:
 			countCASL++
-		} else {
+		case ObjectSourcePhoenix:
+			countPhoenix++
+		default:
 			countBridge++
 		}
 		if obj.Status == models.StatusFire || obj.Status == models.StatusFault {
@@ -154,6 +159,7 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 		CountOffline:   countOffline,
 		CountDisarmed:  countDisarmed,
 		CountBridge:    countBridge,
+		CountPhoenix:   countPhoenix,
 		CountCASL:      countCASL,
 		NewSelectedRow: newSelectedRow,
 	}
@@ -191,6 +197,7 @@ func matchesSearchTerms(obj models.Object, source string, terms []string) bool {
 	}
 
 	idText := strconv.Itoa(obj.ID)
+	displayNumberText := strings.ToLower(strings.TrimSpace(ObjectDisplayNumber(obj)))
 	nameText := strings.ToLower(strings.TrimSpace(obj.Name))
 	addressText := strings.ToLower(strings.TrimSpace(obj.Address))
 	contractText := strings.ToLower(strings.TrimSpace(obj.ContractNum))
@@ -225,8 +232,12 @@ func matchesSearchTerms(obj models.Object, source string, terms []string) bool {
 				if strings.Contains(sim1Digits, digitsTerm) || strings.Contains(sim2Digits, digitsTerm) || strings.Contains(phoneDigits, digitsTerm) || strings.Contains(idText, digitsTerm) {
 					continue
 				}
+				if strings.Contains(displayNumberText, digitsTerm) {
+					continue
+				}
 			}
 			if strings.Contains(idText, term) ||
+				strings.Contains(displayNumberText, term) ||
 				strings.Contains(nameText, term) ||
 				strings.Contains(addressText, term) ||
 				strings.Contains(contractText, term) ||

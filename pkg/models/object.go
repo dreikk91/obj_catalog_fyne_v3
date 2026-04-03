@@ -77,11 +77,16 @@ type Object struct {
 
 // ObjectGroup описує стан окремої групи ППК на об'єкті.
 type ObjectGroup struct {
-	Number    int
-	Armed     bool
-	StateText string
-	RoomID    string
-	RoomName  string
+	ID          string
+	Source      string
+	Number      int
+	Name        string
+	Armed       bool
+	StateText   string
+	RoomID      string
+	RoomName    string
+	PremiseID   string
+	PremiseName string
 }
 
 // GetStatusDisplay повертає текстовий статус об'єкта
@@ -105,11 +110,15 @@ func (o *Object) GetStatusDisplay() string {
 
 // Contact - відповідальна особа
 type Contact struct {
-	Name     string
-	Position string
-	Phone    string
-	Priority int
-	CodeWord string // Кодове слово
+	Name           string
+	Position       string
+	Phone          string
+	Priority       int
+	CodeWord       string // Кодове слово
+	GroupID        string
+	GroupNumber    int
+	GroupName      string
+	GroupStateText string
 }
 
 // LastEvent зберігає час останньої події для відображення

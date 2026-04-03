@@ -33,3 +33,58 @@ func TestVodafoneSIMViewModel_BuildMetadata(t *testing.T) {
 		t.Fatalf("unexpected metadata: name=%q comment=%q", name, comment)
 	}
 }
+
+func TestVodafoneSIMViewModel_BuildBlockingMetadata(t *testing.T) {
+	t.Parallel()
+
+	vm := NewVodafoneSIMViewModel()
+	now := time.Date(2026, time.April, 3, 9, 30, 0, 0, time.UTC)
+
+	name, comment, err := vm.BuildBlockingMetadata("1001", "Нема угоди", "", now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "1001" {
+		t.Fatalf("unexpected name: %q", name)
+	}
+	if comment != "Нема угоди (03.04.2026)" {
+		t.Fatalf("unexpected comment: %q", comment)
+	}
+}
+
+func TestVodafoneSIMViewModel_BuildBlockingMetadata_ManualReason(t *testing.T) {
+	t.Parallel()
+
+	vm := NewVodafoneSIMViewModel()
+	now := time.Date(2026, time.April, 3, 9, 30, 0, 0, time.UTC)
+
+	_, comment, err := vm.BuildBlockingMetadata("1001", "Інша причина", "Потрібна перевидача", now)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if comment != "Потрібна перевидача (03.04.2026)" {
+		t.Fatalf("unexpected comment: %q", comment)
+	}
+}
+
+func TestVodafoneSIMViewModel_BuildStatusText_IncludesBlockingStatus(t *testing.T) {
+	t.Parallel()
+
+	vm := NewVodafoneSIMViewModel()
+	got := vm.BuildStatusText(contracts.VodafoneSIMStatus{
+		MSISDN:         "380501234567",
+		Available:      true,
+		SubscriberName: "Obj 1001",
+		Blocking: contracts.VodafoneSIMBlockingStatus{
+			Status:          "FullBlocked",
+			BlockingDateRaw: "2026-04-03T09:00:00Z",
+		},
+		Connectivity: contracts.VodafoneConnectivityStatus{
+			SIMStatus: "active",
+		},
+	})
+
+	if !strings.Contains(got, "блокування повне") {
+		t.Fatalf("status must contain blocking info, got %q", got)
+	}
+}

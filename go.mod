@@ -4,18 +4,20 @@ go 1.24.6
 
 require (
 	fyne.io/fyne/v2 v2.7.2
+	fyne.io/x/fyne v0.0.0-20260219123538-e09698d18b34
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/jung-kurt/gofpdf v1.16.2
+	github.com/microsoft/go-mssqldb v1.9.5
 	github.com/nakagami/firebirdsql v0.9.15
 	github.com/rs/zerolog v1.34.0
 	github.com/xuri/excelize/v2 v2.9.1
 	golang.org/x/image v0.25.0
+	golang.org/x/net v0.40.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (
 	fyne.io/systray v1.12.0 // indirect
-	fyne.io/x/fyne v0.0.0-20260219123538-e09698d18b34 // indirect
 	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fredbi/uri v1.1.1 // indirect
@@ -29,12 +31,14 @@ require (
 	github.com/go-text/render v0.2.0 // indirect
 	github.com/go-text/typesetting v0.2.1 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
+	github.com/golang-sql/sqlexp v0.1.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.0 // indirect
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/nakagami/chacha20 v0.1.0 // indirect
@@ -55,11 +59,10 @@ require (
 	github.com/xuri/nfp v0.0.1 // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b // indirect
-	golang.org/x/crypto v0.38.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
-	golang.org/x/net v0.40.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 )

@@ -306,6 +306,7 @@ func mapCASLDeviceGroupsToObjectGroups(rawGroups any, rooms []caslRoom) []models
 	for idx, candidate := range candidates {
 		group := models.ObjectGroup{
 			Number: parseCASLID(candidate.key),
+			Source: "casl",
 		}
 		if group.Number <= 0 {
 			group.Number = extractGroupNumber(candidate.value, idx+1)
@@ -323,6 +324,18 @@ func mapCASLDeviceGroupsToObjectGroups(rawGroups any, rooms []caslRoom) []models
 		if group.RoomName == "" {
 			group.RoomName = roomNames[group.RoomID]
 		}
+		if group.Name == "" {
+			group.Name = group.RoomName
+		}
+		if group.PremiseID == "" {
+			group.PremiseID = group.RoomID
+		}
+		if group.PremiseName == "" {
+			group.PremiseName = group.RoomName
+		}
+		if group.ID == "" {
+			group.ID = fmt.Sprintf("casl:group=%d", group.Number)
+		}
 		groups = append(groups, group)
 	}
 
@@ -336,10 +349,228 @@ func mapCASLDeviceGroupsToObjectGroups(rawGroups any, rooms []caslRoom) []models
 	return groups
 }
 
+func alignCASLGroupsWithDeviceLines(
+	groups []models.ObjectGroup,
+	lines []caslDeviceLine,
+	rooms []caslRoom,
+) []models.ObjectGroup {
+	if len(groups) == 0 && len(lines) == 0 {
+		return nil
+	}
+
+	roomNames := make(map[string]string, len(rooms))
+	for _, room := range rooms {
+		roomID := strings.TrimSpace(room.RoomID)
+		roomName := strings.TrimSpace(room.Name)
+		if roomID != "" && roomName != "" {
+			roomNames[roomID] = roomName
+		}
+	}
+
+	lineGroupsByRoom := make(map[string][]int)
+	lineGroupNumbers := make([]int, 0, len(lines))
+	for _, line := range lines {
+		number := caslLineGroupNumber(line)
+		if number <= 0 {
+			continue
+		}
+		lineGroupNumbers = appendCASLUniqueInt(lineGroupNumbers, number)
+
+		roomID := strings.TrimSpace(line.RoomID.String())
+		if roomID == "" {
+			continue
+		}
+		lineGroupsByRoom[roomID] = appendCASLUniqueInt(lineGroupsByRoom[roomID], number)
+	}
+
+	mergedByNumber := make(map[int]models.ObjectGroup, len(groups)+len(lineGroupNumbers))
+	order := make([]int, 0, len(groups)+len(lineGroupNumbers))
+	placeholdersByRoom := make(map[string]models.ObjectGroup)
+
+	appendGroup := func(group models.ObjectGroup) {
+		group = normalizeCASLObjectGroup(group, roomNames)
+		if group.Number <= 0 {
+			return
+		}
+
+		if existing, ok := mergedByNumber[group.Number]; ok {
+			mergedByNumber[group.Number] = mergeCASLObjectGroup(existing, group)
+			return
+		}
+
+		mergedByNumber[group.Number] = group
+		order = append(order, group.Number)
+	}
+
+	for _, group := range groups {
+		roomID := roomIDFromCASLObjectGroup(group)
+		roomNumbers := lineGroupsByRoom[roomID]
+		if roomID != "" && len(roomNumbers) > 0 && !containsCASLInt(roomNumbers, group.Number) {
+			if _, exists := placeholdersByRoom[roomID]; !exists {
+				placeholdersByRoom[roomID] = normalizeCASLObjectGroup(group, roomNames)
+			}
+
+			for _, number := range roomNumbers {
+				clone := group
+				clone.Number = number
+				clone.ID = fmt.Sprintf("casl:group=%d", number)
+				appendGroup(clone)
+			}
+			continue
+		}
+
+		appendGroup(group)
+	}
+
+	for _, number := range lineGroupNumbers {
+		if _, exists := mergedByNumber[number]; exists {
+			continue
+		}
+
+		group := models.ObjectGroup{
+			ID:     fmt.Sprintf("casl:group=%d", number),
+			Source: "casl",
+			Number: number,
+		}
+
+		for roomID, roomNumbers := range lineGroupsByRoom {
+			if !containsCASLInt(roomNumbers, number) {
+				continue
+			}
+			if placeholder, ok := placeholdersByRoom[roomID]; ok {
+				placeholder.Number = number
+				placeholder.ID = group.ID
+				group = mergeCASLObjectGroup(group, normalizeCASLObjectGroup(placeholder, roomNames))
+			} else {
+				group.RoomID = roomID
+				group.PremiseID = roomID
+				group.RoomName = roomNames[roomID]
+				group.PremiseName = roomNames[roomID]
+			}
+			break
+		}
+
+		appendGroup(group)
+	}
+
+	if len(mergedByNumber) == 0 {
+		return nil
+	}
+
+	result := make([]models.ObjectGroup, 0, len(mergedByNumber))
+	for _, number := range order {
+		group := normalizeCASLObjectGroup(mergedByNumber[number], roomNames)
+		result = append(result, group)
+	}
+
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Number == result[j].Number {
+			return result[i].RoomName < result[j].RoomName
+		}
+		return result[i].Number < result[j].Number
+	})
+
+	return result
+}
+
 func collectCASLGroupCandidates(raw any) []caslGroupCandidate {
 	result := make([]caslGroupCandidate, 0, 8)
 	collectCASLGroupCandidatesRecursive("", raw, 0, &result)
 	return result
+}
+
+func roomIDFromCASLObjectGroup(group models.ObjectGroup) string {
+	if roomID := strings.TrimSpace(group.RoomID); roomID != "" {
+		return roomID
+	}
+	return strings.TrimSpace(group.PremiseID)
+}
+
+func normalizeCASLObjectGroup(group models.ObjectGroup, roomNames map[string]string) models.ObjectGroup {
+	if group.Number > 0 && strings.TrimSpace(group.ID) == "" {
+		group.ID = fmt.Sprintf("casl:group=%d", group.Number)
+	}
+	if strings.TrimSpace(group.Source) == "" {
+		group.Source = "casl"
+	}
+
+	roomID := roomIDFromCASLObjectGroup(group)
+	if roomID != "" {
+		group.RoomID = roomID
+		if group.PremiseID == "" {
+			group.PremiseID = roomID
+		}
+		if group.RoomName == "" {
+			group.RoomName = roomNames[roomID]
+		}
+		if group.PremiseName == "" {
+			group.PremiseName = group.RoomName
+		}
+	}
+
+	if group.Name == "" {
+		group.Name = group.RoomName
+	}
+	if group.StateText == "" {
+		if group.Armed {
+			group.StateText = "ПІД ОХОРОНОЮ"
+		} else {
+			group.StateText = "ЗНЯТО"
+		}
+	}
+
+	return group
+}
+
+func mergeCASLObjectGroup(dst, src models.ObjectGroup) models.ObjectGroup {
+	if dst.Number <= 0 {
+		dst.Number = src.Number
+	}
+	if strings.TrimSpace(dst.ID) == "" {
+		dst.ID = strings.TrimSpace(src.ID)
+	}
+	if strings.TrimSpace(dst.Source) == "" {
+		dst.Source = strings.TrimSpace(src.Source)
+	}
+	if strings.TrimSpace(dst.Name) == "" {
+		dst.Name = strings.TrimSpace(src.Name)
+	}
+	if strings.TrimSpace(dst.StateText) == "" {
+		dst.StateText = strings.TrimSpace(src.StateText)
+	}
+	if !dst.Armed && src.Armed {
+		dst.Armed = true
+	}
+	if strings.TrimSpace(dst.RoomID) == "" {
+		dst.RoomID = strings.TrimSpace(src.RoomID)
+	}
+	if strings.TrimSpace(dst.RoomName) == "" {
+		dst.RoomName = strings.TrimSpace(src.RoomName)
+	}
+	if strings.TrimSpace(dst.PremiseID) == "" {
+		dst.PremiseID = strings.TrimSpace(src.PremiseID)
+	}
+	if strings.TrimSpace(dst.PremiseName) == "" {
+		dst.PremiseName = strings.TrimSpace(src.PremiseName)
+	}
+
+	return dst
+}
+
+func appendCASLUniqueInt(dst []int, value int) []int {
+	if value <= 0 || containsCASLInt(dst, value) {
+		return dst
+	}
+	return append(dst, value)
+}
+
+func containsCASLInt(values []int, target int) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func collectCASLGroupCandidatesRecursive(keyHint string, raw any, depth int, out *[]caslGroupCandidate) {
@@ -479,26 +710,47 @@ func applyGroupMap(group *models.ObjectGroup, payload map[string]any) {
 
 	if roomName := strings.TrimSpace(asString(payload["room_name"])); roomName != "" {
 		group.RoomName = roomName
+		if group.Name == "" {
+			group.Name = roomName
+		}
 	}
 	if roomName := strings.TrimSpace(asString(payload["name_room"])); roomName != "" {
 		group.RoomName = roomName
+		if group.Name == "" {
+			group.Name = roomName
+		}
 	}
 	if roomID := strings.TrimSpace(asString(payload["room_id"])); roomID != "" {
 		group.RoomID = roomID
+		if group.PremiseID == "" {
+			group.PremiseID = roomID
+		}
 	}
 	if roomID := strings.TrimSpace(asString(payload["roomId"])); roomID != "" {
 		group.RoomID = roomID
+		if group.PremiseID == "" {
+			group.PremiseID = roomID
+		}
 	}
 
 	if room, ok := payload["room"].(map[string]any); ok {
 		if roomName := strings.TrimSpace(asString(room["name"])); roomName != "" {
 			group.RoomName = roomName
+			if group.Name == "" {
+				group.Name = roomName
+			}
 		}
 		if roomID := strings.TrimSpace(asString(room["room_id"])); roomID != "" {
 			group.RoomID = roomID
+			if group.PremiseID == "" {
+				group.PremiseID = roomID
+			}
 		}
 		if roomID := strings.TrimSpace(asString(room["id"])); roomID != "" && group.RoomID == "" {
 			group.RoomID = roomID
+			if group.PremiseID == "" {
+				group.PremiseID = roomID
+			}
 		}
 	}
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -16,6 +17,16 @@ const (
 	PrefPath     = "db.path"
 	PrefParams   = "db.params"
 
+	PrefFirebirdEnabled = "firebird.enabled"
+	PrefPhoenixEnabled  = "phoenix.enabled"
+	PrefPhoenixUser     = "phoenix.user"
+	PrefPhoenixPassword = "phoenix.password"
+	PrefPhoenixHost     = "phoenix.host"
+	PrefPhoenixPort     = "phoenix.port"
+	PrefPhoenixInstance = "phoenix.instance"
+	PrefPhoenixDatabase = "phoenix.database"
+	PrefPhoenixParams   = "phoenix.params"
+
 	PrefBackendMode = "backend.mode"
 	PrefCASLEnabled = "casl.enabled"
 	PrefCASLBaseURL = "casl.base_url"
@@ -28,6 +39,7 @@ const (
 
 const (
 	BackendModeFirebird  = "firebird"
+	BackendModePhoenix   = "phoenix"
 	BackendModeCASLCloud = "casl_cloud"
 )
 
@@ -38,6 +50,16 @@ type DBConfig struct {
 	Port     string
 	Path     string
 	Params   string
+
+	FirebirdEnabled bool
+	PhoenixEnabled  bool
+	PhoenixUser     string
+	PhoenixPassword string
+	PhoenixHost     string
+	PhoenixPort     string
+	PhoenixInstance string
+	PhoenixDatabase string
+	PhoenixParams   string
 
 	CASLEnabled bool
 	Mode        string
@@ -53,6 +75,8 @@ func LoadDBConfig(p fyne.Preferences) DBConfig {
 	log.Debug().Msg("Завантаження налаштувань БД з преференсів...")
 	legacyMode := normalizeBackendMode(p.StringWithFallback(PrefBackendMode, BackendModeFirebird))
 	caslEnabled := p.BoolWithFallback(PrefCASLEnabled, legacyMode == BackendModeCASLCloud)
+	firebirdEnabled := p.BoolWithFallback(PrefFirebirdEnabled, legacyMode != BackendModePhoenix)
+	phoenixEnabled := p.BoolWithFallback(PrefPhoenixEnabled, legacyMode == BackendModePhoenix)
 	cfg := DBConfig{
 		User:     p.StringWithFallback(PrefUser, "SYSDBA"),
 		Password: p.StringWithFallback(PrefPassword, "masterkey"),
@@ -60,6 +84,16 @@ func LoadDBConfig(p fyne.Preferences) DBConfig {
 		Port:     p.StringWithFallback(PrefPort, "3050"),
 		Path:     p.StringWithFallback(PrefPath, "C:/MOST.PM/BASE/MOST5.FDB"),
 		Params:   p.StringWithFallback(PrefParams, "charset=WIN1251&auth_plugin_name=Srp"),
+
+		FirebirdEnabled: firebirdEnabled,
+		PhoenixEnabled:  phoenixEnabled,
+		PhoenixUser:     p.StringWithFallback(PrefPhoenixUser, "sa"),
+		PhoenixPassword: p.StringWithFallback(PrefPhoenixPassword, ""),
+		PhoenixHost:     p.StringWithFallback(PrefPhoenixHost, "localhost"),
+		PhoenixPort:     p.StringWithFallback(PrefPhoenixPort, ""),
+		PhoenixInstance: p.StringWithFallback(PrefPhoenixInstance, "PHOENIX4"),
+		PhoenixDatabase: p.StringWithFallback(PrefPhoenixDatabase, "Pult4DB"),
+		PhoenixParams:   p.StringWithFallback(PrefPhoenixParams, "encrypt=disable&trustservercertificate=true"),
 
 		CASLEnabled: caslEnabled,
 		Mode:        legacyMode,
@@ -76,6 +110,11 @@ func LoadDBConfig(p fyne.Preferences) DBConfig {
 		Str("host", cfg.Host).
 		Str("port", cfg.Port).
 		Str("path", cfg.Path).
+		Bool("firebirdEnabled", cfg.FirebirdEnabled).
+		Bool("phoenixEnabled", cfg.PhoenixEnabled).
+		Str("phoenixHost", cfg.PhoenixHost).
+		Str("phoenixInstance", cfg.PhoenixInstance).
+		Str("phoenixDatabase", cfg.PhoenixDatabase).
 		Str("mode", cfg.Mode).
 		Bool("caslEnabled", cfg.CASLEnabled).
 		Msg("Налаштування БД завантажено")
@@ -99,14 +138,17 @@ func SaveDBConfig(p fyne.Preferences, cfg DBConfig) {
 	p.SetString(PrefPort, cfg.Port)
 	p.SetString(PrefPath, cfg.Path)
 	p.SetString(PrefParams, cfg.Params)
+	p.SetBool(PrefFirebirdEnabled, cfg.FirebirdEnabled)
+	p.SetBool(PrefPhoenixEnabled, cfg.PhoenixEnabled)
+	p.SetString(PrefPhoenixUser, cfg.PhoenixUser)
+	p.SetString(PrefPhoenixPassword, cfg.PhoenixPassword)
+	p.SetString(PrefPhoenixHost, cfg.PhoenixHost)
+	p.SetString(PrefPhoenixPort, cfg.PhoenixPort)
+	p.SetString(PrefPhoenixInstance, cfg.PhoenixInstance)
+	p.SetString(PrefPhoenixDatabase, cfg.PhoenixDatabase)
+	p.SetString(PrefPhoenixParams, cfg.PhoenixParams)
 	p.SetBool(PrefCASLEnabled, cfg.CASLEnabled)
-	mode := normalizeBackendMode(cfg.Mode)
-	if cfg.CASLEnabled {
-		mode = BackendModeCASLCloud
-	} else {
-		mode = BackendModeFirebird
-	}
-	p.SetString(PrefBackendMode, mode)
+	p.SetString(PrefBackendMode, normalizeBackendMode(cfg.Mode))
 	p.SetString(PrefCASLBaseURL, cfg.CASLBaseURL)
 	p.SetString(PrefCASLToken, cfg.CASLToken)
 	p.SetString(PrefCASLEmail, cfg.CASLEmail)
@@ -117,6 +159,10 @@ func SaveDBConfig(p fyne.Preferences, cfg DBConfig) {
 }
 
 func (c DBConfig) ToDSN() string {
+	return c.FirebirdDSN()
+}
+
+func (c DBConfig) FirebirdDSN() string {
 	// Format: user:password@host:port/path?params
 	dsn := fmt.Sprintf("%s:%s@%s:%s/%s", c.User, c.Password, c.Host, c.Port, c.Path)
 	if c.Params != "" {
@@ -129,12 +175,52 @@ func (c DBConfig) ToDSN() string {
 	return dsn
 }
 
+func (c DBConfig) PhoenixDSN() string {
+	host := strings.TrimSpace(c.PhoenixHost)
+	if host == "" {
+		host = "localhost"
+	}
+
+	authority := host
+	if port := strings.TrimSpace(c.PhoenixPort); port != "" {
+		authority = authority + ":" + port
+	}
+
+	u := &url.URL{
+		Scheme: "sqlserver",
+		Host:   authority,
+	}
+	if user := strings.TrimSpace(c.PhoenixUser); user != "" {
+		if password := c.PhoenixPassword; password != "" {
+			u.User = url.UserPassword(user, password)
+		} else {
+			u.User = url.User(user)
+		}
+	}
+
+	q := u.Query()
+	if database := strings.TrimSpace(c.PhoenixDatabase); database != "" {
+		q.Set("database", database)
+	}
+	if instance := strings.TrimSpace(c.PhoenixInstance); instance != "" {
+		q.Set("instance", instance)
+	}
+	applyURLQueryParams(q, c.PhoenixParams)
+	u.RawQuery = q.Encode()
+
+	dsn := u.String()
+	log.Debug().Str("phoenixDSN", dsn).Msg("DSN Phoenix сформовано")
+	return dsn
+}
+
 func (c DBConfig) NormalizedMode() string {
 	return normalizeBackendMode(c.Mode)
 }
 
 func normalizeBackendMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case BackendModePhoenix:
+		return BackendModePhoenix
 	case BackendModeCASLCloud:
 		return BackendModeCASLCloud
 	default:
@@ -154,5 +240,29 @@ func normalizeLogLevel(level string) string {
 		return "error"
 	default:
 		return "info"
+	}
+}
+
+func applyURLQueryParams(values url.Values, raw string) {
+	text := strings.TrimSpace(strings.TrimPrefix(raw, "?"))
+	if text == "" {
+		return
+	}
+
+	for _, part := range strings.Split(text, "&") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key, value, found := strings.Cut(part, "=")
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if !found {
+			values.Set(key, "")
+			continue
+		}
+		values.Set(key, strings.TrimSpace(value))
 	}
 }

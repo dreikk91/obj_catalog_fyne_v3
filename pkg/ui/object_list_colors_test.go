@@ -19,6 +19,32 @@ func TestObjectListRowColors_PriorityBlockedOverAlarm(t *testing.T) {
 	}
 }
 
+func TestObjectListRowColors_PhoenixBlockedUsesDedicatedPalette(t *testing.T) {
+	item := models.Object{
+		ID:                1000000077,
+		BlockedArmedOnOff: 1,
+		Status:            models.StatusNormal,
+	}
+
+	text, row := objectListRowColors(item, false)
+	if text.R != 255 || row.R != 79 || row.G != 109 || row.B != 135 {
+		t.Fatalf("unexpected phoenix blocked colors (light): text=%+v row=%+v", text, row)
+	}
+}
+
+func TestObjectListRowColors_PhoenixDisarmedUsesDedicatedPalette(t *testing.T) {
+	item := models.Object{
+		ID:         1000000078,
+		GuardState: 0,
+		Status:     models.StatusNormal,
+	}
+
+	text, row := objectListRowColors(item, false)
+	if text.R != 255 || row.R != 67 || row.G != 156 || row.B != 199 {
+		t.Fatalf("unexpected phoenix disarmed colors (light): text=%+v row=%+v", text, row)
+	}
+}
+
 func TestObjectListRowColors_OfflinePriority(t *testing.T) {
 	item := models.Object{
 		IsConnState: 0,

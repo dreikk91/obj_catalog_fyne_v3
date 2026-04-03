@@ -26,12 +26,24 @@ type VodafoneLastEvent struct {
 	EventTimeRaw string
 }
 
+// VodafoneSIMBlockingStatus містить поточний стан блокування номера.
+type VodafoneSIMBlockingStatus struct {
+	Status                 string
+	BlockingDate           time.Time
+	BlockingDateRaw        string
+	BlockingRequestDate    time.Time
+	BlockingRequestDateRaw string
+	UpdateDate             time.Time
+	UpdateDateRaw          string
+}
+
 // VodafoneSIMStatus об'єднує ознаки доступності SIM, статус у мережі та останню подію.
 type VodafoneSIMStatus struct {
 	MSISDN         string
 	Available      bool
 	SubscriberName string
 	Connectivity   VodafoneConnectivityStatus
+	Blocking       VodafoneSIMBlockingStatus
 	LastEvent      VodafoneLastEvent
 }
 
@@ -39,4 +51,11 @@ type VodafoneSIMStatus struct {
 type VodafoneSIMRebootResult struct {
 	OrderID string
 	State   string
+}
+
+// VodafoneSIMBarringResult містить результат заявки на блокування або розблокування номера.
+type VodafoneSIMBarringResult struct {
+	OrderID   string
+	State     string
+	Operation string
 }

@@ -1,34 +1,38 @@
 // Package models - структура тривоги
 package models
 
-import "time"
+import (
+	"strconv"
+	"strings"
+	"time"
+)
 
 // AlarmType визначає тип тривоги
 type AlarmType string
 
 const (
-	AlarmFire        AlarmType = "fire"         // Пожежа
+	AlarmFire AlarmType = "fire" // Пожежа
 	// AlarmBurglary    AlarmType = "burglary"     // Проникнення/охоронна тривога
-	AlarmPanic       AlarmType = "panic"        // Тривожна кнопка/напад
-	AlarmMedical     AlarmType = "medical"      // Медична тривога
-	AlarmGas         AlarmType = "gas"          // Газова тривога
-	AlarmTamper      AlarmType = "tamper"       // Саботаж/тампер
-	AlarmFault       AlarmType = "fault"        // Несправність
-	AlarmPowerFail   AlarmType = "power_fail"   // Втрата 220В
-	AlarmBatteryLow  AlarmType = "battery_low"  // Низький заряд АКБ
-	AlarmOffline     AlarmType = "offline"      // Втрата зв'язку
-	AlarmSystemEvent AlarmType = "system_event" // Системна подія
-	AlarmOperator    AlarmType = "ALARM_TYPE_OPERATOR"     // Операторська тривога
-	AlarmDevice      AlarmType = "ALARM_TYPE_DEVICE"     // Пристроєва тривога
-	AlarmMobile      AlarmType = "ALARM_TYPE_MOBILE"     // Мобільна тривога
-	AlarmBurglary    AlarmType = "BURGLARY_ALARM"    // Охоронна тривога
-	AlarmEliminated  AlarmType = "ALARM_ELIMINATED"  // Ліквідована тривога
-	AlarmAcTrouble   AlarmType = "AC_TROUBLE"      // Проблеми з живленням
-	AlarmExit        AlarmType = "EXIT_ALARM"        // Вихідна тривога
+	AlarmPanic       AlarmType = "panic"               // Тривожна кнопка/напад
+	AlarmMedical     AlarmType = "medical"             // Медична тривога
+	AlarmGas         AlarmType = "gas"                 // Газова тривога
+	AlarmTamper      AlarmType = "tamper"              // Саботаж/тампер
+	AlarmFault       AlarmType = "fault"               // Несправність
+	AlarmPowerFail   AlarmType = "power_fail"          // Втрата 220В
+	AlarmBatteryLow  AlarmType = "battery_low"         // Низький заряд АКБ
+	AlarmOffline     AlarmType = "offline"             // Втрата зв'язку
+	AlarmSystemEvent AlarmType = "system_event"        // Системна подія
+	AlarmOperator    AlarmType = "ALARM_TYPE_OPERATOR" // Операторська тривога
+	AlarmDevice      AlarmType = "ALARM_TYPE_DEVICE"   // Пристроєва тривога
+	AlarmMobile      AlarmType = "ALARM_TYPE_MOBILE"   // Мобільна тривога
+	AlarmBurglary    AlarmType = "BURGLARY_ALARM"      // Охоронна тривога
+	AlarmEliminated  AlarmType = "ALARM_ELIMINATED"    // Ліквідована тривога
+	AlarmAcTrouble   AlarmType = "AC_TROUBLE"          // Проблеми з живленням
+	AlarmExit        AlarmType = "EXIT_ALARM"          // Вихідна тривога
 	// AlarmFire        AlarmType = "FIRE_ALARM"        // Пожежна тривога
-	AlarmFireTrouble AlarmType = "FIRE_TROUBLE"    // Проблеми з пожежною сигналізацією
+	AlarmFireTrouble  AlarmType = "FIRE_TROUBLE" // Проблеми з пожежною сигналізацією
 	AlarmNotification AlarmType = "notification" // Повідомлення
-	
+
 )
 
 // Alarm представляє активну тривогу, що потребує обробки
@@ -37,16 +41,16 @@ type Alarm struct {
 	ObjectID     int       // ID об'єкта
 	ObjectNumber string    // Номер об'єкта (людський формат)
 	ObjectName   string    // Назва об'єкта (для швидкого відображення)
-	Address     string    // Адреса об'єкта
-	Time        time.Time // Час виникнення
-	Details     string    // Деталі тривоги
-	Type        AlarmType // Тип тривоги
-	ZoneNumber  int       // Номер зони (шлейфу)
-	ZoneName    string    // Назва зони
-	SC1         int       // Код кольору з БД
-	IsProcessed bool      // Чи оброблена тривога
-	ProcessedBy string    // Ким оброблена
-	ProcessNote string    // Примітка при обробці
+	Address      string    // Адреса об'єкта
+	Time         time.Time // Час виникнення
+	Details      string    // Деталі тривоги
+	Type         AlarmType // Тип тривоги
+	ZoneNumber   int       // Номер зони (шлейфу)
+	ZoneName     string    // Назва зони
+	SC1          int       // Код кольору з БД
+	IsProcessed  bool      // Чи оброблена тривога
+	ProcessedBy  string    // Ким оброблена
+	ProcessNote  string    // Примітка при обробці
 }
 
 // GetTypeDisplay повертає текстовий опис типу тривоги українською
@@ -103,6 +107,17 @@ func (a *Alarm) GetTimeDisplay() string {
 // GetDateTimeDisplay повертає повну дату і час
 func (a *Alarm) GetDateTimeDisplay() string {
 	return a.Time.Format("02.01.2006 15:04:05")
+}
+
+// GetObjectNumberDisplay повертає номер об'єкта для відображення з fallback на ObjectID.
+func (a *Alarm) GetObjectNumberDisplay() string {
+	if a == nil {
+		return ""
+	}
+	if number := strings.TrimSpace(a.ObjectNumber); number != "" {
+		return number
+	}
+	return strconv.Itoa(a.ObjectID)
 }
 
 // IsCritical повертає true якщо тривога критична і має підсвічуватись як пріоритетна.

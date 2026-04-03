@@ -346,6 +346,20 @@ func (s *objectCardDialogState) syncVodafoneMetadata(slot int) {
 	})
 }
 
+func (s *objectCardDialogState) openVodafoneSIMDialog(slot int) {
+	name := strings.TrimSpace(s.shortNameEntry.Text)
+	if name == "" {
+		name = strings.TrimSpace(s.fullNameEntry.Text)
+	}
+	ShowVodafoneSIMDialog(
+		s.win,
+		s.provider,
+		s.currentSIM(slot),
+		s.objnEntry.Text,
+		name,
+	)
+}
+
 func (s *objectCardDialogState) loadReferenceData() error {
 	if err := s.refsVM.LoadFromProvider(s.provider); err != nil {
 		return err
@@ -544,6 +558,7 @@ func (s *objectCardDialogState) buildSIMPhonesCard() fyne.CanvasObject {
 			makeLowButton("Статус", func() { s.refreshVodafoneSIMStatus(slot) }),
 			makeLowButton("Перезавантажити", func() { s.rebootVodafoneSIM(slot) }),
 			makeLowButton("Записати №/назву", func() { s.syncVodafoneMetadata(slot) }),
+			makeLowButton("Блок/розблок", func() { s.openVodafoneSIMDialog(slot) }),
 		)
 	}
 

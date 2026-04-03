@@ -26,11 +26,12 @@ type EventLogFilterInput struct {
 
 // EventLogFilterOutput описує результат фільтрації журналу подій.
 type EventLogFilterOutput struct {
-	Filtered    []models.Event
-	Count       int
-	CountAll    int
-	CountBridge int
-	CountCASL   int
+	Filtered     []models.Event
+	Count        int
+	CountAll     int
+	CountBridge  int
+	CountPhoenix int
+	CountCASL    int
 }
 
 // EventLogViewModel інкапсулює бізнес-правила формування журналу подій.
@@ -58,6 +59,7 @@ func (vm *EventLogViewModel) ApplyFilters(input EventLogFilterInput) EventLogFil
 	filtered := make([]models.Event, 0, len(input.AllEvents))
 	countAll := 0
 	countBridge := 0
+	countPhoenix := 0
 	countCASL := 0
 	for _, event := range input.AllEvents {
 		switch input.Period {
@@ -84,9 +86,12 @@ func (vm *EventLogViewModel) ApplyFilters(input EventLogFilterInput) EventLogFil
 
 		source := ObjectSourceByID(event.ObjectID)
 		countAll++
-		if source == ObjectSourceCASL {
+		switch source {
+		case ObjectSourceCASL:
 			countCASL++
-		} else {
+		case ObjectSourcePhoenix:
+			countPhoenix++
+		default:
 			countBridge++
 		}
 
@@ -103,10 +108,11 @@ done:
 	}
 
 	return EventLogFilterOutput{
-		Filtered:    filtered,
-		Count:       len(filtered),
-		CountAll:    countAll,
-		CountBridge: countBridge,
-		CountCASL:   countCASL,
+		Filtered:     filtered,
+		Count:        len(filtered),
+		CountAll:     countAll,
+		CountBridge:  countBridge,
+		CountPhoenix: countPhoenix,
+		CountCASL:    countCASL,
 	}
 }

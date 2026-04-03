@@ -3,7 +3,6 @@ package data
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -25,6 +24,8 @@ const (
 	vodafoneBaseURL      = "https://mw-api.vodafone.ua"
 	vodafoneAppVersion   = "3.1.17"
 	vodafoneIOTCategory  = "14038376"
+	vodafoneChannelID    = "MYVODAFONE-API"
+	vodafoneBarringCode  = "POPFRBLKUSER"
 )
 
 var errVodafoneAuthRequired = errors.New("vodafone: потрібна авторизація через SMS-код у налаштуваннях")
@@ -198,6 +199,15 @@ func (s *VodafoneService) GetSIMStatus(msisdn string) (contracts.VodafoneSIMStat
 		MSISDN:         normalized,
 		Available:      available,
 		SubscriberName: subscriber.Description,
+		Blocking: contracts.VodafoneSIMBlockingStatus{
+			Status:                 subscriber.BlockingStatus,
+			BlockingDate:           subscriber.BlockingDate,
+			BlockingDateRaw:        subscriber.BlockingDateRaw,
+			BlockingRequestDate:    subscriber.BlockingRequestDate,
+			BlockingRequestDateRaw: subscriber.BlockingRequestDateRaw,
+			UpdateDate:             subscriber.UpdateDate,
+			UpdateDateRaw:          subscriber.UpdateDateRaw,
+		},
 	}
 	if !available {
 		return status, nil
@@ -214,6 +224,14 @@ func (s *VodafoneService) GetSIMStatus(msisdn string) (contracts.VodafoneSIMStat
 	status.Connectivity = connectivity
 	status.LastEvent = lastEvent
 	return status, nil
+}
+
+func (s *VodafoneService) BlockSIM(msisdn string) (contracts.VodafoneSIMBarringResult, error) {
+	return s.changeSIMBarring(msisdn, "add", "block")
+}
+
+func (s *VodafoneService) UnblockSIM(msisdn string) (contracts.VodafoneSIMBarringResult, error) {
+	return s.changeSIMBarring(msisdn, "delete", "unblock")
 }
 
 func (s *VodafoneService) RebootSIM(msisdn string) (contracts.VodafoneSIMRebootResult, error) {
@@ -316,6 +334,140 @@ func (s *VodafoneService) UpdateSIMMetadata(msisdn string, name string, comment 
 		return errors.New("vodafone: немає даних для запису в name/comment")
 	}
 	return nil
+}
+
+func (s *VodafoneService) changeSIMBarring(msisdn string, action string, operation string) (contracts.VodafoneSIMBarringResult, error) {
+	normalized, err := normalizeVodafoneMSISDN(msisdn)
+	if err != nil {
+		return contracts.VodafoneSIMBarringResult{}, err
+	}
+	subscriber, err := s.requireAvailableSubscriber(normalized)
+	if err != nil {
+		return contracts.VodafoneSIMBarringResult{}, err
+	}
+	token, err := s.ensureAuthorizedToken()
+	if err != nil {
+		return contracts.VodafoneSIMBarringResult{}, err
+	}
+
+	orderID, state, err := s.createSIMBarringOrder(token, subscriber, normalized, action)
+	if err != nil {
+		return contracts.VodafoneSIMBarringResult{}, err
+	}
+	if strings.TrimSpace(orderID) == "" {
+		return contracts.VodafoneSIMBarringResult{}, errors.New("vodafone: сервер не повернув ID заявки на блокування")
+	}
+	if err := s.submitProductOrder(token, orderID); err != nil {
+		return contracts.VodafoneSIMBarringResult{
+			OrderID:   orderID,
+			State:     state,
+			Operation: operation,
+		}, err
+	}
+
+	s.invalidateAvailableSIMsCache()
+	return contracts.VodafoneSIMBarringResult{
+		OrderID:   orderID,
+		State:     state,
+		Operation: operation,
+	}, nil
+}
+
+func (s *VodafoneService) createSIMBarringOrder(token string, subscriber vodafoneSubscriber, msisdn string, action string) (string, string, error) {
+	relatedParty := make([]map[string]string, 0, 1)
+	if strings.TrimSpace(subscriber.AccountID) != "" {
+		relatedParty = append(relatedParty, map[string]string{
+			"id":            strings.TrimSpace(subscriber.AccountID),
+			"@referredType": "child-account",
+		})
+	}
+
+	payload := map[string]any{
+		"externalId": buildVodafoneExternalID("barring", msisdn),
+		"category":   "b2b",
+		"priority":   1,
+		"@type":      "CHANGE-BARRING-SERVICE",
+		"channel": []map[string]string{
+			{
+				"id": vodafoneChannelID,
+			},
+		},
+		"relatedParty": relatedParty,
+		"productOrderItem": []map[string]any{
+			{
+				"action": action,
+				"type":   "change-barring-service",
+				"characteristic": []map[string]string{
+					{
+						"name":      "serviceCode",
+						"value":     vodafoneBarringCode,
+						"valueType": "string",
+					},
+					{
+						"name":      "msisdn",
+						"value":     msisdn,
+						"valueType": "string",
+					},
+					{
+						"name":      "channel",
+						"value":     vodafoneChannelID,
+						"valueType": "string",
+					},
+					{
+						"name":      "LANGUAGE",
+						"value":     "uk",
+						"valueType": "string",
+					},
+				},
+			},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", "", fmt.Errorf("vodafone: failed to build barring request: %w", err)
+	}
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		s.baseURL+"/order/tmf-api/productOrderingManagement/v4/productOrder",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return "", "", fmt.Errorf("vodafone: failed to create barring request: %w", err)
+	}
+	s.applyHeaders(req, token, "", "application/json")
+
+	var resp struct {
+		ID    string `json:"id"`
+		State string `json:"state"`
+	}
+	if err := s.doJSON(req, &resp); err != nil {
+		return "", "", err
+	}
+	return strings.TrimSpace(resp.ID), strings.TrimSpace(resp.State), nil
+}
+
+func (s *VodafoneService) submitProductOrder(token string, orderID string) error {
+	payload := map[string]int{
+		"maxParallelExecutions": 1,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("vodafone: failed to build submit request: %w", err)
+	}
+
+	req, err := http.NewRequest(
+		http.MethodPut,
+		s.baseURL+"/order/api/productOrderingManagement/v4.1/productOrder/"+url.PathEscape(strings.TrimSpace(orderID))+"/operations/submit",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return fmt.Errorf("vodafone: failed to create submit request: %w", err)
+	}
+	s.applyHeaders(req, token, "", "application/json")
+	req.Header.Set("Accept", "*/*")
+
+	return s.expectNoContent(req, http.StatusOK, http.StatusNoContent)
 }
 
 func (s *VodafoneService) patchSubscriberCharacteristic(token string, msisdn string, name string, value string) error {
@@ -513,21 +665,24 @@ func (s *VodafoneService) listAvailableSubscribers(ctx context.Context) (map[str
 				if msisdnValue == "" {
 					continue
 				}
-				description := ""
-				for _, pair := range party.Characteristics {
-					if subtle.ConstantTimeCompare([]byte(pair.Name), []byte("phoneDescription")) == 1 {
-						description = strings.TrimSpace(pair.Value)
-					}
-				}
-				for _, pair := range party.Characterictics {
-					if subtle.ConstantTimeCompare([]byte(pair.Name), []byte("phoneDescription")) == 1 {
-						description = strings.TrimSpace(pair.Value)
-					}
-				}
+				values := make(map[string]string)
+				mergeVodafoneNamedValues(values, party.Characteristics)
+				mergeVodafoneNamedValues(values, party.Characterictics)
+
+				blockingDate, _ := parseVodafoneTime(time.RFC3339, values["blockingDate"])
+				blockingRequestDate, _ := parseVodafoneTime(time.RFC3339, values["blockingRequestDate"])
+				updateDate, _ := parseVodafoneTime(time.RFC3339, values["updateDate"])
 				subscribers[msisdnValue] = vodafoneSubscriber{
-					MSISDN:      msisdnValue,
-					AccountID:   strings.TrimSpace(item.Account.ID),
-					Description: description,
+					MSISDN:                 msisdnValue,
+					AccountID:              strings.TrimSpace(item.Account.ID),
+					Description:            strings.TrimSpace(values["phoneDescription"]),
+					BlockingStatus:         strings.TrimSpace(values["blockingStatus"]),
+					BlockingDate:           blockingDate,
+					BlockingDateRaw:        strings.TrimSpace(values["blockingDate"]),
+					BlockingRequestDate:    blockingRequestDate,
+					BlockingRequestDateRaw: strings.TrimSpace(values["blockingRequestDate"]),
+					UpdateDate:             updateDate,
+					UpdateDateRaw:          strings.TrimSpace(values["updateDate"]),
 				}
 			}
 		}
@@ -640,6 +795,7 @@ func (s *VodafoneService) applyHeaders(req *http.Request, token string, profile 
 	if strings.TrimSpace(token) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
 	}
+	req.Header.Set("Channel", vodafoneChannelID)
 	req.Header.Set("X-App-Version", vodafoneAppVersion)
 	req.Header.Set("X-Device-Source", "Windows OS")
 	req.Header.Set("X-Dev-Mode", "true")
@@ -678,9 +834,16 @@ func (s *VodafoneService) invalidateAvailableSIMsCache() {
 }
 
 type vodafoneSubscriber struct {
-	MSISDN      string
-	AccountID   string
-	Description string
+	MSISDN                 string
+	AccountID              string
+	Description            string
+	BlockingStatus         string
+	BlockingDate           time.Time
+	BlockingDateRaw        string
+	BlockingRequestDate    time.Time
+	BlockingRequestDateRaw string
+	UpdateDate             time.Time
+	UpdateDateRaw          string
 }
 
 type vodafoneNamedValue struct {
@@ -694,6 +857,16 @@ func cloneVodafoneSubscribers(src map[string]vodafoneSubscriber) map[string]voda
 		out[key] = value
 	}
 	return out
+}
+
+func mergeVodafoneNamedValues(dst map[string]string, values []vodafoneNamedValue) {
+	for _, item := range values {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			continue
+		}
+		dst[name] = strings.TrimSpace(item.Value)
+	}
 }
 
 func parseVodafoneTime(layout string, raw string) (time.Time, error) {
@@ -712,6 +885,10 @@ func resolveVodafoneTokenExpiry(token string, expiresIn int64) time.Time {
 		return time.Now().UTC().Add(time.Duration(expiresIn) * time.Second)
 	}
 	return time.Time{}
+}
+
+func buildVodafoneExternalID(prefix string, msisdn string) string {
+	return fmt.Sprintf("%s-%s-%d", strings.TrimSpace(prefix), digitsOnlyVodafone(msisdn), time.Now().UTC().UnixNano())
 }
 
 func jwtTokenExpiry(token string) (time.Time, bool) {

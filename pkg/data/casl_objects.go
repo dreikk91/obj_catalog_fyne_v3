@@ -118,7 +118,7 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 			obj.LastMessageTime = msgTime
 			obj.LastTestTime = msgTime
 		}
-		obj.Groups = mapCASLDeviceGroupsToObjectGroups(state.Groups, record.Rooms)
+		obj.Groups = p.buildCASLObjectGroups(ctx, record, state.Groups)
 	}
 
 	return &obj
@@ -415,7 +415,6 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 
 	hasAssignment := len(normalizeContactIDs(record.InCharge, record.ManagerID)) > 0
 	objectNum := preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
-
 
 	return models.Object{
 		ID:             id,

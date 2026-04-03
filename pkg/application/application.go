@@ -17,17 +17,15 @@ import (
 	"obj_catalog_fyne_v3/pkg/backend"
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
-	"obj_catalog_fyne_v3/pkg/data"
-	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/eventbus"
 	applogger "obj_catalog_fyne_v3/pkg/logger"
 	"obj_catalog_fyne_v3/pkg/models"
 	apptheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	appversion "obj_catalog_fyne_v3/pkg/version"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 )
 
@@ -35,8 +33,7 @@ import (
 type Application struct {
 	fyneApp           fyne.App
 	mainWindow        fyne.Window
-	db                *sqlx.DB
-	dbHealthCancel    context.CancelFunc
+	managedDBs        []managedDBResource
 	refreshLoopCancel context.CancelFunc
 	isShuttingDown    bool
 
@@ -76,9 +73,11 @@ type Application struct {
 	// Поточна тема
 	isDarkTheme bool
 
-	statusLabel *widget.Label
-	versionInfo appversion.Info
-	caslEnabled bool
+	statusLabel     *widget.Label
+	versionInfo     appversion.Info
+	firebirdEnabled bool
+	phoenixEnabled  bool
+	caslEnabled     bool
 }
 
 func (a *Application) getDataProvider() contracts.DataProvider {
@@ -109,7 +108,7 @@ func (a *Application) updateWindowTitle() {
 	base := "Каталог об'єктів"
 
 	if a.currentObject != nil {
-		base = fmt.Sprintf("Каталог об'єктів%s — %s (№%d)", versionLabel, a.currentObject.Name, a.currentObject.ID)
+		base = fmt.Sprintf("Каталог об'єктів%s — %s (№%s)", versionLabel, a.currentObject.Name, viewmodels.ObjectDisplayNumber(*a.currentObject))
 	}
 	if a.currentAlarmsTotal > 0 {
 		base = fmt.Sprintf("%s — Тривоги: %d", base, a.currentAlarmsTotal)
@@ -124,10 +123,20 @@ func (a *Application) backendStatusConnectedText() string {
 	if a == nil {
 		return "Джерело даних: —"
 	}
-	if a.caslEnabled {
-		return "БД/МІСТ: підключено | CASL Cloud: підключено"
+	parts := make([]string, 0, 3)
+	if a.firebirdEnabled {
+		parts = append(parts, "БД/МІСТ: підключено")
 	}
-	return "БД/МІСТ: підключено"
+	if a.phoenixEnabled {
+		parts = append(parts, "Phoenix: підключено")
+	}
+	if a.caslEnabled {
+		parts = append(parts, "CASL Cloud: підключено")
+	}
+	if len(parts) == 0 {
+		return "Джерела даних: не налаштовано"
+	}
+	return strings.Join(parts, " | ")
 }
 
 const (
@@ -157,63 +166,38 @@ func NewApplication() *Application {
 	log.Info().Msg("Завантаження налаштувань БД...")
 	dbCfg := config.LoadDBConfig(fyneApp.Preferences())
 	dbCfg.LogLevel = applogger.SetLogLevel(dbCfg.LogLevel)
-	caslEnabled := dbCfg.CASLEnabled || dbCfg.NormalizedMode() == config.BackendModeCASLCloud
 	log.Info().
 		Str("host", dbCfg.Host).
 		Str("port", dbCfg.Port).
 		Str("user", dbCfg.User).
-		Bool("caslEnabled", caslEnabled).
+		Bool("firebirdEnabled", dbCfg.FirebirdEnabled).
+		Bool("phoenixEnabled", dbCfg.PhoenixEnabled).
+		Bool("caslEnabled", dbCfg.CASLEnabled || dbCfg.NormalizedMode() == config.BackendModeCASLCloud).
 		Msg("Налаштування джерела даних завантажено")
-
-	var (
-		db           *sqlx.DB
-		healthCancel context.CancelFunc
-		dataProvider contracts.DataProvider
-		dbProvider   contracts.DataProvider
-	)
 
 	// Створюємо mock дані
 	// mockData := contracts.NewMockData()
 
 	// Ініціалізація основного провайдера БД/мосту
 	log.Info().Msg("Ініціалізація провайдера даних...")
-	dsn := dbCfg.ToDSN()
-	log.Info().Msg("Підключення до бази даних...")
-	db = database.InitDB(dsn)
-	log.Info().Msg("БД підключена, запуск перевірки здоров'я...")
-	healthCancel = database.StartHealthCheck(db)
-	dbProvider = backend.NewDBProvider(
-		db,
-		dsn,
-		data.WithVodafoneConfigStore(config.NewPreferencesVodafoneConfigStore(fyneApp.Preferences())),
-	)
-	dataProvider = dbProvider
-	log.Debug().Msg("Провайдер даних БД створено")
-
-	if caslEnabled {
-		caslProvider := backend.NewCASLCloudProvider(
-			dbCfg.CASLBaseURL,
-			dbCfg.CASLToken,
-			dbCfg.CASLPultID,
-			dbCfg.CASLEmail,
-			dbCfg.CASLPass,
-		)
-		dataProvider = backend.NewCombinedProvider(dbProvider, caslProvider)
-		log.Debug().Str("baseURL", dbCfg.CASLBaseURL).Msg("CASL Cloud підключено паралельно до БД/мосту")
+	buildResult, err := buildDataProviderFromConfig(dbCfg, fyneApp.Preferences(), false)
+	if err != nil {
+		log.Error().Err(err).Msg("Не вдалося повністю ініціалізувати джерела даних")
 	}
 
 	log.Info().Msg("Створення структури додатку...")
 	application := &Application{
-		fyneApp:        fyneApp,
-		mainWindow:     mainWindow,
-		db:             db,
-		dbHealthCancel: healthCancel,
-		dataProvider:   dataProvider,
-		eventBus:       eventbus.NewBus(),
+		fyneApp:      fyneApp,
+		mainWindow:   mainWindow,
+		managedDBs:   buildResult.managedDBs,
+		dataProvider: buildResult.provider,
+		eventBus:     eventbus.NewBus(),
 		// mockData:   mockData,
-		isDarkTheme: isDark,
-		versionInfo: ver,
-		caslEnabled: caslEnabled,
+		isDarkTheme:     isDark,
+		versionInfo:     ver,
+		firebirdEnabled: buildResult.firebirdEnabled,
+		phoenixEnabled:  buildResult.phoenixEnabled,
+		caslEnabled:     buildResult.caslEnabled,
 	}
 	log.Debug().Msg("Структура додатку готова")
 	log.Info().Str("version", ver.String()).Msg("Версія застосунку")
@@ -392,7 +376,7 @@ func (a *Application) buildUI() {
 		a.alarmPanel.OnNewCriticalAlarm = func(alarm models.Alarm) {
 			// Для адміністратора не перемикаємо вкладку автоматично,
 			// а лише м'яко сповіщаємо про нову тривогу.
-			ui.ShowToast(a.mainWindow, fmt.Sprintf("Нова тривога: №%d %s", alarm.ObjectID, alarm.GetTypeDisplay()))
+			ui.ShowToast(a.mainWindow, fmt.Sprintf("Нова тривога: №%s %s", alarm.GetObjectNumberDisplay(), alarm.GetTypeDisplay()))
 		}
 	}
 	if a.eventLog != nil {
@@ -579,17 +563,7 @@ func (a *Application) resolveVodafoneAdminProvider() contracts.AdminObjectVodafo
 // Run запускає додаток
 func (a *Application) Run() {
 	log.Info().Msg("Запуск основного цикла додатку (UI loop)...")
-	if a.db != nil {
-		defer func() {
-			log.Debug().Msg("Закриття з'єднання з БД...")
-			if a.dbHealthCancel != nil {
-				a.dbHealthCancel()
-				a.dbHealthCancel = nil
-			}
-			a.db.Close()
-			log.Debug().Msg("✓ З'єднання з БД закрито")
-		}()
-	}
+	defer a.closeManagedDBs()
 
 	// Робимо рядок пошуку активним (виділеним) одразу після старту.
 	if a.objectList != nil && a.objectList.SearchEntry != nil {
@@ -602,65 +576,27 @@ func (a *Application) Run() {
 // Reconnect перепідключає джерело даних та оновлює провайдери.
 func (a *Application) Reconnect(cfg config.DBConfig) {
 	cfg.LogLevel = applogger.SetLogLevel(cfg.LogLevel)
-	caslEnabled := cfg.CASLEnabled || cfg.NormalizedMode() == config.BackendModeCASLCloud
-	log.Warn().Bool("caslEnabled", caslEnabled).Msg("🔄 Перепідключення до джерела даних...")
+	log.Warn().Msg("🔄 Перепідключення до джерел даних...")
 	if a.statusLabel != nil {
-		a.statusLabel.SetText("БД/МІСТ: перепідключення...")
+		a.statusLabel.SetText("Джерела даних: перепідключення...")
 	}
 
-	var (
-		newDB          *sqlx.DB
-		newHealthCheck context.CancelFunc
-		newProvider    contracts.DataProvider
-		dbProvider     contracts.DataProvider
-	)
-
-	dsn := cfg.ToDSN()
-	log.Debug().Msg("Ініціалізація нового з'єднання з БД...")
-	newDB = database.InitDB(dsn)
-	if err := newDB.Ping(); err != nil {
-		log.Error().Err(err).Msg("❌ Помилка перевірки з'єднання з новою БД")
+	buildResult, err := buildDataProviderFromConfig(cfg, a.fyneApp.Preferences(), true)
+	if err != nil {
+		log.Error().Err(err).Msg("❌ Помилка перевірки з'єднання з новими джерелами")
 		if a.statusLabel != nil {
-			a.statusLabel.SetText("БД/МІСТ: помилка підключення")
+			a.statusLabel.SetText("Джерела даних: помилка підключення")
 		}
 		dialogs.ShowErrorDialog(a.mainWindow, "Помилка підключення", err)
 		return
 	}
-	log.Debug().Msg("✓ Нове з'єднання з БД успішне")
-	newHealthCheck = database.StartHealthCheck(newDB)
-	dbProvider = backend.NewDBProvider(
-		newDB,
-		dsn,
-		data.WithVodafoneConfigStore(config.NewPreferencesVodafoneConfigStore(a.fyneApp.Preferences())),
-	)
-	newProvider = dbProvider
-	if caslEnabled {
-		caslProvider := backend.NewCASLCloudProvider(
-			cfg.CASLBaseURL,
-			cfg.CASLToken,
-			cfg.CASLPultID,
-			cfg.CASLEmail,
-			cfg.CASLPass,
-		)
-		newProvider = backend.NewCombinedProvider(dbProvider, caslProvider)
-		log.Debug().Str("baseURL", cfg.CASLBaseURL).Msg("CASL Cloud підключено паралельно")
-	}
 
-	// Закриваємо попередні ресурси
-	if a.db != nil {
-		log.Debug().Msg("Закриття попереднього з'єднання з БД...")
-		if a.dbHealthCancel != nil {
-			a.dbHealthCancel()
-			a.dbHealthCancel = nil
-		}
-		a.db.Close()
-		log.Debug().Msg("✓ Попереднє з'єднання закрито")
-	}
-
-	a.db = newDB
-	a.dbHealthCancel = newHealthCheck
-	a.setDataProvider(newProvider)
-	a.caslEnabled = caslEnabled
+	a.closeManagedDBs()
+	a.managedDBs = buildResult.managedDBs
+	a.setDataProvider(buildResult.provider)
+	a.firebirdEnabled = buildResult.firebirdEnabled
+	a.phoenixEnabled = buildResult.phoenixEnabled
+	a.caslEnabled = buildResult.caslEnabled
 	log.Debug().Msg("Провайдер даних оновлено")
 
 	// Оновлюємо посилання в панелях
@@ -681,11 +617,24 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 	})
 	log.Debug().Msg("✓ Дані перезавантажено")
 
-	log.Info().Bool("caslEnabled", caslEnabled).Msg("✅ Перепідключення джерела даних завершено успішно")
+	log.Info().
+		Bool("firebirdEnabled", buildResult.firebirdEnabled).
+		Bool("phoenixEnabled", buildResult.phoenixEnabled).
+		Bool("caslEnabled", buildResult.caslEnabled).
+		Msg("✅ Перепідключення джерел даних завершено успішно")
 	if a.statusLabel != nil {
 		a.statusLabel.SetText(a.backendStatusConnectedText())
 	}
 	dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Підключення до джерел даних оновлено")
+}
+
+func (a *Application) closeManagedDBs() {
+	if a == nil || len(a.managedDBs) == 0 {
+		return
+	}
+	log.Debug().Int("count", len(a.managedDBs)).Msg("Закриття з'єднань із джерелами даних...")
+	closeManagedDBResources(a.managedDBs)
+	a.managedDBs = nil
 }
 
 // RefreshUI оновлює інтерфейс (тему, шрифти)

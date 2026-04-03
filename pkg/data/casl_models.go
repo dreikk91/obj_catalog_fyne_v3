@@ -252,10 +252,14 @@ func (d *caslDevice) UnmarshalJSON(data []byte) error {
 }
 
 type caslDeviceLine struct {
-	ID     caslInt64 `json:"id"`
-	Name   caslText  `json:"name"`
-	Number caslInt64 `json:"number"`
-	Type   caslText  `json:"type"`
+	ID          caslInt64 `json:"id"`
+	Name        caslText  `json:"name"`
+	Number      caslInt64 `json:"number"`
+	Type        caslText  `json:"type"`
+	GroupID     caslText  `json:"group_id"`
+	Group       caslText  `json:"group"`
+	GroupNumber caslInt64 `json:"group_number"`
+	RoomID      caslText  `json:"room_id"`
 }
 
 type caslUser struct {

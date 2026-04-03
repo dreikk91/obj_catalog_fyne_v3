@@ -26,19 +26,20 @@ import (
 
 // WorkAreaPanel - структура робочої області
 type WorkAreaPanel struct {
-	Container     *fyne.Container
-	Data          contracts.WorkAreaProvider
-	ViewModel     *viewmodels.WorkAreaViewModel
-	HeaderVM      *viewmodels.WorkAreaHeaderViewModel
-	DeviceVM      *viewmodels.WorkAreaDeviceViewModel
-	ExportVM      *viewmodels.WorkAreaExportViewModel
-	DeviceStateVM *viewmodels.WorkAreaDeviceStateViewModel
-	ExternalVM    *viewmodels.WorkAreaExternalStateViewModel
-	CurrentObject *models.Object
-	Window        fyne.Window
-	ZonesData     binding.UntypedList
-	ContactsData  binding.UntypedList
-	EventsData    binding.UntypedList
+	Container       *fyne.Container
+	Data            contracts.WorkAreaProvider
+	ViewModel       *viewmodels.WorkAreaViewModel
+	HeaderVM        *viewmodels.WorkAreaHeaderViewModel
+	DeviceVM        *viewmodels.WorkAreaDeviceViewModel
+	GroupSectionsVM *viewmodels.WorkAreaGroupSectionsViewModel
+	ExportVM        *viewmodels.WorkAreaExportViewModel
+	DeviceStateVM   *viewmodels.WorkAreaDeviceStateViewModel
+	ExternalVM      *viewmodels.WorkAreaExternalStateViewModel
+	CurrentObject   *models.Object
+	Window          fyne.Window
+	ZonesData       binding.UntypedList
+	ContactsData    binding.UntypedList
+	EventsData      binding.UntypedList
 
 	// Стан завантаження
 	Zones     []models.Zone
@@ -91,25 +92,30 @@ type WorkAreaPanel struct {
 	CopyLocationBtn *widget.Button
 
 	// Таблиці
-	ZonesTable   *widget.Table
-	ContactsList *widget.List
-	EventsList   *widget.List
+	ZonesTable          *widget.Table
+	ContactsList        *widget.List
+	EventsList          *widget.List
+	ZonesContent        *fyne.Container
+	ContactsContent     *fyne.Container
+	ZonesFlatContent    fyne.CanvasObject
+	ContactsFlatContent fyne.CanvasObject
 }
 
 // NewWorkAreaPanel створює робочу область
 func NewWorkAreaPanel(provider contracts.WorkAreaProvider, window fyne.Window) *WorkAreaPanel {
 	panel := &WorkAreaPanel{
-		Data:          provider,
-		ViewModel:     viewmodels.NewWorkAreaViewModel(),
-		HeaderVM:      viewmodels.NewWorkAreaHeaderViewModel(),
-		DeviceVM:      viewmodels.NewWorkAreaDeviceViewModel(),
-		ExportVM:      viewmodels.NewWorkAreaExportViewModel(),
-		DeviceStateVM: viewmodels.NewWorkAreaDeviceStateViewModel(),
-		ExternalVM:    viewmodels.NewWorkAreaExternalStateViewModel(),
-		Window:        window,
-		ZonesData:     binding.NewUntypedList(),
-		ContactsData:  binding.NewUntypedList(),
-		EventsData:    binding.NewUntypedList(),
+		Data:            provider,
+		ViewModel:       viewmodels.NewWorkAreaViewModel(),
+		HeaderVM:        viewmodels.NewWorkAreaHeaderViewModel(),
+		DeviceVM:        viewmodels.NewWorkAreaDeviceViewModel(),
+		GroupSectionsVM: viewmodels.NewWorkAreaGroupSectionsViewModel(),
+		ExportVM:        viewmodels.NewWorkAreaExportViewModel(),
+		DeviceStateVM:   viewmodels.NewWorkAreaDeviceStateViewModel(),
+		ExternalVM:      viewmodels.NewWorkAreaExternalStateViewModel(),
+		Window:          window,
+		ZonesData:       binding.NewUntypedList(),
+		ContactsData:    binding.NewUntypedList(),
+		EventsData:      binding.NewUntypedList(),
 	}
 
 	// Шапка
@@ -330,7 +336,16 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 	w.ZonesTable.SetColumnWidth(3, 100)
 	w.ZonesTable.SetColumnWidth(4, 40)
 
-	return container.NewBorder(nil, nil, nil, nil, container.New(&zonesTableLayout{table: w.ZonesTable}, w.ZonesTable))
+	w.ZonesFlatContent = container.NewBorder(
+		nil,
+		nil,
+		nil,
+		nil,
+		container.New(&zonesTableLayout{table: w.ZonesTable}, w.ZonesTable),
+	)
+	w.ZonesContent = container.NewMax(w.ZonesFlatContent)
+
+	return w.ZonesContent
 }
 
 type zonesTableLayout struct {
@@ -360,6 +375,61 @@ func (l *zonesTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 
 func (l *zonesTableLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return fyne.NewSize(450, 200)
+}
+
+func (w *WorkAreaPanel) buildGroupedZonesAccordion(
+	sections []viewmodels.WorkAreaGroupSection,
+) fyne.CanvasObject {
+	items := make([]*widget.AccordionItem, 0, len(sections))
+	for _, section := range sections {
+		title := w.GroupSectionsVM.FormatSectionTitle(section.Group)
+		items = append(items, widget.NewAccordionItem(title, w.buildGroupedZonesSection(section)))
+	}
+	accordion := widget.NewAccordion(items...)
+	if len(items) > 0 {
+		accordion.Open(0)
+	}
+	return container.NewScroll(accordion)
+}
+
+func (w *WorkAreaPanel) buildGroupedZonesSection(
+	section viewmodels.WorkAreaGroupSection,
+) fyne.CanvasObject {
+	if len(section.Zones) == 0 {
+		return container.NewPadded(widget.NewLabel("Немає зон у цій групі"))
+	}
+
+	table := widget.NewTable(
+		func() (int, int) {
+			return len(section.Zones), 4
+		},
+		func() fyne.CanvasObject {
+			return widget.NewLabel("Data")
+		},
+		func(id widget.TableCellID, obj fyne.CanvasObject) {
+			label := obj.(*widget.Label)
+			zone := section.Zones[id.Row]
+
+			switch id.Col {
+			case 0:
+				label.SetText("№" + itoa(zone.Number))
+			case 1:
+				label.SetText(zone.Name)
+			case 2:
+				label.SetText(zone.SensorType)
+			case 3:
+				label.SetText(zone.GetStatusDisplay())
+			default:
+				label.SetText("")
+			}
+		},
+	)
+	table.SetColumnWidth(0, 50)
+	table.SetColumnWidth(1, 220)
+	table.SetColumnWidth(2, 140)
+	table.SetColumnWidth(3, 110)
+
+	return container.NewPadded(table)
 }
 
 func (w *WorkAreaPanel) createContactsTab() fyne.CanvasObject {
@@ -412,7 +482,52 @@ func (w *WorkAreaPanel) createContactsTab() fyne.CanvasObject {
 			}
 		},
 	)
-	return w.ContactsList
+	w.ContactsFlatContent = w.ContactsList
+	w.ContactsContent = container.NewMax(w.ContactsFlatContent)
+	return w.ContactsContent
+}
+
+func (w *WorkAreaPanel) buildGroupedContactsAccordion(
+	sections []viewmodels.WorkAreaGroupSection,
+) fyne.CanvasObject {
+	items := make([]*widget.AccordionItem, 0, len(sections))
+	for _, section := range sections {
+		title := w.GroupSectionsVM.FormatSectionTitle(section.Group)
+		items = append(items, widget.NewAccordionItem(title, w.buildGroupedContactsSection(section)))
+	}
+	accordion := widget.NewAccordion(items...)
+	if len(items) > 0 {
+		accordion.Open(0)
+	}
+	return container.NewScroll(accordion)
+}
+
+func (w *WorkAreaPanel) buildGroupedContactsSection(
+	section viewmodels.WorkAreaGroupSection,
+) fyne.CanvasObject {
+	if len(section.Contacts) == 0 {
+		return container.NewPadded(widget.NewLabel("Немає відповідальних у цій групі"))
+	}
+
+	rows := make([]fyne.CanvasObject, 0, len(section.Contacts)*2)
+	for _, contact := range section.Contacts {
+		name := contact.Name
+		if strings.TrimSpace(contact.Position) != "" {
+			name += " (" + contact.Position + ")"
+		}
+
+		phone := strings.TrimSpace(contact.Phone)
+		if phone == "" {
+			phone = "—"
+		}
+
+		rows = append(rows,
+			widget.NewLabel(fmt.Sprintf("%d. %s", contact.Priority, name)),
+			widget.NewLabel("📞 "+phone),
+		)
+	}
+
+	return container.NewPadded(container.NewVBox(rows...))
 }
 
 func (w *WorkAreaPanel) createEventsTab() fyne.CanvasObject {
@@ -600,14 +715,56 @@ func (w *WorkAreaPanel) refreshTabs() {
 	w.syncContactsDataBinding()
 	w.syncEventsDataBinding()
 
+	w.rebuildZonesContent()
+	w.rebuildContactsContent()
+	if w.EventsList != nil {
+		w.EventsList.Refresh()
+	}
+}
+
+func (w *WorkAreaPanel) rebuildZonesContent() {
+	if w == nil || w.ZonesContent == nil {
+		return
+	}
+
+	if w.GroupSectionsVM != nil && w.GroupSectionsVM.ShouldUseGroupedZones(w.CurrentObject, w.Zones) {
+		sections := w.GroupSectionsVM.BuildZoneSections(w.CurrentObject, w.Zones)
+		if len(sections) > 0 {
+			w.ZonesContent.Objects = []fyne.CanvasObject{w.buildGroupedZonesAccordion(sections)}
+			w.ZonesContent.Refresh()
+			return
+		}
+	}
+
+	if w.ZonesFlatContent != nil {
+		w.ZonesContent.Objects = []fyne.CanvasObject{w.ZonesFlatContent}
+	}
+	w.ZonesContent.Refresh()
 	if w.ZonesTable != nil {
 		w.ZonesTable.Refresh()
 	}
+}
+
+func (w *WorkAreaPanel) rebuildContactsContent() {
+	if w == nil || w.ContactsContent == nil {
+		return
+	}
+
+	if w.GroupSectionsVM != nil && w.GroupSectionsVM.ShouldUseGroupedContacts(w.CurrentObject, w.Contacts) {
+		sections := w.GroupSectionsVM.BuildContactSections(w.CurrentObject, w.Contacts)
+		if len(sections) > 0 {
+			w.ContactsContent.Objects = []fyne.CanvasObject{w.buildGroupedContactsAccordion(sections)}
+			w.ContactsContent.Refresh()
+			return
+		}
+	}
+
+	if w.ContactsFlatContent != nil {
+		w.ContactsContent.Objects = []fyne.CanvasObject{w.ContactsFlatContent}
+	}
+	w.ContactsContent.Refresh()
 	if w.ContactsList != nil {
 		w.ContactsList.Refresh()
-	}
-	if w.EventsList != nil {
-		w.EventsList.Refresh()
 	}
 }
 
@@ -704,13 +861,14 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 			return
 		}
 		simValue = strings.TrimSpace(simValue)
+		objectNumber := strings.TrimSpace(viewmodels.ObjectDisplayNumber(*obj))
 		btn.OnTapped = func() {
 			provider := w.resolveVodafoneProvider()
 			if provider == nil {
 				dialogs.ShowInfoDialog(w.Window, "Vodafone", "Vodafone сервіс недоступний.")
 				return
 			}
-			dialogs.ShowVodafoneSIMDialog(w.Window, provider, simValue, obj.ID, obj.Name)
+			dialogs.ShowVodafoneSIMDialog(w.Window, provider, simValue, objectNumber, obj.Name)
 		}
 		if !isVodafonePhone(simValue) {
 			btn.Disable()
@@ -830,7 +988,19 @@ func (w *WorkAreaPanel) OnThemeChanged(fontSize float32) {
 		w.HeaderStatus.Refresh()
 	}
 	// Віджети (Labels, Tables) оновляться автоматично через Refresh
-	w.ZonesTable.Refresh()
-	w.ContactsList.Refresh()
-	w.EventsList.Refresh()
+	if w.ZonesTable != nil {
+		w.ZonesTable.Refresh()
+	}
+	if w.ContactsList != nil {
+		w.ContactsList.Refresh()
+	}
+	if w.EventsList != nil {
+		w.EventsList.Refresh()
+	}
+	if w.ZonesContent != nil {
+		w.ZonesContent.Refresh()
+	}
+	if w.ContactsContent != nil {
+		w.ContactsContent.Refresh()
+	}
 }

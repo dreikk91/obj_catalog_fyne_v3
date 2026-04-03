@@ -26,8 +26,8 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation(t *testing.T) {
 		Location1:     "location",
 		IsUnderGuard:  true,
 		Groups: []models.ObjectGroup{
-			{Number: 1, Armed: true, StateText: "ПІД ОХОРОНОЮ", RoomName: "Room A"},
-			{Number: 2, Armed: false, StateText: "ЗНЯТО"},
+			{Number: 1, Name: "Room A", Armed: true, StateText: "ПІД ОХОРОНОЮ", RoomName: "Room A"},
+			{Number: 2, Name: "Room B", Armed: false, StateText: "ЗНЯТО"},
 		},
 	})
 
@@ -55,7 +55,7 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation(t *testing.T) {
 	if presentation.GuardText != "🔒 ПІД ОХОРОНОЮ" {
 		t.Fatalf("unexpected guard text: %q", presentation.GuardText)
 	}
-	if presentation.GroupsText != "🔐 Групи:\nГрупа 1: ПІД ОХОРОНОЮ | Приміщення: Room A\nГрупа 2: ЗНЯТО" {
+	if presentation.GroupsText != "🔐 Групи:\nГрупа 1 | Room A | ПІД ОХОРОНОЮ\nГрупа 2 | Room B | ЗНЯТО" {
 		t.Fatalf("unexpected groups text: %q", presentation.GroupsText)
 	}
 }
@@ -73,6 +73,42 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_NoGuard(t *testing.T) {
 	}
 	if presentation.GuardText != "🔓 ЗНЯТО З ОХОРОНИ" {
 		t.Fatalf("unexpected guard text: %q", presentation.GuardText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoenixBlocked(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:                phoenixObjectIDNamespaceStart + 77,
+		BlockedArmedOnOff: 1,
+		IsUnderGuard:      false,
+		Groups: []models.ObjectGroup{
+			{Number: 1, Name: "Група 1", Armed: false, StateText: "ЗАБЛОКОВАНО"},
+		},
+	})
+
+	if presentation.GuardText != "⛔ ЗАБЛОКОВАНО" {
+		t.Fatalf("unexpected phoenix guard text: %q", presentation.GuardText)
+	}
+	if presentation.GroupsText != "🔐 Групи:\nГрупа 1 | Група 1 | ЗАБЛОКОВАНО" {
+		t.Fatalf("unexpected phoenix groups text: %q", presentation.GroupsText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoenixDisarmed(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:           phoenixObjectIDNamespaceStart + 78,
+		IsUnderGuard: false,
+		Groups: []models.ObjectGroup{
+			{Number: 1, Name: "Група 1", Armed: false, StateText: "БЕЗ ОХОРОНИ"},
+		},
+	})
+
+	if presentation.GuardText != "🔓 БЕЗ ОХОРОНИ" {
+		t.Fatalf("unexpected phoenix disarmed text: %q", presentation.GuardText)
 	}
 }
 

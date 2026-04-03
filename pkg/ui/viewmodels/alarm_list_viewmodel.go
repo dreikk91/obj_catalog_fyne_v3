@@ -23,6 +23,7 @@ type AlarmRefreshOutput struct {
 	CriticalCount  int
 	CountAll       int
 	CountBridge    int
+	CountPhoenix   int
 	CountCASL      int
 	NewCritical    models.Alarm
 	HasNewCritical bool
@@ -55,9 +56,12 @@ func (vm *AlarmListViewModel) BuildRefreshOutput(input AlarmRefreshInput) AlarmR
 		alarm := input.Alarms[i]
 		source := ObjectSourceByID(alarm.ObjectID)
 		out.CountAll++
-		if source == ObjectSourceCASL {
+		switch source {
+		case ObjectSourceCASL:
 			out.CountCASL++
-		} else {
+		case ObjectSourcePhoenix:
+			out.CountPhoenix++
+		default:
 			out.CountBridge++
 		}
 		if sourceMatchesFilter(source, input.SelectedSource) {

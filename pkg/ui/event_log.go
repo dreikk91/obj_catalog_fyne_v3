@@ -86,7 +86,7 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	panel.RangeSelect.PlaceHolder = "Період"
 
 	panel.SourceSelect = widget.NewSelect(
-		viewmodels.BuildObjectSourceOptions(0, 0, 0),
+		viewmodels.BuildObjectSourceOptions(0, 0, 0, 0),
 		func(string) {
 			panel.applyFilters()
 		},
@@ -312,7 +312,7 @@ func (p *EventLogPanel) applyFilters() {
 
 	fyne.Do(func() {
 		if p.SourceSelect != nil {
-			options := viewmodels.BuildObjectSourceOptions(out.CountAll, out.CountBridge, out.CountCASL)
+			options := viewmodels.BuildObjectSourceOptions(out.CountAll, out.CountBridge, out.CountPhoenix, out.CountCASL)
 			p.SourceSelect.Options = options
 
 			target := options[0]

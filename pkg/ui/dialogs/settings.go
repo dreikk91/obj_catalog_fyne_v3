@@ -42,6 +42,26 @@ func ShowSettingsDialog(
 	pathEntry.SetText(dbCfg.Path)
 	paramsEntry := widget.NewEntry()
 	paramsEntry.SetText(dbCfg.Params)
+	firebirdEnabledCheck := widget.NewCheck("Увімкнути БД/МІСТ (Firebird)", nil)
+	firebirdEnabledCheck.SetChecked(dbCfg.FirebirdEnabled || (!dbCfg.FirebirdEnabled && !dbCfg.PhoenixEnabled && dbCfg.NormalizedMode() != config.BackendModePhoenix))
+
+	// Phoenix MSSQL fields
+	phoenixEnabledCheck := widget.NewCheck("Увімкнути Phoenix паралельно з іншими джерелами", nil)
+	phoenixEnabledCheck.SetChecked(dbCfg.PhoenixEnabled || dbCfg.NormalizedMode() == config.BackendModePhoenix)
+	phoenixUserEntry := widget.NewEntry()
+	phoenixUserEntry.SetText(dbCfg.PhoenixUser)
+	phoenixPassEntry := widget.NewPasswordEntry()
+	phoenixPassEntry.SetText(dbCfg.PhoenixPassword)
+	phoenixHostEntry := widget.NewEntry()
+	phoenixHostEntry.SetText(dbCfg.PhoenixHost)
+	phoenixPortEntry := widget.NewEntry()
+	phoenixPortEntry.SetText(dbCfg.PhoenixPort)
+	phoenixInstanceEntry := widget.NewEntry()
+	phoenixInstanceEntry.SetText(dbCfg.PhoenixInstance)
+	phoenixDatabaseEntry := widget.NewEntry()
+	phoenixDatabaseEntry.SetText(dbCfg.PhoenixDatabase)
+	phoenixParamsEntry := widget.NewEntry()
+	phoenixParamsEntry.SetText(dbCfg.PhoenixParams)
 
 	// CASL Cloud fields
 	caslBaseURLEntry := widget.NewEntry()
@@ -238,12 +258,23 @@ func ShowSettingsDialog(
 
 	tabs := container.NewAppTabs(
 		container.NewTabItem("База даних", widget.NewForm(
+			widget.NewFormItem("Увімкнення", firebirdEnabledCheck),
 			widget.NewFormItem("Користувач", userEntry),
 			widget.NewFormItem("Пароль", passEntry),
 			widget.NewFormItem("Хост", hostEntry),
 			widget.NewFormItem("Порт", portEntry),
 			widget.NewFormItem("Шлях до БД", pathEntry),
 			widget.NewFormItem("Параметри", paramsEntry),
+		)),
+		container.NewTabItem("Phoenix", widget.NewForm(
+			widget.NewFormItem("Увімкнення", phoenixEnabledCheck),
+			widget.NewFormItem("Користувач", phoenixUserEntry),
+			widget.NewFormItem("Пароль", phoenixPassEntry),
+			widget.NewFormItem("Хост", phoenixHostEntry),
+			widget.NewFormItem("Порт", phoenixPortEntry),
+			widget.NewFormItem("Інстанс", phoenixInstanceEntry),
+			widget.NewFormItem("База", phoenixDatabaseEntry),
+			widget.NewFormItem("Параметри", phoenixParamsEntry),
 		)),
 		container.NewTabItem("CASL Cloud", widget.NewForm(
 			widget.NewFormItem("Паралельний режим", caslEnabledCheck),
@@ -283,8 +314,13 @@ func ShowSettingsDialog(
 		func(save bool) {
 			if save {
 				caslEnabled := caslEnabledCheck.Checked
+				firebirdEnabled := firebirdEnabledCheck.Checked
+				phoenixEnabled := phoenixEnabledCheck.Checked
 				mode := config.BackendModeFirebird
-				if caslEnabled {
+				switch {
+				case phoenixEnabled && !firebirdEnabled:
+					mode = config.BackendModePhoenix
+				case caslEnabled && !firebirdEnabled && !phoenixEnabled:
 					mode = config.BackendModeCASLCloud
 				}
 
@@ -294,20 +330,29 @@ func ShowSettingsDialog(
 				}
 
 				newDbCfg := config.DBConfig{
-					User:        userEntry.Text,
-					Password:    passEntry.Text,
-					Host:        hostEntry.Text,
-					Port:        portEntry.Text,
-					Path:        pathEntry.Text,
-					Params:      paramsEntry.Text,
-					CASLEnabled: caslEnabled,
-					Mode:        mode,
-					CASLBaseURL: strings.TrimSpace(caslBaseURLEntry.Text),
-					CASLToken:   strings.TrimSpace(caslTokenEntry.Text),
-					CASLEmail:   strings.TrimSpace(caslEmailEntry.Text),
-					CASLPass:    strings.TrimSpace(caslPassEntry.Text),
-					CASLPultID:  caslPultID,
-					LogLevel:    strings.ToLower(strings.TrimSpace(logLevelSelect.Selected)),
+					User:            userEntry.Text,
+					Password:        passEntry.Text,
+					Host:            hostEntry.Text,
+					Port:            portEntry.Text,
+					Path:            pathEntry.Text,
+					Params:          paramsEntry.Text,
+					FirebirdEnabled: firebirdEnabled,
+					PhoenixEnabled:  phoenixEnabled,
+					PhoenixUser:     strings.TrimSpace(phoenixUserEntry.Text),
+					PhoenixPassword: phoenixPassEntry.Text,
+					PhoenixHost:     strings.TrimSpace(phoenixHostEntry.Text),
+					PhoenixPort:     strings.TrimSpace(phoenixPortEntry.Text),
+					PhoenixInstance: strings.TrimSpace(phoenixInstanceEntry.Text),
+					PhoenixDatabase: strings.TrimSpace(phoenixDatabaseEntry.Text),
+					PhoenixParams:   strings.TrimSpace(phoenixParamsEntry.Text),
+					CASLEnabled:     caslEnabled,
+					Mode:            mode,
+					CASLBaseURL:     strings.TrimSpace(caslBaseURLEntry.Text),
+					CASLToken:       strings.TrimSpace(caslTokenEntry.Text),
+					CASLEmail:       strings.TrimSpace(caslEmailEntry.Text),
+					CASLPass:        strings.TrimSpace(caslPassEntry.Text),
+					CASLPultID:      caslPultID,
+					LogLevel:        strings.ToLower(strings.TrimSpace(logLevelSelect.Selected)),
 				}
 
 				fSize, _ := strconv.ParseFloat(fontEntry.Text, 32)

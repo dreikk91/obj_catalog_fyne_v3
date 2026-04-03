@@ -3,21 +3,32 @@ package database
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	_ "github.com/microsoft/go-mssqldb"
 	_ "github.com/nakagami/firebirdsql" // Драйвер Firebird
 	zlog "github.com/rs/zerolog/log"
 )
 
 func InitDB(connStr string) *sqlx.DB {
-	zlog.Info().Msg("Початок ініціалізації БД Firebird...")
+	return InitNamedDB("firebirdsql", connStr, "Firebird")
+}
+
+func InitNamedDB(driverName string, connStr string, label string) *sqlx.DB {
+	dbLabel := strings.TrimSpace(label)
+	if dbLabel == "" {
+		dbLabel = driverName
+	}
+
+	zlog.Info().Str("driver", driverName).Str("label", dbLabel).Msg("Початок ініціалізації БД...")
 
 	// sqlx.Open не відкриває фізичне з'єднання одразу
-	zlog.Debug().Msg("Відкриття драйвера БД...")
-	db, err := sqlx.Open("firebirdsql", connStr)
+	zlog.Debug().Str("driver", driverName).Str("label", dbLabel).Msg("Відкриття драйвера БД...")
+	db, err := sqlx.Open(driverName, connStr)
 	if err != nil {
-		zlog.Error().Err(err).Msg("Критична помилка: не вдалося налаштувати драйвер Firebird")
+		zlog.Error().Err(err).Str("driver", driverName).Str("label", dbLabel).Msg("Критична помилка: не вдалося налаштувати драйвер БД")
 		log.Fatalf("Помилка конфігурації БД: %v", err)
 	}
 	zlog.Debug().Msg("Драйвер відкритий")
@@ -32,17 +43,26 @@ func InitDB(connStr string) *sqlx.DB {
 	// Перша фізична перевірка з'єднання
 	zlog.Debug().Msg("Виконання першої перевірки з'єднання (ping)...")
 	if err := db.Ping(); err != nil {
-		zlog.Warn().Err(err).Msg("БД недоступна при старті. Продовжуємо роботу, буде повторна спроба...")
+		zlog.Warn().Err(err).Str("label", dbLabel).Msg("БД недоступна при старті. Продовжуємо роботу, буде повторна спроба...")
 		// Не припиняємо роботу - спробуємо пізніше
 	} else {
-		zlog.Info().Msg("З'єднання з БД встановлено успішно")
+		zlog.Info().Str("label", dbLabel).Msg("З'єднання з БД встановлено успішно")
 	}
 
 	return db
 }
 
 func StartHealthCheck(db *sqlx.DB) context.CancelFunc {
-	zlog.Info().Msg("Запуск моніторингу здоров'я БД (перевірка кожні 60 сек)...")
+	return StartNamedHealthCheck(db, "Firebird")
+}
+
+func StartNamedHealthCheck(db *sqlx.DB, label string) context.CancelFunc {
+	dbLabel := strings.TrimSpace(label)
+	if dbLabel == "" {
+		dbLabel = "database"
+	}
+
+	zlog.Info().Str("label", dbLabel).Msg("Запуск моніторингу здоров'я БД (перевірка кожні 30 сек)...")
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		checkCount := 0
@@ -52,22 +72,22 @@ func StartHealthCheck(db *sqlx.DB) context.CancelFunc {
 		for {
 			select {
 			case <-ctx.Done():
-				zlog.Info().Msg("Зупинка моніторингу здоров'я БД")
+				zlog.Info().Str("label", dbLabel).Msg("Зупинка моніторингу здоров'я БД")
 				return
 			case <-ticker.C:
 			}
 			checkCount++
 			if err := db.Ping(); err != nil {
 				if err.Error() == "sql: database is closed" {
-					zlog.Info().Msg("Моніторинг БД зупинено: з'єднання закрито")
+					zlog.Info().Str("label", dbLabel).Msg("Моніторинг БД зупинено: з'єднання закрито")
 					return
 				}
 				failCount++
 
-				zlog.Warn().Err(err).Int("failCount", failCount).Msg("Втрачено зв'язок з Firebird!")
+				zlog.Warn().Err(err).Str("label", dbLabel).Int("failCount", failCount).Msg("Втрачено зв'язок з БД")
 				// Відновлюємо пул при багаторазових збоях
 				if failCount >= 3 {
-					zlog.Error().Err(err).Int("consecutiveFailures", failCount).Msg("Багаторазові відмови з'єднання з БД!")
+					zlog.Error().Err(err).Str("label", dbLabel).Int("consecutiveFailures", failCount).Msg("Багаторазові відмови з'єднання з БД")
 					// Видаляємо мертві з'єднання з пулу
 					db.SetMaxIdleConns(0)
 					time.Sleep(500 * time.Millisecond)
@@ -75,17 +95,17 @@ func StartHealthCheck(db *sqlx.DB) context.CancelFunc {
 
 				} else {
 					// Спроба "м'якого" відновлення - скидаємо простійні з'єднання
-					zlog.Warn().Msg("Спроба скидання пулу з'єднань...")
+					zlog.Warn().Str("label", dbLabel).Msg("Спроба скидання пулу з'єднань...")
 					db.SetMaxIdleConns(0)
 					time.Sleep(500 * time.Millisecond)
 					db.SetMaxIdleConns(2)
 				}
 			} else {
 				if failCount > 0 {
-					zlog.Info().Int("afterFailures", failCount).Msg("З'єднання з БД відновлено")
+					zlog.Info().Str("label", dbLabel).Int("afterFailures", failCount).Msg("З'єднання з БД відновлено")
 					failCount = 0
 				}
-				zlog.Debug().Int("checkNumber", checkCount).Msg("Перевірка здоров'я БД - OK")
+				zlog.Debug().Str("label", dbLabel).Int("checkNumber", checkCount).Msg("Перевірка здоров'я БД - OK")
 			}
 		}
 	}()

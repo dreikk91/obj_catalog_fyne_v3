@@ -84,11 +84,24 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 	if len(obj.Groups) > 0 {
 		lines := make([]string, 0, len(obj.Groups))
 		for _, group := range obj.Groups {
-			label := fmt.Sprintf("Група %d: %s", group.Number, strings.TrimSpace(group.StateText))
-			if strings.TrimSpace(group.RoomName) != "" {
-				label += " | Приміщення: " + strings.TrimSpace(group.RoomName)
+			labelParts := []string{fmt.Sprintf("Група %d", group.Number)}
+			if groupName := strings.TrimSpace(group.Name); groupName != "" {
+				labelParts = append(labelParts, groupName)
+			} else if roomName := strings.TrimSpace(group.RoomName); roomName != "" {
+				labelParts = append(labelParts, roomName)
 			}
-			lines = append(lines, label)
+
+			stateText := strings.TrimSpace(group.StateText)
+			if stateText == "" {
+				if group.Armed {
+					stateText = "ПІД ОХОРОНОЮ"
+				} else {
+					stateText = "ЗНЯТО"
+				}
+			}
+			labelParts = append(labelParts, stateText)
+
+			lines = append(lines, strings.Join(labelParts, " | "))
 		}
 		groupsText = "🔐 Групи:\n" + strings.Join(lines, "\n")
 	}
@@ -112,8 +125,16 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 	}
 
 	guardText := "🔒 ПІД ОХОРОНОЮ"
-	if !obj.IsUnderGuard {
-		guardText = "🔓 ЗНЯТО З ОХОРОНИ"
+	if IsPhoenixObjectID(obj.ID) && obj.BlockedArmedOnOff == 1 {
+		guardText = "⛔ ЗАБЛОКОВАНО"
+	} else if IsPhoenixObjectID(obj.ID) && obj.BlockedArmedOnOff == 2 {
+		guardText = "🧪 СТЕНДИ"
+	} else if !obj.IsUnderGuard {
+		if IsPhoenixObjectID(obj.ID) {
+			guardText = "🔓 БЕЗ ОХОРОНИ"
+		} else {
+			guardText = "🔓 ЗНЯТО З ОХОРОНИ"
+		}
 	}
 
 	deviceType := strings.TrimSpace(obj.DeviceType)

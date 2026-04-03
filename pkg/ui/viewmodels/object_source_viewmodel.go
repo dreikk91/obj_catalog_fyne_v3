@@ -9,21 +9,31 @@ import (
 )
 
 const (
-	ObjectSourceAll    = "Всі джерела"
-	ObjectSourceBridge = "БД/МІСТ"
-	ObjectSourceCASL   = "CASL Cloud"
+	ObjectSourceAll     = "Всі джерела"
+	ObjectSourceBridge  = "БД/МІСТ"
+	ObjectSourcePhoenix = "Phoenix"
+	ObjectSourceCASL    = "CASL Cloud"
 )
 
 const (
-	caslObjectIDNamespaceStart = 1_500_000_000
-	caslObjectIDNamespaceEnd   = 1_999_999_999
+	phoenixObjectIDNamespaceStart = 1_000_000_000
+	phoenixObjectIDNamespaceEnd   = 1_499_999_999
+	caslObjectIDNamespaceStart    = 1_500_000_000
+	caslObjectIDNamespaceEnd      = 1_999_999_999
 )
+
+func IsPhoenixObjectID(id int) bool {
+	return id >= phoenixObjectIDNamespaceStart && id <= phoenixObjectIDNamespaceEnd
+}
 
 func IsCASLObjectID(id int) bool {
 	return id >= caslObjectIDNamespaceStart && id <= caslObjectIDNamespaceEnd
 }
 
 func ObjectSourceByID(id int) string {
+	if IsPhoenixObjectID(id) {
+		return ObjectSourcePhoenix
+	}
 	if IsCASLObjectID(id) {
 		return ObjectSourceCASL
 	}
@@ -36,6 +46,8 @@ func NormalizeObjectSourceFilter(selected string) string {
 		clean = strings.TrimSpace(clean[:idx])
 	}
 	switch strings.ToLower(clean) {
+	case strings.ToLower(ObjectSourcePhoenix), "phoenix":
+		return ObjectSourcePhoenix
 	case strings.ToLower(ObjectSourceCASL), "casl":
 		return ObjectSourceCASL
 	case strings.ToLower(ObjectSourceBridge), "bridge", "db", "міст", "бд/міст", "db/bridge":
@@ -45,15 +57,19 @@ func NormalizeObjectSourceFilter(selected string) string {
 	}
 }
 
-func BuildObjectSourceOptions(countAll int, countBridge int, countCASL int) []string {
+func BuildObjectSourceOptions(countAll int, countBridge int, countPhoenix int, countCASL int) []string {
 	return []string{
 		ObjectSourceAll + " (" + strconv.Itoa(countAll) + ")",
 		ObjectSourceBridge + " (" + strconv.Itoa(countBridge) + ")",
+		ObjectSourcePhoenix + " (" + strconv.Itoa(countPhoenix) + ")",
 		ObjectSourceCASL + " (" + strconv.Itoa(countCASL) + ")",
 	}
 }
 
 func SourceBadgeForObjectID(id int) string {
+	if IsPhoenixObjectID(id) {
+		return "[P]"
+	}
 	if IsCASLObjectID(id) {
 		return "[C]"
 	}
@@ -61,21 +77,25 @@ func SourceBadgeForObjectID(id int) string {
 }
 
 func ObjectDisplayNumber(object models.Object) string {
-	if !IsCASLObjectID(object.ID) {
+	if strings.TrimSpace(object.DisplayNumber) != "" {
+		return object.DisplayNumber
+	}
+	if !IsCASLObjectID(object.ID) && !IsPhoenixObjectID(object.ID) {
 		return strconv.Itoa(object.ID)
 	}
-
-	// if number := numberFromPanelMark(object.PanelMark); number != "" {
-	// 	return number
-	// }
-	// if number := leadingDigits(strings.TrimSpace(object.Name)); number != "" {
-	// 	return number
-	// }
-	return object.DisplayNumber
+	if number := numberFromPanelMark(object.PanelMark); number != "" {
+		return number
+	}
+	if number := leadingDigits(strings.TrimSpace(object.Name)); number != "" {
+		return number
+	}
+	return strconv.Itoa(object.ID)
 }
 
 func sourceMatchesFilter(source string, selectedSource string) bool {
 	switch NormalizeObjectSourceFilter(selectedSource) {
+	case ObjectSourcePhoenix:
+		return source == ObjectSourcePhoenix
 	case ObjectSourceCASL:
 		return source == ObjectSourceCASL
 	case ObjectSourceBridge:

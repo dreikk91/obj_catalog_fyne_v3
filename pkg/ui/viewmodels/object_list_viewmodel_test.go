@@ -36,6 +36,7 @@ func TestObjectListViewModel_ApplyFilters(t *testing.T) {
 	vm := NewObjectListViewModel()
 	all := []models.Object{
 		{ID: 1, Name: "Альфа", Status: models.StatusNormal, GuardState: 1, IsConnState: 1},
+		{ID: phoenixObjectIDNamespaceStart + 10, DisplayNumber: "L00028", Name: "Phoenix", Status: models.StatusNormal, GuardState: 1, IsConnState: 1},
 		{ID: caslObjectIDNamespaceStart + 2, Name: "Бета", Status: models.StatusFire, GuardState: 1, IsConnState: 1},
 		{ID: 3, Name: "Гамма", Status: models.StatusNormal, GuardState: 0, IsConnState: 0},
 	}
@@ -50,7 +51,7 @@ func TestObjectListViewModel_ApplyFilters(t *testing.T) {
 		HasNotifiedSelection: true,
 	})
 
-	if out.CountAll != 3 || out.CountAlarm != 1 || out.CountDisarmed != 1 {
+	if out.CountAll != 4 || out.CountAlarm != 1 || out.CountDisarmed != 1 {
 		t.Fatalf("unexpected counters: %+v", out)
 	}
 	if len(out.Filtered) != 1 || out.Filtered[0].ID != caslObjectIDNamespaceStart+2 {
@@ -62,8 +63,8 @@ func TestObjectListViewModel_ApplyFilters(t *testing.T) {
 	if !out.ShouldNotifySelection {
 		t.Fatalf("must notify selection on auto-selected different object")
 	}
-	if out.CountCASL != 1 || out.CountBridge != 2 {
-		t.Fatalf("unexpected source counters: bridge=%d casl=%d", out.CountBridge, out.CountCASL)
+	if out.CountCASL != 1 || out.CountBridge != 2 || out.CountPhoenix != 1 {
+		t.Fatalf("unexpected source counters: bridge=%d phoenix=%d casl=%d", out.CountBridge, out.CountPhoenix, out.CountCASL)
 	}
 }
 
@@ -82,6 +83,7 @@ func TestObjectListViewModel_ApplyFilters_BySourceAndSIMSearch(t *testing.T) {
 	vm := NewObjectListViewModel()
 	all := []models.Object{
 		{ID: 10, Name: "Bridge One", SIM1: "+380501112233"},
+		{ID: phoenixObjectIDNamespaceStart + 20, DisplayNumber: "L00028", Name: "Phoenix One", SIM1: "+380661234567"},
 		{ID: caslObjectIDNamespaceStart + 10, Name: "CASL One", SIM1: "+380671234567"},
 	}
 
@@ -98,7 +100,7 @@ func TestObjectListViewModel_ApplyFilters_BySourceAndSIMSearch(t *testing.T) {
 		AllObjects:    all,
 		CurrentFilter: "Всі",
 		CurrentSource: ObjectSourceAll,
-		Query:         "sim:1234567",
+		Query:         "sim:671234567",
 	})
 	if len(outBySIM.Filtered) != 1 || outBySIM.Filtered[0].Name != "CASL One" {
 		t.Fatalf("expected CASL One by sim search, got %+v", outBySIM.Filtered)
@@ -112,5 +114,24 @@ func TestObjectListViewModel_ApplyFilters_BySourceAndSIMSearch(t *testing.T) {
 	})
 	if len(outBySourceToken.Filtered) != 1 || !IsCASLObjectID(outBySourceToken.Filtered[0].ID) {
 		t.Fatalf("expected src:casl to filter only CASL objects, got %+v", outBySourceToken.Filtered)
+	}
+
+	outByPhoenixSource := vm.ApplyFilters(ObjectListFilterInput{
+		AllObjects:    all,
+		CurrentFilter: "Всі",
+		CurrentSource: ObjectSourcePhoenix,
+	})
+	if len(outByPhoenixSource.Filtered) != 1 || !IsPhoenixObjectID(outByPhoenixSource.Filtered[0].ID) {
+		t.Fatalf("expected only Phoenix objects, got %+v", outByPhoenixSource.Filtered)
+	}
+
+	outByDisplayNumber := vm.ApplyFilters(ObjectListFilterInput{
+		AllObjects:    all,
+		CurrentFilter: "Всі",
+		CurrentSource: ObjectSourceAll,
+		Query:         "L00028",
+	})
+	if len(outByDisplayNumber.Filtered) != 1 || outByDisplayNumber.Filtered[0].Name != "Phoenix One" {
+		t.Fatalf("expected Phoenix One by display number search, got %+v", outByDisplayNumber.Filtered)
 	}
 }

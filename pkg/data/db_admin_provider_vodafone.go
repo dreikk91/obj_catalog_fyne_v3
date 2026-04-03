@@ -46,6 +46,22 @@ func (p *DBDataProvider) GetVodafoneSIMStatus(msisdn string) (contracts.Vodafone
 	return service.GetSIMStatus(msisdn)
 }
 
+func (p *DBDataProvider) BlockVodafoneSIM(msisdn string) (contracts.VodafoneSIMBarringResult, error) {
+	service, err := p.vodafoneService()
+	if err != nil {
+		return contracts.VodafoneSIMBarringResult{}, err
+	}
+	return service.BlockSIM(msisdn)
+}
+
+func (p *DBDataProvider) UnblockVodafoneSIM(msisdn string) (contracts.VodafoneSIMBarringResult, error) {
+	service, err := p.vodafoneService()
+	if err != nil {
+		return contracts.VodafoneSIMBarringResult{}, err
+	}
+	return service.UnblockSIM(msisdn)
+}
+
 func (p *DBDataProvider) RebootVodafoneSIM(msisdn string) (contracts.VodafoneSIMRebootResult, error) {
 	service, err := p.vodafoneService()
 	if err != nil {

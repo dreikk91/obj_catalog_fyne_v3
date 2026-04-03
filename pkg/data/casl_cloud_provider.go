@@ -30,6 +30,7 @@ const (
 	caslObjectEventsSpan  = 7 * 24 * time.Hour
 	caslJournalEventsSpan = 72 * time.Hour
 	caslStatsSpan         = 30 * 24 * time.Hour
+	caslObjectsStatTTL    = 20 * time.Second
 	caslDictionaryTTL     = 15 * time.Minute
 	caslTranslatorTTL     = 15 * time.Minute
 	caslProbeEventsSpan   = 2 * time.Minute
@@ -80,6 +81,9 @@ type CASLCloudProvider struct {
 	cachedObjectEvents   map[int][]models.Event
 	cachedObjectEventsAt map[int]time.Time
 
+	cachedGroupStats   map[string]map[int]int
+	cachedGroupStatsAt time.Time
+
 	cachedEvents    []models.Event
 	lastBasketCount int
 	hasBasketCount  bool
@@ -128,6 +132,7 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 		cachedUsers:          make(map[string]caslUser),
 		cachedObjectEvents:   make(map[int][]models.Event),
 		cachedObjectEventsAt: make(map[int]time.Time),
+		cachedGroupStats:     make(map[string]map[int]int),
 		cachedTranslators:    make(map[string]map[string]string),
 		cachedTransAt:        make(map[string]time.Time),
 		eventsStartAtMs:      nowMS,

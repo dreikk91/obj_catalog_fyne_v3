@@ -116,7 +116,7 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	panel.FilterSelect.PlaceHolder = "Фільтр"
 
 	panel.SourceSelect = widget.NewSelect(
-		viewmodels.BuildObjectSourceOptions(0, 0, 0),
+		viewmodels.BuildObjectSourceOptions(0, 0, 0, 0),
 		func(selected string) {
 			if panel.isUpdating {
 				return
@@ -348,6 +348,7 @@ func (p *ObjectListPanel) applyFilters() {
 			p.SourceSelect.Options = viewmodels.BuildObjectSourceOptions(
 				result.CountAll,
 				result.CountBridge,
+				result.CountPhoenix,
 				result.CountCASL,
 			)
 			for _, opt := range p.SourceSelect.Options {
@@ -401,6 +402,29 @@ func objectListRowColors(item models.Object, isDark bool) (color.NRGBA, color.NR
 		selectEventColor = utils.SelectColorNRGBADark
 	}
 
+	if viewmodels.IsPhoenixObjectID(item.ID) &&
+		item.BlockedArmedOnOff == 1 &&
+		item.AlarmState == 0 &&
+		item.TechAlarmState == 0 &&
+		item.Status == models.StatusNormal {
+		if isDark {
+			return color.NRGBA{R: 232, G: 239, B: 246, A: 255}, color.NRGBA{R: 54, G: 74, B: 92, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 79, G: 109, B: 135, A: 255}
+	}
+
+	if viewmodels.IsPhoenixObjectID(item.ID) &&
+		item.BlockedArmedOnOff == 0 &&
+		item.GuardState == 0 &&
+		item.AlarmState == 0 &&
+		item.TechAlarmState == 0 &&
+		item.Status == models.StatusNormal {
+		if isDark {
+			return color.NRGBA{R: 225, G: 244, B: 255, A: 255}, color.NRGBA{R: 37, G: 96, B: 128, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 67, G: 156, B: 199, A: 255}
+	}
+
 	// Пріоритети кольорів (зверху вниз):
 	// 1) блокування, 2) тривога, 3) технічна/пожежна несправність,
 	// 4) втрата зв'язку, 5) проблема приписки/конфігурації, 6) інші стани.
@@ -441,7 +465,8 @@ func objectListRowColors(item models.Object, isDark bool) (color.NRGBA, color.NR
 		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 77, G: 112, B: 168, A: 255}
 	}
 
-	if !viewmodels.IsCASLObjectID(item.ID) && strings.TrimSpace(item.SubServerA) == "" && strings.TrimSpace(item.SubServerB) == "" {
+	if !viewmodels.IsCASLObjectID(item.ID) && !viewmodels.IsPhoenixObjectID(item.ID) &&
+		strings.TrimSpace(item.SubServerA) == "" && strings.TrimSpace(item.SubServerB) == "" {
 		// Для МІСТ/БД підсервери мають бути заповнені.
 		return color.NRGBA{R: 210, G: 0, B: 0, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	}

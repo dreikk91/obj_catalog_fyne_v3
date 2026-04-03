@@ -108,6 +108,10 @@ func TestVodafoneService_GetSIMStatus_UsesAvailableIOTList(t *testing.T) {
 							"id": "380501234567",
 							"characterictics": []map[string]any{
 								{"name": "phoneDescription", "value": "Obj 1001"},
+								{"name": "blockingStatus", "value": "NotBlocked"},
+								{"name": "blockingDate", "value": "2026-04-02T08:10:11Z"},
+								{"name": "blockingRequestDate", "value": "2026-04-02T08:09:11Z"},
+								{"name": "updateDate", "value": "2026-04-02T08:12:11Z"},
 							},
 						},
 					},
@@ -159,11 +163,90 @@ func TestVodafoneService_GetSIMStatus_UsesAvailableIOTList(t *testing.T) {
 	if status.SubscriberName != "Obj 1001" {
 		t.Fatalf("unexpected subscriber name: %q", status.SubscriberName)
 	}
+	if status.Blocking.Status != "NotBlocked" {
+		t.Fatalf("unexpected blocking status: %q", status.Blocking.Status)
+	}
 	if status.Connectivity.SIMStatus != "active" {
 		t.Fatalf("unexpected SIM status: %q", status.Connectivity.SIMStatus)
 	}
 	if status.LastEvent.CallType != "DATA_TRANSFER" {
 		t.Fatalf("unexpected call type: %q", status.LastEvent.CallType)
+	}
+}
+
+func TestVodafoneService_BlockSIM_CreatesAndSubmitsOrder(t *testing.T) {
+	t.Parallel()
+
+	store := &vodafoneConfigStoreStub{
+		cfg: config.VodafoneConfig{
+			Phone:       "380501234567",
+			AccessToken: buildTestJWT(time.Now().UTC().Add(2 * time.Hour)),
+			TokenExpiry: time.Now().UTC().Add(2 * time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	createCalls := 0
+	submitCalls := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"account": map[string]any{"id": "295398767704"},
+					"relatedParty": []map[string]any{
+						{
+							"id": "380501234567",
+							"characterictics": []map[string]any{
+								{"name": "phoneDescription", "value": "Obj 1001"},
+							},
+						},
+					},
+				},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/order/tmf-api/productOrderingManagement/v4/productOrder":
+			createCalls++
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("failed to decode create payload: %v", err)
+			}
+			items, ok := payload["productOrderItem"].([]any)
+			if !ok || len(items) != 1 {
+				t.Fatalf("unexpected productOrderItem payload: %#v", payload["productOrderItem"])
+			}
+			item, ok := items[0].(map[string]any)
+			if !ok {
+				t.Fatalf("unexpected order item: %#v", items[0])
+			}
+			if item["action"] != "add" {
+				t.Fatalf("unexpected action: %#v", item["action"])
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":    "order-123",
+				"state": "acknowledged",
+			})
+		case r.Method == http.MethodPut && r.URL.Path == "/order/api/productOrderingManagement/v4.1/productOrder/order-123/operations/submit":
+			submitCalls++
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	service := NewVodafoneService(store, WithVodafoneBaseURL(server.URL))
+	result, err := service.BlockSIM("0501234567")
+	if err != nil {
+		t.Fatalf("BlockSIM() error = %v", err)
+	}
+	if result.OrderID != "order-123" {
+		t.Fatalf("unexpected order id: %q", result.OrderID)
+	}
+	if result.Operation != "block" {
+		t.Fatalf("unexpected operation: %q", result.Operation)
+	}
+	if createCalls != 1 || submitCalls != 1 {
+		t.Fatalf("unexpected calls create=%d submit=%d", createCalls, submitCalls)
 	}
 }
 

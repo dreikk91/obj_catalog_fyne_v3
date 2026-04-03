@@ -13,11 +13,15 @@ const (
 
 // Zone представляє зону (шлейф) пожежної сигналізації
 type Zone struct {
-	Number     int        // Номер зони (1, 2, 3...)
-	Name       string     // Назва (напр. "Склад 1 поверх")
-	SensorType string     // Тип датчиків (напр. "Димові")
-	Status     ZoneStatus // Поточний стан
-	IsBypassed bool       // Чи відключена зона
+	Number         int        // Номер зони (1, 2, 3...)
+	Name           string     // Назва (напр. "Склад 1 поверх")
+	SensorType     string     // Тип датчиків (напр. "Димові")
+	Status         ZoneStatus // Поточний стан
+	IsBypassed     bool       // Чи відключена зона
+	GroupID        string
+	GroupNumber    int
+	GroupName      string
+	GroupStateText string
 }
 
 // GetStatusDisplay повертає текстовий опис статусу зони

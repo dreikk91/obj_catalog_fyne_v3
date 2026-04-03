@@ -10,11 +10,20 @@ func TestObjectSourceHelpers(t *testing.T) {
 	if got := ObjectSourceByID(1); got != ObjectSourceBridge {
 		t.Fatalf("expected bridge source, got %q", got)
 	}
+	if got := ObjectSourceByID(phoenixObjectIDNamespaceStart + 1); got != ObjectSourcePhoenix {
+		t.Fatalf("expected phoenix source, got %q", got)
+	}
 	if got := ObjectSourceByID(caslObjectIDNamespaceStart + 1); got != ObjectSourceCASL {
 		t.Fatalf("expected casl source, got %q", got)
 	}
+	if !IsPhoenixObjectID(phoenixObjectIDNamespaceStart + 5) {
+		t.Fatalf("expected Phoenix ID to be detected")
+	}
 	if !IsCASLObjectID(caslObjectIDNamespaceStart + 5) {
 		t.Fatalf("expected CASL ID to be detected")
+	}
+	if IsPhoenixObjectID(42) {
+		t.Fatalf("expected non-Phoenix ID")
 	}
 	if IsCASLObjectID(42) {
 		t.Fatalf("expected non-CASL ID")
@@ -28,6 +37,8 @@ func TestNormalizeObjectSourceFilter(t *testing.T) {
 	}{
 		{in: "", want: ObjectSourceAll},
 		{in: "Всі джерела (12)", want: ObjectSourceAll},
+		{in: "Phoenix", want: ObjectSourcePhoenix},
+		{in: "Phoenix (2)", want: ObjectSourcePhoenix},
 		{in: "CASL", want: ObjectSourceCASL},
 		{in: "CASL Cloud (3)", want: ObjectSourceCASL},
 		{in: "МІСТ", want: ObjectSourceBridge},
@@ -42,22 +53,34 @@ func TestNormalizeObjectSourceFilter(t *testing.T) {
 }
 
 func TestBuildObjectSourceOptions(t *testing.T) {
-	options := BuildObjectSourceOptions(10, 7, 3)
-	if len(options) != 3 {
-		t.Fatalf("expected 3 options, got %d", len(options))
+	options := BuildObjectSourceOptions(10, 5, 2, 3)
+	if len(options) != 4 {
+		t.Fatalf("expected 4 options, got %d", len(options))
 	}
 	if options[0] != "Всі джерела (10)" {
 		t.Fatalf("unexpected option[0]: %q", options[0])
 	}
-	if options[1] != "БД/МІСТ (7)" {
+	if options[1] != "БД/МІСТ (5)" {
 		t.Fatalf("unexpected option[1]: %q", options[1])
 	}
-	if options[2] != "CASL Cloud (3)" {
+	if options[2] != "Phoenix (2)" {
 		t.Fatalf("unexpected option[2]: %q", options[2])
+	}
+	if options[3] != "CASL Cloud (3)" {
+		t.Fatalf("unexpected option[3]: %q", options[3])
 	}
 }
 
 func TestObjectDisplayNumber(t *testing.T) {
+	phoenix := models.Object{
+		ID:            phoenixObjectIDNamespaceStart + 55,
+		DisplayNumber: "L00028",
+		Name:          "Phoenix Object",
+	}
+	if got := ObjectDisplayNumber(phoenix); got != "L00028" {
+		t.Fatalf("Phoenix ObjectDisplayNumber = %q, want %q", got, "L00028")
+	}
+
 	casl := models.Object{
 		ID:        caslObjectIDNamespaceStart + 123,
 		Name:      "1003 Офіс",

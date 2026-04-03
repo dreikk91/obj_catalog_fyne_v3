@@ -13,6 +13,11 @@ func NewDBProvider(db *sqlx.DB, dsn string, opts ...data.DBProviderOption) contr
 	return data.NewDBDataProvider(db, dsn, opts...)
 }
 
+// NewPhoenixProvider creates Phoenix MSSQL backend provider.
+func NewPhoenixProvider(db *sqlx.DB, dsn string) contracts.DataProvider {
+	return data.NewPhoenixDataProvider(db, dsn)
+}
+
 // NewCASLCloudProvider creates CASL Cloud API backend provider.
 func NewCASLCloudProvider(baseURL string, token string, pultID int64, credentials ...string) contracts.DataProvider {
 	return data.NewCASLCloudProvider(baseURL, token, pultID, credentials...)
@@ -58,6 +63,7 @@ func AsAdminProvider(provider contracts.DataProvider) (contracts.AdminProvider, 
 
 var _ contracts.DataProvider = (*data.DBDataProvider)(nil)
 var _ contracts.AdminProvider = (*data.DBDataProvider)(nil)
+var _ contracts.DataProvider = (*data.PhoenixDataProvider)(nil)
 var _ contracts.DataProvider = (*data.CASLCloudProvider)(nil)
 var _ contracts.DataProvider = (*data.CombinedDataProvider)(nil)
 var _ config.VodafoneConfigStore = (*config.PreferencesVodafoneConfigStore)(nil)

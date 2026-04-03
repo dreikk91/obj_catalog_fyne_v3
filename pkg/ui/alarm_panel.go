@@ -76,7 +76,7 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 	panel.TitleText.TextStyle = fyne.TextStyle{Bold: true}
 
 	panel.SourceSelect = widget.NewSelect(
-		viewmodels.BuildObjectSourceOptions(0, 0, 0),
+		viewmodels.BuildObjectSourceOptions(0, 0, 0, 0),
 		func(selected string) {
 			panel.mutex.Lock()
 			panel.currentSource = viewmodels.NormalizeObjectSourceFilter(selected)
@@ -162,10 +162,7 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 			} else {
 				txt.TextStyle.Bold = false
 			}
-			objNum := alarm.ObjectNumber
-			if objNum == "" {
-				objNum = alarm.ObjectNumber
-			}
+			objNum := alarm.GetObjectNumberDisplay()
 			displayText := alarm.GetTimeDisplay() + " — " + alarm.GetTypeDisplay() + " — №" + objNum
 			if alarm.ZoneNumber > 0 {
 				displayText += "-" + itoa(alarm.ZoneNumber)
@@ -328,7 +325,7 @@ func (p *AlarmPanelWidget) Refresh() {
 		}
 
 		if p.SourceSelect != nil {
-			options := viewmodels.BuildObjectSourceOptions(result.CountAll, result.CountBridge, result.CountCASL)
+			options := viewmodels.BuildObjectSourceOptions(result.CountAll, result.CountBridge, result.CountPhoenix, result.CountCASL)
 			p.SourceSelect.Options = options
 			target := options[0]
 			for _, option := range options {

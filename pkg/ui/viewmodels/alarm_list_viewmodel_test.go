@@ -30,7 +30,7 @@ func TestAlarmListViewModel_BuildRefreshOutput(t *testing.T) {
 	input := AlarmRefreshInput{
 		Alarms: []models.Alarm{
 			{ID: 10, Type: models.AlarmFire, IsProcessed: false},
-			{ID: 11, Type: models.AlarmFault, IsProcessed: false},
+			{ID: 11, ObjectID: phoenixObjectIDNamespaceStart + 11, Type: models.AlarmFault, IsProcessed: false},
 		},
 		LastKnownIDs: map[int]struct{}{
 			11: {},
@@ -50,20 +50,22 @@ func TestAlarmListViewModel_BuildRefreshOutput(t *testing.T) {
 	if _, ok := out.KnownIDs[10]; !ok {
 		t.Fatalf("known ids must include alarm 10")
 	}
-	if out.CountAll != 2 || out.CountBridge != 2 || out.CountCASL != 0 {
-		t.Fatalf("unexpected source counters: all=%d bridge=%d casl=%d", out.CountAll, out.CountBridge, out.CountCASL)
+	if out.CountAll != 2 || out.CountBridge != 1 || out.CountPhoenix != 1 || out.CountCASL != 0 {
+		t.Fatalf("unexpected source counters: all=%d bridge=%d phoenix=%d casl=%d", out.CountAll, out.CountBridge, out.CountPhoenix, out.CountCASL)
 	}
 }
 
 func TestAlarmListViewModel_BuildRefreshOutput_BySource(t *testing.T) {
 	vm := NewAlarmListViewModel()
 	caslObjectID := caslObjectIDNamespaceStart + 100
+	phoenixObjectID := phoenixObjectIDNamespaceStart + 50
 
 	out := vm.BuildRefreshOutput(AlarmRefreshInput{
 		Alarms: []models.Alarm{
 			{ID: 1, ObjectID: 22, Type: models.AlarmFire, IsProcessed: false},
-			{ID: 2, ObjectID: caslObjectID, Type: models.AlarmFire, IsProcessed: false},
-			{ID: 3, ObjectID: caslObjectID, Type: models.AlarmFault, IsProcessed: false},
+			{ID: 2, ObjectID: phoenixObjectID, Type: models.AlarmFire, IsProcessed: false},
+			{ID: 3, ObjectID: caslObjectID, Type: models.AlarmFire, IsProcessed: false},
+			{ID: 4, ObjectID: caslObjectID, Type: models.AlarmFault, IsProcessed: false},
 		},
 		LastKnownIDs:   map[int]struct{}{},
 		SelectedSource: ObjectSourceCASL,
@@ -72,7 +74,7 @@ func TestAlarmListViewModel_BuildRefreshOutput_BySource(t *testing.T) {
 	if len(out.FilteredAlarms) != 2 {
 		t.Fatalf("expected 2 CASL alarms in filtered list, got %d", len(out.FilteredAlarms))
 	}
-	if out.CountAll != 3 || out.CountBridge != 1 || out.CountCASL != 2 {
-		t.Fatalf("unexpected source counters: all=%d bridge=%d casl=%d", out.CountAll, out.CountBridge, out.CountCASL)
+	if out.CountAll != 4 || out.CountBridge != 1 || out.CountPhoenix != 1 || out.CountCASL != 2 {
+		t.Fatalf("unexpected source counters: all=%d bridge=%d phoenix=%d casl=%d", out.CountAll, out.CountBridge, out.CountPhoenix, out.CountCASL)
 	}
 }

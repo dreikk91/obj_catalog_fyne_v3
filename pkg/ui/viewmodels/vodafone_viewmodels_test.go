@@ -88,3 +88,48 @@ func TestVodafoneSIMViewModel_BuildStatusText_IncludesBlockingStatus(t *testing.
 		t.Fatalf("status must contain blocking info, got %q", got)
 	}
 }
+
+func TestVodafoneSIMViewModel_BuildOverviewText(t *testing.T) {
+	t.Parallel()
+
+	vm := NewVodafoneSIMViewModel()
+	got := vm.BuildOverviewText(contracts.VodafoneSIMStatus{
+		MSISDN:    "380501234567",
+		Available: true,
+		Connectivity: contracts.VodafoneConnectivityStatus{
+			SIMStatus: "active",
+		},
+		LastEvent: contracts.VodafoneLastEvent{
+			CallType:     "DATA",
+			EventTimeRaw: "2026-04-03 09:00",
+		},
+	})
+
+	if !strings.Contains(got, "380501234567") {
+		t.Fatalf("overview must contain msisdn, got %q", got)
+	}
+	if !strings.Contains(got, "SIM active") {
+		t.Fatalf("overview must contain sim status, got %q", got)
+	}
+}
+
+func TestVodafoneSIMViewModel_BuildBlockingText(t *testing.T) {
+	t.Parallel()
+
+	vm := NewVodafoneSIMViewModel()
+	got := vm.BuildBlockingText(contracts.VodafoneSIMStatus{
+		Available: true,
+		Blocking: contracts.VodafoneSIMBlockingStatus{
+			Status:                 "FullBlocked",
+			BlockingDateRaw:        "2026-04-03",
+			BlockingRequestDateRaw: "2026-04-02",
+		},
+	})
+
+	if !strings.Contains(got, "Стан блокування: повне") {
+		t.Fatalf("blocking text must contain humanized state, got %q", got)
+	}
+	if !strings.Contains(got, "Дата блокування: 2026-04-03") {
+		t.Fatalf("blocking text must contain date, got %q", got)
+	}
+}

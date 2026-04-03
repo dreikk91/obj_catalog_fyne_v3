@@ -29,6 +29,7 @@ type DBDataProvider struct {
 	baseDSN string
 
 	vodafone *VodafoneService
+	kyivstar *KyivstarService
 }
 
 type DBProviderOption func(*DBDataProvider)
@@ -39,6 +40,15 @@ func WithVodafoneConfigStore(store config.VodafoneConfigStore) DBProviderOption 
 			return
 		}
 		p.vodafone = NewVodafoneService(store)
+	}
+}
+
+func WithKyivstarConfigStore(store config.KyivstarConfigStore) DBProviderOption {
+	return func(p *DBDataProvider) {
+		if p == nil || store == nil {
+			return
+		}
+		p.kyivstar = NewKyivstarService(store)
 	}
 }
 

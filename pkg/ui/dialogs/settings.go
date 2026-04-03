@@ -18,7 +18,7 @@ import (
 
 func ShowSettingsDialog(
 	win fyne.Window,
-	vodafoneProvider contracts.AdminObjectVodafoneService,
+	adminProvider contracts.AdminProvider,
 	pref fyne.Preferences,
 	isDarkTheme bool,
 	onSave func(config.DBConfig, config.UIConfig),
@@ -27,7 +27,9 @@ func ShowSettingsDialog(
 	dbCfg := config.LoadDBConfig(pref)
 	uiCfg := config.LoadUIConfig(pref)
 	vfCfg := config.LoadVodafoneConfig(pref)
+	ksCfg := config.LoadKyivstarConfig(pref)
 	vfAuthVM := viewmodels.NewVodafoneAuthViewModel()
+	ksAuthVM := viewmodels.NewKyivstarAuthViewModel()
 
 	// Database fields
 	userEntry := widget.NewEntry()
@@ -102,6 +104,27 @@ func ShowSettingsDialog(
 	}))
 	vodafoneStatusLabel.Wrapping = fyne.TextWrapWord
 
+	kyivstarClientIDEntry := widget.NewEntry()
+	kyivstarClientIDEntry.SetText(strings.TrimSpace(ksCfg.ClientID))
+	kyivstarClientIDEntry.SetPlaceHolder("client_id")
+
+	kyivstarClientSecretEntry := widget.NewPasswordEntry()
+	kyivstarClientSecretEntry.SetText(strings.TrimSpace(ksCfg.ClientSecret))
+	kyivstarClientSecretEntry.SetPlaceHolder("client_secret")
+
+	kyivstarEmailEntry := widget.NewEntry()
+	kyivstarEmailEntry.SetText(strings.TrimSpace(ksCfg.UserEmail))
+	kyivstarEmailEntry.SetPlaceHolder("company.user@domain.ua")
+
+	kyivstarStatusLabel := widget.NewLabel(ksAuthVM.BuildStatusText(contracts.KyivstarAuthState{
+		ClientID:       ksCfg.ClientID,
+		UserEmail:      ksCfg.UserEmail,
+		Configured:     ksCfg.HasCredentials(),
+		Authorized:     ksCfg.TokenUsableAt(timeNow()),
+		TokenExpiresAt: ksCfg.TokenExpiryTime(),
+	}))
+	kyivstarStatusLabel.Wrapping = fyne.TextWrapWord
+
 	setVodafoneBusy := func(busy bool) {
 		if busy {
 			vodafonePhoneEntry.Disable()
@@ -112,14 +135,26 @@ func ShowSettingsDialog(
 		vodafoneCodeEntry.Enable()
 	}
 
+	setKyivstarBusy := func(busy bool) {
+		if busy {
+			kyivstarClientIDEntry.Disable()
+			kyivstarClientSecretEntry.Disable()
+			kyivstarEmailEntry.Disable()
+			return
+		}
+		kyivstarClientIDEntry.Enable()
+		kyivstarClientSecretEntry.Enable()
+		kyivstarEmailEntry.Enable()
+	}
+
 	refreshVodafoneStatus := func() {
 		state := contracts.VodafoneAuthState{
 			Phone:          strings.TrimSpace(vodafonePhoneEntry.Text),
 			Authorized:     vfCfg.TokenUsableAt(timeNow()),
 			TokenExpiresAt: vfCfg.TokenExpiryTime(),
 		}
-		if vodafoneProvider != nil {
-			if liveState, err := vodafoneProvider.GetVodafoneAuthState(); err == nil {
+		if adminProvider != nil {
+			if liveState, err := adminProvider.GetVodafoneAuthState(); err == nil {
 				state = liveState
 				if strings.TrimSpace(liveState.Phone) != "" {
 					vodafonePhoneEntry.SetText(strings.TrimSpace(liveState.Phone))
@@ -130,8 +165,29 @@ func ShowSettingsDialog(
 		vodafoneStatusLabel.SetText(vfAuthVM.BuildStatusText(state))
 	}
 
+	refreshKyivstarStatus := func() {
+		state := contracts.KyivstarAuthState{
+			ClientID:       strings.TrimSpace(kyivstarClientIDEntry.Text),
+			UserEmail:      strings.TrimSpace(kyivstarEmailEntry.Text),
+			Configured:     strings.TrimSpace(kyivstarClientIDEntry.Text) != "" && strings.TrimSpace(kyivstarClientSecretEntry.Text) != "",
+			Authorized:     ksCfg.TokenUsableAt(timeNow()),
+			TokenExpiresAt: ksCfg.TokenExpiryTime(),
+		}
+		if adminProvider != nil {
+			if liveState, err := adminProvider.GetKyivstarAuthState(); err == nil {
+				state = liveState
+				if strings.TrimSpace(liveState.ClientID) != "" {
+					kyivstarClientIDEntry.SetText(strings.TrimSpace(liveState.ClientID))
+				}
+				ksCfg.ClientID = liveState.ClientID
+				ksCfg.UserEmail = liveState.UserEmail
+			}
+		}
+		kyivstarStatusLabel.SetText(ksAuthVM.BuildStatusText(state))
+	}
+
 	requestVodafoneSMSBtn := widget.NewButton("Надіслати SMS", func() {
-		if vodafoneProvider == nil {
+		if adminProvider == nil {
 			vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
 			return
 		}
@@ -139,7 +195,7 @@ func ShowSettingsDialog(
 		setVodafoneBusy(true)
 		vodafoneStatusLabel.SetText("Vodafone: надсилання SMS-коду...")
 		go func() {
-			err := vodafoneProvider.RequestVodafoneLoginSMS(phone)
+			err := adminProvider.RequestVodafoneLoginSMS(phone)
 			fyne.Do(func() {
 				setVodafoneBusy(false)
 				if err != nil {
@@ -152,7 +208,7 @@ func ShowSettingsDialog(
 	})
 
 	verifyVodafoneCodeBtn := widget.NewButton("Підтвердити код", func() {
-		if vodafoneProvider == nil {
+		if adminProvider == nil {
 			vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
 			return
 		}
@@ -161,7 +217,7 @@ func ShowSettingsDialog(
 		setVodafoneBusy(true)
 		vodafoneStatusLabel.SetText("Vodafone: перевірка коду...")
 		go func() {
-			state, err := vodafoneProvider.VerifyVodafoneLogin(phone, code)
+			state, err := adminProvider.VerifyVodafoneLogin(phone, code)
 			fyne.Do(func() {
 				setVodafoneBusy(false)
 				if err != nil {
@@ -178,13 +234,13 @@ func ShowSettingsDialog(
 	})
 
 	clearVodafoneTokenBtn := widget.NewButton("Очистити токен", func() {
-		if vodafoneProvider == nil {
+		if adminProvider == nil {
 			vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
 			return
 		}
 		setVodafoneBusy(true)
 		go func() {
-			err := vodafoneProvider.ClearVodafoneLogin()
+			err := adminProvider.ClearVodafoneLogin()
 			fyne.Do(func() {
 				setVodafoneBusy(false)
 				if err != nil {
@@ -194,6 +250,55 @@ func ShowSettingsDialog(
 				latestCfg := config.LoadVodafoneConfig(pref)
 				vfCfg = latestCfg
 				refreshVodafoneStatus()
+			})
+		}()
+	})
+
+	refreshKyivstarTokenBtn := widget.NewButton("Отримати токен", func() {
+		if adminProvider == nil {
+			kyivstarStatusLabel.SetText("Kyivstar: сервіс недоступний")
+			return
+		}
+		currentCfg := config.LoadKyivstarConfig(pref)
+		currentCfg.ClientID = strings.TrimSpace(kyivstarClientIDEntry.Text)
+		currentCfg.ClientSecret = strings.TrimSpace(kyivstarClientSecretEntry.Text)
+		currentCfg.UserEmail = strings.TrimSpace(kyivstarEmailEntry.Text)
+		currentCfg.AccessToken = ""
+		currentCfg.TokenExpiry = ""
+		config.SaveKyivstarConfig(pref, currentCfg)
+		ksCfg = currentCfg
+		setKyivstarBusy(true)
+		kyivstarStatusLabel.SetText("Kyivstar: отримання access token...")
+		go func() {
+			state, err := adminProvider.RefreshKyivstarToken()
+			fyne.Do(func() {
+				setKyivstarBusy(false)
+				if err != nil {
+					kyivstarStatusLabel.SetText(err.Error())
+					return
+				}
+				ksCfg = config.LoadKyivstarConfig(pref)
+				kyivstarStatusLabel.SetText(ksAuthVM.BuildStatusText(state))
+			})
+		}()
+	})
+
+	clearKyivstarTokenBtn := widget.NewButton("Очистити токен", func() {
+		if adminProvider == nil {
+			kyivstarStatusLabel.SetText("Kyivstar: сервіс недоступний")
+			return
+		}
+		setKyivstarBusy(true)
+		go func() {
+			err := adminProvider.ClearKyivstarToken()
+			fyne.Do(func() {
+				setKyivstarBusy(false)
+				if err != nil {
+					kyivstarStatusLabel.SetText(err.Error())
+					return
+				}
+				ksCfg = config.LoadKyivstarConfig(pref)
+				refreshKyivstarStatus()
 			})
 		}()
 	})
@@ -293,6 +398,16 @@ func ShowSettingsDialog(
 			container.NewHBox(requestVodafoneSMSBtn, verifyVodafoneCodeBtn, clearVodafoneTokenBtn),
 			vodafoneStatusLabel,
 		)),
+		container.NewTabItem("Kyivstar", container.NewVBox(
+			widget.NewLabel("Kyivstar IoT API використовує client_id/client_secret і email компанії для reset запитів."),
+			widget.NewForm(
+				widget.NewFormItem("Client ID", kyivstarClientIDEntry),
+				widget.NewFormItem("Client Secret", kyivstarClientSecretEntry),
+				widget.NewFormItem("Email компанії", kyivstarEmailEntry),
+			),
+			container.NewHBox(refreshKyivstarTokenBtn, clearKyivstarTokenBtn),
+			kyivstarStatusLabel,
+		)),
 		container.NewTabItem("Інтерфейс", widget.NewForm(
 			widget.NewFormItem("Загальний шрифт", fontEntry),
 			widget.NewFormItem("Шрифт об'єктів", fontObjEntry),
@@ -375,9 +490,21 @@ func ShowSettingsDialog(
 				newVodafoneCfg := config.LoadVodafoneConfig(pref)
 				newVodafoneCfg.Phone = strings.TrimSpace(vodafonePhoneEntry.Text)
 
+				newKyivstarCfg := config.LoadKyivstarConfig(pref)
+				clientIDChanged := strings.TrimSpace(newKyivstarCfg.ClientID) != strings.TrimSpace(kyivstarClientIDEntry.Text)
+				clientSecretChanged := strings.TrimSpace(newKyivstarCfg.ClientSecret) != strings.TrimSpace(kyivstarClientSecretEntry.Text)
+				newKyivstarCfg.ClientID = strings.TrimSpace(kyivstarClientIDEntry.Text)
+				newKyivstarCfg.ClientSecret = strings.TrimSpace(kyivstarClientSecretEntry.Text)
+				newKyivstarCfg.UserEmail = strings.TrimSpace(kyivstarEmailEntry.Text)
+				if clientIDChanged || clientSecretChanged {
+					newKyivstarCfg.AccessToken = ""
+					newKyivstarCfg.TokenExpiry = ""
+				}
+
 				config.SaveDBConfig(pref, newDbCfg)
 				config.SaveUIConfig(pref, newUiCfg)
 				config.SaveVodafoneConfig(pref, newVodafoneCfg)
+				config.SaveKyivstarConfig(pref, newKyivstarCfg)
 
 				if onSave != nil {
 					onSave(newDbCfg, newUiCfg)
@@ -389,6 +516,7 @@ func ShowSettingsDialog(
 
 	d.Resize(fyne.NewSize(560, 520))
 	refreshVodafoneStatus()
+	refreshKyivstarStatus()
 	d.Show()
 }
 

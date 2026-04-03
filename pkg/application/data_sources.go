@@ -66,8 +66,13 @@ func buildDataProviderFromConfig(cfg config.DBConfig, pref fyne.Preferences, ver
 			healthCancel: database.StartNamedHealthCheck(db, "БД/МІСТ"),
 		})
 		sources = append(sources, data.ProviderSource{
-			Name:     "bridge",
-			Provider: backend.NewDBProvider(db, dsn, data.WithVodafoneConfigStore(config.NewPreferencesVodafoneConfigStore(pref))),
+			Name: "bridge",
+			Provider: backend.NewDBProvider(
+				db,
+				dsn,
+				data.WithVodafoneConfigStore(config.NewPreferencesVodafoneConfigStore(pref)),
+				data.WithKyivstarConfigStore(config.NewPreferencesKyivstarConfigStore(pref)),
+			),
 		})
 	}
 

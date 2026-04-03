@@ -40,6 +40,20 @@ type AdminObjectVodafoneService interface {
 	UpdateVodafoneSIMMetadata(msisdn string, name string, comment string) error
 }
 
+// AdminObjectKyivstarService керує Kyivstar IoT функціями для SIM-карток об'єкта.
+type AdminObjectKyivstarService interface {
+	GetKyivstarAuthState() (KyivstarAuthState, error)
+	RefreshKyivstarToken() (KyivstarAuthState, error)
+	ClearKyivstarToken() error
+	GetKyivstarSIMStatus(msisdn string) (KyivstarSIMStatus, error)
+	PauseKyivstarSIM(msisdn string) (KyivstarSIMOperationResult, error)
+	ActivateKyivstarSIM(msisdn string) (KyivstarSIMOperationResult, error)
+	PauseKyivstarSIMServices(msisdn string, serviceIDs []string) (KyivstarSIMOperationResult, error)
+	ActivateKyivstarSIMServices(msisdn string, serviceIDs []string) (KyivstarSIMOperationResult, error)
+	RebootKyivstarSIM(msisdn string) (KyivstarSIMResetResult, error)
+	UpdateKyivstarSIMMetadata(msisdn string, deviceName string, deviceID string) error
+}
+
 // AdminObjectPersonalService керує відповідальними особами об'єкта.
 type AdminObjectPersonalService interface {
 	ListObjectPersonals(objn int64) ([]AdminObjectPersonal, error)
@@ -123,6 +137,7 @@ type AdminObjectCardProvider interface {
 	AdminObjectReferenceService
 	AdminObjectCardService
 	AdminObjectVodafoneService
+	AdminObjectKyivstarService
 	AdminObjectPersonalTabProvider
 	AdminObjectZonesTabProvider
 	AdminObjectAdditionalTabProvider
@@ -133,6 +148,7 @@ type AdminObjectDialogProvider interface {
 	AdminObjectReferenceService
 	AdminObjectCardService
 	AdminObjectVodafoneService
+	AdminObjectKyivstarService
 	AdminObjectPersonalService
 	AdminObjectZoneService
 	AdminObjectCoordinatesService

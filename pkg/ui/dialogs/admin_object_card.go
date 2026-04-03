@@ -13,6 +13,7 @@ import (
 	xwidget "fyne.io/x/fyne/widget"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/simoperator"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
@@ -43,8 +44,9 @@ type objectCardDialogState struct {
 	simVM     *viewmodels.SIMPhoneUsageViewModel
 	simState  *viewmodels.ObjectCardSIMUsageStateViewModel
 	vfSIMVM   *viewmodels.VodafoneSIMViewModel
-	vfSIM1VM  *viewmodels.VodafoneSIMStateViewModel
-	vfSIM2VM  *viewmodels.VodafoneSIMStateViewModel
+	ksSIMVM   *viewmodels.KyivstarSIMViewModel
+	simAPI1VM *viewmodels.SIMOperatorStateViewModel
+	simAPI2VM *viewmodels.SIMOperatorStateViewModel
 
 	statusLabel *widget.Label
 
@@ -66,8 +68,8 @@ type objectCardDialogState struct {
 	sim2Entry         *widget.Entry
 	sim1UsageLabel    *widget.Label
 	sim2UsageLabel    *widget.Label
-	sim1VodafoneLabel *widget.Label
-	sim2VodafoneLabel *widget.Label
+	sim1OperatorLabel *widget.Label
+	sim2OperatorLabel *widget.Label
 	hiddenNEntry      *widget.Entry
 	hiddenNCard       *widget.Card
 
@@ -86,8 +88,8 @@ type objectCardDialogState struct {
 
 func newObjectCardDialogState(win fyne.Window, provider contracts.AdminObjectCardProvider, editObjN *int64, onSaved func(objn int64)) *objectCardDialogState {
 	simState := viewmodels.NewObjectCardSIMUsageStateViewModel()
-	vfSIM1VM := viewmodels.NewVodafoneSIMStateViewModel()
-	vfSIM2VM := viewmodels.NewVodafoneSIMStateViewModel()
+	simAPI1VM := viewmodels.NewSIMOperatorStateViewModel("SIM API: перевірка за запитом")
+	simAPI2VM := viewmodels.NewSIMOperatorStateViewModel("SIM API: перевірка за запитом")
 	channelOptions := viewmodels.ObjectChannelOptions()
 	channelLabelToCode := viewmodels.DefaultObjectChannelLabelToCode()
 	channelCodeToLabel := viewmodels.DefaultObjectChannelCodeToLabel()
@@ -111,8 +113,9 @@ func newObjectCardDialogState(win fyne.Window, provider contracts.AdminObjectCar
 		simVM:     viewmodels.NewSIMPhoneUsageViewModel(),
 		simState:  simState,
 		vfSIMVM:   viewmodels.NewVodafoneSIMViewModel(),
-		vfSIM1VM:  vfSIM1VM,
-		vfSIM2VM:  vfSIM2VM,
+		ksSIMVM:   viewmodels.NewKyivstarSIMViewModel(),
+		simAPI1VM: simAPI1VM,
+		simAPI2VM: simAPI2VM,
 
 		statusLabel: widget.NewLabel("Готово"),
 
@@ -132,8 +135,8 @@ func newObjectCardDialogState(win fyne.Window, provider contracts.AdminObjectCar
 		sim2Entry:         widget.NewEntry(),
 		sim1UsageLabel:    widget.NewLabelWithData(simState.SIM1Binding()),
 		sim2UsageLabel:    widget.NewLabelWithData(simState.SIM2Binding()),
-		sim1VodafoneLabel: widget.NewLabelWithData(vfSIM1VM.StatusBinding()),
-		sim2VodafoneLabel: widget.NewLabelWithData(vfSIM2VM.StatusBinding()),
+		sim1OperatorLabel: widget.NewLabelWithData(simAPI1VM.StatusBinding()),
+		sim2OperatorLabel: widget.NewLabelWithData(simAPI2VM.StatusBinding()),
 		hiddenNEntry:      widget.NewEntry(),
 
 		testControlCheck:  widget.NewCheck("Контролювати тестові повідомлення", nil),
@@ -157,8 +160,8 @@ func newObjectCardDialogState(win fyne.Window, provider contracts.AdminObjectCar
 	s.notesEntry.SetMinRowsVisible(4)
 	s.sim1UsageLabel.Wrapping = fyne.TextWrapWord
 	s.sim2UsageLabel.Wrapping = fyne.TextWrapWord
-	s.sim1VodafoneLabel.Wrapping = fyne.TextWrapWord
-	s.sim2VodafoneLabel.Wrapping = fyne.TextWrapWord
+	s.sim1OperatorLabel.Wrapping = fyne.TextWrapWord
+	s.sim2OperatorLabel.Wrapping = fyne.TextWrapWord
 	s.hiddenNEntry.SetPlaceHolder("Прихований номер (до 4 цифр)")
 	s.testIntervalEntry.SetPlaceHolder("хв.")
 
@@ -196,11 +199,11 @@ func (s *objectCardDialogState) wireEvents() {
 
 	s.sim1Entry.OnChanged = func(text string) {
 		s.checkSIMUsage(text, 1)
-		s.resetVodafoneStatus(1)
+		s.resetSIMOperatorStatus(1)
 	}
 	s.sim2Entry.OnChanged = func(text string) {
 		s.checkSIMUsage(text, 2)
-		s.resetVodafoneStatus(2)
+		s.resetSIMOperatorStatus(2)
 	}
 }
 
@@ -262,20 +265,31 @@ func (s *objectCardDialogState) checkSIMUsage(rawPhone string, slot int) {
 	s.simState.SetSIM1(text)
 }
 
-func (s *objectCardDialogState) vodafoneState(slot int) *viewmodels.VodafoneSIMStateViewModel {
+func (s *objectCardDialogState) simOperatorState(slot int) *viewmodels.SIMOperatorStateViewModel {
 	if slot == 2 {
-		return s.vfSIM2VM
+		return s.simAPI2VM
 	}
-	return s.vfSIM1VM
+	return s.simAPI1VM
 }
 
-func (s *objectCardDialogState) resetVodafoneStatus(slot int) {
+func (s *objectCardDialogState) currentSIMOperator(slot int) simoperator.Operator {
+	return simoperator.Detect(strings.TrimSpace(s.currentSIM(slot)))
+}
+
+func (s *objectCardDialogState) resetSIMOperatorStatus(slot int) {
 	msisdn := strings.TrimSpace(s.currentSIM(slot))
 	if msisdn == "" {
-		s.vodafoneState(slot).SetStatus("Vodafone: SIM не вказана")
+		s.simOperatorState(slot).SetStatus("SIM API: SIM не вказана")
 		return
 	}
-	s.vodafoneState(slot).SetStatus("Vodafone: перевірка за запитом")
+	switch s.currentSIMOperator(slot) {
+	case simoperator.Vodafone:
+		s.simOperatorState(slot).SetStatus("Vodafone: перевірка за запитом")
+	case simoperator.Kyivstar:
+		s.simOperatorState(slot).SetStatus("Kyivstar: перевірка за запитом")
+	default:
+		s.simOperatorState(slot).SetStatus("SIM API: оператор номера не підтримується")
+	}
 }
 
 func (s *objectCardDialogState) currentSIM(slot int) string {
@@ -285,79 +299,157 @@ func (s *objectCardDialogState) currentSIM(slot int) string {
 	return s.sim1Entry.Text
 }
 
-func (s *objectCardDialogState) runVodafoneAction(slot int, startedText string, action func(msisdn string) (string, error)) {
+func (s *objectCardDialogState) runSIMOperatorAction(slot int, startedText string, action func(operator simoperator.Operator, msisdn string) (string, error)) {
 	msisdn := strings.TrimSpace(s.currentSIM(slot))
 	if msisdn == "" {
-		s.vodafoneState(slot).SetStatus("Vodafone: SIM не вказана")
+		s.simOperatorState(slot).SetStatus("SIM API: SIM не вказана")
+		return
+	}
+	operator := s.currentSIMOperator(slot)
+	if operator == simoperator.Unknown {
+		s.simOperatorState(slot).SetStatus("SIM API: оператор номера не підтримується")
 		return
 	}
 
-	s.vodafoneState(slot).SetStatus(startedText)
+	s.simOperatorState(slot).SetStatus(startedText)
 	go func() {
-		text, err := action(msisdn)
+		text, err := action(operator, msisdn)
 		fyne.Do(func() {
 			if err != nil {
-				s.vodafoneState(slot).SetStatus(err.Error())
+				s.simOperatorState(slot).SetStatus(err.Error())
 				s.statusLabel.SetText(err.Error())
 				return
 			}
-			s.vodafoneState(slot).SetStatus(text)
+			s.simOperatorState(slot).SetStatus(text)
 			s.statusLabel.SetText(text)
 		})
 	}()
 }
 
-func (s *objectCardDialogState) refreshVodafoneSIMStatus(slot int) {
-	s.runVodafoneAction(slot, "Vodafone: перевірка стану...", func(msisdn string) (string, error) {
-		status, err := s.provider.GetVodafoneSIMStatus(msisdn)
-		if err != nil {
-			return "", err
+func (s *objectCardDialogState) refreshSIMStatus(slot int) {
+	startedText := "SIM API: перевірка стану..."
+	switch s.currentSIMOperator(slot) {
+	case simoperator.Vodafone:
+		startedText = "Vodafone: перевірка стану..."
+	case simoperator.Kyivstar:
+		startedText = "Kyivstar: перевірка стану..."
+	}
+
+	s.runSIMOperatorAction(slot, startedText, func(operator simoperator.Operator, msisdn string) (string, error) {
+		switch operator {
+		case simoperator.Vodafone:
+			status, err := s.provider.GetVodafoneSIMStatus(msisdn)
+			if err != nil {
+				return "", err
+			}
+			return s.vfSIMVM.BuildStatusText(status), nil
+		case simoperator.Kyivstar:
+			status, err := s.provider.GetKyivstarSIMStatus(msisdn)
+			if err != nil {
+				return "", err
+			}
+			return s.ksSIMVM.BuildStatusText(status), nil
+		default:
+			return "", nil
 		}
-		return s.vfSIMVM.BuildStatusText(status), nil
 	})
 }
 
-func (s *objectCardDialogState) rebootVodafoneSIM(slot int) {
-	s.runVodafoneAction(slot, "Vodafone: створення заявки на перезавантаження...", func(msisdn string) (string, error) {
-		result, err := s.provider.RebootVodafoneSIM(msisdn)
-		if err != nil {
-			return "", err
+func (s *objectCardDialogState) rebootSIM(slot int) {
+	startedText := "SIM API: створення заявки..."
+	switch s.currentSIMOperator(slot) {
+	case simoperator.Vodafone:
+		startedText = "Vodafone: створення заявки на перезавантаження..."
+	case simoperator.Kyivstar:
+		startedText = "Kyivstar: запит на reset..."
+	}
+
+	s.runSIMOperatorAction(slot, startedText, func(operator simoperator.Operator, msisdn string) (string, error) {
+		switch operator {
+		case simoperator.Vodafone:
+			result, err := s.provider.RebootVodafoneSIM(msisdn)
+			if err != nil {
+				return "", err
+			}
+			if strings.TrimSpace(result.OrderID) == "" {
+				return "Vodafone: заявку на перезавантаження створено", nil
+			}
+			if strings.TrimSpace(result.State) == "" {
+				return "Vodafone: заявку створено, ID " + result.OrderID, nil
+			}
+			return "Vodafone: заявку створено, ID " + result.OrderID + ", стан " + result.State, nil
+		case simoperator.Kyivstar:
+			result, err := s.provider.RebootKyivstarSIM(msisdn)
+			if err != nil {
+				return "", err
+			}
+			return "Kyivstar: запит на reset відправлено для " + result.MSISDN, nil
+		default:
+			return "", nil
 		}
-		if strings.TrimSpace(result.OrderID) == "" {
-			return "Vodafone: заявку на перезавантаження створено", nil
-		}
-		if strings.TrimSpace(result.State) == "" {
-			return "Vodafone: заявку створено, ID " + result.OrderID, nil
-		}
-		return "Vodafone: заявку створено, ID " + result.OrderID + ", стан " + result.State, nil
 	})
 }
 
-func (s *objectCardDialogState) syncVodafoneMetadata(slot int) {
-	s.runVodafoneAction(slot, "Vodafone: запис name/comment...", func(msisdn string) (string, error) {
-		name, comment, err := s.vfSIMVM.BuildMetadata(msisdn, s.objnEntry.Text, s.shortNameEntry.Text, s.fullNameEntry.Text)
-		if err != nil {
-			return "", err
+func (s *objectCardDialogState) syncSIMMetadata(slot int) {
+	startedText := "SIM API: запис метаданих..."
+	switch s.currentSIMOperator(slot) {
+	case simoperator.Vodafone:
+		startedText = "Vodafone: запис name/comment..."
+	case simoperator.Kyivstar:
+		startedText = "Kyivstar: запис deviceName/deviceId..."
+	}
+
+	s.runSIMOperatorAction(slot, startedText, func(operator simoperator.Operator, msisdn string) (string, error) {
+		switch operator {
+		case simoperator.Vodafone:
+			name, comment, err := s.vfSIMVM.BuildMetadata(msisdn, s.objnEntry.Text, s.shortNameEntry.Text, s.fullNameEntry.Text)
+			if err != nil {
+				return "", err
+			}
+			if err := s.provider.UpdateVodafoneSIMMetadata(msisdn, name, comment); err != nil {
+				return "", err
+			}
+			return "Vodafone: name/comment оновлено", nil
+		case simoperator.Kyivstar:
+			deviceName, deviceID, err := s.ksSIMVM.BuildMetadata(msisdn, s.objnEntry.Text, s.shortNameEntry.Text, s.fullNameEntry.Text)
+			if err != nil {
+				return "", err
+			}
+			if err := s.provider.UpdateKyivstarSIMMetadata(msisdn, deviceName, deviceID); err != nil {
+				return "", err
+			}
+			return "Kyivstar: deviceName/deviceId оновлено", nil
+		default:
+			return "", nil
 		}
-		if err := s.provider.UpdateVodafoneSIMMetadata(msisdn, name, comment); err != nil {
-			return "", err
-		}
-		return "Vodafone: name/comment оновлено", nil
 	})
 }
 
-func (s *objectCardDialogState) openVodafoneSIMDialog(slot int) {
+func (s *objectCardDialogState) openSIMDialog(slot int) {
 	name := strings.TrimSpace(s.shortNameEntry.Text)
 	if name == "" {
 		name = strings.TrimSpace(s.fullNameEntry.Text)
 	}
-	ShowVodafoneSIMDialog(
-		s.win,
-		s.provider,
-		s.currentSIM(slot),
-		s.objnEntry.Text,
-		name,
-	)
+	switch s.currentSIMOperator(slot) {
+	case simoperator.Vodafone:
+		ShowVodafoneSIMDialog(
+			s.win,
+			s.provider,
+			s.currentSIM(slot),
+			s.objnEntry.Text,
+			name,
+		)
+	case simoperator.Kyivstar:
+		ShowKyivstarSIMDialog(
+			s.win,
+			s.provider,
+			s.currentSIM(slot),
+			s.objnEntry.Text,
+			name,
+		)
+	default:
+		s.simOperatorState(slot).SetStatus("SIM API: оператор номера не підтримується")
+	}
 }
 
 func (s *objectCardDialogState) loadReferenceData() error {
@@ -405,8 +497,8 @@ func (s *objectCardDialogState) fillDefaults() {
 	s.sim1Entry.SetText(presentation.GSMPhone1)
 	s.sim2Entry.SetText(presentation.GSMPhone2)
 	s.simState.Clear()
-	s.resetVodafoneStatus(1)
-	s.resetVodafoneStatus(2)
+	s.resetSIMOperatorStatus(1)
+	s.resetSIMOperatorStatus(2)
 	s.hiddenNEntry.SetText(presentation.GSMHiddenNText)
 	s.testControlCheck.SetChecked(presentation.TestControlEnabled)
 	s.testIntervalEntry.SetText(presentation.TestIntervalMinText)
@@ -445,8 +537,8 @@ func (s *objectCardDialogState) loadCard(objn int64) error {
 	s.sim2Entry.SetText(presentation.GSMPhone2)
 	s.checkSIMUsage(presentation.GSMPhone1, 1)
 	s.checkSIMUsage(presentation.GSMPhone2, 2)
-	s.resetVodafoneStatus(1)
-	s.resetVodafoneStatus(2)
+	s.resetSIMOperatorStatus(1)
+	s.resetSIMOperatorStatus(2)
 	s.hiddenNEntry.SetText(presentation.GSMHiddenNText)
 	s.testControlCheck.SetChecked(presentation.TestControlEnabled)
 	s.testIntervalEntry.SetText(presentation.TestIntervalMinText)
@@ -553,18 +645,18 @@ func (s *objectCardDialogState) buildTestControlCard() fyne.CanvasObject {
 }
 
 func (s *objectCardDialogState) buildSIMPhonesCard() fyne.CanvasObject {
-	vodafoneActions := func(slot int) fyne.CanvasObject {
+	simActions := func(slot int) fyne.CanvasObject {
 		return container.NewHBox(
-			makeLowButton("Статус", func() { s.refreshVodafoneSIMStatus(slot) }),
-			makeLowButton("Перезавантажити", func() { s.rebootVodafoneSIM(slot) }),
-			makeLowButton("Записати №/назву", func() { s.syncVodafoneMetadata(slot) }),
-			makeLowButton("Блок/розблок", func() { s.openVodafoneSIMDialog(slot) }),
+			makeLowButton("Статус", func() { s.refreshSIMStatus(slot) }),
+			makeLowButton("Перезавантажити", func() { s.rebootSIM(slot) }),
+			makeLowButton("Записати №/назву", func() { s.syncSIMMetadata(slot) }),
+			makeLowButton("Блок/розблок", func() { s.openSIMDialog(slot) }),
 		)
 	}
 
 	simPhonesForm := widget.NewForm(
-		widget.NewFormItem("SIM1:", container.NewVBox(s.sim1Entry, s.sim1UsageLabel, s.sim1VodafoneLabel, vodafoneActions(1))),
-		widget.NewFormItem("SIM2:", container.NewVBox(s.sim2Entry, s.sim2UsageLabel, s.sim2VodafoneLabel, vodafoneActions(2))),
+		widget.NewFormItem("SIM1:", container.NewVBox(s.sim1Entry, s.sim1UsageLabel, s.sim1OperatorLabel, simActions(1))),
+		widget.NewFormItem("SIM2:", container.NewVBox(s.sim2Entry, s.sim2UsageLabel, s.sim2OperatorLabel, simActions(2))),
 	)
 	return widget.NewCard("Телефони", "", simPhonesForm)
 }

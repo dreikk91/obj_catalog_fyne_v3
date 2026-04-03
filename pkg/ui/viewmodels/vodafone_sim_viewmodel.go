@@ -71,6 +71,96 @@ func (vm *VodafoneSIMViewModel) BuildStatusText(status contracts.VodafoneSIMStat
 	return strings.Join(parts, " | ")
 }
 
+func (vm *VodafoneSIMViewModel) BuildOverviewText(status contracts.VodafoneSIMStatus) string {
+	msisdn := strings.TrimSpace(status.MSISDN)
+	if msisdn == "" {
+		return "SIM не вказана"
+	}
+	if !status.Available {
+		return fmt.Sprintf("%s відсутній у списку доступних IoT SIM", msisdn)
+	}
+
+	parts := []string{msisdn}
+	if simStatus := strings.TrimSpace(status.Connectivity.SIMStatus); simStatus != "" {
+		parts = append(parts, "SIM "+simStatus)
+	}
+	if eventText := vm.buildLastEventInline(status); eventText != "" {
+		parts = append(parts, "подія "+eventText)
+	}
+	return strings.Join(parts, " | ")
+}
+
+func (vm *VodafoneSIMViewModel) BuildConnectivityText(status contracts.VodafoneSIMStatus) string {
+	if !status.Available {
+		return "Номер не знайдено в IoT-кабінеті Vodafone."
+	}
+
+	parts := make([]string, 0, 5)
+	if value := strings.TrimSpace(status.Connectivity.SIMStatus); value != "" {
+		parts = append(parts, "SIM статус: "+value)
+	}
+	if value := strings.TrimSpace(status.Connectivity.OperationStatus); value != "" {
+		parts = append(parts, "Статус операції: "+value)
+	}
+	if value := strings.TrimSpace(status.Connectivity.BaseStationStatus); value != "" {
+		parts = append(parts, "Базова станція: "+value)
+	}
+	if value := strings.TrimSpace(status.Connectivity.LBSStatusKey); value != "" {
+		parts = append(parts, "LBS: "+value)
+	}
+	if value := strings.TrimSpace(status.Connectivity.ConnectionTimeRaw); value != "" {
+		parts = append(parts, "Останній зв'язок: "+value)
+	}
+	if len(parts) == 0 {
+		return "Дані підключення ще не завантажені."
+	}
+	return strings.Join(parts, "\n")
+}
+
+func (vm *VodafoneSIMViewModel) BuildBlockingText(status contracts.VodafoneSIMStatus) string {
+	if !status.Available {
+		return "Інформація про блокування недоступна."
+	}
+
+	parts := make([]string, 0, 4)
+	if value := humanizeVodafoneBlockingStatus(status.Blocking.Status); value != "" {
+		parts = append(parts, "Стан блокування: "+value)
+	}
+	if value := strings.TrimSpace(status.Blocking.BlockingDateRaw); value != "" {
+		parts = append(parts, "Дата блокування: "+value)
+	}
+	if value := strings.TrimSpace(status.Blocking.BlockingRequestDateRaw); value != "" {
+		parts = append(parts, "Дата заявки: "+value)
+	}
+	if value := strings.TrimSpace(status.Blocking.UpdateDateRaw); value != "" {
+		parts = append(parts, "Оновлено: "+value)
+	}
+	if len(parts) == 0 {
+		return "Блокування не активне."
+	}
+	return strings.Join(parts, "\n")
+}
+
+func (vm *VodafoneSIMViewModel) BuildEventText(status contracts.VodafoneSIMStatus) string {
+	if !status.Available {
+		return "Остання подія недоступна."
+	}
+	if eventText := vm.buildLastEventInline(status); eventText != "" {
+		return eventText
+	}
+	return "Подій немає."
+}
+
+func (vm *VodafoneSIMViewModel) BuildIdentityText(status contracts.VodafoneSIMStatus) string {
+	if !status.Available {
+		return "Назва абонента недоступна."
+	}
+	if value := strings.TrimSpace(status.SubscriberName); value != "" {
+		return "Назва абонента: " + value
+	}
+	return "Назва абонента не задана."
+}
+
 func (vm *VodafoneSIMViewModel) BuildMetadata(msisdn string, objn string, shortName string, fullName string) (string, string, error) {
 	msisdn = strings.TrimSpace(msisdn)
 	if msisdn == "" {
@@ -131,6 +221,27 @@ func (vm *VodafoneSIMViewModel) BuildBarringResultText(result contracts.Vodafone
 		return "Vodafone: заявку на " + operation + " відправлено, ID " + result.OrderID
 	}
 	return "Vodafone: заявку на " + operation + " відправлено, ID " + result.OrderID + ", стан " + result.State
+}
+
+func (vm *VodafoneSIMViewModel) BuildRebootResultText(result contracts.VodafoneSIMRebootResult) string {
+	if strings.TrimSpace(result.OrderID) == "" {
+		return "Vodafone: заявку на перезавантаження створено"
+	}
+	if strings.TrimSpace(result.State) == "" {
+		return "Vodafone: заявку створено, ID " + result.OrderID
+	}
+	return "Vodafone: заявку створено, ID " + result.OrderID + ", стан " + result.State
+}
+
+func (vm *VodafoneSIMViewModel) buildLastEventInline(status contracts.VodafoneSIMStatus) string {
+	eventText := strings.TrimSpace(status.LastEvent.CallType)
+	if value := strings.TrimSpace(status.LastEvent.EventTimeRaw); value != "" {
+		if eventText != "" {
+			eventText += " "
+		}
+		eventText += value
+	}
+	return strings.TrimSpace(eventText)
 }
 
 func humanizeVodafoneBlockingStatus(status string) string {

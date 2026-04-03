@@ -18,6 +18,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 	objexport "obj_catalog_fyne_v3/pkg/export"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/simoperator"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
@@ -856,29 +857,38 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 		ShowToast(w.Window, "Скопійовано SIM2")
 	}
 
-	configureVodafoneButton := func(btn *widget.Button, simValue string) {
+	configureSIMButton := func(btn *widget.Button, simValue string) {
 		if btn == nil {
 			return
 		}
 		simValue = strings.TrimSpace(simValue)
 		objectNumber := strings.TrimSpace(viewmodels.ObjectDisplayNumber(*obj))
+		operator := simoperator.Detect(simValue)
+		btn.SetText(simoperator.Label(operator))
 		btn.OnTapped = func() {
-			provider := w.resolveVodafoneProvider()
-			if provider == nil {
-				dialogs.ShowInfoDialog(w.Window, "Vodafone", "Vodafone сервіс недоступний.")
+			admin := w.resolveAdminProvider()
+			if admin == nil {
+				dialogs.ShowInfoDialog(w.Window, simoperator.Label(operator), "Сервіс оператора недоступний.")
 				return
 			}
-			dialogs.ShowVodafoneSIMDialog(w.Window, provider, simValue, objectNumber, obj.Name)
+			switch operator {
+			case simoperator.Vodafone:
+				dialogs.ShowVodafoneSIMDialog(w.Window, admin, simValue, objectNumber, obj.Name)
+			case simoperator.Kyivstar:
+				dialogs.ShowKyivstarSIMDialog(w.Window, admin, simValue, objectNumber, obj.Name)
+			default:
+				dialogs.ShowInfoDialog(w.Window, "SIM API", "Оператор номера не підтримується.")
+			}
 		}
-		if !isVodafonePhone(simValue) {
+		if operator == simoperator.Unknown {
 			btn.Disable()
 			return
 		}
 		btn.Enable()
 	}
 
-	configureVodafoneButton(w.VodafoneSIM1Btn, presentation.SIM1Value)
-	configureVodafoneButton(w.VodafoneSIM2Btn, presentation.SIM2Value)
+	configureSIMButton(w.VodafoneSIM1Btn, presentation.SIM1Value)
+	configureSIMButton(w.VodafoneSIM2Btn, presentation.SIM2Value)
 
 	// Скидаємо динамічні дані перед завантаженням нових
 	loading := w.DeviceVM.BuildLoadingExternalPresentation()
@@ -921,11 +931,11 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 	}
 }
 
-func (w *WorkAreaPanel) resolveVodafoneProvider() contracts.AdminObjectVodafoneService {
+func (w *WorkAreaPanel) resolveAdminProvider() contracts.AdminProvider {
 	if w == nil || w.Data == nil {
 		return nil
 	}
-	if provider, ok := any(w.Data).(contracts.AdminObjectVodafoneService); ok {
+	if provider, ok := any(w.Data).(contracts.AdminProvider); ok {
 		return provider
 	}
 	if resolver, ok := any(w.Data).(interface {
@@ -937,45 +947,6 @@ func (w *WorkAreaPanel) resolveVodafoneProvider() contracts.AdminObjectVodafoneS
 		}
 	}
 	return nil
-}
-
-func isVodafonePhone(raw string) bool {
-	digits := digitsOnly(raw)
-	switch {
-	case len(digits) >= 5 && strings.HasPrefix(digits, "38050"):
-		return true
-	case len(digits) >= 5 && strings.HasPrefix(digits, "38066"):
-		return true
-	case len(digits) >= 5 && strings.HasPrefix(digits, "38075"):
-		return true
-	case len(digits) >= 5 && strings.HasPrefix(digits, "38095"):
-		return true
-	case len(digits) >= 5 && strings.HasPrefix(digits, "38099"):
-		return true
-	case len(digits) >= 3 && strings.HasPrefix(digits, "050"):
-		return true
-	case len(digits) >= 3 && strings.HasPrefix(digits, "066"):
-		return true
-	case len(digits) >= 3 && strings.HasPrefix(digits, "075"):
-		return true
-	case len(digits) >= 3 && strings.HasPrefix(digits, "095"):
-		return true
-	case len(digits) >= 3 && strings.HasPrefix(digits, "099"):
-		return true
-	default:
-		return false
-	}
-}
-
-func digitsOnly(raw string) string {
-	var b strings.Builder
-	b.Grow(len(raw))
-	for _, r := range raw {
-		if r >= '0' && r <= '9' {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
 }
 
 func (w *WorkAreaPanel) showTestMessages(objectID string) {

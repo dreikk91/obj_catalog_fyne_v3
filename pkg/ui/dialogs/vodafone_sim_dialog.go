@@ -36,13 +36,29 @@ func ShowVodafoneSIMDialog(
 	}
 
 	vm := viewmodels.NewVodafoneSIMViewModel()
-	statusLabel := widget.NewLabel("Vodafone: перевірка за запитом")
-	statusLabel.Wrapping = fyne.TextWrapWord
+	resultLabel := widget.NewLabel("Vodafone: перевірка за запитом")
+	resultLabel.Wrapping = fyne.TextWrapWord
 
 	titleLabel := widget.NewLabel(fmt.Sprintf("SIM: %s", msisdn))
 	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
 	objectLabel := widget.NewLabel(fmt.Sprintf("Об'єкт: #%s %s", objectNumber, strings.TrimSpace(objectName)))
 	objectLabel.Wrapping = fyne.TextWrapWord
+
+	overviewLabel := widget.NewLabel("Стан ще не завантажено.")
+	overviewLabel.TextStyle = fyne.TextStyle{Bold: true}
+	overviewLabel.Wrapping = fyne.TextWrapWord
+
+	connectivityLabel := widget.NewLabel("Натисніть \"Статус\", щоб отримати актуальні дані.")
+	connectivityLabel.Wrapping = fyne.TextWrapWord
+
+	identityLabel := widget.NewLabel("Назва абонента з'явиться тут.")
+	identityLabel.Wrapping = fyne.TextWrapWord
+
+	eventLabel := widget.NewLabel("Остання подія ще не завантажена.")
+	eventLabel.Wrapping = fyne.TextWrapWord
+
+	blockingLabel := widget.NewLabel("Стан блокування ще не завантажено.")
+	blockingLabel.Wrapping = fyne.TextWrapWord
 
 	setBusy := func(busy bool, controls ...fyne.Disableable) {
 		for _, control := range controls {
@@ -68,8 +84,16 @@ func ShowVodafoneSIMDialog(
 		setManualReasonState func(string)
 	)
 
+	applyStatus := func(status contracts.VodafoneSIMStatus) {
+		overviewLabel.SetText(vm.BuildOverviewText(status))
+		connectivityLabel.SetText(vm.BuildConnectivityText(status))
+		identityLabel.SetText(vm.BuildIdentityText(status))
+		eventLabel.SetText(vm.BuildEventText(status))
+		blockingLabel.SetText(vm.BuildBlockingText(status))
+	}
+
 	runAction := func(startedText string, action func() (string, error)) {
-		statusLabel.SetText(startedText)
+		resultLabel.SetText(startedText)
 		setBusy(true, refreshBtn, rebootBtn, syncBtn, blockBtn, unblockBtn, reasonSelect, customReasonEntry)
 		go func() {
 			text, err := action()
@@ -77,37 +101,32 @@ func ShowVodafoneSIMDialog(
 				setBusy(false, refreshBtn, rebootBtn, syncBtn, blockBtn, unblockBtn, reasonSelect, customReasonEntry)
 				setManualReasonState(reasonSelect.Selected)
 				if err != nil {
-					statusLabel.SetText(err.Error())
+					resultLabel.SetText(err.Error())
 					return
 				}
-				statusLabel.SetText(text)
+				resultLabel.SetText(text)
 			})
 		}()
 	}
 
-	refreshBtn = widget.NewButton("Статус і подія", func() {
+	refreshBtn = makeIconButton("Статус", iconRefresh(), widget.MediumImportance, func() {
 		runAction("Vodafone: перевірка стану...", func() (string, error) {
 			status, err := provider.GetVodafoneSIMStatus(msisdn)
 			if err != nil {
 				return "", err
 			}
+			applyStatus(status)
 			return vm.BuildStatusText(status), nil
 		})
 	})
 
-	rebootBtn = widget.NewButton("Перезавантажити SIM", func() {
+	rebootBtn = makeIconButton("Reset SIM", iconRefresh(), widget.MediumImportance, func() {
 		runAction("Vodafone: створення заявки...", func() (string, error) {
 			result, err := provider.RebootVodafoneSIM(msisdn)
 			if err != nil {
 				return "", err
 			}
-			if strings.TrimSpace(result.OrderID) == "" {
-				return "Vodafone: заявку на перезавантаження створено", nil
-			}
-			if strings.TrimSpace(result.State) == "" {
-				return "Vodafone: заявку створено, ID " + result.OrderID, nil
-			}
-			return "Vodafone: заявку створено, ID " + result.OrderID + ", стан " + result.State, nil
+			return vm.BuildRebootResultText(result), nil
 		})
 	})
 
@@ -130,7 +149,7 @@ func ShowVodafoneSIMDialog(
 	}
 	setManualReasonState(reasonSelect.Selected)
 
-	syncBtn = widget.NewButton("Записати №/назву", func() {
+	syncBtn = makeIconButton("Записати дані", iconEdit(), widget.LowImportance, func() {
 		runAction("Vodafone: запис name/comment...", func() (string, error) {
 			name, comment, err := vm.BuildMetadata(
 				msisdn,
@@ -148,47 +167,96 @@ func ShowVodafoneSIMDialog(
 		})
 	})
 
-	blockBtn = widget.NewButton("Блокувати номер", func() {
-		runAction("Vodafone: блокування номера...", func() (string, error) {
-			name, comment, err := vm.BuildBlockingMetadata(objectNumber, reasonSelect.Selected, customReasonEntry.Text, time.Now())
-			if err != nil {
-				return "", err
-			}
-			if err := provider.UpdateVodafoneSIMMetadata(msisdn, name, comment); err != nil {
-				return "", err
-			}
-			result, err := provider.BlockVodafoneSIM(msisdn)
-			if err != nil {
-				return "", err
-			}
-			return vm.BuildBarringResultText(result), nil
-		})
+	blockBtn = makeIconButton("Блокувати номер", iconClose(), widget.DangerImportance, func() {
+		showSIMNumberActionConfirm(
+			parent,
+			"Підтвердити блокування",
+			fmt.Sprintf("Заблокувати номер %s для об'єкта #%s?", msisdn, objectNumber),
+			func() {
+				runAction("Vodafone: блокування номера...", func() (string, error) {
+					name, comment, err := vm.BuildBlockingMetadata(objectNumber, reasonSelect.Selected, customReasonEntry.Text, time.Now())
+					if err != nil {
+						return "", err
+					}
+					if err := provider.UpdateVodafoneSIMMetadata(msisdn, name, comment); err != nil {
+						return "", err
+					}
+					result, err := provider.BlockVodafoneSIM(msisdn)
+					if err != nil {
+						return "", err
+					}
+					return vm.BuildBarringResultText(result), nil
+				})
+			},
+		)
 	})
 
-	unblockBtn = widget.NewButton("Розблокувати номер", func() {
-		runAction("Vodafone: розблокування номера...", func() (string, error) {
-			result, err := provider.UnblockVodafoneSIM(msisdn)
-			if err != nil {
-				return "", err
-			}
-			return vm.BuildBarringResultText(result), nil
-		})
+	unblockBtn = makeIconButton("Розблокувати номер", iconAdd(), widget.HighImportance, func() {
+		showSIMNumberActionConfirm(
+			parent,
+			"Підтвердити розблокування",
+			fmt.Sprintf("Розблокувати номер %s для об'єкта #%s?", msisdn, objectNumber),
+			func() {
+				runAction("Vodafone: розблокування номера...", func() (string, error) {
+					result, err := provider.UnblockVodafoneSIM(msisdn)
+					if err != nil {
+						return "", err
+					}
+					return vm.BuildBarringResultText(result), nil
+				})
+			},
+		)
 	})
 
-	content := container.NewVBox(
-		titleLabel,
-		objectLabel,
-		widget.NewSeparator(),
+	reasonCard := widget.NewCard(
+		"Параметри блокування",
+		"",
 		widget.NewForm(
 			widget.NewFormItem("Причина блокування:", reasonSelect),
 			widget.NewFormItem("Своя причина:", customReasonEntry),
 		),
-		container.NewHBox(refreshBtn, rebootBtn, syncBtn),
-		container.NewHBox(blockBtn, unblockBtn),
-		statusLabel,
 	)
 
-	dlg := dialog.NewCustom("Vodafone запити", "Закрити", content, parent)
-	dlg.Resize(fyne.NewSize(640, 280))
+	headerCard := widget.NewCard(
+		"Номер та об'єкт",
+		"",
+		container.NewVBox(titleLabel, objectLabel),
+	)
+
+	stateCard := widget.NewCard(
+		"Стан",
+		"",
+		container.NewVBox(overviewLabel, connectivityLabel),
+	)
+
+	identityCard := widget.NewCard("Назва абонента", "", identityLabel)
+	eventCard := widget.NewCard("Остання подія", "", eventLabel)
+	blockingCard := widget.NewCard("Блокування", "", blockingLabel)
+
+	actionsCard := widget.NewCard(
+		"Дії",
+		"",
+		container.NewVBox(
+			container.NewGridWithColumns(3, refreshBtn, rebootBtn, syncBtn),
+			container.NewGridWithColumns(2, blockBtn, unblockBtn),
+		),
+	)
+
+	resultCard := widget.NewCard("Результат", "", resultLabel)
+
+	content := container.NewVBox(
+		headerCard,
+		container.NewGridWithColumns(3, stateCard, identityCard, eventCard),
+		blockingCard,
+		actionsCard,
+		reasonCard,
+		resultCard,
+	)
+
+	scrollContent := container.NewVScroll(content)
+	scrollContent.SetMinSize(fyne.NewSize(780, 560))
+
+	dlg := dialog.NewCustom("Vodafone запити", "Закрити", scrollContent, parent)
+	dlg.Resize(fyne.NewSize(840, 620))
 	dlg.Show()
 }

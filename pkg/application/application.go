@@ -335,7 +335,7 @@ func (a *Application) buildUI() {
 		log.Debug().Msg("Відкриття діалогу налаштувань...")
 		dialogs.ShowSettingsDialog(
 			a.mainWindow,
-			a.resolveVodafoneAdminProvider(),
+			a.resolveAdminProvider(),
 			a.fyneApp.Preferences(),
 			a.isDarkTheme,
 			func(dbCfg config.DBConfig, uiCfg config.UIConfig) {
@@ -545,7 +545,7 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	return fyne.NewMainMenu(menus...)
 }
 
-func (a *Application) resolveVodafoneAdminProvider() contracts.AdminObjectVodafoneService {
+func (a *Application) resolveAdminProvider() contracts.AdminProvider {
 	if a == nil {
 		return nil
 	}

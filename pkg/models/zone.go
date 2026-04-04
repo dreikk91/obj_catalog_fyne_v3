@@ -6,6 +6,7 @@ type ZoneStatus string
 
 const (
 	ZoneNormal ZoneStatus = "normal" // Норма
+	ZoneAlarm  ZoneStatus = "alarm"  // Тривога
 	ZoneFire   ZoneStatus = "fire"   // Пожежа
 	ZoneBreak  ZoneStatus = "break"  // Обрив
 	ZoneShort  ZoneStatus = "short"  // Коротке замикання
@@ -32,6 +33,8 @@ func (z *Zone) GetStatusDisplay() string {
 	switch z.Status {
 	case ZoneNormal:
 		return "НОРМА"
+	case ZoneAlarm:
+		return "ТРИВОГА"
 	case ZoneFire:
 		return "ПОЖЕЖА"
 	case ZoneBreak:

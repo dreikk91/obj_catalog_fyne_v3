@@ -36,8 +36,10 @@ type phoenixChannelRow struct {
 	SignalLevel           sql.NullInt64  `db:"signal_level"`
 	DeviceVersion         sql.NullInt64  `db:"device_version"`
 	RadioVersion          sql.NullString `db:"radio_version"`
-	SimNumber             sql.NullString `db:"sim_number"`
-	FallbackSIM           sql.NullString `db:"fallback_sim_number"`
+	Sim1Number            sql.NullString `db:"sim1_number"`
+	Sim1OperatorName      sql.NullString `db:"sim1_operator_name"`
+	Sim2Number            sql.NullString `db:"sim2_number"`
+	Sim2OperatorName      sql.NullString `db:"sim2_operator_name"`
 }
 
 type phoenixZoneRow struct {

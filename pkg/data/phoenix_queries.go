@@ -75,13 +75,12 @@ SELECT TOP (1)
 	M.SignalLevel AS signal_level,
 	MDC.DeviceVersion AS device_version,
 	MDC.RadioVersion AS radio_version,
-	S.RealSimNumber AS sim_number,
-	S.SimNumber AS fallback_sim_number
+	PrimarySIM.sim_number AS sim1_number,
+	PrimarySIM.operator_name AS sim1_operator_name,
+	SecondarySIM.sim_number AS sim2_number,
+	SecondarySIM.operator_name AS sim2_operator_name
 FROM vwMPhoneDeviceChannels MDC WITH (NOLOCK)
 INNER JOIN MPhone M WITH (NOLOCK) ON M.Mphone_id = MDC.Mphone_id
-LEFT JOIN Sim S WITH (NOLOCK) ON
-	S.OnBoardDevice_ID = MDC.OnBoardDevice_ID
-	AND (S.IsCurrentSim = 1 OR S.IsCurrentSim IS NULL)
 OUTER APPLY (
 	SELECT TOP (1)
 		cno.ChannelNo AS channel_no,
@@ -89,8 +88,8 @@ OUTER APPLY (
 			WHEN i.OpenInternetChannel_ID IS NULL THEN crch.CentralReceiverChannel_ID
 			ELSE i.OpenInternetChannel_ID
 		END AS open_internet_channel_id,
-		COALESCE(i.LastTest, crch.LastTest) AS last_test,
-		COALESCE(i.TestTimeout, crch.TestTimeout) AS test_timeout,
+		c.LastTest AS last_test,
+		c.TestTimeout AS test_timeout,
 		ct.ChannelType AS channel_type_name
 	FROM Channel AS c WITH (NOLOCK)
 	INNER JOIN ChannelNo AS cno WITH (NOLOCK) ON
@@ -103,6 +102,40 @@ OUTER APPLY (
 		crch.Channel_ID = c.Channel_ID
 	WHERE c.Channel_ID = MDC.Channel_ID
 ) AS ChannelMeta
+OUTER APPLY (
+	SELECT TOP (1)
+		COALESCE(NULLIF(LTRIM(RTRIM(S.RealSimNumber)), ''), NULLIF(LTRIM(RTRIM(S.SimNumber)), '')) AS sim_number,
+		OP.OperatorName AS operator_name
+	FROM OnBoardDevice D WITH (NOLOCK)
+	INNER JOIN OnBoardDeviceType DT WITH (NOLOCK) ON DT.OnBoardDeviceType_ID = D.OnBoardDeviceType_ID
+	INNER JOIN Sim S WITH (NOLOCK) ON S.OnBoardDevice_ID = D.OnBoardDevice_ID
+	LEFT JOIN Operators OP WITH (NOLOCK) ON OP.Operator_ID = S.Operator_ID
+	WHERE
+		D.MPhone_ID = MDC.Mphone_id
+		AND DT.Enum = 0
+		AND COALESCE(NULLIF(LTRIM(RTRIM(S.RealSimNumber)), ''), NULLIF(LTRIM(RTRIM(S.SimNumber)), '')) IS NOT NULL
+	ORDER BY
+		CASE WHEN ISNULL(S.IsCurrentSim, 0) = 1 THEN 0 ELSE 1 END,
+		CASE WHEN ISNULL(S.IsMainSim, 0) = 1 THEN 0 ELSE 1 END,
+		S.Sim_ID
+) AS PrimarySIM
+OUTER APPLY (
+	SELECT TOP (1)
+		COALESCE(NULLIF(LTRIM(RTRIM(S.RealSimNumber)), ''), NULLIF(LTRIM(RTRIM(S.SimNumber)), '')) AS sim_number,
+		OP.OperatorName AS operator_name
+	FROM OnBoardDevice D WITH (NOLOCK)
+	INNER JOIN OnBoardDeviceType DT WITH (NOLOCK) ON DT.OnBoardDeviceType_ID = D.OnBoardDeviceType_ID
+	INNER JOIN Sim S WITH (NOLOCK) ON S.OnBoardDevice_ID = D.OnBoardDevice_ID
+	LEFT JOIN Operators OP WITH (NOLOCK) ON OP.Operator_ID = S.Operator_ID
+	WHERE
+		D.MPhone_ID = MDC.Mphone_id
+		AND DT.Enum = 1
+		AND COALESCE(NULLIF(LTRIM(RTRIM(S.RealSimNumber)), ''), NULLIF(LTRIM(RTRIM(S.SimNumber)), '')) IS NOT NULL
+	ORDER BY
+		CASE WHEN ISNULL(S.IsCurrentSim, 0) = 1 THEN 0 ELSE 1 END,
+		CASE WHEN ISNULL(S.IsMainSim, 0) = 1 THEN 0 ELSE 1 END,
+		S.Sim_ID
+) AS SecondarySIM
 WHERE
 	MDC.Panel_id = @p1
 	AND MDC.IsActive = 1

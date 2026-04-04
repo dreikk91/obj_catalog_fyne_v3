@@ -110,7 +110,9 @@ func (p *PhoenixDataProvider) GetObjectByID(objectID string) *models.Object {
 	obj := object[0]
 
 	var channelRows []phoenixChannelRow
-	if err := p.db.SelectContext(ctx, &channelRows, phoenixChannelInfoQuery, panelID); err == nil && len(channelRows) > 0 {
+	if err := p.db.SelectContext(ctx, &channelRows, phoenixChannelInfoQuery, panelID); err != nil {
+		log.Error().Err(err).Str("panelID", panelID).Msg("Phoenix: помилка отримання інформації про канал")
+	} else if len(channelRows) > 0 {
 		p.applyChannelInfo(&obj, channelRows[0])
 	}
 
@@ -138,7 +140,7 @@ func (p *PhoenixDataProvider) GetZones(objectID string) []models.Zone {
 		zones = append(zones, models.Zone{
 			Number:         row.ZoneNo,
 			Name:           nullString(row.ZoneName),
-			SensorType:     phoenixZoneTypeText(row.RadioZoneTypeID),
+			SensorType:     phoenixZoneTypeText(row.IsAlarmButton),
 			Status:         phoenixZoneStatus(row.Status),
 			IsBypassed:     nullBool(row.IsBypass),
 			GroupID:        buildPhoenixGroupID(row.PanelID, row.GroupNo),
@@ -313,14 +315,18 @@ func (p *PhoenixDataProvider) GetExternalData(objectID string) (signal string, t
 	defer cancel()
 
 	var channels []phoenixChannelRow
-	if err := p.db.SelectContext(ctx, &channels, phoenixChannelInfoQuery, panelID); err == nil && len(channels) > 0 {
+	if err := p.db.SelectContext(ctx, &channels, phoenixChannelInfoQuery, panelID); err != nil {
+		log.Error().Err(err).Str("panelID", panelID).Msg("Phoenix: помилка отримання зовнішніх даних каналу")
+	} else if len(channels) > 0 {
 		signal = phoenixSignalText(channels[0].SignalLevel)
 		lastTest = nullTime(channels[0].LastTest)
 		testMsg = phoenixTestControlText(channels[0].TestTimeout)
 	}
 
 	var groups []phoenixObjectGroupRow
-	if err := p.db.SelectContext(ctx, &groups, phoenixObjectDetailGroupsQuery, panelID); err == nil {
+	if err := p.db.SelectContext(ctx, &groups, phoenixObjectDetailGroupsQuery, panelID); err != nil {
+		log.Error().Err(err).Str("panelID", panelID).Msg("Phoenix: помилка отримання груп для зовнішніх даних")
+	} else {
 		for _, row := range groups {
 			if ts := nullTime(row.GroupTime); ts.After(lastMsg) {
 				lastMsg = ts
@@ -539,10 +545,11 @@ func (p *PhoenixDataProvider) applyChannelInfo(obj *models.Object, row phoenixCh
 			obj.ObjChan = 1
 		}
 	}
-	if sim := strings.TrimSpace(nullString(row.SimNumber)); sim != "" {
+	if sim := strings.TrimSpace(nullString(row.Sim1Number)); sim != "" {
 		obj.SIM1 = sim
-	} else if sim := strings.TrimSpace(nullString(row.FallbackSIM)); sim != "" {
-		obj.SIM1 = sim
+	}
+	if sim := strings.TrimSpace(nullString(row.Sim2Number)); sim != "" {
+		obj.SIM2 = sim
 	}
 	obj.SignalStrength = phoenixSignalText(row.SignalLevel)
 	obj.LastTestTime = nullTime(row.LastTest)
@@ -687,32 +694,19 @@ func phoenixGroupStateText(isOpen sql.NullBool, groupDisabled sql.NullBool, test
 func phoenixZoneStatus(status sql.NullInt64) models.ZoneStatus {
 	switch nullInt64(status) {
 	case 1:
-		return models.ZoneFire
+		return models.ZoneNormal
 	case 2:
-		return models.ZoneBreak
-	case 3:
-		return models.ZoneShort
+		return models.ZoneAlarm
 	default:
 		return models.ZoneNormal
 	}
 }
 
-func phoenixZoneTypeText(raw sql.NullInt64) string {
-	switch nullInt64(raw) {
-	case 0:
-		return "Стандартна"
-	case 1:
-		return "Пожежна"
-	case 2:
-		return "Охоронна"
-	case 3:
-		return "Тривожна"
-	default:
-		if !raw.Valid {
-			return "—"
-		}
-		return fmt.Sprintf("Тип %d", raw.Int64)
+func phoenixZoneTypeText(isAlarmButton sql.NullBool) string {
+	if nullBool(isAlarmButton) {
+		return "Тривожна кнопка"
 	}
+	return "Охоронна"
 }
 
 func phoenixSignalText(level sql.NullInt64) string {

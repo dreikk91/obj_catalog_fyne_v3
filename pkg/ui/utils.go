@@ -47,7 +47,7 @@ func getStatusIcon(status models.ObjectStatus) string {
 }
 
 // GetStatusColor повертає колір для статусу
-func GetStatusColor(status models.ObjectStatus) interface{ RGBA() (r, g, b, a uint32) } {
+func GetStatusColor(status models.ObjectStatus) color.Color {
 	switch status {
 	case models.StatusFire:
 		return theme.ColorFire

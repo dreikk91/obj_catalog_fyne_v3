@@ -76,6 +76,9 @@ type WorkAreaPanel struct {
 	LastTestLabel        *widget.Label
 	LastTestTimeLabel    *widget.Label
 	LastMessageTimeLabel *widget.Label
+	SummaryStateCaption  *canvas.Text
+	SummaryStatePanel    *canvas.Rectangle
+	SummarySectionPanels []*canvas.Rectangle
 	TestLogsBtn          *widget.Button
 	Notes1Label          *widget.Label
 	Location1Label       *widget.Label
@@ -193,10 +196,9 @@ func (w *WorkAreaPanel) initExportButtons() {
 
 func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 	w.DeviceTypeLabel = widget.NewLabelWithData(w.DeviceStateVM.DeviceTypeBinding())
-	w.PanelMarkLabel = widget.NewLabelWithData(w.DeviceStateVM.PanelMarkBinding()) // Initialized PanelMarkLabel
+	w.PanelMarkLabel = widget.NewLabelWithData(w.DeviceStateVM.PanelMarkBinding())
 	w.GroupsLabel = widget.NewLabelWithData(w.DeviceStateVM.GroupsBinding())
 	w.GroupsLabel.Wrapping = fyne.TextWrapWord
-	// w.GSMLabel = widget.NewLabel("📶 GSM: —")
 	w.PowerLabel = widget.NewLabelWithData(w.DeviceStateVM.PowerBinding())
 	w.SIMLabel = widget.NewLabelWithData(w.DeviceStateVM.SIMBinding())
 	w.SIM1Label = widget.NewLabelWithData(w.DeviceStateVM.SIM1Binding())
@@ -231,6 +233,7 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 	for _, label := range []*widget.Label{
 		w.DeviceTypeLabel,
 		w.PanelMarkLabel,
+		w.GroupsLabel,
 		w.PowerLabel,
 		w.SIMLabel,
 		w.SIM1Label,
@@ -249,70 +252,180 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 		label.Wrapping = fyne.TextWrapWord
 	}
 
+	w.SummarySectionPanels = nil
+
+	w.SummaryStateCaption = canvas.NewText("Оперативний стан", appTheme.ColorSectionTitle)
+	w.SummaryStateCaption.TextSize = fyne.CurrentApp().Settings().Theme().Size(fyneTheme.SizeNameText) - 1
+
+	w.SummaryStatePanel = canvas.NewRectangle(color.Transparent)
+	w.SummaryStatePanel.CornerRadius = 14
+	w.SummaryStatePanel.StrokeWidth = 1
+
+	statusSummary := container.NewStack(
+		w.SummaryStatePanel,
+		container.NewPadded(
+			container.NewAdaptiveGrid(
+				2,
+				container.NewVBox(
+					w.SummaryStateCaption,
+					w.GuardLabel,
+				),
+				container.NewVBox(
+					w.PowerLabel,
+					w.SignalLabel,
+					w.LastMessageTimeLabel,
+				),
+			),
+		),
+	)
+
+	groupsScroll := container.NewScroll(w.GroupsLabel)
+	groupsScroll.SetMinSize(fyne.NewSize(0, 120))
+
 	notesScroll := container.NewScroll(w.Notes1Label)
-	notesScroll.SetMinSize(fyne.NewSize(0, 80))
+	notesScroll.SetMinSize(fyne.NewSize(0, 84))
 
 	locationScroll := container.NewScroll(w.Location1Label)
-	locationScroll.SetMinSize(fyne.NewSize(0, 60))
+	locationScroll.SetMinSize(fyne.NewSize(0, 68))
 
-	generalCard := widget.NewCard(
-		"Загальна інформація",
-		"",
-		container.NewVBox(
-			w.DeviceTypeLabel,
-			w.PanelMarkLabel,
-			w.SignalLabel,
-			w.PowerLabel,
-			w.ChanLabel,
-			w.GuardLabel,
-			w.AkbLabel,
-			w.AutoTestLabel,
-			w.TestControlLabel,
-			w.LastTestLabel,
-			w.LastTestTimeLabel,
-			w.LastMessageTimeLabel,
-		),
+	deviceSection, devicePanel := makeWorkAreaSummarySection(
+		"Прилад",
+		w.DeviceTypeLabel,
+		w.PanelMarkLabel,
+		w.ChanLabel,
+		w.AkbLabel,
 	)
 
-	communicationCard := widget.NewCard(
+	communicationSection, communicationPanel := makeWorkAreaSummarySection(
 		"Зв'язок",
-		"",
-		container.NewVBox(
-			container.NewBorder(nil, nil, nil, container.NewHBox(w.CopySimBtn), w.SIMLabel),
-			container.NewBorder(nil, nil, nil, container.NewHBox(w.VodafoneSIM1Btn, w.CopySIM1Btn), w.SIM1Label),
-			container.NewBorder(nil, nil, nil, container.NewHBox(w.VodafoneSIM2Btn, w.CopySIM2Btn), w.SIM2Label),
-			container.NewBorder(nil, nil, nil, w.CopyPhonesBtn, w.PhoneLabel),
-			widget.NewSeparator(),
-			w.TestLogsBtn,
-		),
+		makeWorkAreaActionRow(w.SIMLabel, w.CopySimBtn),
+		makeWorkAreaActionRow(w.SIM1Label, w.VodafoneSIM1Btn, w.CopySIM1Btn),
+		makeWorkAreaActionRow(w.SIM2Label, w.VodafoneSIM2Btn, w.CopySIM2Btn),
+		makeWorkAreaActionRow(w.PhoneLabel, w.CopyPhonesBtn),
 	)
 
-	groupsCard := widget.NewCard("Групи", "", w.GroupsLabel)
-	locationCard := widget.NewCard(
+	controlSection, controlPanel := makeWorkAreaSummarySection(
+		"Контроль і активність",
+		w.AutoTestLabel,
+		w.TestControlLabel,
+		w.LastTestLabel,
+		w.LastTestTimeLabel,
+		w.TestLogsBtn,
+	)
+
+	groupsSection, groupsPanel := makeWorkAreaSummarySection("Групи", groupsScroll)
+	locationSection, locationPanel := makeWorkAreaSummarySection(
 		"Розташування",
-		"",
-		container.NewBorder(nil, nil, nil, w.CopyLocationBtn, locationScroll),
+		makeWorkAreaActionRow(locationScroll, w.CopyLocationBtn),
 	)
-	notesCard := widget.NewCard(
-		"Додаткова інформація",
-		"",
-		container.NewBorder(nil, nil, nil, w.CopyNotesBtn, notesScroll),
+	notesSection, notesPanel := makeWorkAreaSummarySection(
+		"Примітки",
+		makeWorkAreaActionRow(notesScroll, w.CopyNotesBtn),
 	)
+
+	w.SummarySectionPanels = append(
+		w.SummarySectionPanels,
+		devicePanel,
+		communicationPanel,
+		controlPanel,
+		groupsPanel,
+		locationPanel,
+		notesPanel,
+	)
+	w.updateSummaryThemeColors()
 
 	deviceInfo := container.NewVBox(
-		container.NewGridWithColumns(2, generalCard, communicationCard),
-		groupsCard,
-		locationCard,
-		notesCard,
+		statusSummary,
+		container.NewAdaptiveGrid(2, deviceSection, communicationSection),
+		container.NewAdaptiveGrid(2, controlSection, groupsSection),
+		container.NewAdaptiveGrid(2, locationSection, notesSection),
 	)
 
-	// Додаємо скрол до всієї вкладки, але примушуємо контент займати всю доступну ширину.
 	return container.NewScroll(
 		container.New(
 			&summaryTabContentLayout{},
 			container.NewPadded(deviceInfo),
 		),
 	)
+}
+
+func makeWorkAreaSummarySection(title string, content ...fyne.CanvasObject) (fyne.CanvasObject, *canvas.Rectangle) {
+	themeVariant := fyne.CurrentApp().Settings().ThemeVariant()
+	themeColors := fyne.CurrentApp().Settings().Theme()
+
+	bg := canvas.NewRectangle(themeColors.Color(fyneTheme.ColorNameInputBackground, themeVariant))
+	bg.CornerRadius = 12
+	bg.StrokeColor = themeColors.Color(fyneTheme.ColorNameSeparator, themeVariant)
+	bg.StrokeWidth = 1
+
+	titleLabel := widget.NewLabel(title)
+	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
+
+	items := make([]fyne.CanvasObject, 0, len(content)+2)
+	items = append(items, titleLabel, widget.NewSeparator())
+	items = append(items, content...)
+
+	return container.NewStack(
+		bg,
+		container.NewPadded(container.NewVBox(items...)),
+	), bg
+}
+
+func makeWorkAreaActionRow(content fyne.CanvasObject, actions ...fyne.CanvasObject) fyne.CanvasObject {
+	visibleActions := make([]fyne.CanvasObject, 0, len(actions))
+	for _, action := range actions {
+		if action != nil {
+			visibleActions = append(visibleActions, action)
+		}
+	}
+	if len(visibleActions) == 0 {
+		return content
+	}
+	return container.NewBorder(nil, nil, nil, container.NewHBox(visibleActions...), content)
+}
+
+func (w *WorkAreaPanel) updateSummaryStatusAccent(status models.ObjectStatus) {
+	if w == nil || w.SummaryStatePanel == nil {
+		return
+	}
+
+	base := color.NRGBAModel.Convert(GetStatusColor(status)).(color.NRGBA)
+	fillAlpha := uint8(32)
+	strokeAlpha := uint8(96)
+	if IsDarkMode() {
+		fillAlpha = 52
+		strokeAlpha = 128
+	}
+
+	w.SummaryStatePanel.FillColor = color.NRGBA{R: base.R, G: base.G, B: base.B, A: fillAlpha}
+	w.SummaryStatePanel.StrokeColor = color.NRGBA{R: base.R, G: base.G, B: base.B, A: strokeAlpha}
+	w.SummaryStatePanel.Refresh()
+}
+
+func (w *WorkAreaPanel) updateSummaryThemeColors() {
+	if w == nil {
+		return
+	}
+
+	themeVariant := fyne.CurrentApp().Settings().ThemeVariant()
+	themeColors := fyne.CurrentApp().Settings().Theme()
+	fillColor := themeColors.Color(fyneTheme.ColorNameInputBackground, themeVariant)
+	strokeColor := themeColors.Color(fyneTheme.ColorNameSeparator, themeVariant)
+	captionColor := themeColors.Color(fyneTheme.ColorNamePlaceHolder, themeVariant)
+
+	if w.SummaryStateCaption != nil {
+		w.SummaryStateCaption.Color = captionColor
+		w.SummaryStateCaption.Refresh()
+	}
+
+	for _, panel := range w.SummarySectionPanels {
+		if panel == nil {
+			continue
+		}
+		panel.FillColor = fillColor
+		panel.StrokeColor = strokeColor
+		panel.Refresh()
+	}
 }
 
 type summaryTabContentLayout struct{}
@@ -676,6 +789,7 @@ func (w *WorkAreaPanel) SetObject(object models.Object) {
 	w.HeaderStatus.Text = object.GetStatusDisplay()
 	w.HeaderStatus.Color = GetStatusColor(object.Status)
 	w.HeaderStatus.Refresh()
+	w.updateSummaryStatusAccent(object.Status)
 
 	// Налаштовуємо дії копіювання
 	w.CopyNameBtn.OnTapped = func() {
@@ -1025,6 +1139,13 @@ func (w *WorkAreaPanel) OnThemeChanged(fontSize float32) {
 	if w.HeaderStatus != nil {
 		w.HeaderStatus.TextSize = fontSize + 3
 		w.HeaderStatus.Refresh()
+	}
+	if w.SummaryStateCaption != nil {
+		w.SummaryStateCaption.TextSize = fontSize - 1
+	}
+	w.updateSummaryThemeColors()
+	if w.CurrentObject != nil {
+		w.updateSummaryStatusAccent(w.CurrentObject.Status)
 	}
 	// Віджети (Labels, Tables) оновляться автоматично через Refresh
 	if w.ZonesTable != nil {

@@ -372,3 +372,31 @@ func TestPhoenixTestControlText(t *testing.T) {
 		})
 	}
 }
+
+func TestPhoenixZoneTypeText(t *testing.T) {
+	if got := phoenixZoneTypeText(sql.NullBool{Bool: false, Valid: true}); got != "Охоронна" {
+		t.Fatalf("expected default zone type to be охоронна, got %q", got)
+	}
+
+	if got := phoenixZoneTypeText(sql.NullBool{Bool: true, Valid: true}); got != "Тривожна кнопка" {
+		t.Fatalf("expected alarm button zone type, got %q", got)
+	}
+
+	if got := phoenixZoneTypeText(sql.NullBool{}); got != "Охоронна" {
+		t.Fatalf("expected invalid alarm flag to fallback to охоронна, got %q", got)
+	}
+}
+
+func TestPhoenixZoneStatus(t *testing.T) {
+	if got := phoenixZoneStatus(sql.NullInt64{Int64: 1, Valid: true}); got != models.ZoneNormal {
+		t.Fatalf("expected status 1 to map to normal, got %q", got)
+	}
+
+	if got := phoenixZoneStatus(sql.NullInt64{Int64: 2, Valid: true}); got != models.ZoneAlarm {
+		t.Fatalf("expected status 2 to map to alarm, got %q", got)
+	}
+
+	if got := phoenixZoneStatus(sql.NullInt64{}); got != models.ZoneNormal {
+		t.Fatalf("expected invalid status to map to normal, got %q", got)
+	}
+}

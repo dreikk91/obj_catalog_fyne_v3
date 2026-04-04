@@ -1595,6 +1595,107 @@ func TestCASLProvider_GetAlarms_UsesRealtimeCacheWhenReadEventsFails(t *testing.
 	}
 }
 
+func TestCASLProvider_SubscribeRealtimeTags_DoesNotUseTapeTag(t *testing.T) {
+	t.Parallel()
+
+	calledTags := make([]string, 0, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != caslSubscribePath {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		var payload map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		calledTags = append(calledTags, strings.TrimSpace(asString(payload["tag"])))
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "token", 1)
+	if err := provider.subscribeRealtimeTags(context.Background(), "conn-1"); err != nil {
+		t.Fatalf("subscribeRealtimeTags error: %v", err)
+	}
+
+	if len(calledTags) == 0 {
+		t.Fatal("expected at least one realtime tag subscription")
+	}
+
+	sawPPKIn := false
+	sawUserAction := false
+	for _, tag := range calledTags {
+		switch tag {
+		case "ppk_in":
+			sawPPKIn = true
+		case "user_action":
+			sawUserAction = true
+		case "tape":
+			t.Fatalf("unexpected deprecated realtime tag subscription: %q", tag)
+		}
+	}
+
+	if !sawPPKIn {
+		t.Fatal("expected ppk_in subscription")
+	}
+	if !sawUserAction {
+		t.Fatal("expected user_action subscription")
+	}
+}
+
+func TestCASLProvider_AppendRealtimeRows_UpdatesAlarmCacheWithoutTapeTag(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	provider.mu.Lock()
+	record := caslGrdObject{
+		ObjID:        "25",
+		Name:         "1004 Будинок Хіміч Н.П.",
+		DeviceID:     caslInt64(23),
+		DeviceNumber: caslInt64(1003),
+	}
+	provider.cachedObjects = []caslGrdObject{record}
+	provider.cachedObjectsAt = time.Now()
+	provider.objectByInternalID[mapCASLObjectID(record.ObjID, record.Name, strconv.FormatInt(record.DeviceNumber.Int64(), 10))] = record
+
+	device := caslDevice{
+		DeviceID: caslText("23"),
+		ObjID:    caslText("25"),
+		Number:   caslInt64(1003),
+		Type:     caslText("TYPE_DEVICE_CASL"),
+	}
+	provider.deviceByDeviceID = map[string]caslDevice{"23": device}
+	provider.deviceByObjectID = map[string]caslDevice{"25": device}
+	provider.deviceByNumber = map[int64]caslDevice{1003: device}
+	provider.cachedDevicesAt = time.Now()
+	provider.cachedDictionary = map[string]any{"E110": "Пожежна тривога"}
+	provider.cachedDictionaryAt = time.Now()
+	provider.mu.Unlock()
+
+	nowMs := time.Now().UnixMilli()
+	if err := provider.appendRealtimeRows(context.Background(), []CASLObjectEvent{
+		{
+			Action:    "GRD_OBJ_NOTIF",
+			ObjID:     "25",
+			ObjName:   "1004 Будинок Хіміч Н.П.",
+			AlarmType: "ALARM_TYPE_OPERATOR",
+			Time:      nowMs,
+			Type:      "user_action",
+		},
+	}); err != nil {
+		t.Fatalf("appendRealtimeRows error: %v", err)
+	}
+
+	alarms := provider.snapshotRealtimeAlarms()
+	if len(alarms) != 1 {
+		t.Fatalf("expected 1 realtime alarm, got %d", len(alarms))
+	}
+	if alarms[0].ObjectName != "1003 | 1004 Будинок Хіміч Н.П." {
+		t.Fatalf("unexpected realtime alarm object name: %q", alarms[0].ObjectName)
+	}
+}
+
 func TestCASLProvider_UpdateRealtimeAlarmsFromRows_Lifecycle(t *testing.T) {
 	t.Parallel()
 

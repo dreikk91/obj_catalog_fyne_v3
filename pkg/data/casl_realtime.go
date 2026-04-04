@@ -562,7 +562,6 @@ func (p *CASLCloudProvider) subscribeRealtimeTags(ctx context.Context, connID st
 	tags := []tagSpec{
 		{name: "ppk_in", required: true},
 		{name: "user_action", required: true},
-		{name: "tape", required: true},
 		{name: "ppk_service", required: false},
 		{name: "ppk_out", required: false},
 		{name: "system_event", required: false},
@@ -628,17 +627,12 @@ func (p *CASLCloudProvider) appendRealtimeRows(ctx context.Context, rows []CASLO
 		p.mu.Unlock()
 	}
 
-	// 2. Обробка виключно для стрічки тривог (tape)
-	tapeRows := make([]CASLObjectEvent, 0, len(rows))
-	for _, row := range rows {
-		// Фільтруємо суворо: тільки події з тегу/типу tape
-		if strings.Contains(strings.ToLower(row.Type), "tape") {
-			tapeRows = append(tapeRows, row)
-		}
-	}
-
-	if len(tapeRows) > 0 {
-		p.updateRealtimeAlarmsFromRows(ctx, tapeRows)
+	// 2. Оновлення кешу активних тривог.
+	// На поточних CASL-інсталяціях окремий realtime тег `tape` може бути відсутній,
+	// тому підтримуємо кеш тривог за звичайними realtime подіями (`user_action`,
+	// `ppk_in`, `ppk_service` тощо), які вже приймаємо через WebSocket.
+	if len(rows) > 0 {
+		p.updateRealtimeAlarmsFromRows(ctx, rows)
 	}
 
 	return nil
@@ -920,11 +914,11 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 				ObjectNumber: objectNum,
 				ObjectName:   objectName,
 				Address:      strings.TrimSpace(row.ObjAddr),
-				Time:       alarmTime,
-				Details:    details,
-				Type:       alarmType,
-				ZoneNumber: int(row.Number),
-				SC1:        mapCASLEventSC1(eventType),
+				Time:         alarmTime,
+				Details:      details,
+				Type:         alarmType,
+				ZoneNumber:   int(row.Number),
+				SC1:          mapCASLEventSC1(eventType),
 			}
 			continue
 		}
@@ -969,11 +963,11 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			ObjectNumber: objectNum,
 			ObjectName:   objectName,
 			Address:      strings.TrimSpace(row.ObjAddr),
-			Time:       alarmTime,
-			Details:    details,
-			Type:       alarmType,
-			ZoneNumber: zoneNumber,
-			SC1:        mapCASLEventSC1(eventType),
+			Time:         alarmTime,
+			Details:      details,
+			Type:         alarmType,
+			ZoneNumber:   zoneNumber,
+			SC1:          mapCASLEventSC1(eventType),
 		}
 	}
 }

@@ -316,6 +316,7 @@ func (p *PhoenixDataProvider) GetExternalData(objectID string) (signal string, t
 	if err := p.db.SelectContext(ctx, &channels, phoenixChannelInfoQuery, panelID); err == nil && len(channels) > 0 {
 		signal = phoenixSignalText(channels[0].SignalLevel)
 		lastTest = nullTime(channels[0].LastTest)
+		testMsg = phoenixTestControlText(channels[0].TestTimeout)
 	}
 
 	var groups []phoenixObjectGroupRow
@@ -330,7 +331,10 @@ func (p *PhoenixDataProvider) GetExternalData(objectID string) (signal string, t
 	if signal == "" {
 		signal = "—"
 	}
-	return signal, "", lastTest, lastMsg
+	if testMsg == "" {
+		testMsg = "—"
+	}
+	return signal, testMsg, lastTest, lastMsg
 }
 
 func (p *PhoenixDataProvider) GetTestMessages(objectID string) []models.TestMessage {
@@ -360,6 +364,7 @@ func (p *PhoenixDataProvider) buildObjects(rows []phoenixObjectGroupRow) []model
 				Name:          phoenixObjectName(panelID, row.CompanyName, row.GroupName),
 				Address:       strings.TrimSpace(nullString(row.Address)),
 				Phone:         strings.TrimSpace(nullString(row.Telephones)),
+				Phones1:       strings.TrimSpace(nullString(row.Telephones)),
 				ContractNum:   panelID,
 				DeviceType:    strings.TrimSpace(nullString(row.TypeName)),
 				Groups:        make([]models.ObjectGroup, 0, 4),
@@ -527,7 +532,12 @@ func (p *PhoenixDataProvider) applyChannelInfo(obj *models.Object, row phoenixCh
 		obj.ContractNum = value
 	}
 	if value := strings.TrimSpace(nullString(row.ChannelType)); value != "" {
-		obj.DeviceType = value
+		switch {
+		case row.OpenInternetChannelID.Valid:
+			obj.ObjChan = 5
+		case strings.Contains(strings.ToLower(value), "автодозв"), strings.Contains(strings.ToLower(value), "autodial"):
+			obj.ObjChan = 1
+		}
 	}
 	if sim := strings.TrimSpace(nullString(row.SimNumber)); sim != "" {
 		obj.SIM1 = sim
@@ -536,6 +546,13 @@ func (p *PhoenixDataProvider) applyChannelInfo(obj *models.Object, row phoenixCh
 	}
 	obj.SignalStrength = phoenixSignalText(row.SignalLevel)
 	obj.LastTestTime = nullTime(row.LastTest)
+	if timeoutMinutes := phoenixTimeoutMinutes(row.TestTimeout); timeoutMinutes > 0 {
+		obj.TestControl = 1
+		obj.TestTime = timeoutMinutes
+		if timeoutMinutes%60 == 0 {
+			obj.AutoTestHours = int(timeoutMinutes / 60)
+		}
+	}
 }
 
 func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {
@@ -834,6 +851,37 @@ func phoenixDateText(value sql.NullTime) string {
 		return ""
 	}
 	return value.Time.Format("02.01.2006")
+}
+
+func phoenixTimeoutMinutes(value sql.NullTime) int64 {
+	if !value.Valid || value.Time.IsZero() {
+		return 0
+	}
+
+	hours, minutes, seconds := value.Time.Clock()
+	duration := time.Duration(hours)*time.Hour +
+		time.Duration(minutes)*time.Minute +
+		time.Duration(seconds)*time.Second
+	if duration <= 0 {
+		return 0
+	}
+
+	return int64(duration / time.Minute)
+}
+
+func phoenixTestControlText(value sql.NullTime) string {
+	minutes := phoenixTimeoutMinutes(value)
+	if minutes <= 0 {
+		return ""
+	}
+	if minutes%60 == 0 {
+		hours := minutes / 60
+		if hours == 1 {
+			return "кожну 1 год"
+		}
+		return fmt.Sprintf("кожні %d год", hours)
+	}
+	return fmt.Sprintf("кожні %d хв", minutes)
 }
 
 func nullString(value sql.NullString) string {

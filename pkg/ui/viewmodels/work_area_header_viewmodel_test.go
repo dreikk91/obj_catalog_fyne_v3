@@ -40,6 +40,7 @@ func TestWorkAreaHeaderViewModel_ApplyObject(t *testing.T) {
 		ID:          123,
 		Name:        "Object",
 		Address:     "Main St",
+		Phones1:     "380001",
 		ContractNum: "C-001",
 	})
 
@@ -49,7 +50,7 @@ func TestWorkAreaHeaderViewModel_ApplyObject(t *testing.T) {
 	}
 
 	address, _ := vm.HeaderAddressBinding().Get()
-	if address != "📌 Main St | 📄 C-001 | 🧭 БД/МІСТ" {
+	if address != "📌 Main St | ☎️ 380001 | 📄 C-001 | 🧭 БД/МІСТ" {
 		t.Fatalf("unexpected formatted address: %q", address)
 	}
 }

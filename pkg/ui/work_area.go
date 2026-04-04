@@ -228,44 +228,112 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 	w.Location1Label.Wrapping = fyne.TextWrapWord
 	w.CopyLocationBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
 
+	for _, label := range []*widget.Label{
+		w.DeviceTypeLabel,
+		w.PanelMarkLabel,
+		w.PowerLabel,
+		w.SIMLabel,
+		w.SIM1Label,
+		w.SIM2Label,
+		w.AutoTestLabel,
+		w.GuardLabel,
+		w.ChanLabel,
+		w.PhoneLabel,
+		w.AkbLabel,
+		w.TestControlLabel,
+		w.SignalLabel,
+		w.LastTestLabel,
+		w.LastTestTimeLabel,
+		w.LastMessageTimeLabel,
+	} {
+		label.Wrapping = fyne.TextWrapWord
+	}
+
 	notesScroll := container.NewScroll(w.Notes1Label)
 	notesScroll.SetMinSize(fyne.NewSize(0, 80))
 
 	locationScroll := container.NewScroll(w.Location1Label)
 	locationScroll.SetMinSize(fyne.NewSize(0, 60))
 
-	deviceInfo := container.NewVBox(
-		widget.NewLabel("📟 ЗАГАЛЬНА ІНФОРМАЦІЯ:"),
-		widget.NewSeparator(),
-		container.NewHBox(
-			container.NewVBox(w.DeviceTypeLabel, w.PanelMarkLabel, w.SignalLabel, w.PowerLabel, w.ChanLabel),
-			widget.NewSeparator(),
-			container.NewVBox(
-				container.NewBorder(nil, nil, nil, container.NewHBox(w.CopySimBtn), w.SIMLabel),
-				container.NewBorder(nil, nil, nil, container.NewHBox(w.VodafoneSIM1Btn, w.CopySIM1Btn), w.SIM1Label),
-				container.NewBorder(nil, nil, nil, container.NewHBox(w.VodafoneSIM2Btn, w.CopySIM2Btn), w.SIM2Label),
-				container.NewBorder(nil, nil, nil, w.CopyPhonesBtn, w.PhoneLabel),
-				w.AkbLabel,
-				w.AutoTestLabel,
-				w.TestControlLabel,
-				w.LastTestLabel,
-				w.LastTestTimeLabel,
-				w.LastMessageTimeLabel,
-				w.GuardLabel,
-				w.GroupsLabel,
-				widget.NewSeparator(),
-				w.TestLogsBtn,
-			),
+	generalCard := widget.NewCard(
+		"Загальна інформація",
+		"",
+		container.NewVBox(
+			w.DeviceTypeLabel,
+			w.PanelMarkLabel,
+			w.SignalLabel,
+			w.PowerLabel,
+			w.ChanLabel,
+			w.GuardLabel,
+			w.AkbLabel,
+			w.AutoTestLabel,
+			w.TestControlLabel,
+			w.LastTestLabel,
+			w.LastTestTimeLabel,
+			w.LastMessageTimeLabel,
 		),
-		widget.NewSeparator(),
-		widget.NewLabel("📌 РОЗТАШУВАННЯ:"),
+	)
+
+	communicationCard := widget.NewCard(
+		"Зв'язок",
+		"",
+		container.NewVBox(
+			container.NewBorder(nil, nil, nil, container.NewHBox(w.CopySimBtn), w.SIMLabel),
+			container.NewBorder(nil, nil, nil, container.NewHBox(w.VodafoneSIM1Btn, w.CopySIM1Btn), w.SIM1Label),
+			container.NewBorder(nil, nil, nil, container.NewHBox(w.VodafoneSIM2Btn, w.CopySIM2Btn), w.SIM2Label),
+			container.NewBorder(nil, nil, nil, w.CopyPhonesBtn, w.PhoneLabel),
+			widget.NewSeparator(),
+			w.TestLogsBtn,
+		),
+	)
+
+	groupsCard := widget.NewCard("Групи", "", w.GroupsLabel)
+	locationCard := widget.NewCard(
+		"Розташування",
+		"",
 		container.NewBorder(nil, nil, nil, w.CopyLocationBtn, locationScroll),
-		widget.NewLabel("📝 ДОДАТКОВА ІНФОРМАЦІЯ:"),
+	)
+	notesCard := widget.NewCard(
+		"Додаткова інформація",
+		"",
 		container.NewBorder(nil, nil, nil, w.CopyNotesBtn, notesScroll),
 	)
 
-	// Додаємо скрол до всієї вкладки
-	return container.NewScroll(container.NewPadded(container.NewVBox(deviceInfo)))
+	deviceInfo := container.NewVBox(
+		container.NewGridWithColumns(2, generalCard, communicationCard),
+		groupsCard,
+		locationCard,
+		notesCard,
+	)
+
+	// Додаємо скрол до всієї вкладки, але примушуємо контент займати всю доступну ширину.
+	return container.NewScroll(
+		container.New(
+			&summaryTabContentLayout{},
+			container.NewPadded(deviceInfo),
+		),
+	)
+}
+
+type summaryTabContentLayout struct{}
+
+func (l *summaryTabContentLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, obj := range objects {
+		minSize := obj.MinSize()
+		height := minSize.Height
+		if size.Height > height {
+			height = size.Height
+		}
+		obj.Resize(fyne.NewSize(size.Width, height))
+		obj.Move(fyne.NewPos(0, 0))
+	}
+}
+
+func (l *summaryTabContentLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) == 0 {
+		return fyne.NewSize(0, 0)
+	}
+	return objects[0].MinSize()
 }
 
 func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {

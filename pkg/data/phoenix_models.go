@@ -26,16 +26,18 @@ type phoenixObjectGroupRow struct {
 }
 
 type phoenixChannelRow struct {
-	PanelID       string         `db:"panel_id"`
-	DeviceName    sql.NullString `db:"device_name"`
-	ChannelType   sql.NullString `db:"channel_type"`
-	ChannelNo     sql.NullString `db:"channel_no"`
-	LastTest      sql.NullTime   `db:"last_test"`
-	SignalLevel   sql.NullInt64  `db:"signal_level"`
-	DeviceVersion sql.NullInt64  `db:"device_version"`
-	RadioVersion  sql.NullString `db:"radio_version"`
-	SimNumber     sql.NullString `db:"sim_number"`
-	FallbackSIM   sql.NullString `db:"fallback_sim_number"`
+	PanelID               string         `db:"panel_id"`
+	DeviceName            sql.NullString `db:"device_name"`
+	ChannelType           sql.NullString `db:"channel_type"`
+	ChannelNo             sql.NullString `db:"channel_no"`
+	LastTest              sql.NullTime   `db:"last_test"`
+	TestTimeout           sql.NullTime   `db:"test_timeout"`
+	OpenInternetChannelID sql.NullInt64  `db:"open_internet_channel_id"`
+	SignalLevel           sql.NullInt64  `db:"signal_level"`
+	DeviceVersion         sql.NullInt64  `db:"device_version"`
+	RadioVersion          sql.NullString `db:"radio_version"`
+	SimNumber             sql.NullString `db:"sim_number"`
+	FallbackSIM           sql.NullString `db:"fallback_sim_number"`
 }
 
 type phoenixZoneRow struct {

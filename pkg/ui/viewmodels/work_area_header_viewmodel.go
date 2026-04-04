@@ -2,6 +2,7 @@ package viewmodels
 
 import (
 	"fmt"
+	"strings"
 
 	"fyne.io/fyne/v2/data/binding"
 
@@ -38,5 +39,20 @@ func (vm *WorkAreaHeaderViewModel) Reset() {
 
 func (vm *WorkAreaHeaderViewModel) ApplyObject(object models.Object) {
 	_ = vm.headerName.Set(fmt.Sprintf("%s (№%s)", object.Name, ObjectDisplayNumber(object)))
-	_ = vm.headerAddress.Set(fmt.Sprintf("📌 %s | 📄 %s | 🧭 %s", object.Address, object.ContractNum, ObjectSourceByID(object.ID)))
+	parts := make([]string, 0, 4)
+	if address := strings.TrimSpace(object.Address); address != "" {
+		parts = append(parts, "📌 "+address)
+	}
+	phone := strings.TrimSpace(object.Phones1)
+	if phone == "" {
+		phone = strings.TrimSpace(object.Phone)
+	}
+	if phone != "" {
+		parts = append(parts, "☎️ "+phone)
+	}
+	if contract := strings.TrimSpace(object.ContractNum); contract != "" {
+		parts = append(parts, "📄 "+contract)
+	}
+	parts = append(parts, "🧭 "+ObjectSourceByID(object.ID))
+	_ = vm.headerAddress.Set(strings.Join(parts, " | "))
 }

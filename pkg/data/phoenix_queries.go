@@ -67,9 +67,11 @@ const phoenixChannelInfoQuery = `
 SELECT TOP (1)
 	MDC.Panel_id AS panel_id,
 	MDC.Message AS device_name,
-	MDC.ChannelType AS channel_type,
-	MDC.ChannelNo AS channel_no,
-	MDC.LastTest AS last_test,
+	COALESCE(ChannelMeta.channel_type_name, MDC.ChannelType) AS channel_type,
+	COALESCE(ChannelMeta.channel_no, MDC.ChannelNo) AS channel_no,
+	COALESCE(ChannelMeta.last_test, MDC.LastTest) AS last_test,
+	ChannelMeta.test_timeout AS test_timeout,
+	ChannelMeta.open_internet_channel_id AS open_internet_channel_id,
 	M.SignalLevel AS signal_level,
 	MDC.DeviceVersion AS device_version,
 	MDC.RadioVersion AS radio_version,
@@ -80,6 +82,27 @@ INNER JOIN MPhone M WITH (NOLOCK) ON M.Mphone_id = MDC.Mphone_id
 LEFT JOIN Sim S WITH (NOLOCK) ON
 	S.OnBoardDevice_ID = MDC.OnBoardDevice_ID
 	AND (S.IsCurrentSim = 1 OR S.IsCurrentSim IS NULL)
+OUTER APPLY (
+	SELECT TOP (1)
+		cno.ChannelNo AS channel_no,
+		CASE
+			WHEN i.OpenInternetChannel_ID IS NULL THEN crch.CentralReceiverChannel_ID
+			ELSE i.OpenInternetChannel_ID
+		END AS open_internet_channel_id,
+		COALESCE(i.LastTest, crch.LastTest) AS last_test,
+		COALESCE(i.TestTimeout, crch.TestTimeout) AS test_timeout,
+		ct.ChannelType AS channel_type_name
+	FROM Channel AS c WITH (NOLOCK)
+	INNER JOIN ChannelNo AS cno WITH (NOLOCK) ON
+		cno.ChannelNo_ID = c.ChannelNo_ID
+	INNER JOIN ChannelTypes AS ct WITH (NOLOCK) ON
+		ct.ChannelType_id = c.ChannelType_id
+	LEFT JOIN OpenInternetChannel AS i WITH (NOLOCK) ON
+		i.Channel_ID = c.Channel_ID
+	LEFT JOIN CentralReceiverChannel AS crch WITH (NOLOCK) ON
+		crch.Channel_ID = c.Channel_ID
+	WHERE c.Channel_ID = MDC.Channel_ID
+) AS ChannelMeta
 WHERE
 	MDC.Panel_id = @p1
 	AND MDC.IsActive = 1

@@ -60,6 +60,21 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation(t *testing.T) {
 	}
 }
 
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoneFallback(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		Phone: "38000999",
+	})
+
+	if presentation.PhoneText != "☎️ Тел. об'єкта: 38000999" {
+		t.Fatalf("unexpected phone fallback text: %q", presentation.PhoneText)
+	}
+	if presentation.PhoneCopyText != "38000999" {
+		t.Fatalf("unexpected phone fallback copy text: %q", presentation.PhoneCopyText)
+	}
+}
+
 func TestWorkAreaDeviceViewModel_BuildObjectPresentation_NoGuard(t *testing.T) {
 	vm := NewWorkAreaDeviceViewModel()
 
@@ -183,5 +198,27 @@ func TestWorkAreaDeviceViewModel_BuildLoadingExternalPresentation(t *testing.T) 
 	}
 	if presentation.LastTestText != "📝 Тест: ..." {
 		t.Fatalf("unexpected loading test text: %q", presentation.LastTestText)
+	}
+}
+
+func TestFormatWorkAreaTestInterval(t *testing.T) {
+	tests := []struct {
+		name    string
+		minutes int64
+		want    string
+	}{
+		{name: "zero", minutes: 0, want: "—"},
+		{name: "minutes", minutes: 10, want: "кожні 10 хв"},
+		{name: "hours", minutes: 120, want: "кожні 2 год"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := formatWorkAreaTestInterval(tt.minutes); got != tt.want {
+				t.Fatalf("formatWorkAreaTestInterval(%d) = %q, want %q", tt.minutes, got, tt.want)
+			}
+		})
 	}
 }

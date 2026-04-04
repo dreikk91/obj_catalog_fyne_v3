@@ -3,6 +3,7 @@ package data
 import (
 	"database/sql"
 	"testing"
+	"time"
 
 	"obj_catalog_fyne_v3/pkg/models"
 )
@@ -289,5 +290,85 @@ func TestPhoenixBuildObjects_TestPanelMarkedStand(t *testing.T) {
 	}
 	if obj.StatusText != "СТЕНДИ" {
 		t.Fatalf("StatusText = %q, want %q", obj.StatusText, "СТЕНДИ")
+	}
+}
+
+func TestPhoenixTimeoutMinutes(t *testing.T) {
+	tests := []struct {
+		name  string
+		value sql.NullTime
+		want  int64
+	}{
+		{
+			name:  "zero",
+			value: sql.NullTime{},
+			want:  0,
+		},
+		{
+			name: "ten minutes",
+			value: sql.NullTime{
+				Time:  time.Date(1900, time.January, 1, 0, 10, 0, 0, time.UTC),
+				Valid: true,
+			},
+			want: 10,
+		},
+		{
+			name: "two hours",
+			value: sql.NullTime{
+				Time:  time.Date(1900, time.January, 1, 2, 0, 0, 0, time.UTC),
+				Valid: true,
+			},
+			want: 120,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := phoenixTimeoutMinutes(tt.value); got != tt.want {
+				t.Fatalf("phoenixTimeoutMinutes() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPhoenixTestControlText(t *testing.T) {
+	tests := []struct {
+		name  string
+		value sql.NullTime
+		want  string
+	}{
+		{
+			name:  "empty",
+			value: sql.NullTime{},
+			want:  "",
+		},
+		{
+			name: "minutes",
+			value: sql.NullTime{
+				Time:  time.Date(1900, time.January, 1, 0, 10, 0, 0, time.UTC),
+				Valid: true,
+			},
+			want: "кожні 10 хв",
+		},
+		{
+			name: "hours",
+			value: sql.NullTime{
+				Time:  time.Date(1900, time.January, 1, 2, 0, 0, 0, time.UTC),
+				Valid: true,
+			},
+			want: "кожні 2 год",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := phoenixTestControlText(tt.value); got != tt.want {
+				t.Fatalf("phoenixTestControlText() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

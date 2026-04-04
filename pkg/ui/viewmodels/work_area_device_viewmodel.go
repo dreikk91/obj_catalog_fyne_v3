@@ -119,9 +119,16 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 		akbText = "ТРИВОГА (Розряд/Відсутній)"
 	}
 
+	autoTestText := "⏱️ Автотест: —"
+	if obj.AutoTestHours > 0 {
+		autoTestText = fmt.Sprintf("⏱️ Автотест: кожні %d год", obj.AutoTestHours)
+	} else if obj.TestControl > 0 && obj.TestTime > 0 {
+		autoTestText = "⏱️ Автотест: " + formatWorkAreaTestInterval(obj.TestTime)
+	}
+
 	testCtrlText := "Виключено"
 	if obj.TestControl > 0 {
-		testCtrlText = fmt.Sprintf("Активно (кожні %d хв)", obj.TestTime)
+		testCtrlText = "Активно (" + formatWorkAreaTestInterval(obj.TestTime) + ")"
 	}
 
 	guardText := "🔒 ПІД ОХОРОНОЮ"
@@ -146,6 +153,9 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 		panelMark = "—"
 	}
 	phone := strings.TrimSpace(obj.Phones1)
+	if phone == "" {
+		phone = strings.TrimSpace(obj.Phone)
+	}
 	if IsCASLObjectID(obj.ID) || phone == "" {
 		phone = "—"
 	}
@@ -161,7 +171,7 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 		SIM1Value:        sim1,
 		SIM2Value:        sim2,
 		SIMCopyText:      copySimText,
-		AutoTestText:     fmt.Sprintf("⏱️ Автотест: кожні %d год", obj.AutoTestHours),
+		AutoTestText:     autoTestText,
 		GuardText:        guardText,
 		ChannelText:      "📡 Канал: " + channelText,
 		PhoneText:        "☎️ Тел. об'єкта: " + phone,
@@ -173,6 +183,16 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 		LocationText:     obj.Location1,
 		LocationCopyText: obj.Location1,
 	}
+}
+
+func formatWorkAreaTestInterval(minutes int64) string {
+	if minutes <= 0 {
+		return "—"
+	}
+	if minutes%60 == 0 {
+		return fmt.Sprintf("кожні %d год", minutes/60)
+	}
+	return fmt.Sprintf("кожні %d хв", minutes)
 }
 
 func (vm *WorkAreaDeviceViewModel) BuildLoadingExternalPresentation() WorkAreaExternalPresentation {

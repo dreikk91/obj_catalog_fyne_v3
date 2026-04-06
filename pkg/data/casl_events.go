@@ -898,10 +898,15 @@ func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
 	rawEvents, err := p.readEventsByID(ctx, record)
 	if err != nil {
 		log.Debug().Err(err).Int("objectID", internalID).Msg("CASL: не вдалося отримати події об'єкта")
-		return nil
 	}
 
 	events := p.mapCASLObjectEvents(ctx, record, rawEvents)
+	if historyRows, historyErr := p.readGeneralTapeItemRowsForObjectIDs(ctx, []string{strings.TrimSpace(record.ObjID)}); historyErr != nil {
+		log.Debug().Err(historyErr).Int("objectID", internalID).Msg("CASL: не вдалося отримати історію кейсу через get_general_tape_item")
+	} else if len(historyRows) > 0 {
+		historyEvents, _ := p.mapCASLRowsToEvents(ctx, historyRows, 0)
+		events = mergeCASLObjectEvents(events, historyEvents)
+	}
 	sortEvents(events)
 
 	p.mu.Lock()
@@ -910,6 +915,42 @@ func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
 	p.mu.Unlock()
 
 	return events
+}
+
+func mergeCASLObjectEvents(primary []models.Event, secondary []models.Event) []models.Event {
+	if len(primary) == 0 {
+		return append([]models.Event(nil), secondary...)
+	}
+	if len(secondary) == 0 {
+		return append([]models.Event(nil), primary...)
+	}
+
+	out := append([]models.Event(nil), primary...)
+	seen := make(map[string]struct{}, len(out))
+	for _, item := range out {
+		seen[caslObjectEventMergeKey(item)] = struct{}{}
+	}
+
+	for _, item := range secondary {
+		key := caslObjectEventMergeKey(item)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+
+	return out
+}
+
+func caslObjectEventMergeKey(event models.Event) string {
+	return strings.Join([]string{
+		strconv.Itoa(event.ObjectID),
+		strconv.FormatInt(event.Time.UnixMilli(), 10),
+		string(event.Type),
+		strconv.Itoa(event.ZoneNumber),
+		strings.TrimSpace(event.Details),
+	}, "|")
 }
 
 func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
@@ -995,6 +1036,10 @@ func (p *CASLCloudProvider) readGeneralTapeItemRows(ctx context.Context) ([]CASL
 		}
 		objIDs = append(objIDs, objID)
 	}
+	return p.readGeneralTapeItemRowsForObjectIDs(ctx, objIDs)
+}
+
+func (p *CASLCloudProvider) readGeneralTapeItemRowsForObjectIDs(ctx context.Context, objIDs []string) ([]CASLObjectEvent, error) {
 	if len(objIDs) == 0 {
 		return nil, nil
 	}
@@ -1346,14 +1391,15 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 		}
 
 		result = append(result, models.Event{
-			ID:         stableCASLEventID(record.ObjID, ts, code, idx),
-			Time:       eventTime,
-			ObjectID:   objectID,
-			ObjectName: objectName,
-			Type:       eventType,
-			ZoneNumber: zoneNumber,
-			Details:    details,
-			SC1:        mapCASLEventSC1(eventType),
+			ID:           stableCASLEventID(record.ObjID, ts, code, idx),
+			Time:         eventTime,
+			ObjectID:     objectID,
+			ObjectNumber: objectNum,
+			ObjectName:   objectName,
+			Type:         eventType,
+			ZoneNumber:   zoneNumber,
+			Details:      details,
+			SC1:          mapCASLEventSC1(eventType),
 		})
 	}
 

@@ -3,6 +3,7 @@ package ui
 
 import (
 	"image/color"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,25 +26,30 @@ import (
 
 // AlarmPanelWidget - структура для панелі тривог
 type AlarmPanelWidget struct {
-	Container    *fyne.Container
-	List         *widget.List
-	listData     binding.UntypedList
-	SourceSelect *widget.Select
-	Data         contracts.AlarmProvider
-	UseCase      *usecases.AlarmListUseCase
-	ViewModel    *viewmodels.AlarmListViewModel
+	Container     *fyne.Container
+	List          *widget.List
+	listData      binding.UntypedList
+	SourceSelect  *widget.Select
+	Data          contracts.DataProvider
+	UseCase       *usecases.AlarmListUseCase
+	ViewModel     *viewmodels.AlarmListViewModel
+	CaseHistoryVM *viewmodels.WorkAreaCaseHistoryViewModel
 
 	// Кеш даних
-	AllAlarms     []models.Alarm
-	CurrentAlarms []models.Alarm
-	mutex         sync.RWMutex
-	isRefreshing  bool
-	currentSource string
-	selectedIndex int
-	selectedID    int
-	lastClickTime time.Time
-	processBtn    *widget.Button
-	lastKnownIDs  map[int]struct{}
+	AllAlarms            []models.Alarm
+	CurrentAlarms        []models.Alarm
+	mutex                sync.RWMutex
+	isRefreshing         bool
+	currentSource        string
+	selectedIndex        int
+	selectedID           int
+	lastClickTime        time.Time
+	processBtn           *widget.Button
+	lastKnownIDs         map[int]struct{}
+	CaseHistoryTitle     *widget.Label
+	CaseHistoryAccordion *widget.Accordion
+	CaseHistorySection   *fyne.Container
+	caseHistoryLoadingID int
 
 	// OnAlarmSelected викликається при кожному кліку по тривозі (одинарному).
 	OnAlarmSelected func(alarm models.Alarm)
@@ -55,14 +61,16 @@ type AlarmPanelWidget struct {
 	OnNewCriticalAlarm func(alarm models.Alarm)
 	TitleText          *canvas.Text
 	lastFontSize       float32
+	listWidthGuide     *canvas.Rectangle
 }
 
 // NewAlarmPanelWidget створює панель тривог
-func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
+func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 	panel := &AlarmPanelWidget{
 		Data:          provider,
 		UseCase:       usecases.NewAlarmListUseCase(provider),
 		ViewModel:     viewmodels.NewAlarmListViewModel(),
+		CaseHistoryVM: viewmodels.NewWorkAreaCaseHistoryViewModel(),
 		listData:      binding.NewUntypedList(),
 		currentSource: viewmodels.ObjectSourceAll,
 		selectedIndex: -1,
@@ -162,16 +170,7 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 			} else {
 				txt.TextStyle.Bold = false
 			}
-			objNum := alarm.GetObjectNumberDisplay()
-			displayText := alarm.GetTimeDisplay() + " — " + alarm.GetTypeDisplay() + " — №" + objNum
-			if alarm.ZoneNumber > 0 {
-				displayText += "-" + itoa(alarm.ZoneNumber)
-			}
-			displayText += " " + alarm.ObjectName
-			if alarm.Details != "" {
-				displayText += " — " + alarm.Details
-			}
-			txt.Text = displayText
+			txt.Text = formatAlarmListText(alarm)
 
 			if panel.lastFontSize > 0 {
 				txt.TextSize = panel.lastFontSize
@@ -181,6 +180,8 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 			txt.Refresh()
 		},
 	)
+	alarmsScroll, alarmsWidthGuide := newHorizontalJournalScroll(panel.List)
+	panel.listWidthGuide = alarmsWidthGuide
 
 	panel.List.OnSelected = func(id widget.ListItemID) {
 		panel.mutex.Lock()
@@ -212,6 +213,7 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 		if panel.OnAlarmSelected != nil {
 			panel.OnAlarmSelected(selected)
 		}
+		panel.loadCaseHistoryForAlarm(selected)
 
 		// Подвійний клік по тому самому елементу в межах інтервалу
 		// додатково викликає "активацію" (відкриття деталей).
@@ -234,12 +236,25 @@ func NewAlarmPanelWidget(provider contracts.AlarmProvider) *AlarmPanelWidget {
 	})
 	panel.processBtn.Disable()
 
+	panel.CaseHistoryTitle = widget.NewLabel("Хронологія вибраної тривоги CASL")
+	panel.CaseHistoryTitle.TextStyle = fyne.TextStyle{Bold: true}
+	panel.CaseHistoryTitle.Wrapping = fyne.TextWrapWord
+	panel.CaseHistoryAccordion = widget.NewAccordion()
+	panel.CaseHistoryAccordion.MultiOpen = true
+	panel.CaseHistorySection = container.NewVBox(
+		widget.NewSeparator(),
+		panel.CaseHistoryTitle,
+		panel.CaseHistoryAccordion,
+	)
+	panel.CaseHistorySection.Hide()
+
 	actions := container.NewPadded(container.NewBorder(nil, nil, nil, nil, panel.processBtn))
+	body := container.NewBorder(nil, panel.CaseHistorySection, nil, nil, alarmsScroll)
 
 	panel.Container = container.NewBorder(
 		header,
 		actions, nil, nil,
-		panel.List,
+		body,
 	)
 
 	// Перший запуск завантаження
@@ -299,6 +314,7 @@ func (p *AlarmPanelWidget) Refresh() {
 	p.AllAlarms = result.CurrentAlarms
 	p.CurrentAlarms = result.FilteredAlarms
 	p.lastKnownIDs = result.KnownIDs
+	selectionCleared := false
 	if p.selectedID > 0 {
 		found := -1
 		for i := range p.CurrentAlarms {
@@ -312,6 +328,8 @@ func (p *AlarmPanelWidget) Refresh() {
 		} else {
 			p.selectedIndex = -1
 			p.selectedID = 0
+			p.caseHistoryLoadingID = 0
+			selectionCleared = true
 		}
 	}
 	p.mutex.Unlock()
@@ -342,11 +360,15 @@ func (p *AlarmPanelWidget) Refresh() {
 		}
 
 		_ = SetUntypedList(p.listData, result.FilteredAlarms)
+		ensureJournalListMinWidth(p.listWidthGuide, alarmListTexts(result.FilteredAlarms), p.lastFontSize, fyne.TextStyle{Bold: true})
 		if p.List != nil {
 			p.List.Refresh()
 		}
 		if p.processBtn != nil && p.selectedIndex < 0 {
 			p.processBtn.Disable()
+		}
+		if selectionCleared {
+			p.clearCaseHistory()
 		}
 		if p.OnCountsChanged != nil {
 			p.OnCountsChanged(result.Total, result.CriticalCount)
@@ -361,17 +383,49 @@ func (p *AlarmPanelWidget) OnThemeChanged(fontSize float32) {
 	p.lastFontSize = fontSize // safe: just a float32, no UI call
 
 	fyne.Do(func() {
+		p.mutex.RLock()
+		texts := alarmListTexts(p.CurrentAlarms)
+		p.mutex.RUnlock()
+
 		if p.TitleText != nil {
 			p.TitleText.TextSize = fontSize + 1
 			p.TitleText.Refresh()
 		}
 		if p.List != nil {
+			ensureJournalListMinWidth(p.listWidthGuide, texts, fontSize, fyne.TextStyle{Bold: true})
 			p.List.Refresh()
 		}
 		if p.SourceSelect != nil {
 			p.SourceSelect.Refresh()
 		}
+		if p.CaseHistoryTitle != nil {
+			p.CaseHistoryTitle.Refresh()
+		}
+		if p.CaseHistoryAccordion != nil {
+			p.CaseHistoryAccordion.Refresh()
+		}
 	})
+}
+
+func formatAlarmListText(alarm models.Alarm) string {
+	objNum := alarm.GetObjectNumberDisplay()
+	displayText := alarm.GetTimeDisplay() + " — " + alarm.GetTypeDisplay() + " — №" + objNum
+	if alarm.ZoneNumber > 0 {
+		displayText += "-" + itoa(alarm.ZoneNumber)
+	}
+	displayText += " " + alarm.ObjectName
+	if alarm.Details != "" {
+		displayText += " — " + alarm.Details
+	}
+	return displayText
+}
+
+func alarmListTexts(alarms []models.Alarm) []string {
+	texts := make([]string, 0, len(alarms))
+	for _, alarm := range alarms {
+		texts = append(texts, formatAlarmListText(alarm))
+	}
+	return texts
 }
 
 // adjustAlarmRowColor трохи змінює яскравість кольору рядка,
@@ -392,4 +446,119 @@ func adjustAlarmRowColor(c color.NRGBA) color.NRGBA {
 		B: scale(c.B),
 		A: c.A,
 	}
+}
+
+func (p *AlarmPanelWidget) loadCaseHistoryForAlarm(alarm models.Alarm) {
+	if p == nil || p.CaseHistoryVM == nil || p.Data == nil || !viewmodels.IsCASLObjectID(alarm.ObjectID) {
+		p.clearCaseHistory()
+		return
+	}
+
+	p.mutex.Lock()
+	p.caseHistoryLoadingID = alarm.ID
+	p.mutex.Unlock()
+
+	fyne.Do(func() {
+		p.showCaseHistoryLoading(alarm)
+	})
+
+	go func(selected models.Alarm) {
+		events := p.Data.GetObjectEvents(strconv.Itoa(selected.ObjectID))
+		object := &models.Object{ID: selected.ObjectID, Name: selected.ObjectName}
+		group, ok := p.CaseHistoryVM.FindGroupForAlarm(object, selected, events)
+
+		fyne.Do(func() {
+			p.mutex.RLock()
+			stillSelected := p.selectedID == selected.ID && p.caseHistoryLoadingID == selected.ID
+			p.mutex.RUnlock()
+			if !stillSelected {
+				return
+			}
+			if !ok {
+				p.showEmptyCaseHistory(selected)
+				return
+			}
+			p.showCaseHistoryGroup(selected, group)
+		})
+	}(alarm)
+}
+
+func (p *AlarmPanelWidget) showCaseHistoryLoading(alarm models.Alarm) {
+	if p == nil || p.CaseHistorySection == nil || p.CaseHistoryAccordion == nil {
+		return
+	}
+
+	if p.CaseHistoryTitle != nil {
+		p.CaseHistoryTitle.SetText("CASL: завантаження хронології для №" + alarm.GetObjectNumberDisplay())
+	}
+	loading := widget.NewProgressBarInfinite()
+	loading.Start()
+	p.CaseHistoryAccordion.Items = []*widget.AccordionItem{
+		widget.NewAccordionItem("Завантаження подій кейсу", container.NewPadded(loading)),
+	}
+	p.CaseHistoryAccordion.Open(0)
+	p.CaseHistoryAccordion.Refresh()
+	p.CaseHistorySection.Show()
+}
+
+func (p *AlarmPanelWidget) showEmptyCaseHistory(alarm models.Alarm) {
+	if p == nil || p.CaseHistorySection == nil || p.CaseHistoryAccordion == nil {
+		return
+	}
+
+	if p.CaseHistoryTitle != nil {
+		title := "CASL: №" + alarm.GetObjectNumberDisplay()
+		if name := strings.TrimSpace(alarm.ObjectName); name != "" {
+			title += " " + name
+		}
+		p.CaseHistoryTitle.SetText(title)
+	}
+	label := widget.NewLabel("Для цієї тривоги не вдалося знайти деталізовану хронологію подій.")
+	label.Wrapping = fyne.TextWrapWord
+	p.CaseHistoryAccordion.Items = []*widget.AccordionItem{
+		widget.NewAccordionItem("Хронологія недоступна", container.NewPadded(label)),
+	}
+	p.CaseHistoryAccordion.Open(0)
+	p.CaseHistoryAccordion.Refresh()
+	p.CaseHistorySection.Show()
+}
+
+func (p *AlarmPanelWidget) showCaseHistoryGroup(alarm models.Alarm, group viewmodels.WorkAreaCaseHistoryGroup) {
+	if p == nil || p.CaseHistorySection == nil || p.CaseHistoryAccordion == nil {
+		return
+	}
+
+	if p.CaseHistoryTitle != nil {
+		title := "CASL: №" + alarm.GetObjectNumberDisplay()
+		if name := strings.TrimSpace(alarm.ObjectName); name != "" {
+			title += " " + name
+		}
+		if summary := strings.TrimSpace(group.Title); summary != "" {
+			title += " | " + summary
+		}
+		p.CaseHistoryTitle.SetText(title)
+	}
+
+	p.CaseHistoryAccordion.Items = []*widget.AccordionItem{
+		widget.NewAccordionItem(
+			group.Title,
+			buildCaseHistoryEventList(group),
+		),
+	}
+	p.CaseHistoryAccordion.Open(0)
+	p.CaseHistoryAccordion.Refresh()
+	p.CaseHistorySection.Show()
+}
+
+func (p *AlarmPanelWidget) clearCaseHistory() {
+	if p == nil || p.CaseHistorySection == nil || p.CaseHistoryAccordion == nil {
+		return
+	}
+
+	if p.CaseHistoryTitle != nil {
+		p.CaseHistoryTitle.SetText("Хронологія вибраної тривоги CASL")
+	}
+	p.CaseHistoryAccordion.Items = nil
+	p.CaseHistoryAccordion.Refresh()
+	p.CaseHistorySection.Hide()
 }

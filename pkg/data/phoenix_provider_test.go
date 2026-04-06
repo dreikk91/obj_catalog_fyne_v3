@@ -293,6 +293,59 @@ func TestPhoenixBuildObjects_TestPanelMarkedStand(t *testing.T) {
 	}
 }
 
+func TestPhoenixBuildPhoenixAlarms_ReturnsOnlyActiveAlarmRows(t *testing.T) {
+	provider := NewPhoenixDataProvider(nil, "")
+	rows := []phoenixObjectGroupRow{
+		{
+			PanelID:     "L00031",
+			GroupNo:     1,
+			GroupName:   sql.NullString{String: "Офіс", Valid: true},
+			CompanyName: sql.NullString{String: "Компанія 31", Valid: true},
+			Address:     sql.NullString{String: "Адреса 31", Valid: true},
+			GroupTime:   sql.NullTime{Time: time.Date(2026, time.April, 6, 14, 0, 0, 0, time.UTC), Valid: true},
+			StateEvent:  sql.NullInt64{Int64: 2, Valid: true},
+		},
+		{
+			PanelID:     "L00031",
+			GroupNo:     2,
+			GroupName:   sql.NullString{String: "Стенд", Valid: true},
+			TestPanel:   sql.NullBool{Bool: true, Valid: true},
+			StateEvent:  sql.NullInt64{Int64: 2, Valid: true},
+			CompanyName: sql.NullString{String: "Компанія 31", Valid: true},
+			GroupTime:   sql.NullTime{Time: time.Date(2026, time.April, 6, 14, 1, 0, 0, time.UTC), Valid: true},
+		},
+		{
+			PanelID:     "L00032",
+			GroupNo:     1,
+			GroupName:   sql.NullString{String: "Склад", Valid: true},
+			CompanyName: sql.NullString{String: "Компанія 32", Valid: true},
+			StateEvent:  sql.NullInt64{Int64: 1, Valid: true},
+		},
+	}
+
+	alarms := provider.buildPhoenixAlarms(rows)
+	if len(alarms) != 1 {
+		t.Fatalf("buildPhoenixAlarms() returned %d alarms, want 1", len(alarms))
+	}
+
+	alarm := alarms[0]
+	if alarm.ObjectNumber != "L00031" {
+		t.Fatalf("ObjectNumber = %q, want L00031", alarm.ObjectNumber)
+	}
+	if alarm.ObjectName != "Компанія 31" {
+		t.Fatalf("ObjectName = %q, want Компанія 31", alarm.ObjectName)
+	}
+	if alarm.Details != "Офіс" {
+		t.Fatalf("Details = %q, want Офіс", alarm.Details)
+	}
+	if alarm.Type != models.AlarmFire {
+		t.Fatalf("Type = %q, want %q", alarm.Type, models.AlarmFire)
+	}
+	if alarm.SC1 != 1 {
+		t.Fatalf("SC1 = %d, want 1", alarm.SC1)
+	}
+}
+
 func TestPhoenixTimeoutMinutes(t *testing.T) {
 	tests := []struct {
 		name  string

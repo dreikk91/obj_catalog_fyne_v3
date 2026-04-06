@@ -287,7 +287,20 @@ func (p *PhoenixDataProvider) GetLatestEventID() (int64, error) {
 }
 
 func (p *PhoenixDataProvider) GetAlarms() []models.Alarm {
-	return nil
+	if p == nil || p.db == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	var rows []phoenixObjectGroupRow
+	if err := p.db.SelectContext(ctx, &rows, phoenixObjectsListQuery); err != nil {
+		log.Error().Err(err).Msg("Phoenix: помилка отримання активних тривог")
+		return nil
+	}
+
+	return p.buildPhoenixAlarms(rows)
 }
 
 func (p *PhoenixDataProvider) ProcessAlarm(id string, user string, note string) {}
@@ -394,6 +407,61 @@ func (p *PhoenixDataProvider) buildObjects(rows []phoenixObjectGroupRow) []model
 		result = append(result, *obj)
 	}
 	return result
+}
+
+func (p *PhoenixDataProvider) buildPhoenixAlarms(rows []phoenixObjectGroupRow) []models.Alarm {
+	if len(rows) == 0 {
+		return nil
+	}
+
+	alarms := make([]models.Alarm, 0, len(rows))
+	for _, row := range rows {
+		panelID := strings.TrimSpace(row.PanelID)
+		if panelID == "" {
+			continue
+		}
+		if !phoenixStateIsAlarm(row.StateEvent) {
+			continue
+		}
+		if nullBool(row.TestPanel) || nullBool(row.GroupDisabled) || nullBool(row.PanelDisabled) {
+			continue
+		}
+
+		objectID := p.registerPanelID(panelID)
+		objectName := phoenixObjectName(panelID, row.CompanyName, row.GroupName)
+		details := phoenixGroupName(row.GroupNo, row.GroupName)
+		if details == "" {
+			details = "Тривога Phoenix"
+		}
+
+		alarmTime := time.Now()
+		if ts := nullTime(row.GroupTime); !ts.IsZero() {
+			alarmTime = normalizePhoenixEventTime(ts)
+		}
+
+		alarms = append(alarms, models.Alarm{
+			ID:           stablePhoenixID(panelID, strconv.Itoa(row.GroupNo), "alarm"),
+			ObjectID:     objectID,
+			ObjectNumber: panelID,
+			ObjectName:   objectName,
+			Address:      strings.TrimSpace(nullString(row.Address)),
+			Time:         alarmTime,
+			Details:      details,
+			Type:         models.AlarmFire,
+			SC1:          1,
+		})
+	}
+
+	sort.SliceStable(alarms, func(i, j int) bool {
+		left := alarms[i].Time
+		right := alarms[j].Time
+		if left.Equal(right) {
+			return alarms[i].ID > alarms[j].ID
+		}
+		return left.After(right)
+	})
+
+	return alarms
 }
 
 func (p *PhoenixDataProvider) applyPhoenixObjectState(obj *models.Object, row phoenixObjectGroupRow) {
@@ -689,7 +757,7 @@ func phoenixEffectiveDisabled(groupDisabled sql.NullBool, panelDisabled sql.Null
 
 func phoenixGroupStateText(isOpen sql.NullBool, groupDisabled sql.NullBool, testPanel sql.NullBool, stateEvent sql.NullInt64) string {
 	switch {
-	case nullInt64(stateEvent) == 2 || nullInt64(stateEvent) == 3:
+	case phoenixStateIsAlarm(stateEvent):
 		return "ТРИВОГА"
 	case nullBool(testPanel):
 		return phoenixStandStateText
@@ -700,6 +768,10 @@ func phoenixGroupStateText(isOpen sql.NullBool, groupDisabled sql.NullBool, test
 	default:
 		return "ПІД ОХОРОНОЮ"
 	}
+}
+
+func phoenixStateIsAlarm(stateEvent sql.NullInt64) bool {
+	return nullInt64(stateEvent) == 2 || nullInt64(stateEvent) == 3
 }
 
 func phoenixZoneStatus(status sql.NullInt64) models.ZoneStatus {

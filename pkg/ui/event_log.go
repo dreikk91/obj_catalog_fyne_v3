@@ -45,6 +45,7 @@ type EventLogPanel struct {
 	isRefreshing   bool
 	TitleText      *canvas.Text
 	lastFontSize   float32
+	listWidthGuide *canvas.Rectangle
 
 	// Поточний об'єкт для контекстного відображення подій
 	currentObject *models.Object
@@ -168,20 +169,8 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 			txt.Color = textColor
 
 			// Для непідготовленого користувача: стабільний читабельний формат рядка.
-			// [дата/час] — [# об'єкта] - [назва об'єкта] — [тип] — [зона/деталі]
-			objectID := strings.TrimSpace(event.ObjectNumber)
-			objectName := strings.TrimSpace(event.ObjectName)
-			if objectName == "" {
-				objectName = "Об'єкт"
-			}
-			text := event.GetDateTimeDisplay() + " — " + objectID + " — " + objectName + " — " + event.GetTypeDisplay()
-			if event.ZoneNumber > 0 {
-				text += " — Зона " + itoa(event.ZoneNumber)
-			}
-			if event.Details != "" {
-				text += " — " + event.Details
-			}
-			txt.Text = text
+			// [іконка] [дата/час] — [# об'єкта] - [назва об'єкта] — [тип] — [зона/деталі]
+			txt.Text = formatEventLogRowText(event)
 			if panel.lastFontSize > 0 {
 				txt.TextSize = panel.lastFontSize
 			} else {
@@ -190,6 +179,8 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 			txt.Refresh()
 		},
 	)
+	eventsScroll, eventsWidthGuide := newHorizontalJournalScroll(panel.List)
+	panel.listWidthGuide = eventsWidthGuide
 
 	panel.List.OnSelected = func(id widget.ListItemID) {
 		// Забираємо подію під read-lock, а колбек викликаємо вже без блокування,
@@ -213,7 +204,7 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	panel.Container = container.NewBorder(
 		header,
 		nil, nil, nil,
-		panel.List,
+		eventsScroll,
 	)
 
 	// Перший запуск завантаження
@@ -330,6 +321,7 @@ func (p *EventLogPanel) applyFilters() {
 		}
 
 		_ = SetUntypedList(p.listData, out.Filtered)
+		ensureJournalListMinWidth(p.listWidthGuide, eventLogRowTexts(out.Filtered), p.lastFontSize, fyne.TextStyle{})
 		if p.OnCountChanged != nil {
 			p.OnCountChanged(out.Count)
 		}
@@ -392,6 +384,10 @@ func (p *EventLogPanel) OnThemeChanged(fontSize float32) {
 		p.TitleText.Refresh()
 	}
 	if p.List != nil {
+		p.mutex.RLock()
+		texts := eventLogRowTexts(p.FilteredEvents)
+		p.mutex.RUnlock()
+		ensureJournalListMinWidth(p.listWidthGuide, texts, fontSize, fyne.TextStyle{})
 		p.List.Refresh()
 	}
 	if p.RangeSelect != nil {
@@ -412,6 +408,30 @@ func (p *EventLogPanel) SetCurrentObject(obj *models.Object) {
 	p.currentObject = obj
 	p.mutex.Unlock()
 	p.applyFilters()
+}
+
+func formatEventLogRowText(event models.Event) string {
+	objectID := strings.TrimSpace(event.ObjectNumber)
+	objectName := strings.TrimSpace(event.ObjectName)
+	if objectName == "" {
+		objectName = "Об'єкт"
+	}
+	text := event.GetDateTimeDisplay() + " " + getEventIcon(event.Type) + " — " + objectID + " — " + objectName + " — " + event.GetTypeDisplay()
+	if event.ZoneNumber > 0 {
+		text += " — Зона " + itoa(event.ZoneNumber)
+	}
+	if event.Details != "" {
+		text += " — " + event.Details
+	}
+	return text
+}
+
+func eventLogRowTexts(events []models.Event) []string {
+	texts := make([]string, 0, len(events))
+	for _, event := range events {
+		texts = append(texts, formatEventLogRowText(event))
+	}
+	return texts
 }
 
 func getEventImportance(event models.Event) widget.Importance {

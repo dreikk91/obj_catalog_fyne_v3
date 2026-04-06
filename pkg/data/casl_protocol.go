@@ -63,6 +63,8 @@ func classifyCASLEventType(code string) models.EventType {
 		return models.EventFire
 	case strings.Contains(valueLower, "пожеж"), strings.Contains(valueLower, "дим"), strings.Contains(valueLower, "тепл"):
 		return models.EventFire
+	case isCASLPeriodicTestValue(value, valueLower):
+		return models.EventTest
 	case strings.Contains(value, "R402"),
 		strings.Contains(value, "GROUP_ON"),
 		strings.Contains(value, "GROUP_ON_USER"),
@@ -140,18 +142,33 @@ func classifyCASLEventType(code string) models.EventType {
 		return models.EventBatteryLow
 	case strings.Contains(valueLower, "акб") && strings.Contains(valueLower, "розряд"):
 		return models.EventBatteryLow
-	case strings.Contains(value, "TEST"):
-		return models.EventTest
-	case strings.Contains(value, "POLL"), strings.Contains(value, "PING"), strings.Contains(value, "PONG"):
-		return models.EventTest
 	default:
 		return models.EventFault
+	}
+}
+
+func isCASLPeriodicTestValue(value string, valueLower string) bool {
+	switch {
+	case strings.Contains(value, "NO_POLL"), strings.Contains(value, "NO_PING"), strings.Contains(value, "NO_PONG"):
+		return false
+	case strings.Contains(value, "TEST"),
+		strings.Contains(value, "POLL"),
+		strings.Contains(value, "PING"),
+		strings.Contains(value, "PONG"),
+		strings.Contains(valueLower, "опитуван"),
+		strings.Contains(valueLower, "тестов"),
+		strings.Contains(valueLower, "періодич") && strings.Contains(valueLower, "тест"):
+		return true
+	default:
+		return false
 	}
 }
 
 func mapCASLTapeEventType(raw string) models.EventType {
 	value := strings.ToLower(strings.TrimSpace(raw))
 	switch value {
+	case "alarm":
+		return models.EventAlarmNotification
 	case "fire":
 		return models.EventFire
 	case "burglary":
@@ -188,6 +205,8 @@ func mapCASLTapeEventType(raw string) models.EventType {
 		return models.EventOnline
 	case "system":
 		return models.SystemEvent
+	case "notification":
+		return models.EventNotification
 	case "user_action":
 		return models.EventOperatorAction
 	case "mgr_action":

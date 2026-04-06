@@ -600,6 +600,21 @@ func TestClassifyCASLEventType_CASLCategories(t *testing.T) {
 	}
 }
 
+func TestClassifyCASLEventType_PeriodicPollResponseIsTest(t *testing.T) {
+	t.Parallel()
+
+	const details = "Відповідь на опитування - норма шлейфа № 7"
+
+	if got := classifyCASLEventType(details); got != models.EventTest {
+		t.Fatalf("expected EventTest for periodic poll response details, got %s", got)
+	}
+
+	got := classifyCASLEventTypeWithContext("61184", "", "ppk_event", details)
+	if got != models.EventTest {
+		t.Fatalf("expected EventTest for periodic poll response context, got %s", got)
+	}
+}
+
 func TestMapEventTypeToAlarmType_CASLCategories(t *testing.T) {
 	t.Parallel()
 
@@ -1065,6 +1080,8 @@ func TestCASLProvider_ObjectDetailsEndpoints(t *testing.T) {
 				_, _ = w.Write([]byte(`{"status":"ok","data":[{"user_id":"3","last_name":"Petrenko","first_name":"Ihor","middle_name":"M","role":"IN_CHARGE","phone_numbers":[{"active":true,"number":"+380971112233"}]}]}`))
 			case "read_events_by_id":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[{"ppk_num":1003,"time":1774769226380,"code":"GROUP_ON","type":"ppk_event","number":1,"contact_id":"R401"}]}`))
+			case "get_general_tape_item":
+				_, _ = w.Write([]byte(`{"status":"ok","data":{"24":[]}}`))
 			case "read_device_state":
 				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":-1,"accum":-1,"door":-1,"online":0,"lastPingDate":` + strconv.FormatInt(lastPing, 10) + `,"lines":{},"groups":{},"adapters":{}}}`))
 			case "get_objects_statistic":
@@ -1131,6 +1148,79 @@ func TestCASLProvider_ObjectDetailsEndpoints(t *testing.T) {
 	}
 	if lastMsg.IsZero() {
 		t.Fatalf("expected non-zero last message time")
+	}
+}
+
+func TestCASLProvider_GetObjectEvents_IncludesGeneralTapeItemHistory(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-history","user_id":"u-history","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"51","name":"1004 Будинок","address":"Addr 51","device_id":"23","device_number":1004}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"51","number":1004,"type":"TYPE_DEVICE_CASL"}]}`))
+			case "read_user":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_events_by_id":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{"translate":{"uk":{"E130":"Тривога в зоні № {number}","R130":"Норма в зоні № {number}"}}}}`))
+			case "get_msg_translator_by_device_type":
+				_, _ = w.Write([]byte(`{"status":"ok","data":{"E130":"Тривога в зоні № {number}","R130":"Норма в зоні № {number}"}}`))
+			case "get_general_tape_item":
+				_, _ = w.Write([]byte(`{"status":"ok","data":{"51":[{"dict_name":"GRD_OBJ_PICK","time":1775479716847},{"dict_name":"GRD_OBJ_NOTIF","time":1775479707727},{"code":"ZONE_ALM","time":1775479707370,"number":4,"contact_id":"E130"},{"code":"ZONE_NORM","time":1775479708821,"number":4,"contact_id":"R130"}]}}`))
+			default:
+				t.Fatalf("unexpected command type: %s", cmdType)
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+
+	objectID := strconv.Itoa(objects[0].ID)
+	events := provider.GetObjectEvents(objectID)
+	if len(events) != 4 {
+		t.Fatalf("expected 4 case history events, got %d", len(events))
+	}
+	if events[0].Type != models.EventOperatorAction {
+		t.Fatalf("expected latest history event to be operator action, got %s", events[0].Type)
+	}
+	if !strings.Contains(events[0].Details, "Взяття в роботу") {
+		t.Fatalf("expected GRD_OBJ_PICK details in latest event, got %q", events[0].Details)
+	}
+	foundAlarm := false
+	foundRestore := false
+	for _, item := range events {
+		if item.Type == models.EventBurglary && strings.Contains(item.Details, "Тривога в зоні") {
+			foundAlarm = true
+		}
+		if item.Type == models.EventRestore && strings.Contains(item.Details, "Норма в зоні") {
+			foundRestore = true
+		}
+	}
+	if !foundAlarm {
+		t.Fatalf("expected zone alarm in case history, got %+v", events)
+	}
+	if !foundRestore {
+		t.Fatalf("expected zone restore in case history, got %+v", events)
 	}
 }
 
@@ -1660,6 +1750,56 @@ func TestCASLProvider_GetAlarms_FromGeneralTapeObjects_PreservesObjectNumber(t *
 	}
 	if got := alarms[0].GetObjectNumberDisplay(); got != "1004" {
 		t.Fatalf("alarm display number = %q, want 1004", got)
+	}
+}
+
+func TestCASLProvider_GetAlarms_FromGeneralTapeObjects_GenericAlarmTypeDoesNotBecomeFault(t *testing.T) {
+	t.Parallel()
+
+	nowMs := time.Now().UnixMilli()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_events":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_from_basket":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"25","name":"1004 Будинок Хіміч Н.П.","device_id":"23","device_number":1004}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"25","number":1004,"type":"TYPE_DEVICE_CASL"}]}`))
+			case "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{"alarm_reasons":{"12":"Пожежа"}}}`))
+			case "get_msg_translator_by_device_type":
+				_, _ = w.Write([]byte(`{"status":"ok","data":{}}`))
+			case "get_general_tape_objects":
+				_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"ok","data":[{"obj_id":"25","obj_name":"1004 Будинок Хіміч Н.П.","time":%d,"event_type":"alarm","reasonAlarm":"12","zone":4}]}`, nowMs)))
+			default:
+				t.Fatalf("unexpected command type: %s", cmdType)
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "token", 1)
+	alarms := provider.GetAlarms()
+	if len(alarms) != 1 {
+		t.Fatalf("expected 1 alarm from generic get_general_tape_objects alarm row, got %d", len(alarms))
+	}
+	if alarms[0].Type != models.AlarmNotification {
+		t.Fatalf("alarm type = %s, want %s", alarms[0].Type, models.AlarmNotification)
+	}
+	if alarms[0].SC1 != mapCASLEventSC1(models.EventAlarmNotification) {
+		t.Fatalf("alarm SC1 = %d, want %d", alarms[0].SC1, mapCASLEventSC1(models.EventAlarmNotification))
 	}
 }
 

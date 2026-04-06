@@ -32,6 +32,7 @@ type WorkAreaPanel struct {
 	Container       *fyne.Container
 	Data            contracts.WorkAreaProvider
 	ViewModel       *viewmodels.WorkAreaViewModel
+	CaseHistoryVM   *viewmodels.WorkAreaCaseHistoryViewModel
 	HeaderVM        *viewmodels.WorkAreaHeaderViewModel
 	DeviceVM        *viewmodels.WorkAreaDeviceViewModel
 	GroupSectionsVM *viewmodels.WorkAreaGroupSectionsViewModel
@@ -101,13 +102,16 @@ type WorkAreaPanel struct {
 	CopyLocationBtn *widget.Button
 
 	// Таблиці
-	ZonesTable          *widget.Table
-	ContactsList        *widget.List
-	EventsList          *widget.List
-	ZonesContent        *fyne.Container
-	ContactsContent     *fyne.Container
-	ZonesFlatContent    fyne.CanvasObject
-	ContactsFlatContent fyne.CanvasObject
+	ZonesTable           *widget.Table
+	ContactsList         *widget.List
+	EventsList           *widget.List
+	CaseHistoryAccordion *widget.Accordion
+	CaseHistorySection   *fyne.Container
+	ZonesContent         *fyne.Container
+	ContactsContent      *fyne.Container
+	ZonesFlatContent     fyne.CanvasObject
+	ContactsFlatContent  fyne.CanvasObject
+	EventsWidthGuide     *canvas.Rectangle
 }
 
 // NewWorkAreaPanel створює робочу область
@@ -115,6 +119,7 @@ func NewWorkAreaPanel(provider contracts.WorkAreaProvider, window fyne.Window) *
 	panel := &WorkAreaPanel{
 		Data:            provider,
 		ViewModel:       viewmodels.NewWorkAreaViewModel(),
+		CaseHistoryVM:   viewmodels.NewWorkAreaCaseHistoryViewModel(),
 		HeaderVM:        viewmodels.NewWorkAreaHeaderViewModel(),
 		DeviceVM:        viewmodels.NewWorkAreaDeviceViewModel(),
 		GroupSectionsVM: viewmodels.NewWorkAreaGroupSectionsViewModel(),
@@ -763,23 +768,16 @@ func (w *WorkAreaPanel) createEventsTab() fyne.CanvasObject {
 
 			txt.Color = textColor
 
-			// Формат: час | Зона N | тип — деталі
-			text := event.GetDateTimeDisplay()
-			if event.ZoneNumber > 0 {
-				text += " | Зона " + itoa(event.ZoneNumber)
-			}
-			text += " | " + event.GetTypeDisplay()
-			if event.Details != "" {
-				text += " — " + event.Details
-			}
-			txt.Text = text
+			txt.Text = formatWorkAreaEventRowText(event)
 			txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(fyneTheme.SizeNameText)
 			txt.Refresh()
 		},
 	)
 
+	eventsScroll, eventsWidthGuide := newHorizontalJournalScroll(eventsList)
 	w.EventsList = eventsList
-	return eventsList
+	w.EventsWidthGuide = eventsWidthGuide
+	return eventsScroll
 }
 
 // SetObject встановлює об'єкт та запускає фонове завантаження деталей
@@ -987,6 +985,53 @@ func (w *WorkAreaPanel) syncEventsDataBinding() {
 		return
 	}
 	_ = SetUntypedList(w.EventsData, w.Events)
+	fyne.Do(func() {
+		ensureJournalListMinWidth(w.EventsWidthGuide, workAreaEventRowTexts(w.Events), 0, fyne.TextStyle{})
+		if w.EventsList != nil {
+			w.EventsList.Refresh()
+		}
+	})
+}
+
+func (w *WorkAreaPanel) refreshCaseHistoryAccordion() {
+	if w == nil || w.CaseHistoryAccordion == nil || w.CaseHistorySection == nil || w.CaseHistoryVM == nil {
+		return
+	}
+
+	groups := w.CaseHistoryVM.BuildGroups(w.CurrentObject, w.Events)
+	if len(groups) == 0 {
+		w.CaseHistoryAccordion.Items = nil
+		w.CaseHistoryAccordion.Refresh()
+		w.CaseHistorySection.Hide()
+		return
+	}
+
+	items := make([]*widget.AccordionItem, 0, len(groups))
+	for _, group := range groups {
+		rows := make([]fyne.CanvasObject, 0, len(group.Events))
+		for _, event := range group.Events {
+			line := event.GetDateTimeDisplay()
+			if event.ZoneNumber > 0 {
+				line += " | Зона " + itoa(event.ZoneNumber)
+			}
+			line += " | " + event.GetTypeDisplay()
+			if details := strings.TrimSpace(event.Details); details != "" {
+				line += " — " + details
+			}
+
+			label := widget.NewLabel(line)
+			label.Wrapping = fyne.TextWrapWord
+			rows = append(rows, label)
+		}
+		items = append(items, widget.NewAccordionItem(
+			group.Title,
+			container.NewPadded(container.NewVBox(rows...)),
+		))
+	}
+
+	w.CaseHistoryAccordion.Items = items
+	w.CaseHistoryAccordion.Refresh()
+	w.CaseHistorySection.Show()
 }
 
 func (w *WorkAreaPanel) isJournalTabSelected() bool {
@@ -1224,6 +1269,7 @@ func (w *WorkAreaPanel) OnThemeChanged(fontSize float32) {
 		w.ContactsList.Refresh()
 	}
 	if w.EventsList != nil {
+		ensureJournalListMinWidth(w.EventsWidthGuide, workAreaEventRowTexts(w.Events), fontSize, fyne.TextStyle{})
 		w.EventsList.Refresh()
 	}
 	if w.ZonesContent != nil {
@@ -1232,4 +1278,24 @@ func (w *WorkAreaPanel) OnThemeChanged(fontSize float32) {
 	if w.ContactsContent != nil {
 		w.ContactsContent.Refresh()
 	}
+}
+
+func formatWorkAreaEventRowText(event models.Event) string {
+	text := event.GetDateTimeDisplay() + " " + getEventIcon(event.Type)
+	if event.ZoneNumber > 0 {
+		text += " | Зона " + itoa(event.ZoneNumber)
+	}
+	text += " | " + event.GetTypeDisplay()
+	if event.Details != "" {
+		text += " — " + event.Details
+	}
+	return text
+}
+
+func workAreaEventRowTexts(events []models.Event) []string {
+	texts := make([]string, 0, len(events))
+	for _, event := range events {
+		texts = append(texts, formatWorkAreaEventRowText(event))
+	}
+	return texts
 }

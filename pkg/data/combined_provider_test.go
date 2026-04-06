@@ -171,3 +171,56 @@ func TestCombinedDataProvider_GetLatestEventID_ChangesWhenAnySourceChanges(t *te
 		t.Fatalf("cursor must change when secondary source changes: %d == %d", third, second)
 	}
 }
+
+func TestCombinedDataProvider_MergesBridgePhoenixAndCASLAlarms(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	phoenixObjID := phoenixObjectIDNamespaceStart + 10
+	caslObjID := caslObjectIDNamespaceStart + 20
+
+	provider := NewMultiSourceDataProvider(
+		ProviderSource{
+			Name: "bridge",
+			Provider: &combinedStubProvider{
+				alarms: []models.Alarm{
+					{ID: 101, ObjectID: 101, ObjectNumber: "101", ObjectName: "Bridge object", Time: now.Add(-3 * time.Minute)},
+				},
+			},
+		},
+		ProviderSource{
+			Name:         "phoenix",
+			OwnsObjectID: IsPhoenixObjectID,
+			OwnsAlarmID:  IsPhoenixObjectID,
+			Provider: &combinedStubProvider{
+				alarms: []models.Alarm{
+					{ID: 201, ObjectID: phoenixObjID, ObjectNumber: "L00028", ObjectName: "Phoenix object", Time: now.Add(-2 * time.Minute)},
+				},
+			},
+		},
+		ProviderSource{
+			Name:         "casl",
+			OwnsObjectID: IsCASLObjectID,
+			OwnsAlarmID:  IsCASLObjectID,
+			Provider: &combinedStubProvider{
+				alarms: []models.Alarm{
+					{ID: 301, ObjectID: caslObjID, ObjectNumber: "1004", ObjectName: "CASL object", Time: now.Add(-1 * time.Minute)},
+				},
+			},
+		},
+	)
+
+	alarms := provider.GetAlarms()
+	if len(alarms) != 3 {
+		t.Fatalf("expected 3 merged alarms, got %d", len(alarms))
+	}
+	if alarms[0].ObjectID != caslObjID {
+		t.Fatalf("latest alarm must be CASL, got objectID=%d", alarms[0].ObjectID)
+	}
+	if alarms[1].ObjectID != phoenixObjID {
+		t.Fatalf("second alarm must be Phoenix, got objectID=%d", alarms[1].ObjectID)
+	}
+	if alarms[2].ObjectID != 101 {
+		t.Fatalf("third alarm must be Bridge, got objectID=%d", alarms[2].ObjectID)
+	}
+}

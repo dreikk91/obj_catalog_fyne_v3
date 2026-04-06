@@ -55,7 +55,7 @@ func defaultLightColorMapping() map[int]ColorPair {
 		},
 		11: { // Disarmed
 			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
-			Row:  color.NRGBA{R: 128, G: 128, B: 0, A: 255},
+			Row:  color.NRGBA{R: 70, G: 120, B: 170, A: 255},
 		},
 		12: { // ConnFailed
 			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
@@ -168,8 +168,8 @@ func defaultDarkColorMapping() map[int]ColorPair {
 			Row:  color.NRGBA{R: 25, G: 85, B: 60, A: 255},    // rgb(25,85,60)
 		},
 		11: { // Disarmed
-			Text: color.NRGBA{R: 255, G: 240, B: 180, A: 255},
-			Row:  color.NRGBA{R: 90, G: 85, B: 30, A: 255},
+			Text: color.NRGBA{R: 210, G: 230, B: 255, A: 255},
+			Row:  color.NRGBA{R: 35, G: 55, B: 80, A: 255},
 		},
 		12: { // ConnFailed
 			Text: color.NRGBA{R: 255, G: 245, B: 180, A: 255}, // rgb(255,245,180)

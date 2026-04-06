@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"os"
@@ -315,6 +316,7 @@ func (s *caslObjectEditorState) initLists() {
 func (s *caslObjectEditorState) buildObjectTab() fyne.CanvasObject {
 	s.objectSaveBtn = widget.NewButton("Зберегти об'єкт", s.submitObject)
 	addImageBtn := widget.NewButton("Додати фото", s.uploadObjectImage)
+	pickCoordsBtn := widget.NewButton("Вибрати на карті", s.pickObjectCoordinatesOnMap)
 	objectImagesScroll := container.NewVScroll(s.objectImagesBox)
 	objectImagesArea := fixedMinHeightArea(560, objectImagesScroll)
 
@@ -336,6 +338,7 @@ func (s *caslObjectEditorState) buildObjectTab() fyne.CanvasObject {
 	locationForm := widget.NewForm(
 		widget.NewFormItem("Широта", s.objectLatEntry),
 		widget.NewFormItem("Довгота", s.objectLongEntry),
+		widget.NewFormItem("", container.NewHBox(pickCoordsBtn)),
 		widget.NewFormItem("Опис", s.objectDescriptionEntry),
 		widget.NewFormItem("Примітка", s.objectNoteEntry),
 	)
@@ -1649,6 +1652,24 @@ func (s *caslObjectEditorState) currentRoomImages() []string {
 	return nil
 }
 
+func (s *caslObjectEditorState) pickObjectCoordinatesOnMap() {
+	showCoordinatesMapPickerWithOptions(
+		s.win,
+		strings.TrimSpace(s.objectLatEntry.Text),
+		strings.TrimSpace(s.objectLongEntry.Text),
+		coordinatesMapPickerOptions{
+			Title:           "Вибір координат об'єкта",
+			InitialAddress:  strings.TrimSpace(s.objectAddressEntry.Text),
+			ForceLvivCenter: true,
+		},
+		func(lat, lon string) {
+			s.objectLatEntry.SetText(lat)
+			s.objectLongEntry.SetText(lon)
+			s.setStatus("Координати вибрано на карті")
+		},
+	)
+}
+
 func (s *caslObjectEditorState) objectScopedImages() []string {
 	if len(s.snapshot.Object.Images) == 0 {
 		return nil
@@ -1715,7 +1736,23 @@ func (s *caslObjectEditorState) refreshRoomImages(images []string) {
 
 func (s *caslObjectEditorState) showImagePreview(title string, raw string) {
 	holder := container.NewCenter(widget.NewLabel("Завантаження фото..."))
-	content := container.NewPadded(container.NewScroll(holder))
+	scroll := container.NewScroll(holder)
+	zoomLabel := widget.NewLabel("Масштаб: 100%")
+	zoomOutBtn := widget.NewButton("－", func() {})
+	zoomInBtn := widget.NewButton("＋", func() {})
+	controlsBar := container.NewHBox(
+		zoomOutBtn,
+		zoomInBtn,
+		layout.NewSpacer(),
+		zoomLabel,
+	)
+	content := container.NewBorder(
+		nil,
+		controlsBar,
+		nil,
+		nil,
+		container.NewPadded(scroll),
+	)
 	dlg := dialog.NewCustom(title, "Закрити", content, s.win)
 	dlg.Resize(fyne.NewSize(980, 760))
 	dlg.Show()
@@ -1730,11 +1767,67 @@ func (s *caslObjectEditorState) showImagePreview(title string, raw string) {
 				holder.Refresh()
 				return
 			}
+
+			baseSize := fyne.NewSize(880, 620)
+			zoom := 1.0
+			const (
+				minZoom  = 0.25
+				maxZoom  = 5.0
+				zoomStep = 0.15
+			)
+
 			image := canvas.NewImageFromResource(resource)
 			image.FillMode = canvas.ImageFillContain
 			image.ScaleMode = canvas.ImageScaleSmooth
-			image.SetMinSize(fyne.NewSize(880, 620))
-			holder.Objects = []fyne.CanvasObject{container.NewCenter(image)}
+			image.SetMinSize(baseSize)
+
+			updateZoomLabel := func() {
+				zoomLabel.SetText(fmt.Sprintf("Масштаб: %d%%", int(math.Round(zoom*100))))
+			}
+			applyZoom := func(nextZoom float64) {
+				if nextZoom < minZoom {
+					nextZoom = minZoom
+				}
+				if nextZoom > maxZoom {
+					nextZoom = maxZoom
+				}
+				zoom = nextZoom
+				image.SetMinSize(fyne.NewSize(
+					float32(float64(baseSize.Width)*zoom),
+					float32(float64(baseSize.Height)*zoom),
+				))
+				image.Refresh()
+				updateZoomLabel()
+			}
+
+			interaction := newMapInteractionSurface()
+			interaction.onScrolled = func(ev *fyne.ScrollEvent) {
+				delta := ev.Scrolled.DY
+				if math.Abs(float64(ev.Scrolled.DX)) > math.Abs(float64(delta)) {
+					delta = ev.Scrolled.DX
+				}
+				switch {
+				case delta > 0:
+					applyZoom(zoom + zoomStep)
+				case delta < 0:
+					applyZoom(zoom - zoomStep)
+				}
+			}
+
+			zoomOutBtn.OnTapped = func() {
+				applyZoom(zoom - zoomStep)
+			}
+			zoomInBtn.OnTapped = func() {
+				applyZoom(zoom + zoomStep)
+			}
+
+			updateZoomLabel()
+			holder.Objects = []fyne.CanvasObject{
+				container.NewStack(
+					container.NewCenter(image),
+					interaction,
+				),
+			}
 			holder.Refresh()
 		})
 	}()

@@ -32,7 +32,7 @@ type caslObjectEditorFullResponse struct {
 	ObjectType     string                     `json:"object_type"`
 	IDRequest      string                     `json:"id_request"`
 	GeoZoneID      caslInt64                  `json:"geo_zone_id"`
-	BusinessCoeff  *float64                   `json:"bissnes_coeff"`
+	BusinessCoeff  caslNullableFloat64        `json:"bissnes_coeff"`
 	Rooms          []caslObjectEditorRoom     `json:"rooms"`
 	Device         caslObjectEditorDeviceStub `json:"device"`
 	Devices        json.RawMessage            `json:"devices"`
@@ -689,7 +689,7 @@ func (p *CASLCloudProvider) getCASLObjectFull(ctx context.Context, objID string)
 		ObjectType:     strings.TrimSpace(resp.ObjectType),
 		IDRequest:      strings.TrimSpace(resp.IDRequest),
 		GeoZoneID:      resp.GeoZoneID.Int64(),
-		BusinessCoeff:  resp.BusinessCoeff,
+		BusinessCoeff:  resp.BusinessCoeff.Float64Ptr(),
 		Rooms:          rooms,
 		Device:         deviceDetails,
 		ObjectStatus:   strings.TrimSpace(resp.ObjectStatus.String()),

@@ -32,7 +32,8 @@ type ObjectListFilterOutput struct {
 	CountAll              int
 	CountAlarm            int
 	CountOffline          int
-	CountDisarmed         int
+	CountMonitoringOff    int
+	CountDebug            int
 	CountBridge           int
 	CountPhoenix          int
 	CountCASL             int
@@ -65,12 +66,13 @@ func (vm *ObjectListViewModel) NormalizeFilter(selected string) string {
 	return clean
 }
 
-func (vm *ObjectListViewModel) BuildFilterOptions(countAll int, countAlarm int, countOffline int, countDisarmed int) []string {
+func (vm *ObjectListViewModel) BuildFilterOptions(countAll int, countAlarm int, countOffline int, countMonitoringOff int, countDebug int) []string {
 	return []string{
 		fmt.Sprintf("Всі (%d)", countAll),
 		fmt.Sprintf("Є тривоги (%d)", countAlarm),
 		fmt.Sprintf("Нема зв'язку (%d)", countOffline),
-		fmt.Sprintf("Знято з охорони (%d)", countDisarmed),
+		fmt.Sprintf("Знято зі спостереження (%d)", countMonitoringOff),
+		fmt.Sprintf("В режимі налагодження (%d)", countDebug),
 	}
 }
 
@@ -83,7 +85,8 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 	countAll := 0
 	countAlarm := 0
 	countOffline := 0
-	countDisarmed := 0
+	countMonitoringOff := 0
+	countDebug := 0
 	countBridge := 0
 	countPhoenix := 0
 	countCASL := 0
@@ -111,8 +114,11 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 		if obj.IsConnState == 0 && obj.GuardState != 0 {
 			countOffline++
 		}
-		if obj.GuardState == 0 {
-			countDisarmed++
+		if isMonitoringOffObject(obj, source) {
+			countMonitoringOff++
+		}
+		if isDebugObject(obj, source) {
+			countDebug++
 		}
 
 		statusMatch := true
@@ -125,8 +131,12 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 			if !(obj.IsConnState == 0 && obj.GuardState != 0) {
 				statusMatch = false
 			}
-		case "Знято з охорони":
-			if obj.GuardState != 0 {
+		case "Знято зі спостереження":
+			if !isMonitoringOffObject(obj, source) {
+				statusMatch = false
+			}
+		case "В режимі налагодження":
+			if !isDebugObject(obj, source) {
 				statusMatch = false
 			}
 		}
@@ -153,15 +163,16 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 	}
 
 	out := ObjectListFilterOutput{
-		Filtered:       filtered,
-		CountAll:       countAll,
-		CountAlarm:     countAlarm,
-		CountOffline:   countOffline,
-		CountDisarmed:  countDisarmed,
-		CountBridge:    countBridge,
-		CountPhoenix:   countPhoenix,
-		CountCASL:      countCASL,
-		NewSelectedRow: newSelectedRow,
+		Filtered:           filtered,
+		CountAll:           countAll,
+		CountAlarm:         countAlarm,
+		CountOffline:       countOffline,
+		CountMonitoringOff: countMonitoringOff,
+		CountDebug:         countDebug,
+		CountBridge:        countBridge,
+		CountPhoenix:       countPhoenix,
+		CountCASL:          countCASL,
+		NewSelectedRow:     newSelectedRow,
 	}
 	if newSelectedRow >= 0 {
 		out.SelectedObject = filtered[newSelectedRow]
@@ -173,6 +184,26 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 	}
 
 	return out
+}
+
+func isMonitoringOffObject(obj models.Object, source string) bool {
+	switch NormalizeObjectSourceFilter(source) {
+	case ObjectSourcePhoenix, ObjectSourceCASL:
+		return obj.BlockedArmedOnOff == 1
+	default:
+		return obj.GuardState == 0
+	}
+}
+
+func isDebugObject(obj models.Object, source string) bool {
+	switch NormalizeObjectSourceFilter(source) {
+	case ObjectSourceCASL:
+		return false
+	case ObjectSourcePhoenix:
+		return obj.BlockedArmedOnOff == 2
+	default:
+		return obj.BlockedArmedOnOff == 2
+	}
 }
 
 func splitSearchTerms(query string) []string {

@@ -39,6 +39,12 @@ const (
 	mapCenterModeKyiv   = "kyiv"
 	mapCenterModeCustom = "custom"
 	mapCenterModeLast   = "last"
+
+	mapDefaultLvivLat = 49.8397
+	mapDefaultLvivLon = 24.0297
+	mapDefaultKyivLat = 50.4501
+	mapDefaultKyivLon = 30.5234
+	mapDefaultZoom    = 12
 )
 
 func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminObjectPersonalTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
@@ -922,6 +928,54 @@ func geocodeCandidatesPhoton(query string) ([]geocodeCandidate, error) {
 	}
 
 	return rows, nil
+}
+
+func geocodeAutocompleteCandidates(query string) ([]geocodeCandidate, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+
+	rows, err := geocodeCandidatesPhoton(query)
+	if err == nil && len(rows) > 0 {
+		return rows, nil
+	}
+	if err == nil {
+		return geocodeCandidatesForQuery(query)
+	}
+
+	fallbackRows, fallbackErr := geocodeCandidatesForQuery(query)
+	if fallbackErr != nil {
+		return nil, err
+	}
+	return fallbackRows, nil
+}
+
+func geocodeSuggestionOptions(rows []geocodeCandidate) ([]string, map[string]geocodeCandidate) {
+	options := make([]string, 0, len(rows))
+	items := make(map[string]geocodeCandidate, len(rows))
+	seen := make(map[string]int, len(rows))
+	for _, row := range rows {
+		label := strings.TrimSpace(row.DisplayName)
+		if label == "" {
+			label = strings.TrimSpace(strings.Join([]string{
+				firstAddressValue(row.Address, "road", "street", "pedestrian", "residential"),
+				firstAddressValue(row.Address, "house_number"),
+				firstAddressValue(row.Address, "city", "town", "village"),
+			}, ", "))
+		}
+		label = strings.Trim(label, " ,")
+		if label == "" {
+			continue
+		}
+		if count := seen[label]; count > 0 {
+			label = fmt.Sprintf("%s [%s, %s]", label, strings.TrimSpace(row.Lat), strings.TrimSpace(row.Lon))
+		}
+		seen[label]++
+		options = append(options, label)
+		items[label] = row
+	}
+	return options, items
 }
 
 func scoreGeocodeCandidate(target geocodeTarget, row geocodeCandidate) float64 {
@@ -2060,8 +2114,18 @@ func (s *mapInteractionSurface) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(hitBox)
 }
 
+type coordinatesMapPickerOptions struct {
+	Title           string
+	InitialAddress  string
+	ForceLvivCenter bool
+}
+
 func showCoordinatesMapPicker(parent fyne.Window, initialLatRaw string, initialLonRaw string, onPick func(lat, lon string)) {
-	centerLat, centerLon, zoom, hasObjectMarker := resolveInitialMapCenter(initialLatRaw, initialLonRaw)
+	showCoordinatesMapPickerWithOptions(parent, initialLatRaw, initialLonRaw, coordinatesMapPickerOptions{}, onPick)
+}
+
+func showCoordinatesMapPickerWithOptions(parent fyne.Window, initialLatRaw string, initialLonRaw string, opts coordinatesMapPickerOptions, onPick func(lat, lon string)) {
+	centerLat, centerLon, zoom, hasObjectMarker := resolveInitialMapCenterWithOptions(initialLatRaw, initialLonRaw, opts.ForceLvivCenter)
 
 	mapView := xwidget.NewMapWithOptions(
 		xwidget.WithOsmTiles(),
@@ -2201,6 +2265,140 @@ func showCoordinatesMapPicker(parent fyne.Window, initialLatRaw string, initialL
 	updateSelectedLabel()
 	forceMapOverlayRefresh()
 
+	title := strings.TrimSpace(opts.Title)
+	if title == "" {
+		title = "Вибір координат на карті"
+	}
+	pickerWin := fyne.CurrentApp().NewWindow(title)
+	pickerWin.Resize(fyne.NewSize(980, 680))
+
+	searchEntry := widget.NewSelectEntry(nil)
+	searchEntry.SetPlaceHolder("Пошук адреси")
+	searchEntry.SetText(strings.TrimSpace(opts.InitialAddress))
+	searchStatusLabel := widget.NewLabel("")
+	suggestionOptions := map[string]geocodeCandidate{}
+	var suggestionMu sync.Mutex
+	suggestionReqID := 0
+
+	setSuggestionState := func(options []string, items map[string]geocodeCandidate) {
+		suggestionMu.Lock()
+		defer suggestionMu.Unlock()
+		suggestionOptions = items
+		searchEntry.SetOptions(options)
+	}
+
+	nextSuggestionRequestID := func() int {
+		suggestionMu.Lock()
+		defer suggestionMu.Unlock()
+		suggestionReqID++
+		return suggestionReqID
+	}
+
+	isCurrentSuggestionRequest := func(id int) bool {
+		suggestionMu.Lock()
+		defer suggestionMu.Unlock()
+		return id == suggestionReqID
+	}
+
+	runAddressSearch := func() {
+		address := strings.TrimSpace(searchEntry.Text)
+		if address == "" {
+			searchStatusLabel.SetText("Вкажіть адресу для пошуку")
+			return
+		}
+
+		searchStatusLabel.SetText("Пошук адреси...")
+		go func() {
+			latRaw, lonRaw, _, err := geocodeAddress(address)
+			fyne.Do(func() {
+				if err != nil {
+					searchStatusLabel.SetText("Адресу не знайдено")
+					dialog.ShowError(err, pickerWin)
+					return
+				}
+				lat, latErr := parseCoordinate(latRaw)
+				lon, lonErr := parseCoordinate(lonRaw)
+				if latErr != nil || lonErr != nil {
+					searchStatusLabel.SetText("Сервіс повернув некоректні координати")
+					dialog.ShowError(fmt.Errorf("не вдалося розпізнати координати адреси"), pickerWin)
+					return
+				}
+				setSelectionAt(lat, lon)
+				mapView.PanToLatLon(lat, lon)
+				forceMapOverlayRefresh()
+				searchStatusLabel.SetText(fmt.Sprintf("Знайдено: %s, %s", formatCoordinate(lat), formatCoordinate(lon)))
+			})
+		}()
+	}
+
+	applySuggestion := func(candidate geocodeCandidate) {
+		lat, latErr := parseCoordinate(candidate.Lat)
+		lon, lonErr := parseCoordinate(candidate.Lon)
+		if latErr != nil || lonErr != nil {
+			searchStatusLabel.SetText("Підказка містить некоректні координати")
+			return
+		}
+		setSelectionAt(lat, lon)
+		mapView.PanToLatLon(lat, lon)
+		forceMapOverlayRefresh()
+		searchStatusLabel.SetText(fmt.Sprintf("Підказка: %s", firstNonEmpty(candidate.DisplayName, searchEntry.Text)))
+	}
+
+	searchEntry.OnSubmitted = func(string) {
+		runAddressSearch()
+	}
+	searchEntry.OnChanged = func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			setSuggestionState(nil, map[string]geocodeCandidate{})
+			searchStatusLabel.SetText("")
+			return
+		}
+
+		suggestionMu.Lock()
+		candidate, ok := suggestionOptions[value]
+		suggestionMu.Unlock()
+		if ok {
+			applySuggestion(candidate)
+			return
+		}
+
+		if len([]rune(value)) < 3 {
+			setSuggestionState(nil, map[string]geocodeCandidate{})
+			searchStatusLabel.SetText("Введіть щонайменше 3 символи для підказок")
+			return
+		}
+
+		reqID := nextSuggestionRequestID()
+		searchStatusLabel.SetText("Пошук підказок...")
+		go func(query string, expectedReqID int) {
+			time.Sleep(350 * time.Millisecond)
+			if !isCurrentSuggestionRequest(expectedReqID) {
+				return
+			}
+
+			rows, err := geocodeAutocompleteCandidates(query)
+			fyne.Do(func() {
+				if !isCurrentSuggestionRequest(expectedReqID) {
+					return
+				}
+				if err != nil {
+					setSuggestionState(nil, map[string]geocodeCandidate{})
+					searchStatusLabel.SetText("Не вдалося завантажити підказки")
+					return
+				}
+
+				options, items := geocodeSuggestionOptions(rows)
+				setSuggestionState(options, items)
+				if len(options) == 0 {
+					searchStatusLabel.SetText("Підказки не знайдено")
+					return
+				}
+				searchStatusLabel.SetText(fmt.Sprintf("Знайдено підказок: %d", len(options)))
+			})
+		}(value, reqID)
+	}
+
 	interaction.onTapped = func(ev *fyne.PointEvent) {
 		lat, lon, err := mapCanvasPointToLatLon(mapView, ev.Position.X, ev.Position.Y)
 		if err != nil {
@@ -2255,9 +2453,6 @@ func showCoordinatesMapPicker(parent fyne.Window, initialLatRaw string, initialL
 		forceMapOverlayRefresh()
 	}
 
-	pickerWin := fyne.CurrentApp().NewWindow("Вибір координат на карті")
-	pickerWin.Resize(fyne.NewSize(980, 680))
-
 	useSelectionBtn := widget.NewButton("Підтвердити вибір", func() {
 		centerLat, centerLon, err := mapCenterLatLon(mapView)
 		if err == nil {
@@ -2291,6 +2486,10 @@ func showCoordinatesMapPicker(parent fyne.Window, initialLatRaw string, initialL
 	refreshBtn := widget.NewButton("Оновити", func() {
 		forceMapOverlayRefresh()
 	})
+	centerLvivBtn := widget.NewButton("Львів", func() {
+		mapView.PanToLatLon(mapDefaultLvivLat, mapDefaultLvivLon)
+		forceMapOverlayRefresh()
+	})
 	mapSettingsBtn := widget.NewButton("Налаштування карти", func() {
 		showMapCenterSettingsDialog(pickerWin, func(lat, lon float64, zoom int) {
 			mapView.Zoom(zoom)
@@ -2304,6 +2503,8 @@ func showCoordinatesMapPicker(parent fyne.Window, initialLatRaw string, initialL
 		container.NewVBox(
 			widget.NewLabel("ЛКМ: вибір точки | ПКМ: вибір + центрування | Колесо: зум | Перетягування: панорама."),
 			widget.NewLabel("Червоний маркер: поточна точка об'єкта. Синій маркер: точка, яку ви обрали."),
+			container.NewBorder(nil, nil, nil, container.NewHBox(widget.NewButton("Знайти адресу", runAddressSearch), centerLvivBtn), searchEntry),
+			searchStatusLabel,
 			widget.NewSeparator(),
 		),
 		container.NewVBox(
@@ -2545,15 +2746,15 @@ func tileXYToLatLon(xTile float64, yTile float64, n float64) (float64, float64, 
 }
 
 func resolveInitialMapCenter(initialLatRaw string, initialLonRaw string) (float64, float64, int, bool) {
-	const (
-		lvivLat = 49.8397
-		lvivLon = 24.0297
-		kyivLat = 50.4501
-		kyivLon = 30.5234
-		mapZoom = 12
-	)
+	return resolveInitialMapCenterWithOptions(initialLatRaw, initialLonRaw, false)
+}
+
+func resolveInitialMapCenterWithOptions(initialLatRaw string, initialLonRaw string, forceLvivCenter bool) (float64, float64, int, bool) {
 	if lat, lon, ok := parseLatLon(initialLatRaw, initialLonRaw); ok {
-		return lat, lon, mapZoom, true
+		return lat, lon, mapDefaultZoom, true
+	}
+	if forceLvivCenter {
+		return mapDefaultLvivLat, mapDefaultLvivLon, mapDefaultZoom, false
 	}
 
 	mode := mapCenterModeLviv
@@ -2566,13 +2767,13 @@ func resolveInitialMapCenter(initialLatRaw string, initialLonRaw string) (float6
 
 	switch mode {
 	case mapCenterModeKyiv:
-		return kyivLat, kyivLon, mapZoom, false
+		return mapDefaultKyivLat, mapDefaultKyivLon, mapDefaultZoom, false
 	case mapCenterModeCustom:
 		if prefs != nil {
 			lat, latErr := parseCoordinate(prefs.String(mapCenterCustomLatKey))
 			lon, lonErr := parseCoordinate(prefs.String(mapCenterCustomLonKey))
 			if latErr == nil && lonErr == nil && lat >= -85 && lat <= 85 && lon >= -180 && lon <= 180 {
-				return lat, lon, mapZoom, false
+				return lat, lon, mapDefaultZoom, false
 			}
 		}
 	case mapCenterModeLast:
@@ -2580,12 +2781,12 @@ func resolveInitialMapCenter(initialLatRaw string, initialLonRaw string) (float6
 			lat, latErr := parseCoordinate(prefs.String(mapCenterLastLatPrefKey))
 			lon, lonErr := parseCoordinate(prefs.String(mapCenterLastLonPrefKey))
 			if latErr == nil && lonErr == nil && lat >= -85 && lat <= 85 && lon >= -180 && lon <= 180 {
-				return lat, lon, mapZoom, false
+				return lat, lon, mapDefaultZoom, false
 			}
 		}
 	}
 
-	return lvivLat, lvivLon, mapZoom, false
+	return mapDefaultLvivLat, mapDefaultLvivLon, mapDefaultZoom, false
 }
 
 func saveLastMapCenter(lat float64, lon float64) {

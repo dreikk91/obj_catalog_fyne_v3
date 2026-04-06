@@ -106,7 +106,7 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	}
 
 	// Вибір фільтру
-	panel.FilterSelect = widget.NewSelect([]string{"Всі", "Є тривоги", "Нема зв'язку", "Знято з охорони"}, func(selected string) {
+	panel.FilterSelect = widget.NewSelect([]string{"Всі", "Є тривоги", "Нема зв'язку", "Знято зі спостереження", "В режимі налагодження"}, func(selected string) {
 		if panel.isUpdating {
 			return
 		}
@@ -332,7 +332,8 @@ func (p *ObjectListPanel) applyFilters() {
 			result.CountAll,
 			result.CountAlarm,
 			result.CountOffline,
-			result.CountDisarmed,
+			result.CountMonitoringOff,
+			result.CountDebug,
 		)
 
 		// Знаходимо поточний вибраний фільтр в оновленому списку, щоб він не зникав

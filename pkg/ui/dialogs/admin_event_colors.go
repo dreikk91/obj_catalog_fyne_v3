@@ -33,7 +33,9 @@ func mapSC1ToPaletteCode(sc1 *int64) int {
 		return 5
 	case 10:
 		return 10
-	case 11, 14, 18:
+	case 11:
+		return 11
+	case 14, 18:
 		return 14
 	case 12:
 		return 12

@@ -35,6 +35,7 @@ func ShowColorPaletteDialog(win fyne.Window, isDark bool, onChanged func()) {
 		{Name: "Відновлення / Норма", Codes: []int{5, 9, 13, 17}},
 		{Name: "Інформаційні події", Codes: []int{6}},
 		{Name: "Під охороною", Codes: []int{7, 8, 10}},
+		{Name: "Знято з охорони", Codes: []int{11}},
 		{Name: "Немає зв'язку", Codes: []int{12}},
 		{Name: "Частково знято / інший стан", Codes: []int{14, 18}},
 	}

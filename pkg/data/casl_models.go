@@ -123,6 +123,54 @@ func (v *caslText) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type caslNullableFloat64 struct {
+	value float64
+	valid bool
+}
+
+func (v caslNullableFloat64) Float64Ptr() *float64 {
+	if !v.valid {
+		return nil
+	}
+	value := v.value
+	return &value
+}
+
+func (v *caslNullableFloat64) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		*v = caslNullableFloat64{}
+		return nil
+	}
+
+	if strings.HasPrefix(raw, "\"") {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			*v = caslNullableFloat64{}
+			return nil
+		}
+		value = strings.TrimSpace(value)
+		if value == "" || strings.EqualFold(value, "null") {
+			*v = caslNullableFloat64{}
+			return nil
+		}
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+			*v = caslNullableFloat64{value: parsed, valid: true}
+			return nil
+		}
+		*v = caslNullableFloat64{}
+		return nil
+	}
+
+	if parsed, err := strconv.ParseFloat(raw, 64); err == nil {
+		*v = caslNullableFloat64{value: parsed, valid: true}
+		return nil
+	}
+
+	*v = caslNullableFloat64{}
+	return nil
+}
+
 type caslPult struct {
 	PultID   string   `json:"pult_id"`
 	Name     string   `json:"name"`

@@ -157,6 +157,23 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLFallbacks(t *testin
 	}
 }
 
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_TestControlWithoutInterval(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:          caslObjectIDNamespaceStart + 24,
+		TestControl: 1,
+		TestTime:    0,
+	})
+
+	if presentation.TestControlText != "⏲️ Контроль тесту: Активно" {
+		t.Fatalf("unexpected test control text: %q", presentation.TestControlText)
+	}
+	if presentation.AutoTestText != "⏱️ Автотест: —" {
+		t.Fatalf("unexpected auto test text: %q", presentation.AutoTestText)
+	}
+}
+
 func TestWorkAreaDeviceViewModel_BuildExternalPresentation(t *testing.T) {
 	vm := NewWorkAreaDeviceViewModel()
 	lastTest := time.Date(2026, 3, 28, 10, 0, 0, 0, time.Local)

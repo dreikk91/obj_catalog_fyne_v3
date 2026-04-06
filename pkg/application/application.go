@@ -322,9 +322,25 @@ func (a *Application) buildUI() {
 		log.Debug().Bool("darkTheme", newDark).Msg("Перемикання теми...")
 		a.setTheme(newDark)
 		updateThemeButton()
-		// Оновлюємо панелі, щоб застосувати нові кольори.
+
+		uiCfg := config.LoadUIConfig(a.fyneApp.Preferences())
+		if a.alarmPanel != nil {
+			a.alarmPanel.OnThemeChanged(uiCfg.FontSizeAlarms)
+		}
+		if a.objectList != nil {
+			a.objectList.OnThemeChanged(uiCfg.FontSizeObjects)
+		}
+		if a.workArea != nil {
+			a.workArea.OnThemeChanged(uiCfg.FontSize)
+		}
+		if a.eventLog != nil {
+			a.eventLog.OnThemeChanged(uiCfg.FontSizeEvents)
+		}
+
+		// Оновлюємо панелі, щоб застосувати нові кольори та палітри рядків.
 		a.publishDataRefresh(eventbus.DataRefreshEvent{
 			RefreshObjects: true,
+			RefreshAlarms:  true,
 			RefreshEvents:  true,
 		})
 	}
@@ -532,10 +548,29 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	)
 
 	menus := []*fyne.Menu{adminMenu}
-	if _, ok := a.resolveCASLReportsProvider(); ok {
-		caslMenu := fyne.NewMenu("CASL",
+	if _, reportsOK := a.resolveCASLReportsProvider(); reportsOK {
+		caslMenuItems := []*fyne.MenuItem{
 			fyne.NewMenuItem("Звіти", func() {
 				a.openCASLReportsDialog()
+			}),
+		}
+		if _, ok := a.resolveCASLObjectEditorProvider(); ok {
+			caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Створити новий об'єкт", func() {
+				a.openCASLObjectCreator()
+			}))
+			caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Редагувати поточний об'єкт", func() {
+				a.openCASLObjectEditor()
+			}))
+		}
+		caslMenu := fyne.NewMenu("CASL", caslMenuItems...)
+		menus = append(menus, caslMenu)
+	} else if _, editorOK := a.resolveCASLObjectEditorProvider(); editorOK {
+		caslMenu := fyne.NewMenu("CASL",
+			fyne.NewMenuItem("Створити новий об'єкт", func() {
+				a.openCASLObjectCreator()
+			}),
+			fyne.NewMenuItem("Редагувати поточний об'єкт", func() {
+				a.openCASLObjectEditor()
 			}),
 		)
 		menus = append(menus, caslMenu)

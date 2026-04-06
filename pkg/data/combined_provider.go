@@ -22,6 +22,10 @@ type caslStatisticReportProvider interface {
 	GetStatisticReport(ctx context.Context, name string, limit int) ([]map[string]any, error)
 }
 
+type caslObjectEditorProvider interface {
+	contracts.CASLObjectEditorProvider
+}
+
 // ProviderSource описує одне джерело даних у мультисистемній конфігурації.
 // OwnsObjectID/OwnsAlarmID задають, як маршрутизувати запити до цього джерела.
 // Якщо жоден matcher не спрацював, використовується перше (основне) джерело.
@@ -94,6 +98,158 @@ func (p *CombinedDataProvider) GetStatisticReport(ctx context.Context, name stri
 		return reporter.GetStatisticReport(ctx, name, limit)
 	}
 	return nil, errors.New("casl reports provider is not configured")
+}
+
+func (p *CombinedDataProvider) GetCASLObjectEditorSnapshot(ctx context.Context, objectID int64) (contracts.CASLObjectEditorSnapshot, error) {
+	provider, err := p.resolveCASLObjectEditorProvider(objectID)
+	if err != nil {
+		return contracts.CASLObjectEditorSnapshot{}, err
+	}
+	return provider.GetCASLObjectEditorSnapshot(ctx, objectID)
+}
+
+func (p *CombinedDataProvider) CreateCASLObject(ctx context.Context, create contracts.CASLGuardObjectCreate) (string, error) {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return "", err
+	}
+	return provider.CreateCASLObject(ctx, create)
+}
+
+func (p *CombinedDataProvider) UpdateCASLObject(ctx context.Context, update contracts.CASLGuardObjectUpdate) error {
+	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(update.ObjID))
+	if err != nil {
+		return err
+	}
+	return provider.UpdateCASLObject(ctx, update)
+}
+
+func (p *CombinedDataProvider) UpdateCASLRoom(ctx context.Context, update contracts.CASLRoomUpdate) error {
+	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(update.ObjID))
+	if err != nil {
+		return err
+	}
+	return provider.UpdateCASLRoom(ctx, update)
+}
+
+func (p *CombinedDataProvider) CreateCASLRoom(ctx context.Context, create contracts.CASLRoomCreate) error {
+	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(create.ObjID))
+	if err != nil {
+		return err
+	}
+	return provider.CreateCASLRoom(ctx, create)
+}
+
+func (p *CombinedDataProvider) ReadCASLDeviceNumbers(ctx context.Context) ([]int64, error) {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return nil, err
+	}
+	return provider.ReadCASLDeviceNumbers(ctx)
+}
+
+func (p *CombinedDataProvider) IsCASLDeviceNumberInUse(ctx context.Context, deviceNumber int64) (bool, error) {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return false, err
+	}
+	return provider.IsCASLDeviceNumberInUse(ctx, deviceNumber)
+}
+
+func (p *CombinedDataProvider) CreateCASLDevice(ctx context.Context, create contracts.CASLDeviceCreate) (string, error) {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return "", err
+	}
+	return provider.CreateCASLDevice(ctx, create)
+}
+
+func (p *CombinedDataProvider) UpdateCASLDevice(ctx context.Context, update contracts.CASLDeviceUpdate) error {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return err
+	}
+	return provider.UpdateCASLDevice(ctx, update)
+}
+
+func (p *CombinedDataProvider) UpdateCASLDeviceLine(ctx context.Context, update contracts.CASLDeviceLineMutation) error {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return err
+	}
+	return provider.UpdateCASLDeviceLine(ctx, update)
+}
+
+func (p *CombinedDataProvider) CreateCASLDeviceLine(ctx context.Context, create contracts.CASLDeviceLineMutation) error {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return err
+	}
+	return provider.CreateCASLDeviceLine(ctx, create)
+}
+
+func (p *CombinedDataProvider) AddCASLLineToRoom(ctx context.Context, binding contracts.CASLLineToRoomBinding) error {
+	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(binding.ObjID))
+	if err != nil {
+		return err
+	}
+	return provider.AddCASLLineToRoom(ctx, binding)
+}
+
+func (p *CombinedDataProvider) AddCASLUserToRoom(ctx context.Context, request contracts.CASLAddUserToRoomRequest) error {
+	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(request.ObjID))
+	if err != nil {
+		return err
+	}
+	return provider.AddCASLUserToRoom(ctx, request)
+}
+
+func (p *CombinedDataProvider) RemoveCASLUserFromRoom(ctx context.Context, request contracts.CASLRemoveUserFromRoomRequest) error {
+	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(request.ObjID))
+	if err != nil {
+		return err
+	}
+	return provider.RemoveCASLUserFromRoom(ctx, request)
+}
+
+func (p *CombinedDataProvider) UpdateCASLRoomUserPriorities(ctx context.Context, objectID int64, items []contracts.CASLRoomUserPriority) error {
+	provider, err := p.resolveCASLObjectEditorProvider(objectID)
+	if err != nil {
+		return err
+	}
+	return provider.UpdateCASLRoomUserPriorities(ctx, objectID, items)
+}
+
+func (p *CombinedDataProvider) CreateCASLUser(ctx context.Context, request contracts.CASLUserCreateRequest) (contracts.CASLUserProfile, error) {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return contracts.CASLUserProfile{}, err
+	}
+	return provider.CreateCASLUser(ctx, request)
+}
+
+func (p *CombinedDataProvider) CreateCASLImage(ctx context.Context, request contracts.CASLImageCreateRequest) error {
+	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(request.ObjID))
+	if err != nil {
+		return err
+	}
+	return provider.CreateCASLImage(ctx, request)
+}
+
+func (p *CombinedDataProvider) DeleteCASLImage(ctx context.Context, request contracts.CASLImageDeleteRequest) error {
+	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(request.ObjID))
+	if err != nil {
+		return err
+	}
+	return provider.DeleteCASLImage(ctx, request)
+}
+
+func (p *CombinedDataProvider) FetchCASLImagePreview(ctx context.Context, imageID string) ([]byte, error) {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return nil, err
+	}
+	return provider.FetchCASLImagePreview(ctx, imageID)
 }
 
 func (p *CombinedDataProvider) CanUseAdminForObjectID(objectID int) bool {
@@ -345,6 +501,42 @@ func parseObjectID(raw string) (int, bool) {
 		return 0, false
 	}
 	return parsed, true
+}
+
+func parseCASLMutationObjectID(raw string) int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return parsed
+}
+
+func (p *CombinedDataProvider) resolveCASLObjectEditorProvider(objectID int64) (caslObjectEditorProvider, error) {
+	if objectID > 0 {
+		if source := p.sourceForObjectID(int(objectID)); source != nil {
+			if provider, ok := source.Provider.(caslObjectEditorProvider); ok {
+				return provider, nil
+			}
+		}
+	}
+	return p.resolveAnyCASLObjectEditorProvider()
+}
+
+func (p *CombinedDataProvider) resolveAnyCASLObjectEditorProvider() (caslObjectEditorProvider, error) {
+	if p == nil {
+		return nil, errors.New("combined provider is nil")
+	}
+	for _, source := range p.sources {
+		provider, ok := source.Provider.(caslObjectEditorProvider)
+		if ok {
+			return provider, nil
+		}
+	}
+	return nil, errors.New("casl object editor provider is not configured")
 }
 
 func sortEvents(events []models.Event) {

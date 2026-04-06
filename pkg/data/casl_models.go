@@ -166,14 +166,17 @@ type caslGrdObject struct {
 }
 
 type caslDevice struct {
-	DeviceID caslText         `json:"device_id"`
-	ObjID    caslText         `json:"obj_id"`
-	Number   caslInt64        `json:"number"`
-	Name     caslText         `json:"name"`
-	Type     caslText         `json:"type"`
-	SIM1     caslText         `json:"sim1"`
-	SIM2     caslText         `json:"sim2"`
-	Lines    []caslDeviceLine `json:"lines"`
+	DeviceID     caslText         `json:"device_id"`
+	ObjID        caslText         `json:"obj_id"`
+	Number       caslInt64        `json:"number"`
+	Name         caslText         `json:"name"`
+	Type         caslText         `json:"type"`
+	Timeout      caslInt64        `json:"timeout"`
+	LastPingDate caslInt64        `json:"lastPingDate"`
+	Blocked      bool             `json:"blocked"`
+	SIM1         caslText         `json:"sim1"`
+	SIM2         caslText         `json:"sim2"`
+	Lines        []caslDeviceLine `json:"lines"`
 }
 
 type caslConnectionRecord struct {
@@ -186,6 +189,7 @@ func (r *caslConnectionRecord) UnmarshalJSON(data []byte) error {
 		GuardedObject    json.RawMessage `json:"guardedObject"`
 		GuardedObjectAlt json.RawMessage `json:"guarded_object"`
 		Device           json.RawMessage `json:"device"`
+		Devices          json.RawMessage `json:"devices"`
 	}
 
 	var raw rawConnection
@@ -204,6 +208,12 @@ func (r *caslConnectionRecord) UnmarshalJSON(data []byte) error {
 
 	if len(raw.Device) > 0 {
 		_ = json.Unmarshal(raw.Device, &r.Device)
+	}
+	if deviceMap, ok := findCASLDeviceMapInAny(raw.Devices, "", strings.TrimSpace(r.GuardedObject.ObjID), r.GuardedObject.DeviceNumber.Int64()); ok {
+		var overlay caslDevice
+		if encoded, err := json.Marshal(deviceMap); err == nil && json.Unmarshal(encoded, &overlay) == nil {
+			overlayCASLCoreDevice(&r.Device, overlay)
+		}
 	}
 
 	normalizeCASLObjectRecord(&r.GuardedObject, r.Device)
@@ -225,14 +235,17 @@ func (r caslConnectionRecord) hasPayload() bool {
 
 func (d *caslDevice) UnmarshalJSON(data []byte) error {
 	type rawDevice struct {
-		DeviceID caslText        `json:"device_id"`
-		ObjID    caslText        `json:"obj_id"`
-		Number   caslInt64       `json:"number"`
-		Name     caslText        `json:"name"`
-		Type     caslText        `json:"type"`
-		SIM1     caslText        `json:"sim1"`
-		SIM2     caslText        `json:"sim2"`
-		Lines    json.RawMessage `json:"lines"`
+		DeviceID     caslText        `json:"device_id"`
+		ObjID        caslText        `json:"obj_id"`
+		Number       caslInt64       `json:"number"`
+		Name         caslText        `json:"name"`
+		Type         caslText        `json:"type"`
+		Timeout      caslInt64       `json:"timeout"`
+		LastPingDate caslInt64       `json:"lastPingDate"`
+		Blocked      bool            `json:"blocked"`
+		SIM1         caslText        `json:"sim1"`
+		SIM2         caslText        `json:"sim2"`
+		Lines        json.RawMessage `json:"lines"`
 	}
 
 	var raw rawDevice
@@ -245,10 +258,52 @@ func (d *caslDevice) UnmarshalJSON(data []byte) error {
 	d.Number = raw.Number
 	d.Name = raw.Name
 	d.Type = raw.Type
+	d.Timeout = raw.Timeout
+	d.LastPingDate = raw.LastPingDate
+	d.Blocked = raw.Blocked
 	d.SIM1 = raw.SIM1
 	d.SIM2 = raw.SIM2
 	d.Lines = decodeCASLDeviceLines(raw.Lines)
 	return nil
+}
+
+func overlayCASLCoreDevice(base *caslDevice, overlay caslDevice) {
+	if base == nil {
+		return
+	}
+	if strings.TrimSpace(base.DeviceID.String()) == "" {
+		base.DeviceID = overlay.DeviceID
+	}
+	if strings.TrimSpace(base.ObjID.String()) == "" {
+		base.ObjID = overlay.ObjID
+	}
+	if base.Number.Int64() <= 0 {
+		base.Number = overlay.Number
+	}
+	if strings.TrimSpace(base.Name.String()) == "" {
+		base.Name = overlay.Name
+	}
+	if strings.TrimSpace(base.Type.String()) == "" {
+		base.Type = overlay.Type
+	}
+	if base.Timeout.Int64() <= 0 {
+		base.Timeout = overlay.Timeout
+	}
+	if base.LastPingDate.Int64() <= 0 {
+		base.LastPingDate = overlay.LastPingDate
+	}
+	if !base.Blocked {
+		base.Blocked = overlay.Blocked
+	}
+	if strings.TrimSpace(base.SIM1.String()) == "" {
+		base.SIM1 = overlay.SIM1
+	}
+	if strings.TrimSpace(base.SIM2.String()) == "" {
+		base.SIM2 = overlay.SIM2
+	}
+	if len(base.Lines) == 0 {
+		base.Lines = overlay.Lines
+	}
 }
 
 type caslDeviceLine struct {

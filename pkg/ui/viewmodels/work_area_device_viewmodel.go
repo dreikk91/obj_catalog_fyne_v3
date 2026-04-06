@@ -128,7 +128,10 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 
 	testCtrlText := "Виключено"
 	if obj.TestControl > 0 {
-		testCtrlText = "Активно (" + formatWorkAreaTestInterval(obj.TestTime) + ")"
+		testCtrlText = "Активно"
+		if obj.TestTime > 0 {
+			testCtrlText += " (" + formatWorkAreaTestInterval(obj.TestTime) + ")"
+		}
 	}
 
 	guardText := "🔒 ПІД ОХОРОНОЮ"

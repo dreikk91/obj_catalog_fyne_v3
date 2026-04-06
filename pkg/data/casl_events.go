@@ -892,6 +892,16 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 		}
 	}
 	if len(alarms) == 0 {
+		tapeRows, err := p.readGeneralTapeItemRows(ctx)
+		if err != nil {
+			log.Debug().Err(err).Msg("CASL: get_general_tape_item недоступний під час формування активних тривог")
+		} else if len(tapeRows) > 0 {
+			logCASLGeneralTapeItemRows(tapeRows)
+			p.updateRealtimeAlarmsFromRows(ctx, tapeRows)
+			alarms = p.snapshotRealtimeAlarms()
+		}
+	}
+	if len(alarms) == 0 {
 		return nil
 	}
 	sortCASLAlarms(alarms)

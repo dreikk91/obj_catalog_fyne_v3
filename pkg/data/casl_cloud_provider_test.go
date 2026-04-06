@@ -896,6 +896,7 @@ func TestCASLProvider_LoginAndReadObjects(t *testing.T) {
 
 	var loginCalls int
 	var commandCalls int
+	lastPing := int64(1767706195359)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -916,7 +917,7 @@ func TestCASLProvider_LoginAndReadObjects(t *testing.T) {
 			case "read_grd_object":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","address":"Addr","device_id":"23","device_number":1003,"rooms":[{"room_id":"1","name":"Room A","description":"Desc","rtsp":""}]}]}`))
 			case "read_device":
-				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"name":"Ломбард","type":"TYPE_DEVICE_CASL","sim1":"+380501234567","sim2":"+380671234567","lines":[{"id":1,"name":"Вхідні двері"}]}]}`))
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"name":"Ломбард","type":"TYPE_DEVICE_CASL","timeout":3600,"lastPingDate":1767706195359,"blocked":true,"sim1":"+380501234567","sim2":"+380671234567","lines":[{"id":1,"name":"Вхідні двері"}]}]}`))
 			case "read_device_state":
 				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":0,"accum":0,"online":1,"lastPingDate":1774769732941}}`))
 			case "get_objects_statistic":
@@ -938,6 +939,12 @@ func TestCASLProvider_LoginAndReadObjects(t *testing.T) {
 	objects := provider.GetObjects()
 	if len(objects) != 1 {
 		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].BlockedArmedOnOff != 1 || objects[0].StatusText != "ЗАБЛОКОВАНО" {
+		t.Fatalf("expected blocked object from read_device, got mode=%d status=%q", objects[0].BlockedArmedOnOff, objects[0].StatusText)
+	}
+	if got := objects[0].LastTestTime.UnixMilli(); got != lastPing {
+		t.Fatalf("unexpected last test time from read_device: %d", got)
 	}
 	if loginCalls != 1 {
 		t.Fatalf("expected 1 login call, got %d", loginCalls)
@@ -964,6 +971,12 @@ func TestCASLProvider_LoginAndReadObjects(t *testing.T) {
 	}
 	if gotByID.SIM2 != "+380671234567" {
 		t.Fatalf("unexpected object sim2: %q", gotByID.SIM2)
+	}
+	if gotByID.BlockedArmedOnOff != 1 || gotByID.StatusText != "ЗАБЛОКОВАНО" {
+		t.Fatalf("expected blocked object by id, got mode=%d status=%q", gotByID.BlockedArmedOnOff, gotByID.StatusText)
+	}
+	if gotByID.TestControl != 1 || gotByID.TestTime != 60 || gotByID.AutoTestHours != 1 {
+		t.Fatalf("unexpected test interval: control=%d time=%d autoHours=%d", gotByID.TestControl, gotByID.TestTime, gotByID.AutoTestHours)
 	}
 	if commandCalls != 5 {
 		t.Fatalf("expected 5 command calls after GetObjectByID, got %d", commandCalls)
@@ -1015,6 +1028,9 @@ func TestCASLProvider_ReloginOnWrongFormat(t *testing.T) {
 	objects := provider.GetObjects()
 	if len(objects) != 1 {
 		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].TestControl != 1 {
+		t.Fatalf("expected CASL test control to be always enabled, got %d", objects[0].TestControl)
 	}
 	if loginCalls != 1 {
 		t.Fatalf("expected 1 relogin call, got %d", loginCalls)
@@ -1246,6 +1262,65 @@ func TestCASLProvider_ReadConnectionsFallback(t *testing.T) {
 	}
 	if readUserCalls != 0 {
 		t.Fatalf("read_user should not be required, got %d calls", readUserCalls)
+	}
+}
+
+func TestCASLProvider_ReadConnectionsFallback_DeviceMapTimeout(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-connections-map","user_id":"u-cm","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"error","error":"WRONG_FORMAT"}`))
+			case "read_connections":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"guardedObject":{"obj_id":"25","name":"1004 Будинок Хіміч Н.П.","address":"Львівська обл., с. Раковець","status":"Включено","device_number":1004},"devices":{"1":{"device_id":"24","obj_id":"25","number":1004,"name":"MAKS PRO","type":"TYPE_DEVICE_Ajax","timeout":360,"lastPingDate":1767706195359,"blocked":true,"sim1":"+38 (098) 162-68-59","lines":{"1":{"line_id":173,"description":"Рух тамбур"}}}}}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{"device_types":{"TYPE_DEVICE_Ajax":"Ajax"}}}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+
+	got := objects[0]
+	if got.TestControl != 1 {
+		t.Fatalf("expected enabled test control, got %d", got.TestControl)
+	}
+	if got.TestTime != 6 {
+		t.Fatalf("expected 6 minutes from 360 seconds, got %d", got.TestTime)
+	}
+	if got.AutoTestHours != 0 {
+		t.Fatalf("expected minute-based interval, got %d hours", got.AutoTestHours)
+	}
+	if got.BlockedArmedOnOff != 1 || got.StatusText != "ЗАБЛОКОВАНО" {
+		t.Fatalf("expected blocked object from devices map, got mode=%d status=%q", got.BlockedArmedOnOff, got.StatusText)
+	}
+	if got.LastTestTime.UnixMilli() != 1767706195359 {
+		t.Fatalf("unexpected last test time from devices map: %d", got.LastTestTime.UnixMilli())
+	}
+	if got.SIM1 != "+38 (098) 162-68-59" {
+		t.Fatalf("unexpected SIM1: %q", got.SIM1)
 	}
 }
 
@@ -1518,6 +1593,8 @@ func TestCASLProvider_GetAlarms_FallbackToGeneralTapeItem(t *testing.T) {
 				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{"translate":{"uk":{}}}}`))
 			case "get_msg_translator_by_device_type":
 				_, _ = w.Write([]byte(`{"status":"ok","data":{"MAKS_PRO":[{"code":130,"typeEvent":"E","name":"ZONE_ALM","isAlarm":1}]}}`))
+			case "get_general_tape_objects":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
 			case "get_general_tape_item":
 				_, _ = w.Write([]byte(fmt.Sprintf(`{"status":"ok","data":{"215":[{"code":62221,"time":%d,"contact_id":"E130","number":13}]}}`, nowMs)))
 			default:

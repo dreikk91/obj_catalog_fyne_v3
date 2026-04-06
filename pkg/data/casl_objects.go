@@ -379,7 +379,7 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 		address = formatCASLCoordinates(record.Lat, record.Long)
 	}
 
-	blocked := record.DeviceBlocked || strings.TrimSpace(record.BlockMessage.String()) != ""
+	blocked := record.DeviceBlocked || strings.TrimSpace(record.BlockMessage.String()) != "" || (device != nil && device.Blocked)
 	statusState := mapCASLObjectStatusState(record.Status, blocked)
 
 	notes := strings.TrimSpace(record.Note)
@@ -405,12 +405,27 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 	deviceType := "—"
 	sim1 := ""
 	sim2 := ""
+	autoTestHours := 24
+	testControl := int64(1)
+	testTime := int64(0)
 	if device != nil {
 		if value := strings.TrimSpace(device.Type.String()); value != "" {
 			deviceType = decodeCASLDeviceType(value)
 		}
 		sim1 = strings.TrimSpace(device.SIM1.String())
 		sim2 = strings.TrimSpace(device.SIM2.String())
+		if timeoutMinutes := caslTimeoutMinutes(device.Timeout.Int64()); timeoutMinutes > 0 {
+			testControl = 1
+			testTime = timeoutMinutes
+			autoTestHours = 0
+			if timeoutMinutes%60 == 0 {
+				autoTestHours = int(timeoutMinutes / 60)
+			}
+		}
+	}
+	lastTestTime := time.Time{}
+	if device != nil && device.LastPingDate.Int64() > 0 {
+		lastTestTime = time.UnixMilli(device.LastPingDate.Int64()).Local()
 	}
 
 	hasAssignment := len(normalizeContactIDs(record.InCharge, record.ManagerID)) > 0
@@ -434,10 +449,13 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 		SignalStrength: "н/д",
 		DeviceType:     deviceType,
 		PanelMark:      panelMark,
+		TestControl:    testControl,
+		TestTime:       testTime,
+		LastTestTime:   lastTestTime,
 		SIM1:           sim1,
 		SIM2:           sim2,
 		ObjChan:        5,
-		AutoTestHours:  24,
+		AutoTestHours:  autoTestHours,
 		Notes1:         notes,
 		Location1:      address,
 		LaunchDate:     launchDate,
@@ -448,6 +466,13 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 			return 0
 		}(),
 	}
+}
+
+func caslTimeoutMinutes(timeoutSeconds int64) int64 {
+	if timeoutSeconds <= 0 {
+		return 0
+	}
+	return (timeoutSeconds + 59) / 60
 }
 
 func mapCASLPultToObject(item caslPult) models.Object {

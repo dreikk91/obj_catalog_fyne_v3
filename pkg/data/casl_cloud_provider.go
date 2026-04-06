@@ -42,9 +42,6 @@ const (
 
 	caslObjectStatusText = "НОРМА"
 
-	caslObjectIDNamespaceStart = 1_500_000_000
-	caslObjectIDNamespaceEnd   = 1_999_999_999
-	caslObjectIDNamespaceSize  = caslObjectIDNamespaceEnd - caslObjectIDNamespaceStart + 1
 )
 
 // CASLCloudProvider реалізує DataProvider для CASL Cloud API.

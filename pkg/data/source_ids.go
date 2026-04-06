@@ -10,10 +10,14 @@ const (
 	phoenixObjectIDNamespaceStart = 1_000_000_000
 	phoenixObjectIDNamespaceEnd   = 1_499_999_999
 	phoenixObjectIDNamespaceSize  = phoenixObjectIDNamespaceEnd - phoenixObjectIDNamespaceStart + 1
+
+	caslObjectIDNamespaceStart    = 1_500_000_000
+	caslObjectIDNamespaceEnd      = 1_999_999_999
+	caslObjectIDNamespaceSize     = caslObjectIDNamespaceEnd - caslObjectIDNamespaceStart + 1
 )
 
 func IsCASLObjectID(id int) bool {
-	return isCASLObjectID(id)
+	return id >= caslObjectIDNamespaceStart && id <= caslObjectIDNamespaceEnd
 }
 
 func IsPhoenixObjectID(id int) bool {

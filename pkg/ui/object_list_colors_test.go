@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
 func TestObjectListRowColors_PriorityBlockedOverAlarm(t *testing.T) {
@@ -13,7 +14,7 @@ func TestObjectListRowColors_PriorityBlockedOverAlarm(t *testing.T) {
 		Status:            models.StatusFire,
 	}
 
-	text, row := objectListRowColors(item, false)
+	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
 	if text.R != 255 || row.R != 144 {
 		t.Fatalf("unexpected blocked colors (light): text=%+v row=%+v", text, row)
 	}
@@ -26,7 +27,7 @@ func TestObjectListRowColors_PhoenixBlockedUsesDedicatedPalette(t *testing.T) {
 		Status:            models.StatusNormal,
 	}
 
-	text, row := objectListRowColors(item, false)
+	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
 	if text.R != 255 || row.R != 79 || row.G != 109 || row.B != 135 {
 		t.Fatalf("unexpected phoenix blocked colors (light): text=%+v row=%+v", text, row)
 	}
@@ -39,7 +40,7 @@ func TestObjectListRowColors_PhoenixDisarmedUsesDedicatedPalette(t *testing.T) {
 		Status:     models.StatusNormal,
 	}
 
-	text, row := objectListRowColors(item, false)
+	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
 	if text.R != 255 || row.R != 67 || row.G != 156 || row.B != 199 {
 		t.Fatalf("unexpected phoenix disarmed colors (light): text=%+v row=%+v", text, row)
 	}
@@ -51,7 +52,8 @@ func TestObjectListRowColors_OfflinePriority(t *testing.T) {
 		Status:      models.StatusOffline,
 	}
 
-	_, row := objectListRowColors(item, false)
+	vm := viewmodels.NewObjectListViewModel()
+	_, row := vm.GetRowColors(item, false)
 	if row.G != 235 {
 		t.Fatalf("unexpected offline row color: %+v", row)
 	}
@@ -65,7 +67,7 @@ func TestObjectListRowColors_CASLAssignmentWarning(t *testing.T) {
 		Status:        models.StatusNormal,
 	}
 
-	text, row := objectListRowColors(item, false)
+	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
 	if text.R != 255 || row.B != 168 {
 		t.Fatalf("unexpected casl assignment colors: text=%+v row=%+v", text, row)
 	}

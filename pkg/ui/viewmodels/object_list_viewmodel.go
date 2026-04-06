@@ -2,6 +2,7 @@ package viewmodels
 
 import (
 	"fmt"
+	"image/color"
 	"strconv"
 	"strings"
 
@@ -282,4 +283,85 @@ func matchesSearchTerms(obj models.Object, source string, terms []string) bool {
 		}
 	}
 	return true
+}
+
+// GetRowColors визначає кольори тексту та фону для рядка списку об'єктів.
+// Логіка перенесена з View (MVVM).
+func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (textColor, rowColor color.NRGBA) {
+	selectEventColor := utils.SelectColorNRGBA
+	if isDark {
+		selectEventColor = utils.SelectColorNRGBADark
+	}
+
+	// Спеціальні випадки для Phoenix
+	if IsPhoenixObjectID(item.ID) &&
+		item.BlockedArmedOnOff == 1 &&
+		item.AlarmState == 0 &&
+		item.TechAlarmState == 0 &&
+		item.Status == models.StatusNormal {
+		if isDark {
+			return color.NRGBA{R: 232, G: 239, B: 246, A: 255}, color.NRGBA{R: 54, G: 74, B: 92, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 79, G: 109, B: 135, A: 255}
+	}
+
+	if IsPhoenixObjectID(item.ID) &&
+		item.BlockedArmedOnOff == 0 &&
+		item.GuardState == 0 &&
+		item.AlarmState == 0 &&
+		item.TechAlarmState == 0 &&
+		item.Status == models.StatusNormal {
+		if isDark {
+			return color.NRGBA{R: 225, G: 244, B: 255, A: 255}, color.NRGBA{R: 37, G: 96, B: 128, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 67, G: 156, B: 199, A: 255}
+	}
+
+	// Пріоритети кольорів (зверху вниз):
+	// 1) блокування, 2) тривога, 3) технічна/пожежна несправність,
+	// 4) втрата зв'язку, 5) проблема приписки/конфігурації, 6) інші стани.
+	if item.BlockedArmedOnOff == 1 {
+		// Тимчасово знято із спостереження.
+		if isDark {
+			return color.NRGBA{R: 230, G: 220, B: 245, A: 255}, color.NRGBA{R: 98, G: 52, B: 125, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 144, G: 64, B: 196, A: 255}
+	}
+	if item.BlockedArmedOnOff == 2 {
+		// Режим налагодження.
+		if isDark {
+			return color.NRGBA{R: 238, G: 236, B: 195, A: 255}, color.NRGBA{R: 95, G: 96, B: 42, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 128, G: 128, B: 0, A: 255}
+	}
+
+	if item.AlarmState > 0 || item.Status == models.StatusFire {
+		return selectEventColor(1)
+	}
+
+	if item.TechAlarmState > 0 || item.Status == models.StatusFault {
+		return selectEventColor(2)
+	}
+
+	if item.IsConnState == 0 || item.Status == models.StatusOffline {
+		if isDark {
+			return color.NRGBA{R: 255, G: 250, B: 180, A: 255}, color.NRGBA{R: 90, G: 90, B: 20, A: 255}
+		}
+		return color.NRGBA{R: 0, G: 0, B: 0, A: 255}, color.NRGBA{R: 225, G: 235, B: 35, A: 255}
+	}
+
+	if IsCASLObjectID(item.ID) && !item.HasAssignment {
+		if isDark {
+			return color.NRGBA{R: 240, G: 243, B: 255, A: 255}, color.NRGBA{R: 52, G: 70, B: 98, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 77, G: 112, B: 168, A: 255}
+	}
+
+	if !IsCASLObjectID(item.ID) && !IsPhoenixObjectID(item.ID) &&
+		strings.TrimSpace(item.SubServerA) == "" && strings.TrimSpace(item.SubServerB) == "" {
+		// Для МІСТ/БД підсервери мають бути заповнені.
+		return color.NRGBA{R: 210, G: 0, B: 0, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	}
+
+	return utils.ChangeItemColorNRGBA(item.AlarmState, item.GuardState, item.TechAlarmState, item.IsConnState, isDark)
 }

@@ -513,11 +513,17 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 		})),
 	)
 
-	adminMonitoring := fyne.NewMenu("Моніторинг",
+	adminMonitoringItems := []*fyne.MenuItem{
 		fyne.NewMenuItem("Збір статистики", a.withAdminProvider(func(admin contracts.AdminProvider) {
 			dialogs.ShowStatisticsDialog(a.mainWindow, admin)
 		})),
-	)
+	}
+	if _, ok := a.resolveSIMInventoryReportProvider(); ok {
+		adminMonitoringItems = append(adminMonitoringItems, fyne.NewMenuItem("Звіт по SIM-картах", func() {
+			a.openSIMInventoryReportDialog()
+		}))
+	}
+	adminMonitoring := fyne.NewMenu("Моніторинг", adminMonitoringItems...)
 
 	adminDirectories := fyne.NewMenu("Довідники",
 		fyne.NewMenuItem("Конструктор ППК", a.withAdminProvider(func(admin contracts.AdminProvider) {
@@ -549,11 +555,10 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 
 	menus := []*fyne.Menu{adminMenu}
 	if _, reportsOK := a.resolveCASLReportsProvider(); reportsOK {
-		caslMenuItems := []*fyne.MenuItem{
-			fyne.NewMenuItem("Звіти", func() {
-				a.openCASLReportsDialog()
-			}),
-		}
+		caslMenuItems := make([]*fyne.MenuItem, 0, 3)
+		caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Звіти", func() {
+			a.openCASLReportsDialog()
+		}))
 		if _, ok := a.resolveCASLObjectEditorProvider(); ok {
 			caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Створити новий об'єкт", func() {
 				a.openCASLObjectCreator()

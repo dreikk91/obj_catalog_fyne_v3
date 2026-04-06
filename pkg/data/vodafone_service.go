@@ -38,6 +38,8 @@ type VodafoneService struct {
 	mu              sync.Mutex
 	availableSIMs   map[string]vodafoneSubscriber
 	availableSIMsAt time.Time
+	settings        map[string]vodafoneSetting
+	settingsAt      time.Time
 }
 
 type VodafoneOption func(*VodafoneService)
@@ -219,6 +221,11 @@ func (s *VodafoneService) GetSIMStatus(msisdn string) (contracts.VodafoneSIMStat
 		return status, nil
 	}
 
+	settings, err := s.listSettingsDictionary(context.Background())
+	if err != nil {
+		settings = nil
+	}
+
 	connectivity, err := s.fetchConnectivityStatus(normalized)
 	if err != nil {
 		return contracts.VodafoneSIMStatus{}, err
@@ -227,8 +234,8 @@ func (s *VodafoneService) GetSIMStatus(msisdn string) (contracts.VodafoneSIMStat
 	if err != nil {
 		return contracts.VodafoneSIMStatus{}, err
 	}
-	status.Connectivity = connectivity
-	status.LastEvent = lastEvent
+	status.Connectivity = decorateVodafoneConnectivity(connectivity, settings)
+	status.LastEvent = decorateVodafoneLastEvent(lastEvent, settings)
 	return status, nil
 }
 
@@ -650,9 +657,73 @@ func (s *VodafoneService) listAvailableSubscribers(ctx context.Context) (map[str
 	return subscribers, nil
 }
 
+func (s *VodafoneService) listSettingsDictionary(ctx context.Context) (map[string]vodafoneSetting, error) {
+	s.mu.Lock()
+	if len(s.settings) > 0 && time.Since(s.settingsAt) < 30*time.Minute {
+		cached := cloneVodafoneSettings(s.settings)
+		s.mu.Unlock()
+		return cached, nil
+	}
+	s.mu.Unlock()
+
+	token, err := s.ensureAuthorizedToken()
+	if err != nil {
+		return nil, err
+	}
+
+	settings, err := s.fetchSettingsDictionary(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	s.settings = cloneVodafoneSettings(settings)
+	s.settingsAt = time.Now()
+	s.mu.Unlock()
+	return settings, nil
+}
+
+func (s *VodafoneService) fetchSettingsDictionary(ctx context.Context, token string) (map[string]vodafoneSetting, error) {
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		s.baseURL+"/entity/api/functions/MYVF-SETTINGS?spinnerType=1",
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("vodafone: failed to create settings request: %w", err)
+	}
+	s.applyHeaders(req, token, "", "application/json")
+
+	var resp struct {
+		Settings []struct {
+			Key   string `json:"key"`
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"settings"`
+	}
+	if err := s.doJSON(req, &resp); err != nil {
+		return nil, err
+	}
+
+	settings := make(map[string]vodafoneSetting, len(resp.Settings))
+	for _, item := range resp.Settings {
+		key := strings.TrimSpace(item.Key)
+		if key == "" {
+			continue
+		}
+		settings[key] = vodafoneSetting{
+			Key:   key,
+			Name:  strings.TrimSpace(item.Name),
+			Value: strings.TrimSpace(item.Value),
+		}
+	}
+	return settings, nil
+}
+
 func (s *VodafoneService) fetchAvailableSubscribers(ctx context.Context, token string, useSelfEndpoint bool) (map[string]vodafoneSubscriber, error) {
 	subscribers := make(map[string]vodafoneSubscriber)
-	const limit = 100
+	const limit = 1000
 	for offset := 0; ; offset += limit {
 		reqURL := ""
 		if useSelfEndpoint {
@@ -878,6 +949,12 @@ type vodafoneSubscriber struct {
 	UpdateDateRaw          string
 }
 
+type vodafoneSetting struct {
+	Key   string
+	Name  string
+	Value string
+}
+
 type vodafoneNamedValue struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
@@ -885,6 +962,14 @@ type vodafoneNamedValue struct {
 
 func cloneVodafoneSubscribers(src map[string]vodafoneSubscriber) map[string]vodafoneSubscriber {
 	out := make(map[string]vodafoneSubscriber, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneVodafoneSettings(src map[string]vodafoneSetting) map[string]vodafoneSetting {
+	out := make(map[string]vodafoneSetting, len(src))
 	for key, value := range src {
 		out[key] = value
 	}
@@ -908,6 +993,35 @@ func firstNonEmptyVodafone(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func decorateVodafoneConnectivity(status contracts.VodafoneConnectivityStatus, settings map[string]vodafoneSetting) contracts.VodafoneConnectivityStatus {
+	status.OperationStatusText = decodeVodafoneSettingText(status.OperationStatus, settings)
+	status.SIMStatusText = decodeVodafoneSettingText(status.SIMStatus, settings)
+	status.BaseStationStatusText = decodeVodafoneSettingText(status.BaseStationStatus, settings)
+	status.LBSStatusText = decodeVodafoneSettingText(status.LBSStatusKey, settings)
+	return status
+}
+
+func decorateVodafoneLastEvent(event contracts.VodafoneLastEvent, settings map[string]vodafoneSetting) contracts.VodafoneLastEvent {
+	event.CallTypeText = decodeVodafoneSettingText(event.CallType, settings)
+	return event
+}
+
+func decodeVodafoneSettingText(raw string, settings map[string]vodafoneSetting) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len(settings) == 0 {
+		return ""
+	}
+	item, ok := settings[raw]
+	if !ok {
+		return ""
+	}
+	text := firstNonEmptyVodafone(item.Name, item.Value)
+	if strings.EqualFold(text, raw) {
+		return ""
+	}
+	return text
 }
 
 func parseVodafoneTime(layout string, raw string) (time.Time, error) {

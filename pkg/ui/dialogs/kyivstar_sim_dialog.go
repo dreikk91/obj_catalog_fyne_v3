@@ -173,8 +173,10 @@ func ShowKyivstarSIMDialog(
 			if err != nil {
 				return "", err
 			}
-			applyStatus(status)
-			renderServices(status.Services)
+			fyne.DoAndWait(func() {
+				applyStatus(status)
+				renderServices(status.Services)
+			})
 			return vm.BuildStatusText(status), nil
 		})
 	})
@@ -237,8 +239,9 @@ func ShowKyivstarSIMDialog(
 	})
 
 	pauseServicesBtn = makeIconButton("Блокувати сервіси", iconClose(), widget.DangerImportance, func() {
+		selectedServiceIDs := gatherSelectedServiceIDs()
 		runAction("Kyivstar: блокування сервісів...", func() (string, error) {
-			result, err := provider.PauseKyivstarSIMServices(msisdn, gatherSelectedServiceIDs())
+			result, err := provider.PauseKyivstarSIMServices(msisdn, selectedServiceIDs)
 			if err != nil {
 				return "", err
 			}
@@ -247,8 +250,9 @@ func ShowKyivstarSIMDialog(
 	})
 
 	activateServicesBtn = makeIconButton("Розблокувати сервіси", iconAdd(), widget.HighImportance, func() {
+		selectedServiceIDs := gatherSelectedServiceIDs()
 		runAction("Kyivstar: розблокування сервісів...", func() (string, error) {
-			result, err := provider.ActivateKyivstarSIMServices(msisdn, gatherSelectedServiceIDs())
+			result, err := provider.ActivateKyivstarSIMServices(msisdn, selectedServiceIDs)
 			if err != nil {
 				return "", err
 			}

@@ -34,6 +34,40 @@ func isCASLUnknownText(value string) bool {
 	}
 }
 
+func (p *CASLCloudProvider) resolveCASLPPKByDeviceIDWithCache(
+	ctx context.Context,
+	deviceID string,
+	resolved map[string]int64,
+	unresolved map[string]struct{},
+) int64 {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return 0
+	}
+	if resolved != nil {
+		if ppkNum, ok := resolved[deviceID]; ok {
+			return ppkNum
+		}
+	}
+	if unresolved != nil {
+		if _, failed := unresolved[deviceID]; failed {
+			return 0
+		}
+	}
+
+	ppkNum, ok := p.resolvePPKByDeviceID(ctx, deviceID)
+	if !ok || ppkNum <= 0 {
+		if unresolved != nil {
+			unresolved[deviceID] = struct{}{}
+		}
+		return 0
+	}
+	if resolved != nil {
+		resolved[deviceID] = ppkNum
+	}
+	return ppkNum
+}
+
 func fallbackCASLActionDetails(row CASLObjectEvent, sourceType string) string {
 	action := strings.TrimSpace(row.Action)
 	if action == "" {
@@ -592,6 +626,8 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context, byObjec
 	}
 
 	dictMap := p.loadDictionaryMap(ctx)
+	resolvedByDeviceID := make(map[string]int64)
+	unresolvedByDeviceID := make(map[string]struct{})
 
 	events := make([]models.Event, 0, len(rows))
 	for idx, row := range rows {
@@ -599,9 +635,20 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context, byObjec
 		if rawObjID == "" {
 			rawObjID = strings.TrimSpace(asString(row["object_id"]))
 		}
+		ppkNum := int64(parseCASLAnyInt(row["ppk_num"]))
+		if ppkNum <= 0 {
+			ppkNum = int64(parseCASLAnyInt(row["device_number"]))
+		}
+		deviceID := strings.TrimSpace(asString(row["device_id"]))
+		if deviceID == "" {
+			deviceID = strings.TrimSpace(asString(row["deviceId"]))
+		}
+		if ppkNum <= 0 {
+			ppkNum = p.resolveCASLPPKByDeviceIDWithCache(ctx, deviceID, resolvedByDeviceID, unresolvedByDeviceID)
+		}
 
 		// Використання дефолтних значень
-		objectID := mapCASLObjectID(rawObjID, asString(row["number"]), asString(row["device_number"]))
+		objectID := mapCASLObjectID(rawObjID, strconv.FormatInt(ppkNum, 10), asString(row["number"]), asString(row["device_number"]), deviceID)
 		objectName := strings.TrimSpace(asString(row["obj_name"]))
 		if objectName == "" {
 			objectName = strings.TrimSpace(asString(row["name"]))
@@ -609,7 +656,7 @@ func (p *CASLCloudProvider) readGeneralTapeAsEvents(ctx context.Context, byObjec
 		if objectName == "" {
 			objectName = "Об'єкт #" + strings.TrimSpace(rawObjID)
 		}
-		objectNum := rawObjID
+		objectNum := preferredCASLObjectNumber(rawObjID, objectName, ppkNum)
 		translator := map[string]string(nil)
 		deviceType := strings.TrimSpace(asString(row["device_type"]))
 
@@ -685,6 +732,8 @@ func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context, byPPK ma
 	}
 
 	dictMap := p.loadDictionaryMap(ctx)
+	resolvedByDeviceID := make(map[string]int64)
+	unresolvedByDeviceID := make(map[string]struct{})
 
 	alarms := make([]models.Alarm, 0, len(rows))
 	for _, row := range rows {
@@ -692,11 +741,18 @@ func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context, byPPK ma
 		if ppkNum <= 0 {
 			ppkNum = int64(parseCASLAnyInt(row["device_number"]))
 		}
+		deviceID := strings.TrimSpace(asString(row["device_id"]))
+		if deviceID == "" {
+			deviceID = strings.TrimSpace(asString(row["deviceId"]))
+		}
+		if ppkNum <= 0 {
+			ppkNum = p.resolveCASLPPKByDeviceIDWithCache(ctx, deviceID, resolvedByDeviceID, unresolvedByDeviceID)
+		}
 		rawObjID := strings.TrimSpace(asString(row["obj_id"]))
 		if rawObjID == "" {
 			rawObjID = strings.TrimSpace(asString(row["object_id"]))
 		}
-		if ppkNum <= 0 && rawObjID == "" {
+		if ppkNum <= 0 && rawObjID == "" && deviceID == "" {
 			continue
 		}
 		number := parseCASLAnyInt(row["number"])
@@ -718,7 +774,7 @@ func (p *CASLCloudProvider) readFromBasketAsAlarms(ctx context.Context, byPPK ma
 				hasCtx = true
 			}
 		}
-		objectID := mapCASLObjectID(rawObjID, strconv.FormatInt(ppkNum, 10))
+		objectID := mapCASLObjectID(rawObjID, strconv.FormatInt(ppkNum, 10), deviceID)
 		objectName := strings.TrimSpace(asString(row["obj_name"]))
 		if objectName == "" {
 			objectName = strings.TrimSpace(asString(row["name_obj"]))
@@ -892,14 +948,10 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 		}
 	}
 	if len(alarms) == 0 {
-		tapeRows, err := p.readGeneralTapeItemRows(ctx)
-		if err != nil {
-			log.Debug().Err(err).Msg("CASL: get_general_tape_item недоступний під час формування активних тривог")
-		} else if len(tapeRows) > 0 {
-			logCASLGeneralTapeItemRows(tapeRows)
-			p.updateRealtimeAlarmsFromRows(ctx, tapeRows)
-			alarms = p.snapshotRealtimeAlarms()
-		}
+		// get_general_tape_item повертає історичний ланцюжок подій по об'єкту
+		// ("від тривоги далі"), а не перелік поточних активних тривог.
+		// Тому не використовуємо його як fallback для стрічки активних тривог,
+		// інакше в UI зависають уже завершені CASL-кейси.
 	}
 	if len(alarms) == 0 {
 		return nil

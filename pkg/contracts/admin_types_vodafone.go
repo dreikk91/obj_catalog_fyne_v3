@@ -11,17 +11,22 @@ type VodafoneAuthState struct {
 
 // VodafoneConnectivityStatus містить статус підключення SIM у мережі.
 type VodafoneConnectivityStatus struct {
-	OperationStatus   string
-	SIMStatus         string
-	BaseStationStatus string
-	LBSStatusKey      string
-	ConnectionTime    time.Time
-	ConnectionTimeRaw string
+	OperationStatus       string
+	OperationStatusText   string
+	SIMStatus             string
+	SIMStatusText         string
+	BaseStationStatus     string
+	BaseStationStatusText string
+	LBSStatusKey          string
+	LBSStatusText         string
+	ConnectionTime        time.Time
+	ConnectionTimeRaw     string
 }
 
 // VodafoneLastEvent містить інформацію про останню подію по номеру.
 type VodafoneLastEvent struct {
 	CallType     string
+	CallTypeText string
 	EventTime    time.Time
 	EventTimeRaw string
 }
@@ -46,6 +51,14 @@ type VodafoneSIMStatus struct {
 	Connectivity      VodafoneConnectivityStatus
 	Blocking          VodafoneSIMBlockingStatus
 	LastEvent         VodafoneLastEvent
+}
+
+// VodafoneSIMInventoryEntry містить легкі дані списку IoT SIM для масових звітів.
+type VodafoneSIMInventoryEntry struct {
+	MSISDN            string
+	SubscriberName    string
+	SubscriberComment string
+	BlockingStatus    string
 }
 
 // VodafoneSIMRebootResult містить результат постановки заявки на перезавантаження SIM.

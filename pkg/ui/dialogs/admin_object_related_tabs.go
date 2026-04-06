@@ -178,6 +178,8 @@ func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminObjectPe
 	})
 
 	refreshBtn := widget.NewButton("Оновити", reload)
+	tableScroll := container.NewScroll(table)
+	tableScroll.SetMinSize(fyne.NewSize(420, 260))
 
 	content := container.NewBorder(
 		container.NewVBox(
@@ -187,7 +189,7 @@ func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminObjectPe
 		nil,
 		nil,
 		nil,
-		table,
+		tableScroll,
 	)
 
 	reload()
@@ -451,6 +453,8 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminObjectZones
 
 	refreshBtn := widget.NewButton("Оновити", reload)
 	nextBtn := widget.NewButton("Enter -> Наступна", moveToNextZone)
+	tableScroll := container.NewScroll(table)
+	tableScroll.SetMinSize(fyne.NewSize(420, 260))
 
 	content := container.NewBorder(
 		container.NewVBox(
@@ -469,7 +473,7 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminObjectZones
 		),
 		nil,
 		nil,
-		table,
+		tableScroll,
 	)
 
 	reload()

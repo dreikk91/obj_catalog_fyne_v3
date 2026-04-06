@@ -38,6 +38,14 @@ func (p *DBDataProvider) GetKyivstarSIMStatus(msisdn string) (contracts.Kyivstar
 	return service.GetSIMStatus(msisdn)
 }
 
+func (p *DBDataProvider) ListKyivstarSIMInventory(numbers []string) (map[string]contracts.KyivstarSIMInventoryEntry, error) {
+	service, err := p.kyivstarService()
+	if err != nil {
+		return nil, err
+	}
+	return service.ListSIMInventory(numbers)
+}
+
 func (p *DBDataProvider) PauseKyivstarSIM(msisdn string) (contracts.KyivstarSIMOperationResult, error) {
 	service, err := p.kyivstarService()
 	if err != nil {

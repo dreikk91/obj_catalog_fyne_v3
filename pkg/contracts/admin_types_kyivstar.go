@@ -39,6 +39,16 @@ type KyivstarSIMStatus struct {
 	Services         []KyivstarSIMServiceStatus
 }
 
+// KyivstarSIMInventoryEntry містить легкі дані списку IoT номерів для масових звітів.
+type KyivstarSIMInventoryEntry struct {
+	MSISDN       string
+	Status       string
+	DeviceName   string
+	DeviceID     string
+	IsOnline     bool
+	IsTestPeriod bool
+}
+
 // KyivstarSIMOperationResult містить результат зміни стану номера або сервісів.
 type KyivstarSIMOperationResult struct {
 	MSISDN    string

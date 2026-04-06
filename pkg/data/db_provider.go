@@ -570,6 +570,8 @@ func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
 		Address:     ptrToString(row.Address1),
 		ContractNum: ptrToString(row.Contract1),
 		Phone:       ptrToString(row.GsmPhone),
+		SIM1:        ptrToString(row.GsmPhone),
+		SIM2:        ptrToString(row.GsmPhone2),
 		Status:      mapStateToStatus(row.AlarmState1, row.IsConnState1),
 		StatusText:  mapStateToStatusText(row.AlarmState1, row.TechAlarmState1, row.IsConnState1),
 		GSMLevel:    0,

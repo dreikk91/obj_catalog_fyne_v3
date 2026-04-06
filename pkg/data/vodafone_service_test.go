@@ -100,6 +100,13 @@ func TestVodafoneService_GetSIMStatus_UsesAvailableIOTList(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/entity/api/functions/MYVF-SETTINGS":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"settings": []map[string]any{
+					{"key": "done", "name": "LBS завершено"},
+					{"key": "DATA_TRANSFER", "name": "Передача даних"},
+				},
+			})
 		case r.URL.Path == "/customer/api/customerManagement/v3/customer":
 			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{
@@ -204,8 +211,14 @@ func TestVodafoneService_GetSIMStatus_UsesAvailableIOTList(t *testing.T) {
 	if status.Connectivity.SIMStatus != "active" {
 		t.Fatalf("unexpected SIM status: %q", status.Connectivity.SIMStatus)
 	}
+	if status.Connectivity.LBSStatusText != "LBS завершено" {
+		t.Fatalf("unexpected LBSStatusText: %q", status.Connectivity.LBSStatusText)
+	}
 	if status.LastEvent.CallType != "DATA_TRANSFER" {
 		t.Fatalf("unexpected call type: %q", status.LastEvent.CallType)
+	}
+	if status.LastEvent.CallTypeText != "Передача даних" {
+		t.Fatalf("unexpected CallTypeText: %q", status.LastEvent.CallTypeText)
 	}
 }
 
@@ -225,6 +238,8 @@ func TestVodafoneService_BlockSIM_CreatesAndSubmitsOrder(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/entity/api/functions/MYVF-SETTINGS":
+			_ = json.NewEncoder(w).Encode(map[string]any{"settings": []map[string]any{}})
 		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer":
 			_ = json.NewEncoder(w).Encode([]map[string]any{
 				{
@@ -324,6 +339,8 @@ func TestVodafoneService_UpdateSIMMetadata_InvalidatesCachedDescription(t *testi
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/entity/api/functions/MYVF-SETTINGS":
+			_ = json.NewEncoder(w).Encode(map[string]any{"settings": []map[string]any{}})
 		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer":
 			listCalls++
 			_ = json.NewEncoder(w).Encode([]map[string]any{

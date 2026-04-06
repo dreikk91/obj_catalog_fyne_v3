@@ -158,3 +158,27 @@ func TestVodafoneSIMViewModel_BuildIdentityText(t *testing.T) {
 		t.Fatalf("identity text must contain subscriber comment, got %q", got)
 	}
 }
+
+func TestVodafoneSIMViewModel_BuildConnectivityText_UsesDecodedLabels(t *testing.T) {
+	t.Parallel()
+
+	vm := NewVodafoneSIMViewModel()
+	got := vm.BuildConnectivityText(contracts.VodafoneSIMStatus{
+		Available: true,
+		Connectivity: contracts.VodafoneConnectivityStatus{
+			OperationStatus:       "SUCCESS",
+			OperationStatusText:   "Операція успішна",
+			LBSStatusKey:          "done",
+			LBSStatusText:         "LBS завершено",
+			BaseStationStatus:     "active",
+			BaseStationStatusText: "",
+		},
+	})
+
+	if !strings.Contains(got, "Операція успішна [SUCCESS]") {
+		t.Fatalf("expected decoded operation status, got %q", got)
+	}
+	if !strings.Contains(got, "LBS завершено [done]") {
+		t.Fatalf("expected decoded lbs status, got %q", got)
+	}
+}

@@ -81,6 +81,7 @@ func iconUp() fyne.Resource      { return fyneTheme.MoveUpIcon() }
 func iconDown() fyne.Resource    { return fyneTheme.MoveDownIcon() }
 func iconRefresh() fyne.Resource { return fyneTheme.ViewRefreshIcon() }
 func iconExport() fyne.Resource  { return fyneTheme.DocumentSaveIcon() }
+func iconCopy() fyne.Resource    { return fyneTheme.ContentCopyIcon() }
 func iconClose() fyne.Resource   { return fyneTheme.CancelIcon() }
 func iconFolder() fyne.Resource  { return fyneTheme.FolderOpenIcon() }
 func iconClear() fyne.Resource   { return fyneTheme.ContentClearIcon() }

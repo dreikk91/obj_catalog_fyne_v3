@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"errors"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"strings"
@@ -76,6 +77,29 @@ func (p *DBDataProvider) UpdateVodafoneSIMMetadata(msisdn string, name string, c
 		return err
 	}
 	return service.UpdateSIMMetadata(msisdn, name, comment)
+}
+
+func (p *DBDataProvider) ListVodafoneSIMInventory() (map[string]contracts.VodafoneSIMInventoryEntry, error) {
+	service, err := p.vodafoneService()
+	if err != nil {
+		return nil, err
+	}
+
+	subscribers, err := service.listAvailableSubscribers(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	items := make(map[string]contracts.VodafoneSIMInventoryEntry, len(subscribers))
+	for key, item := range subscribers {
+		items[key] = contracts.VodafoneSIMInventoryEntry{
+			MSISDN:            strings.TrimSpace(item.MSISDN),
+			SubscriberName:    strings.TrimSpace(item.Name),
+			SubscriberComment: strings.TrimSpace(item.Comment),
+			BlockingStatus:    strings.TrimSpace(item.BlockingStatus),
+		}
+	}
+	return items, nil
 }
 
 func (p *DBDataProvider) vodafoneService() (*VodafoneService, error) {

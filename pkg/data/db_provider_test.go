@@ -84,6 +84,26 @@ func TestMapDBEventRowsPreservesInputOrder(t *testing.T) {
 	}
 }
 
+func TestMapObjectRowToModel_PreservesSIMPhones(t *testing.T) {
+	t.Parallel()
+
+	sim1 := "+380501234567"
+	sim2 := "+380671234567"
+	row := database.ObjectInfoRow{
+		Objn:      1001,
+		GsmPhone:  &sim1,
+		GsmPhone2: &sim2,
+	}
+
+	obj := mapObjectRowToModel(row)
+	if obj.SIM1 != sim1 {
+		t.Fatalf("SIM1 = %q, want %q", obj.SIM1, sim1)
+	}
+	if obj.SIM2 != sim2 {
+		t.Fatalf("SIM2 = %q, want %q", obj.SIM2, sim2)
+	}
+}
+
 func ptrTime(v time.Time) *time.Time {
 	return &v
 }

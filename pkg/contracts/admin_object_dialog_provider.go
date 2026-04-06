@@ -46,6 +46,7 @@ type AdminObjectKyivstarService interface {
 	RefreshKyivstarToken() (KyivstarAuthState, error)
 	ClearKyivstarToken() error
 	GetKyivstarSIMStatus(msisdn string) (KyivstarSIMStatus, error)
+	ListKyivstarSIMInventory(numbers []string) (map[string]KyivstarSIMInventoryEntry, error)
 	PauseKyivstarSIM(msisdn string) (KyivstarSIMOperationResult, error)
 	ActivateKyivstarSIM(msisdn string) (KyivstarSIMOperationResult, error)
 	PauseKyivstarSIMServices(msisdn string, serviceIDs []string) (KyivstarSIMOperationResult, error)

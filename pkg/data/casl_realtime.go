@@ -770,15 +770,16 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromEvents(ctx context.Context, 
 		}
 
 		p.realtimeAlarmByObjID[cacheKey] = models.Alarm{
-			ID:         event.ID,
-			ObjectID:   event.ObjectID,
-			ObjectName: event.ObjectName,
-			Address:    event.Details, // Для tape подій часто адреса в деталях або треба довантажити
-			Time:       event.Time,
-			Details:    event.Details,
-			Type:       alarmType,
-			ZoneNumber: event.ZoneNumber,
-			SC1:        event.SC1,
+			ID:           event.ID,
+			ObjectID:     event.ObjectID,
+			ObjectNumber: strings.TrimSpace(event.ObjectNumber),
+			ObjectName:   event.ObjectName,
+			Address:      event.Details, // Для tape подій часто адреса в деталях або треба довантажити
+			Time:         event.Time,
+			Details:      event.Details,
+			Type:         alarmType,
+			ZoneNumber:   event.ZoneNumber,
+			SC1:          event.SC1,
 		}
 	}
 }
@@ -790,9 +791,15 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 
 	ppkFilter := make(map[int64]struct{}, len(rows))
 	objFilter := make(map[string]struct{}, len(rows))
+	resolvedByDeviceID := make(map[string]int64)
+	unresolvedByDeviceID := make(map[string]struct{})
 	for _, row := range rows {
-		if row.PPKNum > 0 {
-			ppkFilter[row.PPKNum] = struct{}{}
+		ppkNum := row.PPKNum
+		if ppkNum <= 0 {
+			ppkNum = p.resolveCASLPPKByDeviceIDWithCache(ctx, row.DeviceID, resolvedByDeviceID, unresolvedByDeviceID)
+		}
+		if ppkNum > 0 {
+			ppkFilter[ppkNum] = struct{}{}
 		}
 		if objID := strings.TrimSpace(row.ObjID); objID != "" {
 			objFilter[objID] = struct{}{}
@@ -820,6 +827,9 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 
 		rawObjID := strings.TrimSpace(row.ObjID)
 		ppkNum := row.PPKNum
+		if ppkNum <= 0 {
+			ppkNum = p.resolveCASLPPKByDeviceIDWithCache(ctx, row.DeviceID, resolvedByDeviceID, unresolvedByDeviceID)
+		}
 
 		ctxItem, hasCtx := contextByPPK[ppkNum]
 		if !hasCtx && rawObjID != "" {
@@ -829,7 +839,7 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			}
 		}
 
-		objectID := mapCASLObjectID(rawObjID, strconv.FormatInt(ppkNum, 10))
+		objectID := mapCASLObjectID(rawObjID, strconv.FormatInt(ppkNum, 10), strings.TrimSpace(row.DeviceID))
 		objectName := strings.TrimSpace(row.ObjName)
 		objectNum := preferredCASLObjectNumber(rawObjID, objectName, ppkNum)
 

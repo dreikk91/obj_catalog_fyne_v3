@@ -41,7 +41,7 @@ func (vm *VodafoneSIMViewModel) BuildStatusText(status contracts.VodafoneSIMStat
 		fmt.Sprintf("Vodafone: %s", msisdn),
 	}
 	if strings.TrimSpace(status.Connectivity.SIMStatus) != "" {
-		parts = append(parts, "SIM="+strings.TrimSpace(status.Connectivity.SIMStatus))
+		parts = append(parts, "SIM="+formatVodafoneDisplayValue(status.Connectivity.SIMStatus, status.Connectivity.SIMStatusText))
 	}
 	if strings.TrimSpace(status.Connectivity.ConnectionTimeRaw) != "" {
 		parts = append(parts, "ост. зв'язок "+strings.TrimSpace(status.Connectivity.ConnectionTimeRaw))
@@ -56,7 +56,7 @@ func (vm *VodafoneSIMViewModel) BuildStatusText(status contracts.VodafoneSIMStat
 		parts = append(parts, "заявка "+strings.TrimSpace(status.Blocking.BlockingRequestDateRaw))
 	}
 	if strings.TrimSpace(status.LastEvent.CallType) != "" || strings.TrimSpace(status.LastEvent.EventTimeRaw) != "" {
-		eventText := strings.TrimSpace(status.LastEvent.CallType)
+		eventText := formatVodafoneDisplayValue(status.LastEvent.CallType, status.LastEvent.CallTypeText)
 		if strings.TrimSpace(status.LastEvent.EventTimeRaw) != "" {
 			if eventText != "" {
 				eventText += " "
@@ -85,7 +85,7 @@ func (vm *VodafoneSIMViewModel) BuildOverviewText(status contracts.VodafoneSIMSt
 
 	parts := []string{msisdn}
 	if simStatus := strings.TrimSpace(status.Connectivity.SIMStatus); simStatus != "" {
-		parts = append(parts, "SIM "+simStatus)
+		parts = append(parts, "SIM "+formatVodafoneDisplayValue(simStatus, status.Connectivity.SIMStatusText))
 	}
 	if eventText := vm.buildLastEventInline(status); eventText != "" {
 		parts = append(parts, "подія "+eventText)
@@ -100,16 +100,16 @@ func (vm *VodafoneSIMViewModel) BuildConnectivityText(status contracts.VodafoneS
 
 	parts := make([]string, 0, 5)
 	if value := strings.TrimSpace(status.Connectivity.SIMStatus); value != "" {
-		parts = append(parts, "SIM статус: "+value)
+		parts = append(parts, "SIM статус: "+formatVodafoneDisplayValue(value, status.Connectivity.SIMStatusText))
 	}
 	if value := strings.TrimSpace(status.Connectivity.OperationStatus); value != "" {
-		parts = append(parts, "Статус операції: "+value)
+		parts = append(parts, "Статус операції: "+formatVodafoneDisplayValue(value, status.Connectivity.OperationStatusText))
 	}
 	if value := strings.TrimSpace(status.Connectivity.BaseStationStatus); value != "" {
-		parts = append(parts, "Базова станція: "+value)
+		parts = append(parts, "Базова станція: "+formatVodafoneDisplayValue(value, status.Connectivity.BaseStationStatusText))
 	}
 	if value := strings.TrimSpace(status.Connectivity.LBSStatusKey); value != "" {
-		parts = append(parts, "LBS: "+value)
+		parts = append(parts, "LBS: "+formatVodafoneDisplayValue(value, status.Connectivity.LBSStatusText))
 	}
 	if value := strings.TrimSpace(status.Connectivity.ConnectionTimeRaw); value != "" {
 		parts = append(parts, "Останній зв'язок: "+value)
@@ -245,6 +245,7 @@ func (vm *VodafoneSIMViewModel) BuildRebootResultText(result contracts.VodafoneS
 
 func (vm *VodafoneSIMViewModel) buildLastEventInline(status contracts.VodafoneSIMStatus) string {
 	eventText := strings.TrimSpace(status.LastEvent.CallType)
+	eventText = formatVodafoneDisplayValue(eventText, status.LastEvent.CallTypeText)
 	if value := strings.TrimSpace(status.LastEvent.EventTimeRaw); value != "" {
 		if eventText != "" {
 			eventText += " "
@@ -268,5 +269,20 @@ func humanizeVodafoneBlockingStatus(status string) string {
 		return "фінальне"
 	default:
 		return strings.TrimSpace(status)
+	}
+}
+
+func formatVodafoneDisplayValue(raw string, decoded string) string {
+	raw = strings.TrimSpace(raw)
+	decoded = strings.TrimSpace(decoded)
+	switch {
+	case raw == "":
+		return decoded
+	case decoded == "":
+		return raw
+	case strings.EqualFold(raw, decoded):
+		return raw
+	default:
+		return decoded + " [" + raw + "]"
 	}
 }

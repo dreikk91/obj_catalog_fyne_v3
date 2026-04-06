@@ -645,18 +645,9 @@ func (s *objectCardDialogState) buildTestControlCard() fyne.CanvasObject {
 }
 
 func (s *objectCardDialogState) buildSIMPhonesCard() fyne.CanvasObject {
-	simActions := func(slot int) fyne.CanvasObject {
-		return container.NewHBox(
-			makeLowButton("Статус", func() { s.refreshSIMStatus(slot) }),
-			makeLowButton("Перезавантажити", func() { s.rebootSIM(slot) }),
-			makeLowButton("Записати №/назву", func() { s.syncSIMMetadata(slot) }),
-			makeLowButton("Блок/розблок", func() { s.openSIMDialog(slot) }),
-		)
-	}
-
 	simPhonesForm := widget.NewForm(
-		widget.NewFormItem("SIM1:", container.NewVBox(s.sim1Entry, s.sim1UsageLabel, s.sim1OperatorLabel, simActions(1))),
-		widget.NewFormItem("SIM2:", container.NewVBox(s.sim2Entry, s.sim2UsageLabel, s.sim2OperatorLabel, simActions(2))),
+		widget.NewFormItem("SIM1:", container.NewVBox(s.sim1Entry, s.sim1UsageLabel)),
+		widget.NewFormItem("SIM2:", container.NewVBox(s.sim2Entry, s.sim2UsageLabel)),
 	)
 	return widget.NewCard("Телефони", "", simPhonesForm)
 }
@@ -675,7 +666,10 @@ func (s *objectCardDialogState) buildObjectTab() fyne.CanvasObject {
 	testControlCard := s.buildTestControlCard()
 	simPhonesCard := s.buildSIMPhonesCard()
 	subserverCard := s.buildSubserverCard()
-	ppkParamsRow := container.NewGridWithColumns(3, testControlCard, simPhonesCard, s.hiddenNCard)
+	ppkParamsRow := container.NewVBox(
+		container.NewGridWithColumns(2, testControlCard, s.hiddenNCard),
+		simPhonesCard,
+	)
 
 	return container.NewVScroll(container.NewVBox(
 		mainInfoForm,
@@ -799,7 +793,7 @@ func showObjectCardDialog(parent fyne.Window, provider contracts.AdminObjectCard
 	title := "Редагування/Створення об'єкта"
 
 	win := fyne.CurrentApp().NewWindow(title)
-	win.Resize(fyne.NewSize(800, 600))
+	win.Resize(fyne.NewSize(720, 600))
 
 	state := newObjectCardDialogState(win, provider, editObjN, onSaved)
 	win.SetContent(state.buildContent())

@@ -141,6 +141,55 @@ func (s *KyivstarService) GetSIMStatus(msisdn string) (contracts.KyivstarSIMStat
 	return status, nil
 }
 
+func (s *KyivstarService) ListSIMInventory(numbers []string) (map[string]contracts.KyivstarSIMInventoryEntry, error) {
+	result := make(map[string]contracts.KyivstarSIMInventoryEntry)
+
+	normalized := make([]string, 0, len(numbers))
+	seen := make(map[string]struct{}, len(numbers))
+	for _, number := range numbers {
+		msisdn, err := normalizeKyivstarMSISDN(number)
+		if err != nil {
+			continue
+		}
+		if _, ok := seen[msisdn]; ok {
+			continue
+		}
+		seen[msisdn] = struct{}{}
+		normalized = append(normalized, msisdn)
+	}
+	if len(normalized) == 0 {
+		return result, nil
+	}
+
+	const batchSize = 100
+	for start := 0; start < len(normalized); start += batchSize {
+		end := start + batchSize
+		if end > len(normalized) {
+			end = len(normalized)
+		}
+		items, err := s.fetchCompanyNumbers(normalized[start:end])
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			msisdn := strings.TrimSpace(item.Number)
+			if msisdn == "" {
+				continue
+			}
+			result[msisdn] = contracts.KyivstarSIMInventoryEntry{
+				MSISDN:       msisdn,
+				Status:       strings.TrimSpace(item.Status),
+				DeviceName:   strings.TrimSpace(item.DeviceName),
+				DeviceID:     strings.TrimSpace(item.DeviceID),
+				IsOnline:     item.IsOnline,
+				IsTestPeriod: item.IsTestPeriod,
+			}
+		}
+	}
+
+	return result, nil
+}
+
 func (s *KyivstarService) PauseSIM(msisdn string) (contracts.KyivstarSIMOperationResult, error) {
 	return s.changeNumberStatus(msisdn, "pause")
 }

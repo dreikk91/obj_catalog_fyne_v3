@@ -8,6 +8,7 @@ const (
 	Unknown  Operator = ""
 	Vodafone Operator = "vodafone"
 	Kyivstar Operator = "kyivstar"
+	Lifecell Operator = "lifecell"
 )
 
 func Detect(raw string) Operator {
@@ -16,6 +17,8 @@ func Detect(raw string) Operator {
 		return Vodafone
 	case IsKyivstar(raw):
 		return Kyivstar
+	case IsLifecell(raw):
+		return Lifecell
 	default:
 		return Unknown
 	}
@@ -81,12 +84,34 @@ func IsKyivstar(raw string) bool {
 	}
 }
 
+func IsLifecell(raw string) bool {
+	digits := digitsOnly(raw)
+	switch {
+	case len(digits) >= 5 && strings.HasPrefix(digits, "38063"):
+		return true
+	case len(digits) >= 5 && strings.HasPrefix(digits, "38073"):
+		return true
+	case len(digits) >= 5 && strings.HasPrefix(digits, "38093"):
+		return true
+	case len(digits) >= 3 && strings.HasPrefix(digits, "063"):
+		return true
+	case len(digits) >= 3 && strings.HasPrefix(digits, "073"):
+		return true
+	case len(digits) >= 3 && strings.HasPrefix(digits, "093"):
+		return true
+	default:
+		return false
+	}
+}
+
 func Label(operator Operator) string {
 	switch operator {
 	case Vodafone:
 		return "Vodafone"
 	case Kyivstar:
 		return "Kyivstar"
+	case Lifecell:
+		return "lifecell"
 	default:
 		return "SIM API"
 	}

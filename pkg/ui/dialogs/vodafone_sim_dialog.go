@@ -115,7 +115,9 @@ func ShowVodafoneSIMDialog(
 			if err != nil {
 				return "", err
 			}
-			applyStatus(status)
+			fyne.DoAndWait(func() {
+				applyStatus(status)
+			})
 			return vm.BuildStatusText(status), nil
 		})
 	})

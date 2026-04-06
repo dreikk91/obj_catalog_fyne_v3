@@ -68,6 +68,9 @@ func (vm *VodafoneSIMViewModel) BuildStatusText(status contracts.VodafoneSIMStat
 	if strings.TrimSpace(status.SubscriberName) != "" {
 		parts = append(parts, "назва "+strings.TrimSpace(status.SubscriberName))
 	}
+	if strings.TrimSpace(status.SubscriberComment) != "" {
+		parts = append(parts, "коментар "+strings.TrimSpace(status.SubscriberComment))
+	}
 	return strings.Join(parts, " | ")
 }
 
@@ -153,12 +156,19 @@ func (vm *VodafoneSIMViewModel) BuildEventText(status contracts.VodafoneSIMStatu
 
 func (vm *VodafoneSIMViewModel) BuildIdentityText(status contracts.VodafoneSIMStatus) string {
 	if !status.Available {
-		return "Назва абонента недоступна."
+		return "Назва та коментар недоступні."
 	}
+	parts := make([]string, 0, 2)
 	if value := strings.TrimSpace(status.SubscriberName); value != "" {
-		return "Назва абонента: " + value
+		parts = append(parts, "Назва: "+value)
 	}
-	return "Назва абонента не задана."
+	if value := strings.TrimSpace(status.SubscriberComment); value != "" {
+		parts = append(parts, "Коментар: "+value)
+	}
+	if len(parts) == 0 {
+		return "Назва та коментар не задані."
+	}
+	return strings.Join(parts, "\n")
 }
 
 func (vm *VodafoneSIMViewModel) BuildMetadata(msisdn string, objn string, shortName string, fullName string) (string, string, error) {

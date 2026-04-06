@@ -196,9 +196,15 @@ func (s *VodafoneService) GetSIMStatus(msisdn string) (contracts.VodafoneSIMStat
 		return contracts.VodafoneSIMStatus{}, err
 	}
 	status := contracts.VodafoneSIMStatus{
-		MSISDN:         normalized,
-		Available:      available,
-		SubscriberName: subscriber.Description,
+		MSISDN:    normalized,
+		Available: available,
+		SubscriberName: firstNonEmptyVodafone(
+			subscriber.Name,
+		),
+		SubscriberComment: firstNonEmptyVodafone(
+			subscriber.Comment,
+			subscriber.Description,
+		),
 		Blocking: contracts.VodafoneSIMBlockingStatus{
 			Status:                 subscriber.BlockingStatus,
 			BlockingDate:           subscriber.BlockingDate,
@@ -333,6 +339,7 @@ func (s *VodafoneService) UpdateSIMMetadata(msisdn string, name string, comment 
 	if !performed {
 		return errors.New("vodafone: немає даних для запису в name/comment")
 	}
+	s.invalidateAvailableSIMsCache()
 	return nil
 }
 
@@ -628,16 +635,42 @@ func (s *VodafoneService) listAvailableSubscribers(ctx context.Context) (map[str
 		return nil, err
 	}
 
+	subscribers, err := s.fetchAvailableSubscribers(ctx, token, true)
+	if err != nil || len(subscribers) == 0 {
+		subscribers, err = s.fetchAvailableSubscribers(ctx, token, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	s.mu.Lock()
+	s.availableSIMs = cloneVodafoneSubscribers(subscribers)
+	s.availableSIMsAt = time.Now()
+	s.mu.Unlock()
+	return subscribers, nil
+}
+
+func (s *VodafoneService) fetchAvailableSubscribers(ctx context.Context, token string, useSelfEndpoint bool) (map[string]vodafoneSubscriber, error) {
 	subscribers := make(map[string]vodafoneSubscriber)
 	const limit = 100
 	for offset := 0; ; offset += limit {
-		reqURL := fmt.Sprintf(
-			"%s/customer/api/customerManagement/v3/customer?offset=%d&limit=%d&sort=+msisdn&category.id=%s&fields=description",
-			s.baseURL,
-			offset,
-			limit,
-			vodafoneIOTCategory,
-		)
+		reqURL := ""
+		if useSelfEndpoint {
+			reqURL = fmt.Sprintf(
+				"%s/customer/api/customerManagement/v3/customer/self?offset=%d&limit=%d&sort=+msisdn&fields=subscriberName,subscriberComment&spinnerType=3",
+				s.baseURL,
+				offset,
+				limit,
+			)
+		} else {
+			reqURL = fmt.Sprintf(
+				"%s/customer/api/customerManagement/v3/customer?offset=%d&limit=%d&sort=+msisdn&category.id=%s&fields=description,subscriberName,subscriberComment",
+				s.baseURL,
+				offset,
+				limit,
+				vodafoneIOTCategory,
+			)
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("vodafone: failed to create customers request: %w", err)
@@ -675,6 +708,8 @@ func (s *VodafoneService) listAvailableSubscribers(ctx context.Context) (map[str
 				subscribers[msisdnValue] = vodafoneSubscriber{
 					MSISDN:                 msisdnValue,
 					AccountID:              strings.TrimSpace(item.Account.ID),
+					Name:                   strings.TrimSpace(values["subscriberName"]),
+					Comment:                strings.TrimSpace(values["subscriberComment"]),
 					Description:            strings.TrimSpace(values["phoneDescription"]),
 					BlockingStatus:         strings.TrimSpace(values["blockingStatus"]),
 					BlockingDate:           blockingDate,
@@ -690,11 +725,6 @@ func (s *VodafoneService) listAvailableSubscribers(ctx context.Context) (map[str
 			break
 		}
 	}
-
-	s.mu.Lock()
-	s.availableSIMs = cloneVodafoneSubscribers(subscribers)
-	s.availableSIMsAt = time.Now()
-	s.mu.Unlock()
 	return subscribers, nil
 }
 
@@ -836,6 +866,8 @@ func (s *VodafoneService) invalidateAvailableSIMsCache() {
 type vodafoneSubscriber struct {
 	MSISDN                 string
 	AccountID              string
+	Name                   string
+	Comment                string
 	Description            string
 	BlockingStatus         string
 	BlockingDate           time.Time
@@ -867,6 +899,15 @@ func mergeVodafoneNamedValues(dst map[string]string, values []vodafoneNamedValue
 		}
 		dst[name] = strings.TrimSpace(item.Value)
 	}
+}
+
+func firstNonEmptyVodafone(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func parseVodafoneTime(layout string, raw string) (time.Time, error) {

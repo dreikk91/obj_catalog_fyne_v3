@@ -25,6 +25,8 @@ import (
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
+const workAreaJournalTabIndex = 3
+
 // WorkAreaPanel - структура робочої області
 type WorkAreaPanel struct {
 	Container       *fyne.Container
@@ -47,6 +49,9 @@ type WorkAreaPanel struct {
 	Contacts  []models.Contact
 	Events    []models.Event
 	IsLoading bool
+
+	eventsLoadedObjectID  int
+	eventsLoadingObjectID int
 
 	// UI елементи
 	HeaderName    *widget.Label
@@ -173,6 +178,12 @@ func NewWorkAreaPanel(provider contracts.WorkAreaProvider, window fyne.Window) *
 		container.NewTabItem("👥 Відповідальні", panel.createContactsTab()),
 		container.NewTabItem("📜 Журнал", panel.createEventsTab()),
 	)
+	panel.Tabs.OnSelected = func(item *container.TabItem) {
+		if item == nil {
+			return
+		}
+		panel.ensureCurrentObjectEventsLoaded()
+	}
 
 	panel.Container = container.NewBorder(
 		header,
@@ -805,9 +816,12 @@ func (w *WorkAreaPanel) SetObject(object models.Object) {
 	w.Zones = nil
 	w.Contacts = nil
 	w.Events = nil
+	w.eventsLoadedObjectID = 0
+	w.eventsLoadingObjectID = 0
 
 	w.updateDeviceInfo()
 	w.refreshTabs()
+	w.ensureCurrentObjectEventsLoaded()
 
 	// Запускаємо асинхронне завантаження
 	go w.loadObjectDetails(object.ID)
@@ -823,6 +837,7 @@ func (w *WorkAreaPanel) exportSelectedObject(format string) {
 	zones := append([]models.Zone(nil), w.Zones...)
 	contacts := append([]models.Contact(nil), w.Contacts...)
 	events := append([]models.Event(nil), w.Events...)
+	eventsLoaded := w.eventsLoadedObjectID == obj.ID
 
 	if w.ExportPDFBtn != nil {
 		w.ExportPDFBtn.Disable()
@@ -832,6 +847,10 @@ func (w *WorkAreaPanel) exportSelectedObject(format string) {
 	}
 
 	go func() {
+		if !eventsLoaded {
+			uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+			events = w.ViewModel.LoadObjectEvents(w.Data, obj.ID, uiCfg.ObjectLogLimit)
+		}
 		externalData := w.ViewModel.LoadExternalData(w.Data, obj.ID)
 		exportData := w.ExportVM.BuildObjectExportData(obj, zones, contacts, events, externalData)
 		uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
@@ -871,8 +890,7 @@ func (w *WorkAreaPanel) exportSelectedObject(format string) {
 }
 
 func (w *WorkAreaPanel) loadObjectDetails(id int) {
-	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
-	details := w.ViewModel.LoadObjectDetails(w.Data, id, uiCfg.ObjectLogLimit)
+	details := w.ViewModel.LoadObjectBaseDetails(w.Data, id)
 
 	fyne.Do(func() {
 		// Перевіряємо, чи користувач досі на цьому ж об'єкті
@@ -887,7 +905,6 @@ func (w *WorkAreaPanel) loadObjectDetails(id int) {
 
 		w.Zones = details.Zones
 		w.Contacts = details.Contacts
-		w.Events = details.Events
 
 		w.refreshTabs()
 	})
@@ -972,6 +989,47 @@ func (w *WorkAreaPanel) syncEventsDataBinding() {
 	_ = SetUntypedList(w.EventsData, w.Events)
 }
 
+func (w *WorkAreaPanel) isJournalTabSelected() bool {
+	return w != nil && w.Tabs != nil && w.Tabs.SelectedIndex() == workAreaJournalTabIndex
+}
+
+func (w *WorkAreaPanel) ensureCurrentObjectEventsLoaded() {
+	if w == nil || w.CurrentObject == nil || w.Data == nil || w.ViewModel == nil {
+		return
+	}
+	if !w.isJournalTabSelected() {
+		return
+	}
+
+	objectID := w.CurrentObject.ID
+	if w.eventsLoadedObjectID == objectID || w.eventsLoadingObjectID == objectID {
+		return
+	}
+
+	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+	eventLimit := uiCfg.ObjectLogLimit
+	w.eventsLoadingObjectID = objectID
+
+	go func(id int) {
+		events := w.ViewModel.LoadObjectEvents(w.Data, id, eventLimit)
+		fyne.Do(func() {
+			if w.eventsLoadingObjectID == id {
+				w.eventsLoadingObjectID = 0
+			}
+			if !w.ViewModel.CanApplyDetails(w.CurrentObject, id) {
+				return
+			}
+
+			w.Events = events
+			w.eventsLoadedObjectID = id
+			w.syncEventsDataBinding()
+			if w.EventsList != nil {
+				w.EventsList.Refresh()
+			}
+		})
+	}(objectID)
+}
+
 func (w *WorkAreaPanel) zoneByRow(row int) (models.Zone, bool) {
 	if w == nil || w.ZonesData == nil || row < 0 || row >= w.ZonesData.Length() {
 		return models.Zone{}, false
@@ -990,8 +1048,19 @@ func (w *WorkAreaPanel) RefreshCurrentObjectEvents() {
 	if w == nil || w.CurrentObject == nil || w.Data == nil || w.ViewModel == nil {
 		return
 	}
+	if !w.isJournalTabSelected() {
+		return
+	}
 
 	objectID := w.CurrentObject.ID
+	if w.eventsLoadedObjectID != objectID {
+		w.ensureCurrentObjectEventsLoaded()
+		return
+	}
+	if w.eventsLoadingObjectID == objectID {
+		return
+	}
+
 	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
 	eventLimit := uiCfg.ObjectLogLimit
 

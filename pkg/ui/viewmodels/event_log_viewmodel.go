@@ -1,6 +1,7 @@
 package viewmodels
 
 import (
+	"sort"
 	"time"
 
 	"obj_catalog_fyne_v3/pkg/models"
@@ -46,7 +47,7 @@ func (vm *EventLogViewModel) LoadEvents(useCase EventLogUseCase) []models.Event 
 		return nil
 	}
 	events := useCase.FetchEvents()
-	return append([]models.Event(nil), events...)
+	return sortEventsByTimeDesc(events)
 }
 
 func (vm *EventLogViewModel) ApplyFilters(input EventLogFilterInput) EventLogFilterOutput {
@@ -56,12 +57,13 @@ func (vm *EventLogViewModel) ApplyFilters(input EventLogFilterInput) EventLogFil
 	}
 	year, month, day := now.Date()
 
-	filtered := make([]models.Event, 0, len(input.AllEvents))
+	orderedEvents := sortEventsByTimeDesc(input.AllEvents)
+	filtered := make([]models.Event, 0, len(orderedEvents))
 	countAll := 0
 	countBridge := 0
 	countPhoenix := 0
 	countCASL := 0
-	for _, event := range input.AllEvents {
+	for _, event := range orderedEvents {
 		switch input.Period {
 		case "Остання година":
 			if now.Sub(event.Time) > time.Hour {
@@ -115,4 +117,17 @@ done:
 		CountPhoenix: countPhoenix,
 		CountCASL:    countCASL,
 	}
+}
+
+func sortEventsByTimeDesc(events []models.Event) []models.Event {
+	ordered := append([]models.Event(nil), events...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		left := ordered[i].Time
+		right := ordered[j].Time
+		if left.Equal(right) {
+			return ordered[i].ID > ordered[j].ID
+		}
+		return left.After(right)
+	})
+	return ordered
 }

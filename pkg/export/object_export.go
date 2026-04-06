@@ -19,18 +19,20 @@ type ZoneExportRow struct {
 	Number string
 	Name   string
 	Type   string
+	Group  string
 	Status string
 }
 
 type ResponsibleExportRow struct {
 	Name  string
 	Phone string
+	Group string
 	Note  string
 }
 
 // ObjectExportData contains all information required for object export.
 type ObjectExportData struct {
-	Number         int
+	Number         string
 	Name           string
 	Address        string
 	ContractNumber string
@@ -44,6 +46,7 @@ type ObjectExportData struct {
 	ObjectPhone    string
 	Location       string
 	AdditionalInfo string
+	GroupsSummary  string
 	Zones          []ZoneExportRow
 	Responsibles   []ResponsibleExportRow
 }
@@ -56,7 +59,7 @@ func ExportObjectToPDF(data ObjectExportData, outputDir string) (string, error) 
 	}
 
 	pdf := gofpdf.New("P", "mm", "A4", "")
-	pdf.SetTitle(fmt.Sprintf("Object #%d", data.Number), false)
+	pdf.SetTitle("Object #"+normalizeValue(data.Number), false)
 	pdf.SetMargins(12, 12, 12)
 	pdf.SetAutoPageBreak(true, 12)
 	pdf.AddPage()
@@ -66,14 +69,14 @@ func ExportObjectToPDF(data ObjectExportData, outputDir string) (string, error) 
 	}
 
 	pdf.SetFont("goregular", "", 14)
-	pdf.CellFormat(0, 9, fmt.Sprintf("Інформація про об'єкт №%d", data.Number), "", 1, "", false, 0, "")
+	pdf.CellFormat(0, 9, "Інформація про об'єкт №"+normalizeValue(data.Number), "", 1, "", false, 0, "")
 	pdf.Ln(1)
 
 	fields := []struct {
 		label string
 		value string
 	}{
-		{label: "Номер", value: fmt.Sprintf("%d", data.Number)},
+		{label: "Номер", value: normalizeValue(data.Number)},
 		{label: "Назва", value: normalizeValue(data.Name)},
 		{label: "Адреса", value: normalizeValue(data.Address)},
 		{label: "Номер договору", value: normalizeValue(data.ContractNumber)},
@@ -87,6 +90,12 @@ func ExportObjectToPDF(data ObjectExportData, outputDir string) (string, error) 
 		{label: "Телефон об'єкту", value: normalizeValue(data.ObjectPhone)},
 		{label: "Розташування", value: normalizeValue(data.Location)},
 		{label: "Додаткова інформація", value: normalizeValue(data.AdditionalInfo)},
+	}
+	if strings.TrimSpace(data.GroupsSummary) != "" {
+		fields = append(fields, struct {
+			label string
+			value string
+		}{label: "Групи", value: normalizeValue(data.GroupsSummary)})
 	}
 
 	writePDFSectionHeader(pdf, "ЗАГАЛЬНА ІНФОРМАЦІЯ")
@@ -146,7 +155,7 @@ func ExportObjectToXLSX(data ObjectExportData, outputDir string) (string, error)
 		key   string
 		value string
 	}{
-		{key: "Номер", value: fmt.Sprintf("%d", data.Number)},
+		{key: "Номер", value: normalizeValue(data.Number)},
 		{key: "Назва", value: normalizeValue(data.Name)},
 		{key: "Адреса", value: normalizeValue(data.Address)},
 		{key: "Номер договору", value: normalizeValue(data.ContractNumber)},
@@ -161,6 +170,12 @@ func ExportObjectToXLSX(data ObjectExportData, outputDir string) (string, error)
 		{key: "Розташування", value: normalizeValue(data.Location)},
 		{key: "Додаткова інформація", value: normalizeValue(data.AdditionalInfo)},
 	}
+	if strings.TrimSpace(data.GroupsSummary) != "" {
+		baseRows = append(baseRows, struct {
+			key   string
+			value string
+		}{key: "Групи", value: normalizeValue(data.GroupsSummary)})
+	}
 
 	row := 1
 	row = addSectionHeaderRange(f, sheet, row, "ЗАГАЛЬНА ІНФОРМАЦІЯ", "A", "D", headerStyle)
@@ -170,20 +185,40 @@ func ExportObjectToXLSX(data ObjectExportData, outputDir string) (string, error)
 	}
 
 	row++
-	row = addSectionHeaderRange(f, sheet, row, "СПИСОК ЗОН", "A", "D", headerStyle)
-	setTableHeaders(f, sheet, row, []string{"№ зони", "Назва", "Тип", "Стан"}, tableHeaderStyle)
+	zoneHeaders := []string{"№ зони", "Назва", "Тип", "Стан"}
+	zoneEndCol := "D"
+	if hasAnyZoneGroups(data.Zones) {
+		zoneHeaders = []string{"№ зони", "Назва", "Тип", "Група", "Стан"}
+		zoneEndCol = "E"
+	}
+	row = addSectionHeaderRange(f, sheet, row, "СПИСОК ЗОН", "A", zoneEndCol, headerStyle)
+	setTableHeaders(f, sheet, row, zoneHeaders, tableHeaderStyle)
 	row++
 	for _, z := range ensureZones(data.Zones) {
-		setTableRow(f, sheet, row, []string{normalizeValue(z.Number), normalizeValue(z.Name), normalizeValue(z.Type), normalizeValue(z.Status)}, cellStyle)
+		values := []string{normalizeValue(z.Number), normalizeValue(z.Name), normalizeValue(z.Type), normalizeValue(z.Status)}
+		if hasAnyZoneGroups(data.Zones) {
+			values = []string{normalizeValue(z.Number), normalizeValue(z.Name), normalizeValue(z.Type), normalizeValue(z.Group), normalizeValue(z.Status)}
+		}
+		setTableRow(f, sheet, row, values, cellStyle)
 		row++
 	}
 
 	row++
-	row = addSectionHeaderRange(f, sheet, row, "СПИСОК ВІДПОВІДАЛЬНИХ", "A", "C", headerStyle)
-	setTableHeaders(f, sheet, row, []string{"Ім'я", "Телефон", "Примітка"}, tableHeaderStyle)
+	responsibleHeaders := []string{"Ім'я", "Телефон", "Примітка"}
+	responsibleEndCol := "C"
+	if hasAnyResponsibleGroups(data.Responsibles) {
+		responsibleHeaders = []string{"Ім'я", "Телефон", "Група", "Примітка"}
+		responsibleEndCol = "D"
+	}
+	row = addSectionHeaderRange(f, sheet, row, "СПИСОК ВІДПОВІДАЛЬНИХ", "A", responsibleEndCol, headerStyle)
+	setTableHeaders(f, sheet, row, responsibleHeaders, tableHeaderStyle)
 	row++
 	for _, p := range ensureResponsibles(data.Responsibles) {
-		setTableRow(f, sheet, row, []string{normalizeValue(p.Name), normalizeValue(p.Phone), normalizeValue(p.Note)}, cellStyle)
+		values := []string{normalizeValue(p.Name), normalizeValue(p.Phone), normalizeValue(p.Note)}
+		if hasAnyResponsibleGroups(data.Responsibles) {
+			values = []string{normalizeValue(p.Name), normalizeValue(p.Phone), normalizeValue(p.Group), normalizeValue(p.Note)}
+		}
+		setTableRow(f, sheet, row, values, cellStyle)
 		row++
 	}
 
@@ -191,6 +226,7 @@ func ExportObjectToXLSX(data ObjectExportData, outputDir string) (string, error)
 	_ = f.SetColWidth(sheet, "B", "B", 42)
 	_ = f.SetColWidth(sheet, "C", "C", 32)
 	_ = f.SetColWidth(sheet, "D", "D", 24)
+	_ = f.SetColWidth(sheet, "E", "E", 30)
 	for i := 1; i <= row; i++ {
 		_ = f.SetRowHeight(sheet, i, 24)
 	}
@@ -244,33 +280,164 @@ func writePDFKeyValue(pdf *gofpdf.Fpdf, key string, value string) {
 func writeZoneTableToPDF(pdf *gofpdf.Fpdf, rows []ZoneExportRow) {
 	pdf.SetFont("goregular", "", 9)
 	pdf.SetFillColor(242, 242, 242)
-	pdf.CellFormat(24, 6, "№ зони", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(70, 6, "Назва", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(45, 6, "Тип", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(0, 6, "Стан", "1", 1, "C", true, 0, "")
+	if hasAnyZoneGroups(rows) {
+		pdf.CellFormat(18, 6, "№ зони", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(54, 6, "Назва", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(36, 6, "Тип", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(48, 6, "Група", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(0, 6, "Стан", "1", 1, "C", true, 0, "")
+	} else {
+		pdf.CellFormat(24, 6, "№ зони", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(70, 6, "Назва", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(45, 6, "Тип", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(0, 6, "Стан", "1", 1, "C", true, 0, "")
+	}
 
 	pdf.SetFillColor(255, 255, 255)
 	for _, z := range rows {
-		pdf.CellFormat(24, 6, normalizeValue(z.Number), "1", 0, "L", false, 0, "")
-		pdf.CellFormat(70, 6, normalizeValue(z.Name), "1", 0, "L", false, 0, "")
-		pdf.CellFormat(45, 6, normalizeValue(z.Type), "1", 0, "L", false, 0, "")
-		pdf.CellFormat(0, 6, normalizeValue(z.Status), "1", 1, "L", false, 0, "")
+		if hasAnyZoneGroups(rows) {
+			writePDFTableRow(pdf, 6, []pdfTableColumn{
+				{Width: 18, Text: z.Number},
+				{Width: 54, Text: z.Name},
+				{Width: 36, Text: z.Type},
+				{Width: 48, Text: z.Group},
+				{Width: 0, Text: z.Status},
+			})
+		} else {
+			writePDFTableRow(pdf, 6, []pdfTableColumn{
+				{Width: 24, Text: z.Number},
+				{Width: 70, Text: z.Name},
+				{Width: 45, Text: z.Type},
+				{Width: 0, Text: z.Status},
+			})
+		}
 	}
 }
 
 func writeResponsibleTableToPDF(pdf *gofpdf.Fpdf, rows []ResponsibleExportRow) {
 	pdf.SetFont("goregular", "", 9)
 	pdf.SetFillColor(242, 242, 242)
-	pdf.CellFormat(70, 6, "Ім'я", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(50, 6, "Телефон", "1", 0, "C", true, 0, "")
-	pdf.CellFormat(0, 6, "Примітка", "1", 1, "C", true, 0, "")
+	if hasAnyResponsibleGroups(rows) {
+		pdf.CellFormat(45, 6, "Ім'я", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(38, 6, "Телефон", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(48, 6, "Група", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(0, 6, "Примітка", "1", 1, "C", true, 0, "")
+	} else {
+		pdf.CellFormat(70, 6, "Ім'я", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(50, 6, "Телефон", "1", 0, "C", true, 0, "")
+		pdf.CellFormat(0, 6, "Примітка", "1", 1, "C", true, 0, "")
+	}
 
 	pdf.SetFillColor(255, 255, 255)
 	for _, p := range rows {
-		pdf.CellFormat(70, 6, normalizeValue(p.Name), "1", 0, "L", false, 0, "")
-		pdf.CellFormat(50, 6, normalizeValue(p.Phone), "1", 0, "L", false, 0, "")
-		pdf.CellFormat(0, 6, normalizeValue(p.Note), "1", 1, "L", false, 0, "")
+		if hasAnyResponsibleGroups(rows) {
+			writePDFTableRow(pdf, 6, []pdfTableColumn{
+				{Width: 45, Text: p.Name},
+				{Width: 38, Text: p.Phone},
+				{Width: 48, Text: p.Group},
+				{Width: 0, Text: p.Note},
+			})
+		} else {
+			writePDFTableRow(pdf, 6, []pdfTableColumn{
+				{Width: 70, Text: p.Name},
+				{Width: 50, Text: p.Phone},
+				{Width: 0, Text: p.Note},
+			})
+		}
 	}
+}
+
+type pdfTableColumn struct {
+	Width float64
+	Text  string
+	Align string
+}
+
+func writePDFTableRow(pdf *gofpdf.Fpdf, lineHeight float64, columns []pdfTableColumn) {
+	if pdf == nil || len(columns) == 0 {
+		return
+	}
+
+	widths := resolvePDFColumnWidths(pdf, columns)
+	rowHeight := pdfRowHeight(pdf, widths, columns, lineHeight)
+	ensurePDFRowFits(pdf, rowHeight)
+
+	startX, startY := pdf.GetXY()
+	currentX := startX
+
+	for idx, column := range columns {
+		width := widths[idx]
+		text := normalizeValue(column.Text)
+		align := strings.TrimSpace(column.Align)
+		if align == "" {
+			align = "L"
+		}
+
+		pdf.Rect(currentX, startY, width, rowHeight, "D")
+		pdf.SetXY(currentX, startY)
+		pdf.MultiCell(width, lineHeight, text, "", align, false)
+		currentX += width
+		pdf.SetXY(currentX, startY)
+	}
+
+	pdf.SetXY(startX, startY+rowHeight)
+}
+
+func resolvePDFColumnWidths(pdf *gofpdf.Fpdf, columns []pdfTableColumn) []float64 {
+	widths := make([]float64, len(columns))
+	totalExplicit := 0.0
+	flexibleCount := 0
+
+	for idx, column := range columns {
+		if column.Width > 0 {
+			widths[idx] = column.Width
+			totalExplicit += column.Width
+			continue
+		}
+		flexibleCount++
+	}
+
+	if flexibleCount == 0 {
+		return widths
+	}
+
+	pageWidth, _ := pdf.GetPageSize()
+	left, _, right, _ := pdf.GetMargins()
+	availableWidth := pageWidth - left - right
+	remainingWidth := availableWidth - totalExplicit
+	if remainingWidth < float64(flexibleCount)*10 {
+		remainingWidth = float64(flexibleCount) * 10
+	}
+	flexibleWidth := remainingWidth / float64(flexibleCount)
+
+	for idx, column := range columns {
+		if column.Width <= 0 {
+			widths[idx] = flexibleWidth
+		}
+	}
+
+	return widths
+}
+
+func pdfRowHeight(pdf *gofpdf.Fpdf, widths []float64, columns []pdfTableColumn, lineHeight float64) float64 {
+	maxLines := 1
+	for idx, column := range columns {
+		lines := pdf.SplitLines([]byte(normalizeValue(column.Text)), widths[idx])
+		if len(lines) > maxLines {
+			maxLines = len(lines)
+		}
+	}
+	return float64(maxLines) * lineHeight
+}
+
+func ensurePDFRowFits(pdf *gofpdf.Fpdf, rowHeight float64) {
+	_, y := pdf.GetXY()
+	_, pageHeight := pdf.GetPageSize()
+	_, _, _, bottom := pdf.GetMargins()
+	if y+rowHeight <= pageHeight-bottom {
+		return
+	}
+	pdf.AddPage()
 }
 
 func normalizeValue(v string) string {
@@ -295,7 +462,7 @@ func ensureResponsibles(items []ResponsibleExportRow) []ResponsibleExportRow {
 	return items
 }
 
-func buildFilePath(objectID int, ext string, outputDir string) (string, error) {
+func buildFilePath(objectNumber string, ext string, outputDir string) (string, error) {
 	baseDir := strings.TrimSpace(outputDir)
 	if baseDir == "" {
 		wd, err := os.Getwd()
@@ -315,10 +482,32 @@ func buildFilePath(objectID int, ext string, outputDir string) (string, error) {
 	}
 
 	ts := time.Now().Format("20060102_150405")
-	fileName := fmt.Sprintf("object_%d_export_%s.%s", objectID, ts, ext)
+	number := strings.TrimSpace(objectNumber)
+	if number == "" {
+		number = "unknown"
+	}
+	fileName := fmt.Sprintf("object_%s_export_%s.%s", number, ts, ext)
 	fileName = sanitizeFileName(fileName)
 
 	return filepath.Join(absDir, fileName), nil
+}
+
+func hasAnyZoneGroups(rows []ZoneExportRow) bool {
+	for _, row := range rows {
+		if strings.TrimSpace(row.Group) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyResponsibleGroups(rows []ResponsibleExportRow) bool {
+	for _, row := range rows {
+		if strings.TrimSpace(row.Group) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func sanitizeFileName(name string) string {

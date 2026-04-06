@@ -28,9 +28,12 @@ func TestWorkAreaExportViewModel_BuildObjectExportData(t *testing.T) {
 			Phones1:       "380001",
 			Location1:     "Loc",
 			Notes1:        "Note",
+			Groups: []models.ObjectGroup{
+				{ID: "group:1", Number: 1, Name: "Офіс", StateText: "ПІД ОХОРОНОЮ"},
+			},
 		},
-		[]models.Zone{{Number: 1, Name: "Zone 1", SensorType: "Smoke", Status: models.ZoneNormal}},
-		[]models.Contact{{Name: "John", Phone: "123", Position: "Head"}},
+		[]models.Zone{{Number: 1, Name: "Zone 1", SensorType: "Smoke", Status: models.ZoneNormal, GroupNumber: 1, GroupName: "Офіс", GroupStateText: "ПІД ОХОРОНОЮ"}},
+		[]models.Contact{{Name: "John", Phone: "123", Position: "Head", GroupNumber: 1, GroupName: "Офіс", GroupStateText: "ПІД ОХОРОНОЮ"}},
 		[]models.Event{{Time: eventTime, Type: models.EventFire, ZoneNumber: 1, Details: "Alarm"}},
 		WorkAreaExternalData{
 			Signal:      "85%",
@@ -39,8 +42,8 @@ func TestWorkAreaExportViewModel_BuildObjectExportData(t *testing.T) {
 		},
 	)
 
-	if exportData.Number != 101 {
-		t.Fatalf("unexpected export number: %d", exportData.Number)
+	if exportData.Number != "101" {
+		t.Fatalf("unexpected export number: %q", exportData.Number)
 	}
 	if exportData.SimCard != "111 / 222" {
 		t.Fatalf("unexpected sim text: %q", exportData.SimCard)
@@ -59,6 +62,15 @@ func TestWorkAreaExportViewModel_BuildObjectExportData(t *testing.T) {
 	}
 	if !strings.Contains(exportData.LastTest, "OK") {
 		t.Fatalf("unexpected last test details: %q", exportData.LastTest)
+	}
+	if got := exportData.Zones[0].Group; got != "Група 1 | Офіс | ПІД ОХОРОНОЮ" {
+		t.Fatalf("unexpected zone group: %q", got)
+	}
+	if got := exportData.Responsibles[0].Group; got != "Група 1 | Офіс | ПІД ОХОРОНОЮ" {
+		t.Fatalf("unexpected responsible group: %q", got)
+	}
+	if got := exportData.GroupsSummary; got != "Група 1 | Офіс | ПІД ОХОРОНОЮ" {
+		t.Fatalf("unexpected groups summary: %q", got)
 	}
 	if len(exportData.Zones) != 1 || len(exportData.Responsibles) != 1 {
 		t.Fatalf("unexpected related rows count: zones=%d contacts=%d", len(exportData.Zones), len(exportData.Responsibles))
@@ -98,5 +110,28 @@ func TestWorkAreaExportViewModel_BuildExcelRowTSV(t *testing.T) {
 	}
 	if parts[13] != "Manager" || parts[14] != "380001" {
 		t.Fatalf("unexpected manager columns: %q / %q", parts[13], parts[14])
+	}
+}
+
+func TestWorkAreaExportViewModel_UsesDisplayNumberForSpecialSources(t *testing.T) {
+	vm := NewWorkAreaExportViewModel()
+
+	caslExport := vm.BuildObjectExportData(
+		models.Object{ID: caslObjectIDNamespaceStart + 24, DisplayNumber: "1003", Name: "CASL Obj"},
+		nil,
+		nil,
+		nil,
+		WorkAreaExternalData{},
+	)
+	if caslExport.Number != "1003" {
+		t.Fatalf("unexpected CASL export number: %q", caslExport.Number)
+	}
+
+	phoenixRow := vm.BuildExcelRowTSV(
+		models.Object{ID: phoenixObjectIDNamespaceStart + 28, DisplayNumber: "L00028", Name: "Phoenix Obj"},
+		nil,
+	)
+	if firstColumn := strings.Split(phoenixRow, "\t")[0]; firstColumn != "L00028" {
+		t.Fatalf("unexpected Phoenix first column: %q", firstColumn)
 	}
 }

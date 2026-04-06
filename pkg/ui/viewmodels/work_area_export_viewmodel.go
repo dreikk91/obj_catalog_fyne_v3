@@ -2,6 +2,7 @@ package viewmodels
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	objexport "obj_catalog_fyne_v3/pkg/export"
@@ -22,9 +23,15 @@ func (vm *WorkAreaExportViewModel) BuildObjectExportData(
 	events []models.Event,
 	external WorkAreaExternalData,
 ) objexport.ObjectExportData {
+	displayNumber := strings.TrimSpace(ObjectDisplayNumber(obj))
+	if displayNumber == "" {
+		displayNumber = "Немає"
+	}
+
+	sortedEvents := sortEventsByTimeDesc(events)
 	lastEventText := "Немає"
-	if len(events) > 0 {
-		latest := events[0]
+	if len(sortedEvents) > 0 {
+		latest := sortedEvents[0]
 		eventTime := "Немає дати"
 		if !latest.Time.IsZero() {
 			eventTime = latest.Time.Format("02.01.2006 15:04:05")
@@ -57,6 +64,7 @@ func (vm *WorkAreaExportViewModel) BuildObjectExportData(
 			Number: fmt.Sprintf("%d", z.Number),
 			Name:   emptyFallback(z.Name),
 			Type:   emptyFallback(z.SensorType),
+			Group:  groupExportLabel(z.GroupNumber, z.GroupName, z.GroupStateText),
 			Status: emptyFallback(z.GetStatusDisplay()),
 		})
 	}
@@ -66,12 +74,13 @@ func (vm *WorkAreaExportViewModel) BuildObjectExportData(
 		responsibleRows = append(responsibleRows, objexport.ResponsibleExportRow{
 			Name:  emptyFallback(c.Name),
 			Phone: emptyFallback(c.Phone),
+			Group: groupExportLabel(c.GroupNumber, c.GroupName, c.GroupStateText),
 			Note:  emptyFallback(c.Position),
 		})
 	}
 
 	return objexport.ObjectExportData{
-		Number:         obj.ID,
+		Number:         displayNumber,
 		Name:           emptyFallback(obj.Name),
 		Address:        emptyFallback(obj.Address),
 		ContractNumber: emptyFallback(obj.ContractNum),
@@ -85,6 +94,7 @@ func (vm *WorkAreaExportViewModel) BuildObjectExportData(
 		ObjectPhone:    emptyFallback(obj.Phones1),
 		Location:       emptyFallback(obj.Location1),
 		AdditionalInfo: emptyFallback(obj.Notes1),
+		GroupsSummary:  buildGroupsSummary(obj.Groups, zoneRows, responsibleRows),
 		Zones:          zoneRows,
 		Responsibles:   responsibleRows,
 	}
@@ -102,7 +112,7 @@ func (vm *WorkAreaExportViewModel) BuildExcelRowTSV(obj models.Object, contacts 
 	}
 
 	fields := []string{
-		fmt.Sprintf("%d", obj.ID),             // собсс
+		cleanTSV(ObjectDisplayNumber(obj)),    // собсс / номер об'єкта
 		cleanTSV(obj.LaunchDate),              // Дата підключен. до ПЦС
 		cleanTSV(obj.ContractNum),             // Дата угоди (за поточними даними: номер/ідентифікатор угоди)
 		"",                                    // Юридична назва, згідно угоди
@@ -171,4 +181,62 @@ func emptyFallback(v string) string {
 		return "Немає"
 	}
 	return strings.TrimSpace(v)
+}
+
+func groupExportLabel(number int, name string, state string) string {
+	parts := make([]string, 0, 3)
+	if number > 0 {
+		parts = append(parts, fmt.Sprintf("Група %d", number))
+	}
+	name = strings.TrimSpace(name)
+	if name != "" {
+		if len(parts) == 0 || name != parts[0] {
+			parts = append(parts, name)
+		}
+	}
+	state = strings.TrimSpace(state)
+	if state != "" && state != "—" {
+		parts = append(parts, state)
+	}
+	return strings.Join(parts, " | ")
+}
+
+func buildGroupsSummary(
+	groups []models.ObjectGroup,
+	zoneRows []objexport.ZoneExportRow,
+	responsibleRows []objexport.ResponsibleExportRow,
+) string {
+	labels := make([]string, 0, len(groups))
+	seen := make(map[string]struct{}, len(groups))
+
+	appendLabel := func(label string) {
+		label = strings.TrimSpace(label)
+		if label == "" {
+			return
+		}
+		if _, ok := seen[label]; ok {
+			return
+		}
+		seen[label] = struct{}{}
+		labels = append(labels, label)
+	}
+
+	sortedGroups := append([]models.ObjectGroup(nil), groups...)
+	sort.SliceStable(sortedGroups, func(i, j int) bool {
+		if sortedGroups[i].Number == sortedGroups[j].Number {
+			return sortedGroups[i].Name < sortedGroups[j].Name
+		}
+		return sortedGroups[i].Number < sortedGroups[j].Number
+	})
+	for _, group := range sortedGroups {
+		appendLabel(groupExportLabel(group.Number, group.Name, group.StateText))
+	}
+	for _, row := range zoneRows {
+		appendLabel(row.Group)
+	}
+	for _, row := range responsibleRows {
+		appendLabel(row.Group)
+	}
+
+	return strings.Join(labels, "; ")
 }

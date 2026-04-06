@@ -25,7 +25,7 @@ import (
 
 type ObjectListPanel struct {
 	Container    *fyne.Container
-	Table        *widget.Table
+	Table        *objectListTable
 	SearchEntry  *widget.Entry
 	SearchClear  *widget.Button
 	FilteredData binding.UntypedList
@@ -46,6 +46,7 @@ type ObjectListPanel struct {
 	CurrentSource string
 	LoadingLabel  *widget.Label
 	SelectedRow   int
+	SelectedCol   int
 	TitleText     *canvas.Text
 	lastFontSize  float32
 	colNameWidth  float32
@@ -60,6 +61,47 @@ type ObjectListPanel struct {
 	OnObjectSelected func(object models.Object)
 }
 
+type objectListTable struct {
+	widget.Table
+
+	onMoveSelection func(delta int) bool
+}
+
+func newObjectListTable(
+	length func() (rows int, cols int),
+	create func() fyne.CanvasObject,
+	update func(id widget.TableCellID, obj fyne.CanvasObject),
+	onMoveSelection func(delta int) bool,
+) *objectListTable {
+	table := &objectListTable{
+		onMoveSelection: onMoveSelection,
+	}
+	table.Length = length
+	table.CreateCell = create
+	table.UpdateCell = update
+	table.ExtendBaseWidget(table)
+	return table
+}
+
+func (t *objectListTable) TypedKey(event *fyne.KeyEvent) {
+	if event == nil {
+		return
+	}
+
+	switch event.Name {
+	case fyne.KeyUp:
+		if t.onMoveSelection != nil && t.onMoveSelection(-1) {
+			return
+		}
+	case fyne.KeyDown:
+		if t.onMoveSelection != nil && t.onMoveSelection(1) {
+			return
+		}
+	}
+
+	t.Table.TypedKey(event)
+}
+
 // NewObjectListPanel створює панель списку об'єктів
 func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	panel := &ObjectListPanel{
@@ -70,6 +112,7 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 		CurrentFilter: "Всі",
 		CurrentSource: viewmodels.ObjectSourceAll,
 		SelectedRow:   -1,
+		SelectedCol:   0,
 		colNameWidth:  200,
 		colAddrWidth:  250,
 	}
@@ -132,7 +175,7 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	panel.LoadingLabel.Alignment = fyne.TextAlignCenter
 
 	// Таблиця об'єктів (використовує FilteredItems)
-	panel.Table = widget.NewTable(
+	panel.Table = newObjectListTable(
 		func() (int, int) {
 			if panel.FilteredData != nil {
 				return panel.FilteredData.Length(), 4
@@ -197,25 +240,10 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 			}
 			txt.Refresh()
 		},
+		panel.moveSelection,
 	)
 
-	panel.Table.OnSelected = func(id widget.TableCellID) {
-		selectedObj, ok := panel.objectByRow(id.Row)
-		if !ok {
-			return
-		}
-
-		panel.mutex.Lock()
-		panel.SelectedRow = id.Row
-		panel.lastNotifiedSelectedID = selectedObj.ID
-		panel.hasNotifiedSelection = true
-		panel.mutex.Unlock()
-
-		if panel.OnObjectSelected != nil {
-			panel.OnObjectSelected(selectedObj)
-		}
-		panel.Table.Refresh()
-	}
+	panel.Table.OnSelected = panel.handleSelection
 
 	// Ширина колонок (початкова)
 	panel.Table.SetColumnWidth(0, 50)  // ID (фіксована)
@@ -256,6 +284,27 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	go panel.RefreshData()
 
 	return panel
+}
+
+func (p *ObjectListPanel) handleSelection(id widget.TableCellID) {
+	selectedObj, ok := p.objectByRow(id.Row)
+	if !ok {
+		return
+	}
+
+	p.mutex.Lock()
+	p.SelectedRow = id.Row
+	p.SelectedCol = id.Col
+	p.lastNotifiedSelectedID = selectedObj.ID
+	p.hasNotifiedSelection = true
+	p.mutex.Unlock()
+
+	if p.OnObjectSelected != nil {
+		p.OnObjectSelected(selectedObj)
+	}
+	if p.Table != nil {
+		p.Table.Refresh()
+	}
 }
 
 func (p *ObjectListPanel) RefreshData() {
@@ -318,6 +367,7 @@ func (p *ObjectListPanel) applyFilters() {
 	p.FilteredItems = result.Filtered
 	p.SelectedRow = result.NewSelectedRow
 	if result.NewSelectedRow < 0 {
+		p.SelectedCol = 0
 		p.hasNotifiedSelection = false
 		p.lastNotifiedSelectedID = 0
 	}
@@ -395,6 +445,47 @@ func (p *ObjectListPanel) objectByRow(row int) (models.Object, bool) {
 	}
 	obj, ok := value.(models.Object)
 	return obj, ok
+}
+
+func (p *ObjectListPanel) moveSelection(delta int) bool {
+	if p == nil || p.Table == nil || delta == 0 {
+		return false
+	}
+
+	p.mutex.RLock()
+	total := len(p.FilteredItems)
+	selectedRow := p.SelectedRow
+	selectedCol := p.SelectedCol
+	p.mutex.RUnlock()
+
+	if total == 0 {
+		return false
+	}
+
+	nextRow := selectedRow
+	switch {
+	case nextRow < 0 || nextRow >= total:
+		if delta > 0 {
+			nextRow = 0
+		} else {
+			nextRow = total - 1
+		}
+	default:
+		nextRow += delta
+		if nextRow < 0 {
+			nextRow = 0
+		}
+		if nextRow >= total {
+			nextRow = total - 1
+		}
+	}
+
+	if selectedCol < 0 || selectedCol >= 4 {
+		selectedCol = 0
+	}
+
+	p.Table.Select(widget.TableCellID{Row: nextRow, Col: selectedCol})
+	return true
 }
 
 func objectListRowColors(item models.Object, isDark bool) (color.NRGBA, color.NRGBA) {
@@ -478,7 +569,7 @@ func objectListRowColors(item models.Object, isDark bool) (color.NRGBA, color.NR
 // objectListTableLayout для динамічного ресайзу колонок "Назва" та "Адреса"
 type objectListTableLayout struct {
 	panel         *ObjectListPanel
-	table         *widget.Table
+	table         *objectListTable
 	lastNameWidth float32
 	lastAddrWidth float32
 }

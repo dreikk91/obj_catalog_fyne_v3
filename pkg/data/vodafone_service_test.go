@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"obj_catalog_fyne_v3/pkg/config"
+	"strings"
 	"testing"
 	"time"
 )
@@ -117,6 +118,27 @@ func TestVodafoneService_GetSIMStatus_UsesAvailableIOTList(t *testing.T) {
 					},
 				},
 			})
+		case r.URL.Path == "/customer/api/customerManagement/v3/customer/self" &&
+			strings.Contains(r.URL.RawQuery, "fields=subscriberName,subscriberComment") &&
+			strings.Contains(r.URL.RawQuery, "spinnerType=3"):
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"account": map[string]any{"id": "295398767704"},
+					"relatedParty": []map[string]any{
+						{
+							"id": "380501234567",
+							"characterictics": []map[string]any{
+								{"name": "subscriberName", "value": "1001"},
+								{"name": "subscriberComment", "value": "Obj 1001"},
+								{"name": "blockingStatus", "value": "NotBlocked"},
+								{"name": "blockingDate", "value": "2026-04-02T08:10:11Z"},
+								{"name": "blockingRequestDate", "value": "2026-04-02T08:09:11Z"},
+								{"name": "updateDate", "value": "2026-04-02T08:12:11Z"},
+							},
+						},
+					},
+				},
+			})
 		case r.URL.Path == "/customer/api/customerManagement/v3/customer/self" && r.Header.Get("Profile") == "CONNECTIVITY-CHECK-BY-MSISDN":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"relatedParty": []map[string]any{
@@ -131,6 +153,16 @@ func TestVodafoneService_GetSIMStatus_UsesAvailableIOTList(t *testing.T) {
 						},
 					},
 				},
+			})
+		case r.URL.Path == "/customer/api/customerManagement/v3/customer/self" && r.Header.Get("Profile") == "B2B-CHARACTERISTIC":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"characteristic": []map[string]any{},
+			})
+		case r.URL.Path == "/customer/api/customerManagement/v3/customer/self" &&
+			r.Header.Get("Profile") == "" &&
+			(strings.Contains(r.URL.RawQuery, "childMsisdn=") || strings.Contains(r.URL.RawQuery, "msisdn=")):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"characteristic": []map[string]any{},
 			})
 		case r.URL.Path == "/customer/api/customerManagement/v3/customer/self" && r.Header.Get("Profile") == "LASTEVENT-MSISDN-M2M":
 			_ = json.NewEncoder(w).Encode([]map[string]any{
@@ -160,8 +192,11 @@ func TestVodafoneService_GetSIMStatus_UsesAvailableIOTList(t *testing.T) {
 	if !status.Available {
 		t.Fatalf("expected SIM to be available")
 	}
-	if status.SubscriberName != "Obj 1001" {
+	if status.SubscriberName != "1001" {
 		t.Fatalf("unexpected subscriber name: %q", status.SubscriberName)
+	}
+	if status.SubscriberComment != "Obj 1001" {
+		t.Fatalf("unexpected subscriber comment: %q", status.SubscriberComment)
 	}
 	if status.Blocking.Status != "NotBlocked" {
 		t.Fatalf("unexpected blocking status: %q", status.Blocking.Status)
@@ -203,6 +238,29 @@ func TestVodafoneService_BlockSIM_CreatesAndSubmitsOrder(t *testing.T) {
 						},
 					},
 				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer/self" &&
+			strings.Contains(r.URL.RawQuery, "fields=subscriberName,subscriberComment") &&
+			strings.Contains(r.URL.RawQuery, "spinnerType=3"):
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"account": map[string]any{"id": "295398767704"},
+					"relatedParty": []map[string]any{
+						{
+							"id": "380501234567",
+							"characterictics": []map[string]any{
+								{"name": "subscriberName", "value": "1001"},
+								{"name": "subscriberComment", "value": "Obj 1001"},
+							},
+						},
+					},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer/self" &&
+			r.Header.Get("Profile") == "" &&
+			(strings.Contains(r.URL.RawQuery, "childMsisdn=") || strings.Contains(r.URL.RawQuery, "msisdn=")):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"characteristic": []map[string]any{},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/order/tmf-api/productOrderingManagement/v4/productOrder":
 			createCalls++
@@ -247,6 +305,115 @@ func TestVodafoneService_BlockSIM_CreatesAndSubmitsOrder(t *testing.T) {
 	}
 	if createCalls != 1 || submitCalls != 1 {
 		t.Fatalf("unexpected calls create=%d submit=%d", createCalls, submitCalls)
+	}
+}
+
+func TestVodafoneService_UpdateSIMMetadata_InvalidatesCachedDescription(t *testing.T) {
+	t.Parallel()
+
+	store := &vodafoneConfigStoreStub{
+		cfg: config.VodafoneConfig{
+			Phone:       "380501234567",
+			AccessToken: buildTestJWT(time.Now().UTC().Add(2 * time.Hour)),
+			TokenExpiry: time.Now().UTC().Add(2 * time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	description := "Old comment"
+	listCalls := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer":
+			listCalls++
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"account": map[string]any{"id": "295398767704"},
+					"relatedParty": []map[string]any{
+						{
+							"id": "380501234567",
+							"characterictics": []map[string]any{
+								{"name": "phoneDescription", "value": description},
+							},
+						},
+					},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer/self" &&
+			strings.Contains(r.URL.RawQuery, "fields=subscriberName,subscriberComment") &&
+			strings.Contains(r.URL.RawQuery, "spinnerType=3"):
+			listCalls++
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"account": map[string]any{"id": "295398767704"},
+					"relatedParty": []map[string]any{
+						{
+							"id": "380501234567",
+							"characterictics": []map[string]any{
+								{"name": "subscriberName", "value": "1001"},
+								{"name": "subscriberComment", "value": description},
+							},
+						},
+					},
+				},
+			})
+		case r.Method == http.MethodPatch && r.URL.Path == "/customer/api/customerManagement/v3/customer/self":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"characteristic":[]}`))
+			description = "New comment"
+		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer/self" && r.Header.Get("Profile") == "B2B-CHARACTERISTIC":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"characteristic": []map[string]any{},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer/self" &&
+			r.Header.Get("Profile") == "" &&
+			(strings.Contains(r.URL.RawQuery, "childMsisdn=") || strings.Contains(r.URL.RawQuery, "msisdn=")):
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"characteristic": []map[string]any{},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer/self" && r.Header.Get("Profile") == "CONNECTIVITY-CHECK-BY-MSISDN":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"relatedParty": []map[string]any{
+					{"id": "380501234567"},
+				},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/customer/api/customerManagement/v3/customer/self" && r.Header.Get("Profile") == "LASTEVENT-MSISDN-M2M":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"relatedParty": []map[string]any{
+						{"id": "380501234567"},
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	service := NewVodafoneService(store, WithVodafoneBaseURL(server.URL))
+
+	first, err := service.GetSIMStatus("0501234567")
+	if err != nil {
+		t.Fatalf("GetSIMStatus() first error = %v", err)
+	}
+	if first.SubscriberComment != "Old comment" {
+		t.Fatalf("unexpected first comment: %q", first.SubscriberComment)
+	}
+
+	if err := service.UpdateSIMMetadata("0501234567", "1001", "New comment"); err != nil {
+		t.Fatalf("UpdateSIMMetadata() error = %v", err)
+	}
+
+	second, err := service.GetSIMStatus("0501234567")
+	if err != nil {
+		t.Fatalf("GetSIMStatus() second error = %v", err)
+	}
+	if second.SubscriberComment != "New comment" {
+		t.Fatalf("unexpected second comment: %q", second.SubscriberComment)
+	}
+	if listCalls < 2 {
+		t.Fatalf("customer list must be refreshed after metadata update, got %d calls", listCalls)
 	}
 }
 

@@ -205,19 +205,13 @@ func (p *PhoenixDataProvider) GetEvents() []models.Event {
 	defer cancel()
 
 	if p.lastEventID == 0 {
-		var rows []phoenixEventRow
-		if err := p.db.SelectContext(ctx, &rows, phoenixInitialEventsQuery); err != nil {
-			log.Error().Err(err).Msg("Phoenix: помилка початкового завантаження подій")
+		var latest sql.NullInt64
+		if err := p.db.GetContext(ctx, &latest, phoenixLatestEventIDQuery); err != nil {
+			log.Error().Err(err).Msg("Phoenix: помилка отримання стартового курсора подій")
 			return append([]models.Event(nil), p.cachedEvents...)
 		}
-		events := make([]models.Event, 0, len(rows))
-		for _, row := range rows {
-			events = append(events, p.mapEventRow(row))
-			if row.EventID > p.lastEventID {
-				p.lastEventID = row.EventID
-			}
-		}
-		p.cachedEvents = events
+
+		p.lastEventID = nullInt64(latest)
 		return append([]models.Event(nil), p.cachedEvents...)
 	}
 
@@ -230,16 +224,9 @@ func (p *PhoenixDataProvider) GetEvents() []models.Event {
 		return append([]models.Event(nil), p.cachedEvents...)
 	}
 
-	newEvents := make([]models.Event, 0, len(rows))
-	for _, row := range rows {
-		newEvents = append(newEvents, p.mapEventRow(row))
-		if row.EventID > p.lastEventID {
-			p.lastEventID = row.EventID
-		}
-	}
-	for i, j := 0, len(newEvents)-1; i < j; i, j = i+1, j-1 {
-		newEvents[i], newEvents[j] = newEvents[j], newEvents[i]
-	}
+	newEvents := mapPhoenixEventRows(rows, p.mapEventRow)
+	p.lastEventID = maxPhoenixEventID(rows, p.lastEventID)
+	reversePhoenixEvents(newEvents)
 	p.cachedEvents = append(newEvents, p.cachedEvents...)
 	if len(p.cachedEvents) > 5000 {
 		p.cachedEvents = p.cachedEvents[:5000]
@@ -584,7 +571,7 @@ func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {
 
 	return models.Event{
 		ID:           stablePhoenixEventID(panelID, row.EventID),
-		Time:         row.TimeEvent,
+		Time:         normalizePhoenixEventTime(row.TimeEvent),
 		ObjectID:     objectID,
 		ObjectNumber: panelID,
 		ObjectName:   phoenixObjectName(panelID, row.CompanyName, row.GroupName),
@@ -593,6 +580,30 @@ func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {
 		Details:      details,
 		SC1:          phoenixEventSC1(row.TypeCodeID, row.EventCode, details),
 	}
+}
+
+func mapPhoenixEventRows(rows []phoenixEventRow, mapRow func(phoenixEventRow) models.Event) []models.Event {
+	events := make([]models.Event, 0, len(rows))
+	for _, row := range rows {
+		events = append(events, mapRow(row))
+	}
+	return events
+}
+
+func reversePhoenixEvents(events []models.Event) {
+	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
+		events[i], events[j] = events[j], events[i]
+	}
+}
+
+func maxPhoenixEventID(rows []phoenixEventRow, current int64) int64 {
+	maxID := current
+	for _, row := range rows {
+		if row.EventID > maxID {
+			maxID = row.EventID
+		}
+	}
+	return maxID
 }
 
 func (p *PhoenixDataProvider) resolvePanelID(objectID string) (string, bool) {
@@ -901,4 +912,14 @@ func nullTime(value sql.NullTime) time.Time {
 		return time.Time{}
 	}
 	return value.Time
+}
+
+func normalizePhoenixEventTime(value time.Time) time.Time {
+	if value.IsZero() {
+		return time.Time{}
+	}
+
+	year, month, day := value.Date()
+	hour, minute, second := value.Clock()
+	return time.Date(year, month, day, hour, minute, second, value.Nanosecond(), time.Local)
 }

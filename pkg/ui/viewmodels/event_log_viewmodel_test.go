@@ -17,12 +17,19 @@ func (s *eventLogUseCaseStub) FetchEvents() []models.Event {
 
 func TestEventLogViewModel_LoadEvents(t *testing.T) {
 	vm := NewEventLogViewModel()
+	now := time.Date(2026, 3, 28, 12, 0, 0, 0, time.Local)
 	events := vm.LoadEvents(&eventLogUseCaseStub{
-		events: []models.Event{{ID: 1}, {ID: 2}},
+		events: []models.Event{
+			{ID: 1, Time: now.Add(-2 * time.Minute)},
+			{ID: 2, Time: now.Add(-1 * time.Minute)},
+		},
 	})
 
 	if len(events) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[0].ID != 2 || events[1].ID != 1 {
+		t.Fatalf("expected sorted events, got %+v", events)
 	}
 }
 
@@ -103,5 +110,27 @@ func TestEventLogViewModel_ApplyFiltersBySource(t *testing.T) {
 	}
 	if out.CountAll != 4 || out.CountBridge != 1 || out.CountPhoenix != 1 || out.CountCASL != 2 {
 		t.Fatalf("unexpected source counters: all=%d bridge=%d phoenix=%d casl=%d", out.CountAll, out.CountBridge, out.CountPhoenix, out.CountCASL)
+	}
+}
+
+func TestEventLogViewModel_ApplyFiltersSortsNewestFirst(t *testing.T) {
+	vm := NewEventLogViewModel()
+	now := time.Date(2026, 3, 29, 12, 0, 0, 0, time.Local)
+
+	out := vm.ApplyFilters(EventLogFilterInput{
+		AllEvents: []models.Event{
+			{ID: 1, ObjectID: 11, Time: now.Add(-20 * time.Minute), Type: models.EventFire},
+			{ID: 2, ObjectID: 11, Time: now.Add(-5 * time.Minute), Type: models.EventArm},
+			{ID: 3, ObjectID: 11, Time: now.Add(-10 * time.Minute), Type: models.EventFault},
+		},
+		Period: "Всі",
+		Now:    now,
+	})
+
+	if len(out.Filtered) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(out.Filtered))
+	}
+	if out.Filtered[0].ID != 2 || out.Filtered[1].ID != 3 || out.Filtered[2].ID != 1 {
+		t.Fatalf("unexpected sorted order: %+v", out.Filtered)
 	}
 }

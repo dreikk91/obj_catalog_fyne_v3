@@ -72,9 +72,10 @@ func TestVodafoneSIMViewModel_BuildStatusText_IncludesBlockingStatus(t *testing.
 
 	vm := NewVodafoneSIMViewModel()
 	got := vm.BuildStatusText(contracts.VodafoneSIMStatus{
-		MSISDN:         "380501234567",
-		Available:      true,
-		SubscriberName: "Obj 1001",
+		MSISDN:            "380501234567",
+		Available:         true,
+		SubscriberName:    "1001",
+		SubscriberComment: "Obj 1001",
 		Blocking: contracts.VodafoneSIMBlockingStatus{
 			Status:          "FullBlocked",
 			BlockingDateRaw: "2026-04-03T09:00:00Z",
@@ -86,6 +87,12 @@ func TestVodafoneSIMViewModel_BuildStatusText_IncludesBlockingStatus(t *testing.
 
 	if !strings.Contains(got, "блокування повне") {
 		t.Fatalf("status must contain blocking info, got %q", got)
+	}
+	if !strings.Contains(got, "назва 1001") {
+		t.Fatalf("status must contain subscriber name, got %q", got)
+	}
+	if !strings.Contains(got, "коментар Obj 1001") {
+		t.Fatalf("status must contain subscriber comment, got %q", got)
 	}
 }
 
@@ -131,5 +138,23 @@ func TestVodafoneSIMViewModel_BuildBlockingText(t *testing.T) {
 	}
 	if !strings.Contains(got, "Дата блокування: 2026-04-03") {
 		t.Fatalf("blocking text must contain date, got %q", got)
+	}
+}
+
+func TestVodafoneSIMViewModel_BuildIdentityText(t *testing.T) {
+	t.Parallel()
+
+	vm := NewVodafoneSIMViewModel()
+	got := vm.BuildIdentityText(contracts.VodafoneSIMStatus{
+		Available:         true,
+		SubscriberName:    "1001",
+		SubscriberComment: "Ломбард",
+	})
+
+	if !strings.Contains(got, "Назва: 1001") {
+		t.Fatalf("identity text must contain subscriber name, got %q", got)
+	}
+	if !strings.Contains(got, "Коментар: Ломбард") {
+		t.Fatalf("identity text must contain subscriber comment, got %q", got)
 	}
 }

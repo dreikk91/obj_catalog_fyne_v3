@@ -51,7 +51,7 @@ func ShowVodafoneSIMDialog(
 	connectivityLabel := widget.NewLabel("Натисніть \"Статус\", щоб отримати актуальні дані.")
 	connectivityLabel.Wrapping = fyne.TextWrapWord
 
-	identityLabel := widget.NewLabel("Назва абонента з'явиться тут.")
+	identityLabel := widget.NewLabel("Назва та коментар з'являться тут.")
 	identityLabel.Wrapping = fyne.TextWrapWord
 
 	eventLabel := widget.NewLabel("Остання подія ще не завантажена.")
@@ -229,7 +229,7 @@ func ShowVodafoneSIMDialog(
 		container.NewVBox(overviewLabel, connectivityLabel),
 	)
 
-	identityCard := widget.NewCard("Назва абонента", "", identityLabel)
+	identityCard := widget.NewCard("Назва та коментар", "", identityLabel)
 	eventCard := widget.NewCard("Остання подія", "", eventLabel)
 	blockingCard := widget.NewCard("Блокування", "", blockingLabel)
 

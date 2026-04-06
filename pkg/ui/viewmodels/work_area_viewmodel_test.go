@@ -9,6 +9,7 @@ import (
 
 type workAreaDataProviderStub struct {
 	lastRequestedID string
+	eventRequests   int
 
 	fullObject *models.Object
 	zones      []models.Zone
@@ -38,6 +39,7 @@ func (s *workAreaDataProviderStub) GetEmployees(objectID string) []models.Contac
 
 func (s *workAreaDataProviderStub) GetObjectEvents(objectID string) []models.Event {
 	s.lastRequestedID = objectID
+	s.eventRequests++
 	return s.events
 }
 
@@ -46,7 +48,7 @@ func (s *workAreaDataProviderStub) GetExternalData(objectID string) (string, str
 	return s.signal, s.testMessage, s.lastTest, s.lastMessage
 }
 
-func TestWorkAreaViewModel_LoadObjectDetails(t *testing.T) {
+func TestWorkAreaViewModel_LoadObjectBaseDetails(t *testing.T) {
 	vm := NewWorkAreaViewModel()
 	stub := &workAreaDataProviderStub{
 		fullObject: &models.Object{ID: 42, Name: "Obj 42"},
@@ -63,7 +65,7 @@ func TestWorkAreaViewModel_LoadObjectDetails(t *testing.T) {
 		},
 	}
 
-	details := vm.LoadObjectDetails(stub, 42, 2)
+	details := vm.LoadObjectBaseDetails(stub, 42)
 
 	if stub.lastRequestedID != "42" {
 		t.Fatalf("expected string object id 42, got %q", stub.lastRequestedID)
@@ -77,28 +79,11 @@ func TestWorkAreaViewModel_LoadObjectDetails(t *testing.T) {
 	if len(details.Contacts) != 1 {
 		t.Fatalf("unexpected contacts count: %d", len(details.Contacts))
 	}
-	if len(details.Events) != 2 {
-		t.Fatalf("expected event limit to apply, got %d", len(details.Events))
+	if len(details.Events) != 0 {
+		t.Fatalf("base details must not preload events, got %d", len(details.Events))
 	}
-
-	details.Events[0].ID = 999
-	if stub.events[0].ID == 999 {
-		t.Fatalf("details must not alias source events slice")
-	}
-}
-
-func TestWorkAreaViewModel_LoadObjectDetails_WithoutLimit(t *testing.T) {
-	vm := NewWorkAreaViewModel()
-	stub := &workAreaDataProviderStub{
-		events: []models.Event{
-			{ID: 1},
-			{ID: 2},
-		},
-	}
-
-	details := vm.LoadObjectDetails(stub, 7, 0)
-	if len(details.Events) != 2 {
-		t.Fatalf("expected all events without limit, got %d", len(details.Events))
+	if stub.eventRequests != 0 {
+		t.Fatalf("base details must not request events, got %d requests", stub.eventRequests)
 	}
 }
 

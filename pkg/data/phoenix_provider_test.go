@@ -400,3 +400,79 @@ func TestPhoenixZoneStatus(t *testing.T) {
 		t.Fatalf("expected invalid status to map to normal, got %q", got)
 	}
 }
+
+func TestReversePhoenixEvents(t *testing.T) {
+	t.Parallel()
+
+	events := []models.Event{
+		{ID: 1},
+		{ID: 2},
+		{ID: 3},
+	}
+
+	reversePhoenixEvents(events)
+
+	if events[0].ID != 3 || events[1].ID != 2 || events[2].ID != 1 {
+		t.Fatalf("unexpected reverse order: %+v", events)
+	}
+}
+
+func TestMaxPhoenixEventID(t *testing.T) {
+	t.Parallel()
+
+	rows := []phoenixEventRow{
+		{EventID: 101},
+		{EventID: 150},
+		{EventID: 120},
+	}
+
+	if got := maxPhoenixEventID(rows, 99); got != 150 {
+		t.Fatalf("maxPhoenixEventID() = %d, want 150", got)
+	}
+}
+
+func TestMapPhoenixEventRowsPreservesInputOrder(t *testing.T) {
+	t.Parallel()
+
+	rows := []phoenixEventRow{
+		{EventID: 20},
+		{EventID: 10},
+	}
+
+	events := mapPhoenixEventRows(rows, func(row phoenixEventRow) models.Event {
+		return models.Event{ID: int(row.EventID)}
+	})
+
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[0].ID != 20 || events[1].ID != 10 {
+		t.Fatalf("mapPhoenixEventRows() changed order: %+v", events)
+	}
+}
+
+func TestPhoenixMapEventRow_NormalizesEventTimeToLocalWallClock(t *testing.T) {
+	t.Parallel()
+
+	provider := NewPhoenixDataProvider(nil, "")
+	src := time.Date(2026, time.April, 6, 12, 34, 56, 123000000, time.UTC)
+
+	event := provider.mapEventRow(phoenixEventRow{
+		EventID:   77,
+		PanelID:   "L00028",
+		TimeEvent: src,
+	})
+
+	if event.Time.IsZero() {
+		t.Fatal("expected mapped event time")
+	}
+	if event.Time.Location() != time.Local {
+		t.Fatalf("event time location = %v, want %v", event.Time.Location(), time.Local)
+	}
+	if event.Time.Year() != 2026 || event.Time.Month() != time.April || event.Time.Day() != 6 {
+		t.Fatalf("unexpected event date: %v", event.Time)
+	}
+	if event.Time.Hour() != 12 || event.Time.Minute() != 34 || event.Time.Second() != 56 {
+		t.Fatalf("wall clock time must be preserved, got %v", event.Time)
+	}
+}

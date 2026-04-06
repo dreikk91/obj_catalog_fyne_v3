@@ -39,12 +39,13 @@ type VodafoneSIMBlockingStatus struct {
 
 // VodafoneSIMStatus об'єднує ознаки доступності SIM, статус у мережі та останню подію.
 type VodafoneSIMStatus struct {
-	MSISDN         string
-	Available      bool
-	SubscriberName string
-	Connectivity   VodafoneConnectivityStatus
-	Blocking       VodafoneSIMBlockingStatus
-	LastEvent      VodafoneLastEvent
+	MSISDN            string
+	Available         bool
+	SubscriberName    string
+	SubscriberComment string
+	Connectivity      VodafoneConnectivityStatus
+	Blocking          VodafoneSIMBlockingStatus
+	LastEvent         VodafoneLastEvent
 }
 
 // VodafoneSIMRebootResult містить результат постановки заявки на перезавантаження SIM.

@@ -230,24 +230,17 @@ func (p *DBDataProvider) GetEvents() []models.Event {
 	rows, err := database.GetGlobalEvents(ctx, p.db, p.lastEventID)
 	if err != nil {
 		log.Error().Err(err).Msg("Помилка завантаження подій")
-		return p.cachedEvents
+		return append([]models.Event(nil), p.cachedEvents...)
 	}
 
 	// 3. Додаємо нові події в кеш
 	if len(rows) > 0 {
 		log.Debug().Int("newEventsCount", len(rows)).Msg("Знайдено нові события")
-		var newEvents []models.Event
-		for _, row := range rows {
-			newEvents = append(newEvents, mapEventRowToModel(row, 0))
-			if row.ID > p.lastEventID {
-				p.lastEventID = row.ID
-			}
-		}
+		newEvents := mapDBEventRows(rows, 0)
+		p.lastEventID = maxDBEventRowID(rows, p.lastEventID)
 
 		// Перевертаємо нові події, щоб остання була першою в списку (традиційний вигляд журналу)
-		for i, j := 0, len(newEvents)-1; i < j; i, j = i+1, j-1 {
-			newEvents[i], newEvents[j] = newEvents[j], newEvents[i]
-		}
+		reverseDBEvents(newEvents)
 
 		// Об'єднуємо: спочатку нові, потім старі
 		p.cachedEvents = append(newEvents, p.cachedEvents...)
@@ -262,7 +255,7 @@ func (p *DBDataProvider) GetEvents() []models.Event {
 	}
 
 	log.Debug().Int("totalCachedEvents", len(p.cachedEvents)).Msg("Події завантажено")
-	return p.cachedEvents
+	return append([]models.Event(nil), p.cachedEvents...)
 }
 
 // GetLatestEventID повертає ID останньої події для легкого probe-перевіряння змін.
@@ -307,10 +300,32 @@ func (p *DBDataProvider) GetObjectEvents(objectID string) []models.Event {
 	}
 
 	var events []models.Event
+	events = mapDBEventRows(rows, int(id))
+	return events
+}
+
+func mapDBEventRows(rows []database.EventRow, objectID int) []models.Event {
+	events := make([]models.Event, 0, len(rows))
 	for _, row := range rows {
-		events = append(events, mapEventRowToModel(row, int(id)))
+		events = append(events, mapEventRowToModel(row, objectID))
 	}
 	return events
+}
+
+func reverseDBEvents(events []models.Event) {
+	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
+		events[i], events[j] = events[j], events[i]
+	}
+}
+
+func maxDBEventRowID(rows []database.EventRow, current int64) int64 {
+	maxID := current
+	for _, row := range rows {
+		if row.ID > maxID {
+			maxID = row.ID
+		}
+	}
+	return maxID
 }
 
 // GetAlarms отримує список активних тривог (оптимізовано)

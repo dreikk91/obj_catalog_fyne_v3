@@ -47,22 +47,16 @@ func (vm *WorkAreaViewModel) CanApplyDetails(currentObject *models.Object, reque
 	return currentObject != nil && currentObject.ID == requestedObjectID
 }
 
-func (vm *WorkAreaViewModel) LoadObjectDetails(provider WorkAreaDataProvider, objectID int, eventLimit int) WorkAreaDetails {
+func (vm *WorkAreaViewModel) LoadObjectBaseDetails(provider WorkAreaDataProvider, objectID int) WorkAreaDetails {
 	idStr := strconv.Itoa(objectID)
 
 	fullObj := provider.GetObjectByID(idStr)
 	zones := provider.GetZones(idStr)
 	contacts := provider.GetEmployees(idStr)
-	events := provider.GetObjectEvents(idStr)
-
-	if eventLimit > 0 && len(events) > eventLimit {
-		events = events[:eventLimit]
-	}
 
 	details := WorkAreaDetails{
 		Zones:    append([]models.Zone(nil), zones...),
 		Contacts: append([]models.Contact(nil), contacts...),
-		Events:   append([]models.Event(nil), events...),
 	}
 	if fullObj != nil {
 		clone := *fullObj
@@ -74,7 +68,7 @@ func (vm *WorkAreaViewModel) LoadObjectDetails(provider WorkAreaDataProvider, ob
 // LoadObjectEvents повертає лише журнал подій об'єкта з урахуванням ліміту.
 func (vm *WorkAreaViewModel) LoadObjectEvents(provider WorkAreaDataProvider, objectID int, eventLimit int) []models.Event {
 	idStr := strconv.Itoa(objectID)
-	events := provider.GetObjectEvents(idStr)
+	events := sortEventsByTimeDesc(provider.GetObjectEvents(idStr))
 
 	if eventLimit > 0 && len(events) > eventLimit {
 		events = events[:eventLimit]

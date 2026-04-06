@@ -4,6 +4,7 @@ package ui
 import (
 	"image/color"
 	"obj_catalog_fyne_v3/pkg/config"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -418,7 +419,7 @@ func formatEventLogRowText(event models.Event) string {
 	}
 	text := event.GetDateTimeDisplay() + " " + getEventIcon(event.Type) + " — " + objectID + " — " + objectName + " — " + event.GetTypeDisplay()
 	if event.ZoneNumber > 0 {
-		text += " — Зона " + itoa(event.ZoneNumber)
+		text += " — Зона " + strconv.Itoa(event.ZoneNumber)
 	}
 	if event.Details != "" {
 		text += " — " + event.Details

@@ -4,6 +4,7 @@ package ui
 import (
 	"fmt"
 	"image/color"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -495,7 +496,7 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 			var text string
 			switch id.Col {
 			case 0:
-				text = "№" + itoa(zone.Number)
+				text = "№" + strconv.Itoa(zone.Number)
 			case 1:
 				text = zone.Name
 			case 2:
@@ -610,7 +611,7 @@ func (w *WorkAreaPanel) buildGroupedZonesSection(
 
 			switch id.Col {
 			case 0:
-				label.SetText("№" + itoa(zone.Number))
+				label.SetText("№" + strconv.Itoa(zone.Number))
 			case 1:
 				label.SetText(zone.Name)
 			case 2:
@@ -1012,7 +1013,7 @@ func (w *WorkAreaPanel) refreshCaseHistoryAccordion() {
 		for _, event := range group.Events {
 			line := event.GetDateTimeDisplay()
 			if event.ZoneNumber > 0 {
-				line += " | Зона " + itoa(event.ZoneNumber)
+				line += " | Зона " + strconv.Itoa(event.ZoneNumber)
 			}
 			line += " | " + event.GetTypeDisplay()
 			if details := strings.TrimSpace(event.Details); details != "" {
@@ -1208,7 +1209,7 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 	}()
 
 	w.TestLogsBtn.OnTapped = func() {
-		w.showTestMessages(itoa(obj.ID))
+		w.showTestMessages(strconv.Itoa(obj.ID))
 	}
 
 	w.CopyPhonesBtn.OnTapped = func() {
@@ -1283,7 +1284,7 @@ func (w *WorkAreaPanel) OnThemeChanged(fontSize float32) {
 func formatWorkAreaEventRowText(event models.Event) string {
 	text := event.GetDateTimeDisplay() + " " + getEventIcon(event.Type)
 	if event.ZoneNumber > 0 {
-		text += " | Зона " + itoa(event.ZoneNumber)
+		text += " | Зона " + strconv.Itoa(event.ZoneNumber)
 	}
 	text += " | " + event.GetTypeDisplay()
 	if event.Details != "" {

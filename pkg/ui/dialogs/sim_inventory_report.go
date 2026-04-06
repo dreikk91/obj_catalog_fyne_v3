@@ -21,6 +21,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/simoperator"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 const (
@@ -867,7 +868,7 @@ func normalizeSIMLookupKey(raw string) string {
 }
 
 func normalizeSIMInventoryNumber(raw string) string {
-	digits := digitsOnly(raw)
+	digits := utils.DigitsOnly(raw)
 	switch {
 	case len(digits) == 12 && strings.HasPrefix(digits, "380"):
 		return digits
@@ -882,16 +883,6 @@ func normalizeSIMInventoryNumber(raw string) string {
 	}
 }
 
-func digitsOnly(raw string) string {
-	var builder strings.Builder
-	builder.Grow(len(raw))
-	for _, r := range raw {
-		if r >= '0' && r <= '9' {
-			builder.WriteRune(r)
-		}
-	}
-	return builder.String()
-}
 
 func formatVodafoneSIMActive(status contracts.VodafoneSIMStatus) string {
 	if !status.Available {

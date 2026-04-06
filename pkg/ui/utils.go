@@ -13,25 +13,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// itoa - проста конвертація int в string
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	negative := n < 0
-	if negative {
-		n = -n
-	}
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	if negative {
-		digits = append([]byte{'-'}, digits...)
-	}
-	return string(digits)
-}
+
 
 func getStatusIcon(status models.ObjectStatus) string {
 	switch status {

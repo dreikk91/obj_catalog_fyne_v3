@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -51,7 +52,7 @@ func caseHistoryEventText(event models.Event) string {
 
 	line := strings.Join(parts, " ")
 	if event.ZoneNumber > 0 {
-		line += " | Зона " + itoa(event.ZoneNumber)
+		line += " | Зона " + strconv.Itoa(event.ZoneNumber)
 	}
 	if user := strings.TrimSpace(event.UserName); user != "" {
 		line += " | " + user

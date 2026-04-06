@@ -8,7 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
+
+	"obj_catalog_fyne_v3/pkg/utils"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
@@ -1850,7 +1851,7 @@ func coordinateOrZero(v string) string {
 }
 
 func normalizeUASimPhone(raw string) string {
-	digits := digitsOnly(raw)
+	digits := utils.DigitsOnly(raw)
 	if digits == "" {
 		return ""
 	}
@@ -1879,7 +1880,7 @@ func normalizeUserPhones(raw string) string {
 		if p == "" {
 			continue
 		}
-		digits := digitsOnly(p)
+		digits := utils.DigitsOnly(p)
 		if n, ok := normalizeUAMobileDigits(digits); ok {
 			out = append(out, formatUAPhoneDisplay(n))
 			continue
@@ -1924,16 +1925,6 @@ func extractNormalizedUAPhones(raw string) map[string]struct{} {
 	return result
 }
 
-func digitsOnly(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		if unicode.IsDigit(r) {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
 
 func normalizeUAMobileDigits(d string) (string, bool) {
 	if d == "" {

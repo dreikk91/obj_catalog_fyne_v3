@@ -1,6 +1,10 @@
 package simoperator
 
-import "strings"
+import (
+	"strings"
+
+	"obj_catalog_fyne_v3/pkg/utils"
+)
 
 type Operator string
 
@@ -25,7 +29,7 @@ func Detect(raw string) Operator {
 }
 
 func IsVodafone(raw string) bool {
-	digits := digitsOnly(raw)
+	digits := utils.DigitsOnly(raw)
 	switch {
 	case len(digits) >= 5 && strings.HasPrefix(digits, "38050"):
 		return true
@@ -53,7 +57,7 @@ func IsVodafone(raw string) bool {
 }
 
 func IsKyivstar(raw string) bool {
-	digits := digitsOnly(raw)
+	digits := utils.DigitsOnly(raw)
 	switch {
 	case len(digits) >= 5 && strings.HasPrefix(digits, "38067"):
 		return true
@@ -85,7 +89,7 @@ func IsKyivstar(raw string) bool {
 }
 
 func IsLifecell(raw string) bool {
-	digits := digitsOnly(raw)
+	digits := utils.DigitsOnly(raw)
 	switch {
 	case len(digits) >= 5 && strings.HasPrefix(digits, "38063"):
 		return true
@@ -117,13 +121,3 @@ func Label(operator Operator) string {
 	}
 }
 
-func digitsOnly(raw string) string {
-	var b strings.Builder
-	b.Grow(len(raw))
-	for _, r := range raw {
-		if r >= '0' && r <= '9' {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}

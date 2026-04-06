@@ -411,7 +411,7 @@ func formatAlarmListText(alarm models.Alarm) string {
 	objNum := alarm.GetObjectNumberDisplay()
 	displayText := alarm.GetTimeDisplay() + " — " + alarm.GetTypeDisplay() + " — №" + objNum
 	if alarm.ZoneNumber > 0 {
-		displayText += "-" + itoa(alarm.ZoneNumber)
+		displayText += "-" + strconv.Itoa(alarm.ZoneNumber)
 	}
 	displayText += " " + alarm.ObjectName
 	if alarm.Details != "" {

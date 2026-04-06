@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 // ObjectListUseCase описує мінімальний use case для завантаження об'єктів у список.
@@ -237,9 +237,9 @@ func matchesSearchTerms(obj models.Object, source string, terms []string) bool {
 	sim2Text := strings.ToLower(strings.TrimSpace(obj.SIM2))
 	sourceText := strings.ToLower(strings.TrimSpace(source))
 
-	sim1Digits := digitsOnly(sim1Text)
-	sim2Digits := digitsOnly(sim2Text)
-	phoneDigits := digitsOnly(phoneText)
+	sim1Digits := utils.DigitsOnly(sim1Text)
+	sim2Digits := utils.DigitsOnly(sim2Text)
+	phoneDigits := utils.DigitsOnly(phoneText)
 
 	for _, term := range terms {
 		switch {
@@ -249,7 +249,7 @@ func matchesSearchTerms(obj models.Object, source string, terms []string) bool {
 				return false
 			}
 		case strings.HasPrefix(term, "sim:"):
-			simQuery := digitsOnly(strings.TrimSpace(strings.TrimPrefix(term, "sim:")))
+			simQuery := utils.DigitsOnly(strings.TrimSpace(strings.TrimPrefix(term, "sim:")))
 			if simQuery == "" {
 				return false
 			}
@@ -257,8 +257,8 @@ func matchesSearchTerms(obj models.Object, source string, terms []string) bool {
 				return false
 			}
 		default:
-			digitsTerm := digitsOnly(term)
-			isNumericTerm := digitsTerm != "" && isDigitsOnlyTerm(term)
+			digitsTerm := utils.DigitsOnly(term)
+			isNumericTerm := digitsTerm != "" && utils.IsDigitsOnlyTerm(term)
 			if isNumericTerm && len(digitsTerm) >= 4 {
 				if strings.Contains(sim1Digits, digitsTerm) || strings.Contains(sim2Digits, digitsTerm) || strings.Contains(phoneDigits, digitsTerm) || strings.Contains(idText, digitsTerm) {
 					continue
@@ -278,32 +278,6 @@ func matchesSearchTerms(obj models.Object, source string, terms []string) bool {
 				strings.Contains(sourceText, term) {
 				continue
 			}
-			return false
-		}
-	}
-	return true
-}
-
-func digitsOnly(value string) string {
-	if value == "" {
-		return ""
-	}
-	var b strings.Builder
-	b.Grow(len(value))
-	for _, r := range value {
-		if unicode.IsDigit(r) {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-func isDigitsOnlyTerm(value string) bool {
-	if value == "" {
-		return false
-	}
-	for _, r := range value {
-		if !unicode.IsDigit(r) {
 			return false
 		}
 	}

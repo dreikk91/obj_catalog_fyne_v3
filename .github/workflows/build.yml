@@ -111,25 +111,67 @@ jobs:
         with:
           go-version: '1.25.7'
 
-      - name: Install fyne-cross
-        run: go install github.com/fyne-io/fyne-cross@latest
+      - name: Enable i386 architecture
+        run: sudo dpkg --add-architecture i386
 
-      - name: Build Linux amd64 and 386
+      - name: Install system dependencies
         run: |
-          fyne-cross linux -arch=amd64,386 -icon=icon.png -app-id=com.fyne.objcatalog -release -output=obj_catalog
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc \
+            libgl1-mesa-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxinerama-dev \
+            libxi-dev \
+            libxxf86vm-dev \
+            gcc-multilib \
+            gcc-i686-linux-gnu \
+            libgl1-mesa-dev:i386 \
+            libxrandr-dev:i386 \
+            libxcursor-dev:i386 \
+            libxinerama-dev:i386 \
+            libxi-dev:i386 \
+            libxxf86vm-dev:i386
+
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      - name: Build Linux amd64
+        run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release -output obj_catalog
+        env:
+          GOARCH: amd64
+          CGO_ENABLED: '1'
+
+      - name: Package amd64 artifact
+        run: |
+          mkdir -p dist/linux-amd64
+          mv obj_catalog.tar.xz dist/linux-amd64/
+
+      - name: Build Linux 386
+        run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release -output obj_catalog
+        env:
+          GOARCH: '386'
+          CGO_ENABLED: '1'
+          CC: i686-linux-gnu-gcc
+
+      - name: Package 386 artifact
+        run: |
+          mkdir -p dist/linux-386
+          mv obj_catalog.tar.xz dist/linux-386/
 
       - name: Upload Linux 64-bit artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-64-bit
-          path: 'fyne-cross/dist/linux-amd64/obj_catalog.tar.xz'
+          path: 'dist/linux-amd64/obj_catalog.tar.xz'
           retention-days: 7
 
       - name: Upload Linux 32-bit artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-32-bit
-          path: 'fyne-cross/dist/linux-386/obj_catalog.tar.xz'
+          path: 'dist/linux-386/obj_catalog.tar.xz'
           retention-days: 7
 
   create-release:

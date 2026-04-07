@@ -27,8 +27,9 @@ jobs:
         with:
           go-version: '1.25.7'
 
+      # Виправлено інсталяцію Fyne CLI
       - name: Install Fyne CLI
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       - name: Build Windows 64-bit
         run: fyne package -os windows -icon icon.png -appID com.fyne.objcatalog -release
@@ -73,8 +74,9 @@ jobs:
           gcc --version
         shell: powershell
 
+      # Виправлено інсталяцію Fyne CLI
       - name: Install Fyne CLI
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       - name: Build Windows 32-bit
         run: |
@@ -123,11 +125,13 @@ jobs:
             libxi-dev \
             libxxf86vm-dev
 
+      # Виправлено інсталяцію Fyne CLI
       - name: Install Fyne CLI
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
+      # Замінено -output на --name
       - name: Build Linux amd64
-        run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release -output obj_catalog
+        run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release --name obj_catalog
         env:
           GOARCH: amd64
           CGO_ENABLED: '1'
@@ -178,11 +182,13 @@ jobs:
           echo 'exec gcc -m32 "$@"' | sudo tee -a /usr/local/bin/gcc-m32
           sudo chmod +x /usr/local/bin/gcc-m32
 
+      # Виправлено інсталяцію Fyne CLI
       - name: Install Fyne CLI
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
+      # Замінено -output на --name
       - name: Build Linux 386
-        run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release -output obj_catalog
+        run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release --name obj_catalog
         env:
           GOARCH: '386'
           CGO_ENABLED: '1'

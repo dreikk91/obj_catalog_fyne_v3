@@ -131,7 +131,7 @@ jobs:
 
       # Замінено -output на --name
       - name: Build Linux amd64
-        run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release --name obj_catalog
+        run: fyne package -os linux -icon icon.png -app-id com.fyne.objcatalog -release --name obj_catalog
         env:
           GOARCH: amd64
           CGO_ENABLED: '1'
@@ -188,7 +188,7 @@ jobs:
 
       # Замінено -output на --name
       - name: Build Linux 386
-        run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release --name obj_catalog
+        run: fyne package -os linux -icon icon.png -app-id com.fyne.objcatalog -release --name obj_catalog
         env:
           GOARCH: '386'
           CGO_ENABLED: '1'

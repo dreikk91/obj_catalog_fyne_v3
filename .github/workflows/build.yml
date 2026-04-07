@@ -99,8 +99,48 @@ jobs:
           path: 'obj_catalog-windows-386.exe'
           retention-days: 7
 
-  build-linux:
-    name: Build Linux (64-bit & 32-bit)
+  build-linux-64:
+    name: Build Linux 64-bit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.7'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc \
+            libgl1-mesa-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxinerama-dev \
+            libxi-dev \
+            libxxf86vm-dev
+
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      - name: Build Linux amd64
+        run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release -output obj_catalog
+        env:
+          GOARCH: amd64
+          CGO_ENABLED: '1'
+
+      - name: Upload Linux 64-bit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-64-bit
+          path: 'obj_catalog.tar.xz'
+          retention-days: 7
+
+  build-linux-32:
+    name: Build Linux 32-bit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -114,69 +154,50 @@ jobs:
       - name: Enable i386 architecture
         run: sudo dpkg --add-architecture i386
 
-      - name: Install system dependencies
+      - name: Install system dependencies (32-bit)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            gcc \
+            gcc-multilib \
             libgl1-mesa-dev \
             libxrandr-dev \
             libxcursor-dev \
             libxinerama-dev \
             libxi-dev \
             libxxf86vm-dev \
-            gcc-multilib \
-            gcc-i686-linux-gnu \
-            libgl1-mesa-dev:i386 \
+            libgl-dev:i386 \
             libxrandr-dev:i386 \
             libxcursor-dev:i386 \
             libxinerama-dev:i386 \
             libxi-dev:i386 \
             libxxf86vm-dev:i386
 
+      - name: Create gcc-m32 wrapper
+        run: |
+          echo '#!/bin/sh' | sudo tee /usr/local/bin/gcc-m32
+          echo 'exec gcc -m32 "$@"' | sudo tee -a /usr/local/bin/gcc-m32
+          sudo chmod +x /usr/local/bin/gcc-m32
+
       - name: Install Fyne CLI
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
-
-      - name: Build Linux amd64
-        run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release -output obj_catalog
-        env:
-          GOARCH: amd64
-          CGO_ENABLED: '1'
-
-      - name: Package amd64 artifact
-        run: |
-          mkdir -p dist/linux-amd64
-          mv obj_catalog.tar.xz dist/linux-amd64/
 
       - name: Build Linux 386
         run: fyne package -os linux -icon icon.png -appID com.fyne.objcatalog -release -output obj_catalog
         env:
           GOARCH: '386'
           CGO_ENABLED: '1'
-          CC: i686-linux-gnu-gcc
-
-      - name: Package 386 artifact
-        run: |
-          mkdir -p dist/linux-386
-          mv obj_catalog.tar.xz dist/linux-386/
-
-      - name: Upload Linux 64-bit artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-64-bit
-          path: 'dist/linux-amd64/obj_catalog.tar.xz'
-          retention-days: 7
+          CC: /usr/local/bin/gcc-m32
 
       - name: Upload Linux 32-bit artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-32-bit
-          path: 'dist/linux-386/obj_catalog.tar.xz'
+          path: 'obj_catalog.tar.xz'
           retention-days: 7
 
   create-release:
     name: Create Release
-    needs: [build-windows-64, build-windows-32, build-linux]
+    needs: [build-windows-64, build-windows-32, build-linux-64, build-linux-32]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:

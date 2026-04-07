@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -37,7 +38,7 @@ func NewWorkAreaCaseHistoryViewModel() *WorkAreaCaseHistoryViewModel {
 }
 
 func (vm *WorkAreaCaseHistoryViewModel) BuildGroups(currentObject *models.Object, events []models.Event) []WorkAreaCaseHistoryGroup {
-	if currentObject == nil || !IsCASLObjectID(currentObject.ID) || len(events) == 0 {
+	if currentObject == nil || !ids.IsCASLObjectID(currentObject.ID) || len(events) == 0 {
 		return nil
 	}
 

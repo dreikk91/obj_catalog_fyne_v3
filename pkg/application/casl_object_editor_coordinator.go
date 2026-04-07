@@ -3,8 +3,8 @@ package application
 import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/eventbus"
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
-	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
 func (a *Application) resolveCASLObjectEditorProvider() (contracts.CASLObjectEditorProvider, bool) {
@@ -24,7 +24,7 @@ func (a *Application) openCASLObjectEditor() {
 		dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть CASL-об'єкт у списку.")
 		return
 	}
-	if !viewmodels.IsCASLObjectID(a.currentObject.ID) {
+	if !ids.IsCASLObjectID(a.currentObject.ID) {
 		dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "CASL-редактор працює лише для CASL-об'єктів.")
 		return
 	}

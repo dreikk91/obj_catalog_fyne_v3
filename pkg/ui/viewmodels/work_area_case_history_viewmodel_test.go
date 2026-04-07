@@ -4,12 +4,13 @@ import (
 	"testing"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
 func TestWorkAreaCaseHistoryViewModel_BuildGroups_ForCASLObject(t *testing.T) {
 	vm := NewWorkAreaCaseHistoryViewModel()
-	object := &models.Object{ID: caslObjectIDNamespaceStart + 51, Name: "CASL object"}
+	object := &models.Object{ID: ids.CASLObjectIDNamespaceStart + 51, Name: "CASL object"}
 	base := time.Date(2026, 4, 6, 10, 0, 0, 0, time.Local)
 
 	events := []models.Event{
@@ -57,7 +58,7 @@ func TestWorkAreaCaseHistoryViewModel_BuildGroups_IgnoresNonCASLObject(t *testin
 
 func TestWorkAreaCaseHistoryViewModel_FindGroupForAlarm_PrefersMatchingZoneAndType(t *testing.T) {
 	vm := NewWorkAreaCaseHistoryViewModel()
-	object := &models.Object{ID: caslObjectIDNamespaceStart + 77, Name: "CASL object"}
+	object := &models.Object{ID: ids.CASLObjectIDNamespaceStart + 77, Name: "CASL object"}
 	base := time.Date(2026, 4, 6, 12, 0, 0, 0, time.Local)
 
 	events := []models.Event{

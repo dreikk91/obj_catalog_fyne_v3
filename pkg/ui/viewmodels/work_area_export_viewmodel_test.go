@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -117,7 +118,7 @@ func TestWorkAreaExportViewModel_UsesDisplayNumberForSpecialSources(t *testing.T
 	vm := NewWorkAreaExportViewModel()
 
 	caslExport := vm.BuildObjectExportData(
-		models.Object{ID: caslObjectIDNamespaceStart + 24, DisplayNumber: "1003", Name: "CASL Obj"},
+		models.Object{ID: ids.CASLObjectIDNamespaceStart + 24, DisplayNumber: "1003", Name: "CASL Obj"},
 		nil,
 		nil,
 		nil,
@@ -128,7 +129,7 @@ func TestWorkAreaExportViewModel_UsesDisplayNumberForSpecialSources(t *testing.T
 	}
 
 	phoenixRow := vm.BuildExcelRowTSV(
-		models.Object{ID: phoenixObjectIDNamespaceStart + 28, DisplayNumber: "L00028", Name: "Phoenix Obj"},
+		models.Object{ID: ids.PhoenixObjectIDNamespaceStart + 28, DisplayNumber: "L00028", Name: "Phoenix Obj"},
 		nil,
 	)
 	if firstColumn := strings.Split(phoenixRow, "\t")[0]; firstColumn != "L00028" {

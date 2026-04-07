@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -75,7 +76,7 @@ func TestCombinedDataProvider_MergesObjectsAndAlarms(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
-	secondaryObjID := caslObjectIDNamespaceStart + 1
+	secondaryObjID := ids.CASLObjectIDNamespaceStart + 1
 
 	primary := &combinedStubProvider{
 		objects: []models.Object{
@@ -116,7 +117,7 @@ func TestCombinedDataProvider_MergesObjectsAndAlarms(t *testing.T) {
 func TestCombinedDataProvider_RoutesByObjectIDNamespace(t *testing.T) {
 	t.Parallel()
 
-	secondaryObjID := caslObjectIDNamespaceStart + 2
+	secondaryObjID := ids.CASLObjectIDNamespaceStart + 2
 	secondaryObjIDStr := strconv.Itoa(secondaryObjID)
 
 	primary := &combinedStubProvider{
@@ -176,8 +177,8 @@ func TestCombinedDataProvider_MergesBridgePhoenixAndCASLAlarms(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
-	phoenixObjID := phoenixObjectIDNamespaceStart + 10
-	caslObjID := caslObjectIDNamespaceStart + 20
+	phoenixObjID := ids.PhoenixObjectIDNamespaceStart + 10
+	caslObjID := ids.CASLObjectIDNamespaceStart + 20
 
 	provider := NewMultiSourceDataProvider(
 		ProviderSource{
@@ -190,8 +191,8 @@ func TestCombinedDataProvider_MergesBridgePhoenixAndCASLAlarms(t *testing.T) {
 		},
 		ProviderSource{
 			Name:         "phoenix",
-			OwnsObjectID: IsPhoenixObjectID,
-			OwnsAlarmID:  IsPhoenixObjectID,
+			OwnsObjectID: ids.IsPhoenixObjectID,
+			OwnsAlarmID:  ids.IsPhoenixObjectID,
 			Provider: &combinedStubProvider{
 				alarms: []models.Alarm{
 					{ID: 201, ObjectID: phoenixObjID, ObjectNumber: "L00028", ObjectName: "Phoenix object", Time: now.Add(-2 * time.Minute)},
@@ -200,8 +201,8 @@ func TestCombinedDataProvider_MergesBridgePhoenixAndCASLAlarms(t *testing.T) {
 		},
 		ProviderSource{
 			Name:         "casl",
-			OwnsObjectID: IsCASLObjectID,
-			OwnsAlarmID:  IsCASLObjectID,
+			OwnsObjectID: ids.IsCASLObjectID,
+			OwnsAlarmID:  ids.IsCASLObjectID,
 			Provider: &combinedStubProvider{
 				alarms: []models.Alarm{
 					{ID: 301, ObjectID: caslObjID, ObjectNumber: "1004", ObjectName: "CASL object", Time: now.Add(-1 * time.Minute)},

@@ -102,16 +102,30 @@ func ParseAnyTime(value any) time.Time {
 		if text == "" {
 			return time.Time{}
 		}
-		// Спроба ISO 8601 / RFC 3339
+		if t, err := time.Parse(time.RFC3339Nano, text); err == nil {
+			return t.Local()
+		}
 		if t, err := time.Parse(time.RFC3339, text); err == nil {
 			return t.Local()
 		}
-		// Спроба чистого числа (epoch)
 		if i, err := strconv.ParseInt(text, 10, 64); err == nil {
 			return parseEpoch(i)
 		}
+		if f, err := strconv.ParseFloat(text, 64); err == nil {
+			return parseEpoch(int64(f))
+		}
 		return time.Time{}
 	default:
+		text := strings.TrimSpace(fmt.Sprintf("%v", value))
+		if text == "" {
+			return time.Time{}
+		}
+		if i, err := strconv.ParseInt(text, 10, 64); err == nil {
+			return parseEpoch(i)
+		}
+		if f, err := strconv.ParseFloat(text, 64); err == nil {
+			return parseEpoch(int64(f))
+		}
 		return time.Time{}
 	}
 }
@@ -156,7 +170,7 @@ func AsString(value any) string {
 	case int64:
 		return strconv.FormatInt(v, 10)
 	case float64:
-		return strconv.FormatInt(int64(v), 10)
+		return strconv.FormatFloat(v, 'f', -1, 64)
 	default:
 		return strings.TrimSpace(fmt.Sprintf("%v", value))
 	}

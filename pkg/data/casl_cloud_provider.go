@@ -41,7 +41,6 @@ const (
 	caslDebugBodyLimit  = 8192
 
 	caslObjectStatusText = "НОРМА"
-
 )
 
 // CASLCloudProvider реалізує DataProvider для CASL Cloud API.

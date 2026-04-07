@@ -63,18 +63,19 @@ func (vm *EventLogViewModel) ApplyFilters(input EventLogFilterInput) EventLogFil
 	countBridge := 0
 	countPhoenix := 0
 	countCASL := 0
+eventLoop:
 	for _, event := range orderedEvents {
 		switch input.Period {
 		case "Остання година":
 			if now.Sub(event.Time) > time.Hour {
 				// Події приходять у порядку від нових до старих,
 				// тому далі теж буде поза періодом.
-				goto done
+				break eventLoop
 			}
 		case "Сьогодні":
 			y, m, d := event.Time.Date()
 			if y != year || m != month || d != day {
-				goto done
+				break eventLoop
 			}
 		}
 
@@ -103,8 +104,6 @@ func (vm *EventLogViewModel) ApplyFilters(input EventLogFilterInput) EventLogFil
 
 		filtered = append(filtered, event)
 	}
-
-done:
 	if input.MaxEvents > 0 && len(filtered) > input.MaxEvents {
 		filtered = filtered[:input.MaxEvents]
 	}

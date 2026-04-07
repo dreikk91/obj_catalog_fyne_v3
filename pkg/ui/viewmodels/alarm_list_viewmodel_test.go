@@ -3,6 +3,7 @@ package viewmodels
 import (
 	"testing"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -30,7 +31,7 @@ func TestAlarmListViewModel_BuildRefreshOutput(t *testing.T) {
 	input := AlarmRefreshInput{
 		Alarms: []models.Alarm{
 			{ID: 10, Type: models.AlarmFire, IsProcessed: false},
-			{ID: 11, ObjectID: phoenixObjectIDNamespaceStart + 11, Type: models.AlarmFault, IsProcessed: false},
+			{ID: 11, ObjectID: ids.PhoenixObjectIDNamespaceStart + 11, Type: models.AlarmFault, IsProcessed: false},
 		},
 		LastKnownIDs: map[int]struct{}{
 			11: {},
@@ -57,8 +58,8 @@ func TestAlarmListViewModel_BuildRefreshOutput(t *testing.T) {
 
 func TestAlarmListViewModel_BuildRefreshOutput_BySource(t *testing.T) {
 	vm := NewAlarmListViewModel()
-	caslObjectID := caslObjectIDNamespaceStart + 100
-	phoenixObjectID := phoenixObjectIDNamespaceStart + 50
+	caslObjectID := ids.CASLObjectIDNamespaceStart + 100
+	phoenixObjectID := ids.PhoenixObjectIDNamespaceStart + 50
 
 	out := vm.BuildRefreshOutput(AlarmRefreshInput{
 		Alarms: []models.Alarm{

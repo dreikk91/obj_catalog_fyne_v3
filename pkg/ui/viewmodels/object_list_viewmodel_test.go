@@ -3,6 +3,7 @@ package viewmodels
 import (
 	"testing"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -25,10 +26,12 @@ func TestObjectListViewModel_LoadObjects(t *testing.T) {
 	}
 }
 
-func TestObjectListViewModel_NormalizeFilter(t *testing.T) {
-	vm := NewObjectListViewModel()
-	if got := vm.NormalizeFilter("Є тривоги (12)"); got != "Є тривоги" {
+func TestNormalizeObjectListFilter(t *testing.T) {
+	if got := NormalizeObjectListFilter(FilterAlarm + " (12)"); got != FilterAlarm {
 		t.Fatalf("unexpected normalized filter: %q", got)
+	}
+	if got := NormalizeObjectListFilter("unknown"); got != FilterAll {
+		t.Fatalf("unexpected fallback filter: %q", got)
 	}
 }
 
@@ -36,15 +39,15 @@ func TestObjectListViewModel_ApplyFilters(t *testing.T) {
 	vm := NewObjectListViewModel()
 	all := []models.Object{
 		{ID: 1, Name: "Альфа", Status: models.StatusNormal, GuardState: 1, IsConnState: 1},
-		{ID: phoenixObjectIDNamespaceStart + 10, DisplayNumber: "L00028", Name: "Phoenix", Status: models.StatusNormal, GuardState: 1, IsConnState: 1},
-		{ID: caslObjectIDNamespaceStart + 2, Name: "Бета", Status: models.StatusFire, GuardState: 1, IsConnState: 1},
+		{ID: ids.PhoenixObjectIDNamespaceStart + 10, DisplayNumber: "L00028", Name: "Phoenix", Status: models.StatusNormal, GuardState: 1, IsConnState: 1},
+		{ID: ids.CASLObjectIDNamespaceStart + 2, Name: "Бета", Status: models.StatusFire, GuardState: 1, IsConnState: 1},
 		{ID: 3, Name: "Гамма", Status: models.StatusNormal, GuardState: 0, IsConnState: 0},
 	}
 
 	out := vm.ApplyFilters(ObjectListFilterInput{
 		AllObjects:           all,
 		Query:                "",
-		CurrentFilter:        "Є тривоги",
+		CurrentFilter:        FilterAlarm,
 		PreviousSelectedID:   1,
 		HadPreviousSelection: true,
 		LastNotifiedID:       1,
@@ -54,10 +57,10 @@ func TestObjectListViewModel_ApplyFilters(t *testing.T) {
 	if out.CountAll != 4 || out.CountAlarm != 1 || out.CountMonitoringOff != 1 || out.CountDebug != 0 {
 		t.Fatalf("unexpected counters: %+v", out)
 	}
-	if len(out.Filtered) != 1 || out.Filtered[0].ID != caslObjectIDNamespaceStart+2 {
+	if len(out.Filtered) != 1 || out.Filtered[0].ID != ids.CASLObjectIDNamespaceStart+2 {
 		t.Fatalf("unexpected filtered result: %+v", out.Filtered)
 	}
-	if out.NewSelectedRow != 0 || !out.HasSelectedObject || out.SelectedObject.ID != caslObjectIDNamespaceStart+2 {
+	if out.NewSelectedRow != 0 || !out.HasSelectedObject || out.SelectedObject.ID != ids.CASLObjectIDNamespaceStart+2 {
 		t.Fatalf("unexpected selected object: %+v", out)
 	}
 	if !out.ShouldNotifySelection {
@@ -74,7 +77,7 @@ func TestObjectListViewModel_BuildFilterOptions(t *testing.T) {
 	if len(opts) != 5 {
 		t.Fatalf("expected 5 options, got %d", len(opts))
 	}
-	if opts[0] != "Всі (10)" {
+	if opts[0] != FilterAll+" (10)" {
 		t.Fatalf("unexpected option: %q", opts[0])
 	}
 	if opts[3] != "Знято зі спостереження (4)" {
@@ -89,22 +92,22 @@ func TestObjectListViewModel_ApplyFilters_BySourceAndSIMSearch(t *testing.T) {
 	vm := NewObjectListViewModel()
 	all := []models.Object{
 		{ID: 10, Name: "Bridge One", SIM1: "+380501112233"},
-		{ID: phoenixObjectIDNamespaceStart + 20, DisplayNumber: "L00028", Name: "Phoenix One", SIM1: "+380661234567"},
-		{ID: caslObjectIDNamespaceStart + 10, Name: "CASL One", SIM1: "+380671234567"},
+		{ID: ids.PhoenixObjectIDNamespaceStart + 20, DisplayNumber: "L00028", Name: "Phoenix One", SIM1: "+380661234567"},
+		{ID: ids.CASLObjectIDNamespaceStart + 10, Name: "CASL One", SIM1: "+380671234567"},
 	}
 
 	outBySource := vm.ApplyFilters(ObjectListFilterInput{
 		AllObjects:    all,
-		CurrentFilter: "Всі",
+		CurrentFilter: FilterAll,
 		CurrentSource: ObjectSourceCASL,
 	})
-	if len(outBySource.Filtered) != 1 || !IsCASLObjectID(outBySource.Filtered[0].ID) {
+	if len(outBySource.Filtered) != 1 || !ids.IsCASLObjectID(outBySource.Filtered[0].ID) {
 		t.Fatalf("expected only CASL objects, got %+v", outBySource.Filtered)
 	}
 
 	outBySIM := vm.ApplyFilters(ObjectListFilterInput{
 		AllObjects:    all,
-		CurrentFilter: "Всі",
+		CurrentFilter: FilterAll,
 		CurrentSource: ObjectSourceAll,
 		Query:         "sim:671234567",
 	})
@@ -114,26 +117,26 @@ func TestObjectListViewModel_ApplyFilters_BySourceAndSIMSearch(t *testing.T) {
 
 	outBySourceToken := vm.ApplyFilters(ObjectListFilterInput{
 		AllObjects:    all,
-		CurrentFilter: "Всі",
+		CurrentFilter: FilterAll,
 		CurrentSource: ObjectSourceAll,
 		Query:         "src:casl",
 	})
-	if len(outBySourceToken.Filtered) != 1 || !IsCASLObjectID(outBySourceToken.Filtered[0].ID) {
+	if len(outBySourceToken.Filtered) != 1 || !ids.IsCASLObjectID(outBySourceToken.Filtered[0].ID) {
 		t.Fatalf("expected src:casl to filter only CASL objects, got %+v", outBySourceToken.Filtered)
 	}
 
 	outByPhoenixSource := vm.ApplyFilters(ObjectListFilterInput{
 		AllObjects:    all,
-		CurrentFilter: "Всі",
+		CurrentFilter: FilterAll,
 		CurrentSource: ObjectSourcePhoenix,
 	})
-	if len(outByPhoenixSource.Filtered) != 1 || !IsPhoenixObjectID(outByPhoenixSource.Filtered[0].ID) {
+	if len(outByPhoenixSource.Filtered) != 1 || !ids.IsPhoenixObjectID(outByPhoenixSource.Filtered[0].ID) {
 		t.Fatalf("expected only Phoenix objects, got %+v", outByPhoenixSource.Filtered)
 	}
 
 	outByDisplayNumber := vm.ApplyFilters(ObjectListFilterInput{
 		AllObjects:    all,
-		CurrentFilter: "Всі",
+		CurrentFilter: FilterAll,
 		CurrentSource: ObjectSourceAll,
 		Query:         "L00028",
 	})
@@ -147,15 +150,15 @@ func TestObjectListViewModel_ApplyFilters_MonitoringOffAndDebug(t *testing.T) {
 	all := []models.Object{
 		{ID: 10, Name: "Bridge Off", GuardState: 0, IsConnState: 1},
 		{ID: 11, Name: "Bridge Debug", GuardState: 1, IsConnState: 1, BlockedArmedOnOff: 2},
-		{ID: phoenixObjectIDNamespaceStart + 20, Name: "Phoenix Blocked", GuardState: 1, IsConnState: 1, BlockedArmedOnOff: 1},
-		{ID: phoenixObjectIDNamespaceStart + 21, Name: "Phoenix Stand", GuardState: 1, IsConnState: 1, BlockedArmedOnOff: 2},
-		{ID: phoenixObjectIDNamespaceStart + 22, Name: "Phoenix Disarmed", GuardState: 0, IsConnState: 1},
-		{ID: caslObjectIDNamespaceStart + 30, Name: "CASL Blocked", GuardState: 0, IsConnState: 1, BlockedArmedOnOff: 1},
+		{ID: ids.PhoenixObjectIDNamespaceStart + 20, Name: "Phoenix Blocked", GuardState: 1, IsConnState: 1, BlockedArmedOnOff: 1},
+		{ID: ids.PhoenixObjectIDNamespaceStart + 21, Name: "Phoenix Stand", GuardState: 1, IsConnState: 1, BlockedArmedOnOff: 2},
+		{ID: ids.PhoenixObjectIDNamespaceStart + 22, Name: "Phoenix Disarmed", GuardState: 0, IsConnState: 1},
+		{ID: ids.CASLObjectIDNamespaceStart + 30, Name: "CASL Blocked", GuardState: 0, IsConnState: 1, BlockedArmedOnOff: 1},
 	}
 
 	monitoringOff := vm.ApplyFilters(ObjectListFilterInput{
 		AllObjects:    all,
-		CurrentFilter: "Знято зі спостереження",
+		CurrentFilter: FilterMonitoringOff,
 		CurrentSource: ObjectSourceAll,
 	})
 	if len(monitoringOff.Filtered) != 3 {
@@ -167,7 +170,7 @@ func TestObjectListViewModel_ApplyFilters_MonitoringOffAndDebug(t *testing.T) {
 
 	debug := vm.ApplyFilters(ObjectListFilterInput{
 		AllObjects:    all,
-		CurrentFilter: "В режимі налагодження",
+		CurrentFilter: FilterDebug,
 		CurrentSource: ObjectSourceAll,
 	})
 	if len(debug.Filtered) != 2 {

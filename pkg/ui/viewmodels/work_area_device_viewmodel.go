@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -135,12 +136,12 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 	}
 
 	guardText := "🔒 ПІД ОХОРОНОЮ"
-	if IsPhoenixObjectID(obj.ID) && obj.BlockedArmedOnOff == 1 {
+	if ids.IsPhoenixObjectID(obj.ID) && obj.BlockedArmedOnOff == 1 {
 		guardText = "⛔ ЗАБЛОКОВАНО"
-	} else if IsPhoenixObjectID(obj.ID) && obj.BlockedArmedOnOff == 2 {
+	} else if ids.IsPhoenixObjectID(obj.ID) && obj.BlockedArmedOnOff == 2 {
 		guardText = "🧪 СТЕНДИ"
 	} else if !obj.IsUnderGuard {
-		if IsPhoenixObjectID(obj.ID) {
+		if ids.IsPhoenixObjectID(obj.ID) {
 			guardText = "🔓 БЕЗ ОХОРОНИ"
 		} else {
 			guardText = "🔓 ЗНЯТО З ОХОРОНИ"
@@ -159,7 +160,7 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 	if phone == "" {
 		phone = strings.TrimSpace(obj.Phone)
 	}
-	if IsCASLObjectID(obj.ID) || phone == "" {
+	if ids.IsCASLObjectID(obj.ID) || phone == "" {
 		phone = "—"
 	}
 

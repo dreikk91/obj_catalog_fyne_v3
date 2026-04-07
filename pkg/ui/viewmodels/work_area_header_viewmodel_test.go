@@ -5,6 +5,7 @@ import (
 
 	"fyne.io/fyne/v2/test"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -76,7 +77,7 @@ func TestWorkAreaHeaderViewModel_ApplyObjectCASLNumber(t *testing.T) {
 
 	vm := NewWorkAreaHeaderViewModel()
 	vm.ApplyObject(models.Object{
-		ID:          caslObjectIDNamespaceStart + 24,
+		ID:          ids.CASLObjectIDNamespaceStart + 24,
 		Name:        "Офіс",
 		Address:     "Border 1",
 		ContractNum: "C-003",

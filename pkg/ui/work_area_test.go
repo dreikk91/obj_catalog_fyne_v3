@@ -18,7 +18,7 @@ func TestSIMOperatorDetection(t *testing.T) {
 		{name: "38095 intl", input: "380951234567", want: simoperator.Vodafone},
 		{name: "formatted 099", input: "+38 (099) 123-45-67", want: simoperator.Vodafone},
 		{name: "kyivstar", input: "0671234567", want: simoperator.Kyivstar},
-		{name: "lifecell", input: "0631234567", want: simoperator.Unknown},
+		{name: "lifecell", input: "0631234567", want: simoperator.Lifecell},
 		{name: "empty", input: "", want: simoperator.Unknown},
 	}
 

@@ -18,10 +18,10 @@ import (
 
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"obj_catalog_fyne_v3/pkg/usecases"
-	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 // AlarmPanelWidget - структура для панелі тривог
@@ -31,7 +31,6 @@ type AlarmPanelWidget struct {
 	listData      binding.UntypedList
 	SourceSelect  *widget.Select
 	Data          contracts.DataProvider
-	UseCase       *usecases.AlarmListUseCase
 	ViewModel     *viewmodels.AlarmListViewModel
 	CaseHistoryVM *viewmodels.WorkAreaCaseHistoryViewModel
 
@@ -68,7 +67,6 @@ type AlarmPanelWidget struct {
 func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 	panel := &AlarmPanelWidget{
 		Data:          provider,
-		UseCase:       usecases.NewAlarmListUseCase(provider),
 		ViewModel:     viewmodels.NewAlarmListViewModel(),
 		CaseHistoryVM: viewmodels.NewWorkAreaCaseHistoryViewModel(),
 		listData:      binding.NewUntypedList(),
@@ -142,13 +140,7 @@ func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 				return
 			}
 
-			// Вибираємо палітру кольорів залежно від теми
-			var textColor, rowColor color.NRGBA
-			if IsDarkMode() {
-				textColor, rowColor = utils.SelectColorNRGBADark(alarm.SC1)
-			} else {
-				textColor, rowColor = utils.SelectColorNRGBA(alarm.SC1)
-			}
+			textColor, rowColor := eventRowColors(alarm.SC1)
 
 			// Базовий колір рядка. Для вибраної тривоги додаємо підсвітку.
 			rowBg := rowColor
@@ -273,7 +265,7 @@ func (p *AlarmPanelWidget) Refresh() {
 	if p.ViewModel == nil {
 		p.ViewModel = viewmodels.NewAlarmListViewModel()
 	}
-	p.UseCase = usecases.NewAlarmListUseCase(p.Data)
+	useCase := usecases.NewAlarmListUseCase(p.Data)
 
 	p.mutex.Lock()
 	if p.isRefreshing {
@@ -289,7 +281,7 @@ func (p *AlarmPanelWidget) Refresh() {
 		p.mutex.Unlock()
 	}()
 
-	alarms := p.ViewModel.LoadAlarms(p.UseCase)
+	alarms := p.ViewModel.LoadAlarms(useCase)
 	currentSource := viewmodels.ObjectSourceAll
 	p.mutex.RLock()
 	if strings.TrimSpace(p.currentSource) != "" {
@@ -344,19 +336,7 @@ func (p *AlarmPanelWidget) Refresh() {
 
 		if p.SourceSelect != nil {
 			options := viewmodels.BuildObjectSourceOptions(result.CountAll, result.CountBridge, result.CountPhoenix, result.CountCASL)
-			p.SourceSelect.Options = options
-			target := options[0]
-			for _, option := range options {
-				if strings.HasPrefix(option, currentSource+" (") || option == currentSource {
-					target = option
-					break
-				}
-			}
-			handler := p.SourceSelect.OnChanged
-			p.SourceSelect.OnChanged = nil
-			p.SourceSelect.SetSelected(target)
-			p.SourceSelect.OnChanged = handler
-			p.SourceSelect.Refresh()
+			updateSelectPreservingValue(p.SourceSelect, options, currentSource)
 		}
 
 		_ = SetUntypedList(p.listData, result.FilteredAlarms)
@@ -449,7 +429,7 @@ func adjustAlarmRowColor(c color.NRGBA) color.NRGBA {
 }
 
 func (p *AlarmPanelWidget) loadCaseHistoryForAlarm(alarm models.Alarm) {
-	if p == nil || p.CaseHistoryVM == nil || p.Data == nil || !viewmodels.IsCASLObjectID(alarm.ObjectID) {
+	if p == nil || p.CaseHistoryVM == nil || p.Data == nil || !ids.IsCASLObjectID(alarm.ObjectID) {
 		p.clearCaseHistory()
 		return
 	}

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -39,7 +40,7 @@ func TestEventLogViewModel_ApplyFiltersByPeriod(t *testing.T) {
 	out := vm.ApplyFilters(EventLogFilterInput{
 		AllEvents: []models.Event{
 			{ID: 1, Time: now.Add(-10 * time.Minute), Type: models.EventFire},
-			{ID: 2, ObjectID: phoenixObjectIDNamespaceStart + 12, Time: now.Add(-45 * time.Minute), Type: models.EventArm},
+			{ID: 2, ObjectID: ids.PhoenixObjectIDNamespaceStart + 12, Time: now.Add(-45 * time.Minute), Type: models.EventArm},
 			{ID: 3, Time: now.Add(-2 * time.Hour), Type: models.EventFault},
 		},
 		Period: "Остання година",
@@ -63,7 +64,7 @@ func TestEventLogViewModel_ApplyFiltersImportantCurrentAndLimit(t *testing.T) {
 	out := vm.ApplyFilters(EventLogFilterInput{
 		AllEvents: []models.Event{
 			{ID: 1, ObjectID: 10, Time: now.Add(-5 * time.Minute), Type: models.EventFire},
-			{ID: 2, ObjectID: phoenixObjectIDNamespaceStart + 20, Time: now.Add(-6 * time.Minute), Type: models.EventFault},
+			{ID: 2, ObjectID: ids.PhoenixObjectIDNamespaceStart + 20, Time: now.Add(-6 * time.Minute), Type: models.EventFault},
 			{ID: 3, ObjectID: 10, Time: now.Add(-7 * time.Minute), Type: models.EventArm},
 			{ID: 4, ObjectID: 20, Time: now.Add(-8 * time.Minute), Type: models.EventBatteryLow},
 		},
@@ -90,8 +91,8 @@ func TestEventLogViewModel_ApplyFiltersImportantCurrentAndLimit(t *testing.T) {
 func TestEventLogViewModel_ApplyFiltersBySource(t *testing.T) {
 	vm := NewEventLogViewModel()
 	now := time.Date(2026, 3, 29, 12, 0, 0, 0, time.Local)
-	caslID := caslObjectIDNamespaceStart + 24
-	phoenixID := phoenixObjectIDNamespaceStart + 5
+	caslID := ids.CASLObjectIDNamespaceStart + 24
+	phoenixID := ids.PhoenixObjectIDNamespaceStart + 5
 
 	out := vm.ApplyFilters(EventLogFilterInput{
 		AllEvents: []models.Event{

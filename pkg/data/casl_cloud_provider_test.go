@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 	"strconv"
 	"strings"
@@ -91,10 +92,10 @@ func TestMapCASLPultToObject(t *testing.T) {
 	}
 
 	obj := mapCASLPultToObject(item)
-	if wantID := caslObjectIDNamespaceStart + 123; obj.ID != wantID {
+	if wantID := ids.CASLObjectIDNamespaceStart + 123; obj.ID != wantID {
 		t.Fatalf("unexpected ID: got %d, want %d", obj.ID, wantID)
 	}
-	if !isCASLObjectID(obj.ID) {
+	if !ids.IsCASLObjectID(obj.ID) {
 		t.Fatalf("expected CASL namespace ID, got %d", obj.ID)
 	}
 	if obj.Name != "ЛОТ \"Поліс\"" {

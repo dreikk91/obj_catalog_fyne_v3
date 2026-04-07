@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"sort"
@@ -54,8 +55,8 @@ func NewCombinedDataProvider(primary contracts.DataProvider, secondary contracts
 		sources = append(sources, ProviderSource{
 			Name:         "casl",
 			Provider:     secondary,
-			OwnsObjectID: isCASLObjectID,
-			OwnsAlarmID:  isCASLObjectID,
+			OwnsObjectID: ids.IsCASLObjectID,
+			OwnsAlarmID:  ids.IsCASLObjectID,
 		})
 	}
 	return NewMultiSourceDataProvider(sources...)

@@ -31,7 +31,6 @@ type ObjectListPanel struct {
 	FilterSelect *widget.Select
 	SourceSelect *widget.Select
 	Data         contracts.ObjectProvider
-	UseCase      *usecases.ObjectListUseCase
 	ViewModel    *viewmodels.ObjectListViewModel
 	ColumnHeader *fyne.Container
 
@@ -105,10 +104,9 @@ func (t *objectListTable) TypedKey(event *fyne.KeyEvent) {
 func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	panel := &ObjectListPanel{
 		Data:          provider,
-		UseCase:       usecases.NewObjectListUseCase(provider),
 		ViewModel:     viewmodels.NewObjectListViewModel(),
 		FilteredData:  binding.NewUntypedList(),
-		CurrentFilter: "Всі",
+		CurrentFilter: viewmodels.FilterAll,
 		CurrentSource: viewmodels.ObjectSourceAll,
 		SelectedRow:   -1,
 		SelectedCol:   0,
@@ -148,11 +146,11 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	}
 
 	// Вибір фільтру
-	panel.FilterSelect = widget.NewSelect([]string{"Всі", "Є тривоги", "Нема зв'язку", "Знято зі спостереження", "В режимі налагодження"}, func(selected string) {
+	panel.FilterSelect = widget.NewSelect(panel.ViewModel.BuildFilterOptions(0, 0, 0, 0, 0), func(selected string) {
 		if panel.isUpdating {
 			return
 		}
-		panel.CurrentFilter = panel.ViewModel.NormalizeFilter(selected)
+		panel.CurrentFilter = viewmodels.NormalizeObjectListFilter(selected)
 		go panel.applyFilters()
 	})
 	panel.FilterSelect.PlaceHolder = "Фільтр"
@@ -313,9 +311,8 @@ func (p *ObjectListPanel) RefreshData() {
 	if p.ViewModel == nil {
 		p.ViewModel = viewmodels.NewObjectListViewModel()
 	}
-	// Джерело даних може змінюватися (наприклад, після Reconnect), тому use case перевизначаємо.
-	p.UseCase = usecases.NewObjectListUseCase(p.Data)
-	objects := p.ViewModel.LoadObjects(p.UseCase)
+	useCase := usecases.NewObjectListUseCase(p.Data)
+	objects := p.ViewModel.LoadObjects(useCase)
 
 	p.mutex.Lock()
 	p.AllObjects = objects
@@ -377,37 +374,23 @@ func (p *ObjectListPanel) applyFilters() {
 		defer func() { p.isUpdating = false }()
 
 		// Оновлюємо назви фільтрів з кількістю
-		p.FilterSelect.Options = p.ViewModel.BuildFilterOptions(
+		filterOptions := p.ViewModel.BuildFilterOptions(
 			result.CountAll,
 			result.CountAlarm,
 			result.CountOffline,
 			result.CountMonitoringOff,
 			result.CountDebug,
 		)
-
-		// Знаходимо поточний вибраний фільтр в оновленому списку, щоб він не зникав
-		for _, opt := range p.FilterSelect.Options {
-			if strings.HasPrefix(opt, currentFilter+" (") || opt == currentFilter {
-				p.FilterSelect.SetSelected(opt)
-				break
-			}
-		}
-		p.FilterSelect.Refresh()
+		updateSelectPreservingValue(p.FilterSelect, filterOptions, currentFilter)
 
 		if p.SourceSelect != nil {
-			p.SourceSelect.Options = viewmodels.BuildObjectSourceOptions(
+			options := viewmodels.BuildObjectSourceOptions(
 				result.CountAll,
 				result.CountBridge,
 				result.CountPhoenix,
 				result.CountCASL,
 			)
-			for _, opt := range p.SourceSelect.Options {
-				if strings.HasPrefix(opt, currentSource+" (") || opt == currentSource {
-					p.SourceSelect.SetSelected(opt)
-					break
-				}
-			}
-			p.SourceSelect.Refresh()
+			updateSelectPreservingValue(p.SourceSelect, options, currentSource)
 		}
 
 		if p.TitleText != nil {
@@ -486,7 +469,6 @@ func (p *ObjectListPanel) moveSelection(delta int) bool {
 	p.Table.Select(widget.TableCellID{Row: nextRow, Col: selectedCol})
 	return true
 }
-
 
 // objectListTableLayout для динамічного ресайзу колонок "Назва" та "Адреса"
 type objectListTableLayout struct {

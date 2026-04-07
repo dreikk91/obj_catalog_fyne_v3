@@ -1,12 +1,12 @@
-package data
+package ids
 
 import "testing"
 
-func TestStablePhoenixID_IsDeterministicAndNamespaced(t *testing.T) {
-	first := stablePhoenixID("L00028")
-	second := stablePhoenixID("L00028")
+func TestStablePhoenixIDIsDeterministicAndNamespaced(t *testing.T) {
+	first := StablePhoenixID("L00028")
+	second := StablePhoenixID("L00028")
 	if first != second {
-		t.Fatalf("stablePhoenixID must be deterministic: %d != %d", first, second)
+		t.Fatalf("StablePhoenixID must be deterministic: %d != %d", first, second)
 	}
 	if !IsPhoenixObjectID(first) {
 		t.Fatalf("expected Phoenix namespace ID, got %d", first)

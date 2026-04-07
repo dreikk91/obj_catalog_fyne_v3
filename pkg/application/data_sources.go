@@ -12,6 +12,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/database"
+	"obj_catalog_fyne_v3/pkg/ids"
 )
 
 type managedDBResource struct {
@@ -94,8 +95,8 @@ func buildDataProviderFromConfig(cfg config.DBConfig, pref fyne.Preferences, ver
 		sources = append(sources, data.ProviderSource{
 			Name:         "phoenix",
 			Provider:     backend.NewPhoenixProvider(db, dsn),
-			OwnsObjectID: data.IsPhoenixObjectID,
-			OwnsAlarmID:  data.IsPhoenixObjectID,
+			OwnsObjectID: ids.IsPhoenixObjectID,
+			OwnsAlarmID:  ids.IsPhoenixObjectID,
 		})
 	}
 
@@ -110,8 +111,8 @@ func buildDataProviderFromConfig(cfg config.DBConfig, pref fyne.Preferences, ver
 		sources = append(sources, data.ProviderSource{
 			Name:         "casl",
 			Provider:     caslProvider,
-			OwnsObjectID: data.IsCASLObjectID,
-			OwnsAlarmID:  data.IsCASLObjectID,
+			OwnsObjectID: ids.IsCASLObjectID,
+			OwnsAlarmID:  ids.IsCASLObjectID,
 		})
 	}
 

@@ -120,4 +120,3 @@ func Label(operator Operator) string {
 		return "SIM API"
 	}
 }
-

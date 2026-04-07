@@ -1925,7 +1925,6 @@ func extractNormalizedUAPhones(raw string) map[string]struct{} {
 	return result
 }
 
-
 func normalizeUAMobileDigits(d string) (string, bool) {
 	if d == "" {
 		return "", false

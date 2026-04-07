@@ -20,7 +20,6 @@ import (
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"obj_catalog_fyne_v3/pkg/usecases"
-	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 // EventLogPanel - структура журналу подій
@@ -29,7 +28,6 @@ type EventLogPanel struct {
 	List            *widget.List
 	listData        binding.UntypedList
 	Data            contracts.EventProvider
-	UseCase         *usecases.EventLogUseCase
 	ViewModel       *viewmodels.EventLogViewModel
 	IsPaused        bool
 	PauseBtn        *widget.Button
@@ -59,7 +57,6 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	panel := &EventLogPanel{
 		Data:      provider,
 		listData:  binding.NewUntypedList(),
-		UseCase:   usecases.NewEventLogUseCase(provider),
 		ViewModel: viewmodels.NewEventLogViewModel(),
 		IsPaused:  false,
 	}
@@ -156,13 +153,7 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 				return
 			}
 
-			// Вибираємо палітру кольорів залежно від теми
-			var textColor, rowColor color.NRGBA
-			if IsDarkMode() {
-				textColor, rowColor = utils.SelectColorNRGBADark(event.SC1)
-			} else {
-				textColor, rowColor = utils.SelectColorNRGBA(event.SC1)
-			}
+			textColor, rowColor := eventRowColors(event.SC1)
 
 			bg.FillColor = rowColor
 			bg.Refresh()
@@ -239,9 +230,8 @@ func (p *EventLogPanel) Refresh() {
 	if p.ViewModel == nil {
 		p.ViewModel = viewmodels.NewEventLogViewModel()
 	}
-	// Джерело даних може змінюватися (наприклад, після Reconnect), тому use case перевизначаємо.
-	p.UseCase = usecases.NewEventLogUseCase(p.Data)
-	events := p.ViewModel.LoadEvents(p.UseCase)
+	useCase := usecases.NewEventLogUseCase(p.Data)
+	events := p.ViewModel.LoadEvents(useCase)
 
 	// Оновлюємо кеш
 	p.mutex.Lock()
@@ -305,20 +295,7 @@ func (p *EventLogPanel) applyFilters() {
 	fyne.Do(func() {
 		if p.SourceSelect != nil {
 			options := viewmodels.BuildObjectSourceOptions(out.CountAll, out.CountBridge, out.CountPhoenix, out.CountCASL)
-			p.SourceSelect.Options = options
-
-			target := options[0]
-			for _, option := range options {
-				if strings.HasPrefix(option, selectedSource+" (") || option == selectedSource {
-					target = option
-					break
-				}
-			}
-			handler := p.SourceSelect.OnChanged
-			p.SourceSelect.OnChanged = nil
-			p.SourceSelect.SetSelected(target)
-			p.SourceSelect.OnChanged = handler
-			p.SourceSelect.Refresh()
+			updateSelectPreservingValue(p.SourceSelect, options, selectedSource)
 		}
 
 		_ = SetUntypedList(p.listData, out.Filtered)
@@ -331,9 +308,6 @@ func (p *EventLogPanel) applyFilters() {
 		}
 	})
 }
-
-// Решта функцій (getEventIcon, getEventImportance) залишаються незмінними (вони в тому ж файлі були?)
-// Так, вони були в кінці файлу. Я їх додам сюди для цілісності.
 
 func getEventIcon(eventType models.EventType) string {
 	switch eventType {
@@ -433,14 +407,4 @@ func eventLogRowTexts(events []models.Event) []string {
 		texts = append(texts, formatEventLogRowText(event))
 	}
 	return texts
-}
-
-func getEventImportance(event models.Event) widget.Importance {
-	if event.IsCritical() {
-		return widget.DangerImportance
-	}
-	if event.IsWarning() {
-		return widget.WarningImportance
-	}
-	return widget.MediumImportance
 }

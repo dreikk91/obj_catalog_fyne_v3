@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -95,7 +96,7 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoenixBlocked(t *testi
 	vm := NewWorkAreaDeviceViewModel()
 
 	presentation := vm.BuildObjectPresentation(models.Object{
-		ID:                phoenixObjectIDNamespaceStart + 77,
+		ID:                ids.PhoenixObjectIDNamespaceStart + 77,
 		BlockedArmedOnOff: 1,
 		IsUnderGuard:      false,
 		Groups: []models.ObjectGroup{
@@ -115,7 +116,7 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoenixDisarmed(t *test
 	vm := NewWorkAreaDeviceViewModel()
 
 	presentation := vm.BuildObjectPresentation(models.Object{
-		ID:           phoenixObjectIDNamespaceStart + 78,
+		ID:           ids.PhoenixObjectIDNamespaceStart + 78,
 		IsUnderGuard: false,
 		Groups: []models.ObjectGroup{
 			{Number: 1, Name: "Група 1", Armed: false, StateText: "БЕЗ ОХОРОНИ"},
@@ -131,7 +132,7 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLFallbacks(t *testin
 	vm := NewWorkAreaDeviceViewModel()
 
 	presentation := vm.BuildObjectPresentation(models.Object{
-		ID:         caslObjectIDNamespaceStart + 24,
+		ID:         ids.CASLObjectIDNamespaceStart + 24,
 		DeviceType: "",
 		ObjChan:    5,
 		Phones1:    "",
@@ -161,7 +162,7 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_TestControlWithoutInter
 	vm := NewWorkAreaDeviceViewModel()
 
 	presentation := vm.BuildObjectPresentation(models.Object{
-		ID:          caslObjectIDNamespaceStart + 24,
+		ID:          ids.CASLObjectIDNamespaceStart + 24,
 		TestControl: 1,
 		TestTime:    0,
 	})

@@ -17,8 +17,8 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/contracts"
+	appTheme "obj_catalog_fyne_v3/pkg/theme"
 )
 
 func ShowAdminSystemControlDialog(parent fyne.Window, provider contracts.AdminProvider) {

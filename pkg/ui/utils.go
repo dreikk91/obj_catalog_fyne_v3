@@ -13,8 +13,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-
-
 func getStatusIcon(status models.ObjectStatus) string {
 	switch status {
 	case models.StatusFire:

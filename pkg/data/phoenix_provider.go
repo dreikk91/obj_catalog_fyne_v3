@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/ids"
+
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 )
@@ -440,7 +442,7 @@ func (p *PhoenixDataProvider) buildPhoenixAlarms(rows []phoenixObjectGroupRow) [
 		}
 
 		alarms = append(alarms, models.Alarm{
-			ID:           stablePhoenixID(panelID, strconv.Itoa(row.GroupNo), "alarm"),
+			ID:           ids.StablePhoenixID(panelID, strconv.Itoa(row.GroupNo), "alarm"),
 			ObjectID:     objectID,
 			ObjectNumber: panelID,
 			ObjectName:   objectName,
@@ -709,7 +711,7 @@ func (p *PhoenixDataProvider) registerPanelID(panelID string) int {
 		return id
 	}
 
-	candidate := stablePhoenixID(panelID)
+	candidate := ids.StablePhoenixID(panelID)
 	for {
 		existing, occupied := p.panelByID[candidate]
 		if !occupied || existing == panelID {
@@ -718,8 +720,8 @@ func (p *PhoenixDataProvider) registerPanelID(panelID string) int {
 			return candidate
 		}
 		candidate++
-		if candidate > phoenixObjectIDNamespaceEnd {
-			candidate = phoenixObjectIDNamespaceStart
+		if candidate > ids.PhoenixObjectIDNamespaceEnd {
+			candidate = ids.PhoenixObjectIDNamespaceStart
 		}
 	}
 }

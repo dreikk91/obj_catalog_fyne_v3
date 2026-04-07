@@ -42,3 +42,25 @@ func HasCyrillicChars(text string) bool {
 	}
 	return false
 }
+
+// LeadingDigits повертає початкову послідовність цифр, ігноруючи початкові пробіли.
+func LeadingDigits(value string) string {
+	if value == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	for _, r := range value {
+		if unicode.IsDigit(r) {
+			b.WriteRune(r)
+			continue
+		}
+		if b.Len() > 0 {
+			break
+		}
+		if !unicode.IsSpace(r) {
+			return ""
+		}
+	}
+	return b.String()
+}

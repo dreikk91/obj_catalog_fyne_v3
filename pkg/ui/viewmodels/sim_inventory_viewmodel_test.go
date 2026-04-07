@@ -1,4 +1,4 @@
-package dialogs
+package viewmodels
 
 import (
 	"context"
@@ -62,15 +62,17 @@ func (s simInventoryReportProviderStub) ListKyivstarSIMInventory(numbers []strin
 }
 
 func (s simInventoryReportProviderStub) GetVodafoneSIMStatus(msisdn string) (contracts.VodafoneSIMStatus, error) {
-	return s.vodafoneByKey[normalizeSIMLookupKey(msisdn)], nil
+	return s.vodafoneByKey[NormalizeSIMLookupKey(msisdn)], nil
 }
 
 func (s simInventoryReportProviderStub) GetKyivstarSIMStatus(msisdn string) (contracts.KyivstarSIMStatus, error) {
-	return s.kyivstarByKey[normalizeSIMLookupKey(msisdn)], nil
+	return s.kyivstarByKey[NormalizeSIMLookupKey(msisdn)], nil
 }
 
 func TestBuildSIMInventoryReport_MergesSourcesAndOperatorData(t *testing.T) {
 	t.Parallel()
+
+	vm := NewSIMInventoryViewModel()
 
 	phoenixID := 1_000_000_028
 	caslID := 1_500_000_024
@@ -184,13 +186,13 @@ func TestBuildSIMInventoryReport_MergesSourcesAndOperatorData(t *testing.T) {
 
 	progressStages := make([]string, 0, 8)
 	var progressMu sync.Mutex
-	result, err := buildSIMInventoryReport(context.Background(), provider, 1001, func(stage string) {
+	result, err := vm.BuildReport(context.Background(), provider, 1001, func(stage string) {
 		progressMu.Lock()
 		progressStages = append(progressStages, stage)
 		progressMu.Unlock()
 	})
 	if err != nil {
-		t.Fatalf("buildSIMInventoryReport() error = %v", err)
+		t.Fatalf("BuildReport() error = %v", err)
 	}
 	if len(progressStages) == 0 {
 		t.Fatal("expected progress callbacks to be emitted")
@@ -207,7 +209,7 @@ func TestBuildSIMInventoryReport_MergesSourcesAndOperatorData(t *testing.T) {
 	}
 
 	bridgeRow := result.Rows[0]
-	if bridgeRow.Source != simInventorySourceBridge {
+	if bridgeRow.Source != SIMInventorySourceBridge {
 		t.Fatalf("unexpected bridge source: %q", bridgeRow.Source)
 	}
 	if bridgeRow.SIM1 != "380501111111" || bridgeRow.SIM2 != "380671111111" {
@@ -221,7 +223,7 @@ func TestBuildSIMInventoryReport_MergesSourcesAndOperatorData(t *testing.T) {
 	}
 
 	lifecellRow := result.Rows[1]
-	if lifecellRow.Source != simInventorySourceBridge {
+	if lifecellRow.Source != SIMInventorySourceBridge {
 		t.Fatalf("unexpected lifecell source: %q", lifecellRow.Source)
 	}
 	if lifecellRow.SIM1 != "380631234567" {
@@ -238,7 +240,7 @@ func TestBuildSIMInventoryReport_MergesSourcesAndOperatorData(t *testing.T) {
 	}
 
 	phoenixRow := result.Rows[2]
-	if phoenixRow.Source != simInventorySourcePhoenix {
+	if phoenixRow.Source != SIMInventorySourcePhoenix {
 		t.Fatalf("unexpected phoenix source: %q", phoenixRow.Source)
 	}
 	if phoenixRow.SIM1 != "380502222222" {
@@ -246,7 +248,7 @@ func TestBuildSIMInventoryReport_MergesSourcesAndOperatorData(t *testing.T) {
 	}
 
 	caslRow := result.Rows[3]
-	if caslRow.Source != simInventorySourceCASL {
+	if caslRow.Source != SIMInventorySourceCASL {
 		t.Fatalf("unexpected casl source: %q", caslRow.Source)
 	}
 	if caslRow.ObjectNumber != "1003" {
@@ -259,7 +261,7 @@ func TestBuildSIMInventoryReport_MergesSourcesAndOperatorData(t *testing.T) {
 		t.Fatalf("unexpected casl lookup data: %+v", caslRow)
 	}
 
-	tsv := buildSIMInventoryTSV(result.Rows)
+	tsv := vm.BuildTSV(result.Rows)
 	if !strings.Contains(tsv, "Оператор SIM 1") {
 		t.Fatalf("TSV header is incomplete: %s", tsv)
 	}
@@ -267,12 +269,12 @@ func TestBuildSIMInventoryReport_MergesSourcesAndOperatorData(t *testing.T) {
 		t.Fatalf("TSV does not contain expected object names: %s", tsv)
 	}
 
-	summary := formatSIMInventorySummary(result)
+	summary := vm.FormatSummary(result)
 	if !strings.Contains(summary, "Vodafone: 2") || !strings.Contains(summary, "Kyivstar: 2") {
 		t.Fatalf("summary does not contain operator counts: %s", summary)
 	}
 
-	readyStatus := formatSIMInventoryReadyStatus(result)
+	readyStatus := vm.FormatReadyStatus(result)
 	if !strings.Contains(readyStatus, "звіт готовий до експорту") {
 		t.Fatalf("ready status does not mention export: %s", readyStatus)
 	}
@@ -298,8 +300,8 @@ func TestNormalizeSIMInventoryNumber(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := normalizeSIMInventoryNumber(tt.input); got != tt.want {
-				t.Fatalf("normalizeSIMInventoryNumber(%q) = %q, want %q", tt.input, got, tt.want)
+			if got := NormalizeSIMInventoryNumber(tt.input); got != tt.want {
+				t.Fatalf("NormalizeSIMInventoryNumber(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

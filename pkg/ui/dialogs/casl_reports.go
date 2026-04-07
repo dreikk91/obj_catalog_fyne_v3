@@ -34,7 +34,6 @@ func ShowCASLReportsDialog(parent fyne.Window, provider CASLReportsProvider) {
 	reportNameEntry.SetPlaceHolder("Назва звіту, наприклад: stats_events")
 	avalaibleCommands := widget.NewLabel("Доступні команди: stats_events, stats_objects, stats_activity, stats_mgr_status, stats_device_blocked, stats_users, stats_devices_v2, stats_devices_offline, stats_connection")
 
-
 	limitEntry := widget.NewEntry()
 	limitEntry.SetText("500")
 	limitEntry.SetPlaceHolder("Ліміт рядків")

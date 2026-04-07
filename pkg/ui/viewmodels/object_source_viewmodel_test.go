@@ -3,6 +3,7 @@ package viewmodels
 import (
 	"testing"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -10,22 +11,22 @@ func TestObjectSourceHelpers(t *testing.T) {
 	if got := ObjectSourceByID(1); got != ObjectSourceBridge {
 		t.Fatalf("expected bridge source, got %q", got)
 	}
-	if got := ObjectSourceByID(phoenixObjectIDNamespaceStart + 1); got != ObjectSourcePhoenix {
+	if got := ObjectSourceByID(ids.PhoenixObjectIDNamespaceStart + 1); got != ObjectSourcePhoenix {
 		t.Fatalf("expected phoenix source, got %q", got)
 	}
-	if got := ObjectSourceByID(caslObjectIDNamespaceStart + 1); got != ObjectSourceCASL {
+	if got := ObjectSourceByID(ids.CASLObjectIDNamespaceStart + 1); got != ObjectSourceCASL {
 		t.Fatalf("expected casl source, got %q", got)
 	}
-	if !IsPhoenixObjectID(phoenixObjectIDNamespaceStart + 5) {
+	if !ids.IsPhoenixObjectID(ids.PhoenixObjectIDNamespaceStart + 5) {
 		t.Fatalf("expected Phoenix ID to be detected")
 	}
-	if !IsCASLObjectID(caslObjectIDNamespaceStart + 5) {
+	if !ids.IsCASLObjectID(ids.CASLObjectIDNamespaceStart + 5) {
 		t.Fatalf("expected CASL ID to be detected")
 	}
-	if IsPhoenixObjectID(42) {
+	if ids.IsPhoenixObjectID(42) {
 		t.Fatalf("expected non-Phoenix ID")
 	}
-	if IsCASLObjectID(42) {
+	if ids.IsCASLObjectID(42) {
 		t.Fatalf("expected non-CASL ID")
 	}
 }
@@ -73,7 +74,7 @@ func TestBuildObjectSourceOptions(t *testing.T) {
 
 func TestObjectDisplayNumber(t *testing.T) {
 	phoenix := models.Object{
-		ID:            phoenixObjectIDNamespaceStart + 55,
+		ID:            ids.PhoenixObjectIDNamespaceStart + 55,
 		DisplayNumber: "L00028",
 		Name:          "Phoenix Object",
 	}
@@ -82,7 +83,7 @@ func TestObjectDisplayNumber(t *testing.T) {
 	}
 
 	casl := models.Object{
-		ID:        caslObjectIDNamespaceStart + 123,
+		ID:        ids.CASLObjectIDNamespaceStart + 123,
 		Name:      "1003 Офіс",
 		PanelMark: "CASL #1003",
 	}

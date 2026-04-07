@@ -31,7 +31,7 @@ jobs:
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
       - name: Build Windows 64-bit
-        run: fyne package -os windows -icon icon.png -appID com.fyne.objcatalog -release
+        run: fyne package -os windows -icon icon.png -app-id com.fyne.objcatalog -release
         shell: powershell
 
       - name: Rename artifact
@@ -81,7 +81,7 @@ jobs:
           $env:PATH = "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw32\bin;$env:PATH"
           $env:GOARCH = '386'
           $env:CGO_ENABLED = '1'
-          fyne package -os windows -icon icon.png -appID com.fyne.objcatalog -release
+          fyne package -os windows -icon icon.png -app-id com.fyne.objcatalog -release
         shell: powershell
 
       - name: Rename artifact

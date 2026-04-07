@@ -6,8 +6,17 @@ import (
 	"strconv"
 	"strings"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/utils"
+)
+
+const (
+	FilterAll           = "Всі"
+	FilterAlarm         = "Є тривоги"
+	FilterOffline       = "Нема зв'язку"
+	FilterMonitoringOff = "Знято зі спостереження"
+	FilterDebug         = "В режимі налагодження"
 )
 
 // ObjectListUseCase описує мінімальний use case для завантаження об'єктів у список.
@@ -59,27 +68,32 @@ func (vm *ObjectListViewModel) LoadObjects(useCase ObjectListUseCase) []models.O
 	return append([]models.Object(nil), objects...)
 }
 
-func (vm *ObjectListViewModel) NormalizeFilter(selected string) string {
+func NormalizeObjectListFilter(selected string) string {
 	clean := strings.TrimSpace(selected)
 	if idx := strings.Index(clean, " ("); idx != -1 {
-		clean = clean[:idx]
+		clean = strings.TrimSpace(clean[:idx])
 	}
-	return clean
+	switch clean {
+	case FilterAlarm, FilterOffline, FilterMonitoringOff, FilterDebug:
+		return clean
+	default:
+		return FilterAll
+	}
 }
 
 func (vm *ObjectListViewModel) BuildFilterOptions(countAll int, countAlarm int, countOffline int, countMonitoringOff int, countDebug int) []string {
 	return []string{
-		fmt.Sprintf("Всі (%d)", countAll),
-		fmt.Sprintf("Є тривоги (%d)", countAlarm),
-		fmt.Sprintf("Нема зв'язку (%d)", countOffline),
-		fmt.Sprintf("Знято зі спостереження (%d)", countMonitoringOff),
-		fmt.Sprintf("В режимі налагодження (%d)", countDebug),
+		fmt.Sprintf("%s (%d)", FilterAll, countAll),
+		fmt.Sprintf("%s (%d)", FilterAlarm, countAlarm),
+		fmt.Sprintf("%s (%d)", FilterOffline, countOffline),
+		fmt.Sprintf("%s (%d)", FilterMonitoringOff, countMonitoringOff),
+		fmt.Sprintf("%s (%d)", FilterDebug, countDebug),
 	}
 }
 
 func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectListFilterOutput {
 	query := strings.ToLower(strings.TrimSpace(input.Query))
-	currentFilter := strings.TrimSpace(input.CurrentFilter)
+	currentFilter := NormalizeObjectListFilter(input.CurrentFilter)
 	currentSource := NormalizeObjectSourceFilter(input.CurrentSource)
 
 	filtered := make([]models.Object, 0, len(input.AllObjects))
@@ -92,7 +106,7 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 	countPhoenix := 0
 	countCASL := 0
 
-	terms := splitSearchTerms(query)
+	terms := strings.Fields(query)
 
 	for _, obj := range input.AllObjects {
 		source := ObjectSourceByID(obj.ID)
@@ -124,19 +138,19 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 
 		statusMatch := true
 		switch currentFilter {
-		case "Є тривоги":
+		case FilterAlarm:
 			if obj.Status != models.StatusFire && obj.Status != models.StatusFault {
 				statusMatch = false
 			}
-		case "Нема зв'язку":
+		case FilterOffline:
 			if !(obj.IsConnState == 0 && obj.GuardState != 0) {
 				statusMatch = false
 			}
-		case "Знято зі спостереження":
+		case FilterMonitoringOff:
 			if !isMonitoringOffObject(obj, source) {
 				statusMatch = false
 			}
-		case "В режимі налагодження":
+		case FilterDebug:
 			if !isDebugObject(obj, source) {
 				statusMatch = false
 			}
@@ -205,22 +219,6 @@ func isDebugObject(obj models.Object, source string) bool {
 	default:
 		return obj.BlockedArmedOnOff == 2
 	}
-}
-
-func splitSearchTerms(query string) []string {
-	if strings.TrimSpace(query) == "" {
-		return nil
-	}
-	parts := strings.Fields(strings.ToLower(strings.TrimSpace(query)))
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		result = append(result, part)
-	}
-	return result
 }
 
 func matchesSearchTerms(obj models.Object, source string, terms []string) bool {
@@ -294,7 +292,7 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 	}
 
 	// Спеціальні випадки для Phoenix
-	if IsPhoenixObjectID(item.ID) &&
+	if ids.IsPhoenixObjectID(item.ID) &&
 		item.BlockedArmedOnOff == 1 &&
 		item.AlarmState == 0 &&
 		item.TechAlarmState == 0 &&
@@ -305,7 +303,7 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 79, G: 109, B: 135, A: 255}
 	}
 
-	if IsPhoenixObjectID(item.ID) &&
+	if ids.IsPhoenixObjectID(item.ID) &&
 		item.BlockedArmedOnOff == 0 &&
 		item.GuardState == 0 &&
 		item.AlarmState == 0 &&
@@ -350,14 +348,14 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 		return color.NRGBA{R: 0, G: 0, B: 0, A: 255}, color.NRGBA{R: 225, G: 235, B: 35, A: 255}
 	}
 
-	if IsCASLObjectID(item.ID) && !item.HasAssignment {
+	if ids.IsCASLObjectID(item.ID) && !item.HasAssignment {
 		if isDark {
 			return color.NRGBA{R: 240, G: 243, B: 255, A: 255}, color.NRGBA{R: 52, G: 70, B: 98, A: 255}
 		}
 		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 77, G: 112, B: 168, A: 255}
 	}
 
-	if !IsCASLObjectID(item.ID) && !IsPhoenixObjectID(item.ID) &&
+	if !ids.IsCASLObjectID(item.ID) && !ids.IsPhoenixObjectID(item.ID) &&
 		strings.TrimSpace(item.SubServerA) == "" && strings.TrimSpace(item.SubServerB) == "" {
 		// Для МІСТ/БД підсервери мають бути заповнені.
 		return color.NRGBA{R: 210, G: 0, B: 0, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255}

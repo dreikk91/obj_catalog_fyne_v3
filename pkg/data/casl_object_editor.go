@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ids"
 )
 
 type caslObjectEditorFullResponse struct {
@@ -553,7 +554,7 @@ func (p *CASLCloudProvider) resolveCASLEditorObjectID(ctx context.Context, objec
 		return "", fmt.Errorf("casl object editor: empty object id")
 	}
 
-	if objectID < int64(caslObjectIDNamespaceStart) || objectID > int64(caslObjectIDNamespaceEnd) {
+	if objectID < int64(ids.CASLObjectIDNamespaceStart) || objectID > int64(ids.CASLObjectIDNamespaceEnd) {
 		return strconv.FormatInt(objectID, 10), nil
 	}
 

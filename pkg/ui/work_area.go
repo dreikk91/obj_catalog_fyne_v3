@@ -23,7 +23,6 @@ import (
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
-	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 const workAreaJournalTabIndex = 3
@@ -756,13 +755,7 @@ func (w *WorkAreaPanel) createEventsTab() fyne.CanvasObject {
 			txtContainer := stack.Objects[1].(*fyne.Container)
 			txt := txtContainer.Objects[0].(*canvas.Text)
 
-			// Вибираємо палітру кольорів залежно від теми
-			var textColor, rowColor color.NRGBA
-			if IsDarkMode() {
-				textColor, rowColor = utils.SelectColorNRGBADark(event.SC1)
-			} else {
-				textColor, rowColor = utils.SelectColorNRGBA(event.SC1)
-			}
+			textColor, rowColor := eventRowColors(event.SC1)
 
 			bg.FillColor = rowColor
 			bg.Refresh()

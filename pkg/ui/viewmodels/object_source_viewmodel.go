@@ -3,9 +3,10 @@ package viewmodels
 import (
 	"strconv"
 	"strings"
-	"unicode"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 const (
@@ -15,26 +16,11 @@ const (
 	ObjectSourceCASL    = "CASL Cloud"
 )
 
-const (
-	phoenixObjectIDNamespaceStart = 1_000_000_000
-	phoenixObjectIDNamespaceEnd   = 1_499_999_999
-	caslObjectIDNamespaceStart    = 1_500_000_000
-	caslObjectIDNamespaceEnd      = 1_999_999_999
-)
-
-func IsPhoenixObjectID(id int) bool {
-	return id >= phoenixObjectIDNamespaceStart && id <= phoenixObjectIDNamespaceEnd
-}
-
-func IsCASLObjectID(id int) bool {
-	return id >= caslObjectIDNamespaceStart && id <= caslObjectIDNamespaceEnd
-}
-
 func ObjectSourceByID(id int) string {
-	if IsPhoenixObjectID(id) {
+	if ids.IsPhoenixObjectID(id) {
 		return ObjectSourcePhoenix
 	}
-	if IsCASLObjectID(id) {
+	if ids.IsCASLObjectID(id) {
 		return ObjectSourceCASL
 	}
 	return ObjectSourceBridge
@@ -67,10 +53,10 @@ func BuildObjectSourceOptions(countAll int, countBridge int, countPhoenix int, c
 }
 
 func SourceBadgeForObjectID(id int) string {
-	if IsPhoenixObjectID(id) {
+	if ids.IsPhoenixObjectID(id) {
 		return "[P]"
 	}
-	if IsCASLObjectID(id) {
+	if ids.IsCASLObjectID(id) {
 		return "[C]"
 	}
 	return "[М]"
@@ -80,13 +66,13 @@ func ObjectDisplayNumber(object models.Object) string {
 	if strings.TrimSpace(object.DisplayNumber) != "" {
 		return object.DisplayNumber
 	}
-	if !IsCASLObjectID(object.ID) && !IsPhoenixObjectID(object.ID) {
+	if !ids.IsCASLObjectID(object.ID) && !ids.IsPhoenixObjectID(object.ID) {
 		return strconv.Itoa(object.ID)
 	}
 	if number := numberFromPanelMark(object.PanelMark); number != "" {
 		return number
 	}
-	if number := leadingDigits(strings.TrimSpace(object.Name)); number != "" {
+	if number := utils.LeadingDigits(strings.TrimSpace(object.Name)); number != "" {
 		return number
 	}
 	return strconv.Itoa(object.ID)
@@ -112,31 +98,9 @@ func numberFromPanelMark(value string) string {
 	}
 
 	if idx := strings.LastIndex(text, "#"); idx >= 0 && idx < len(text)-1 {
-		if number := leadingDigits(strings.TrimSpace(text[idx+1:])); number != "" {
+		if number := utils.LeadingDigits(strings.TrimSpace(text[idx+1:])); number != "" {
 			return number
 		}
 	}
-	return leadingDigits(text)
+	return utils.LeadingDigits(text)
 }
-
-func leadingDigits(value string) string {
-	if value == "" {
-		return ""
-	}
-	var b strings.Builder
-	for _, r := range value {
-		if unicode.IsDigit(r) {
-			b.WriteRune(r)
-			continue
-		}
-		if b.Len() > 0 {
-			break
-		}
-		if !unicode.IsSpace(r) {
-			return ""
-		}
-	}
-	return b.String()
-}
-
-

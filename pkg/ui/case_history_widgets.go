@@ -13,7 +13,6 @@ import (
 
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
-	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 func buildCaseHistoryEventList(group viewmodels.WorkAreaCaseHistoryGroup) fyne.CanvasObject {
@@ -64,10 +63,6 @@ func caseHistoryEventText(event models.Event) string {
 }
 
 func caseHistoryEventTextColor(sc1 int) color.Color {
-	if IsDarkMode() {
-		text, _ := utils.SelectColorNRGBADark(sc1)
-		return text
-	}
-	text, _ := utils.SelectColorNRGBA(sc1)
+	text, _ := eventRowColors(sc1)
 	return text
 }

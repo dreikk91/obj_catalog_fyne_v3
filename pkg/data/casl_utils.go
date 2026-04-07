@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/utils"
 
 	"github.com/rs/zerolog/log"
 )
@@ -28,12 +31,7 @@ func appendCASLUniqueID(dst []string, seen map[string]struct{}, raw string) []st
 }
 
 func hasCyrillicChars(text string) bool {
-	for _, r := range text {
-		if (r >= 'А' && r <= 'я') || r == 'Ї' || r == 'ї' || r == 'Є' || r == 'є' || r == 'І' || r == 'і' || r == 'Ґ' || r == 'ґ' {
-			return true
-		}
-	}
-	return false
+	return utils.HasCyrillicChars(text)
 }
 
 func fallbackCASLContactIDTemplate(contactID string) string {
@@ -60,120 +58,11 @@ func fallbackCASLContactIDTemplate(contactID string) string {
 }
 
 func parseCASLAnyInt(value any) int {
-	switch v := value.(type) {
-	case nil:
-		return 0
-	case int:
-		return v
-	case int64:
-		return int(v)
-	case int32:
-		return int(v)
-	case float64:
-		return int(v)
-	case float32:
-		return int(v)
-	case json.Number:
-		if i, err := v.Int64(); err == nil {
-			return int(i)
-		}
-		if f, err := v.Float64(); err == nil {
-			return int(f)
-		}
-		return 0
-	case string:
-		text := strings.TrimSpace(v)
-		if text == "" {
-			return 0
-		}
-		if i, err := strconv.Atoi(text); err == nil {
-			return i
-		}
-		if f, err := strconv.ParseFloat(text, 64); err == nil {
-			return int(f)
-		}
-		return 0
-	default:
-		text := strings.TrimSpace(fmt.Sprintf("%v", value))
-		if text == "" {
-			return 0
-		}
-		if i, err := strconv.Atoi(text); err == nil {
-			return i
-		}
-		if f, err := strconv.ParseFloat(text, 64); err == nil {
-			return int(f)
-		}
-		return 0
-	}
+	return utils.ParseAnyInt(value)
 }
 
 func parseCASLAnyTime(value any) time.Time {
-	parseEpoch := func(epoch int64) time.Time {
-		if epoch == 0 {
-			return time.Time{}
-		}
-		if epoch > 1_000_000_000_000 || epoch < -1_000_000_000_000 {
-			return time.UnixMilli(epoch).Local()
-		}
-		if epoch > 1_000_000_000 || epoch < -1_000_000_000 {
-			return time.Unix(epoch, 0).Local()
-		}
-		return time.Time{}
-	}
-
-	switch v := value.(type) {
-	case nil:
-		return time.Time{}
-	case time.Time:
-		return v.Local()
-	case int64:
-		return parseEpoch(v)
-	case int:
-		return parseEpoch(int64(v))
-	case float64:
-		return parseEpoch(int64(v))
-	case float32:
-		return parseEpoch(int64(v))
-	case json.Number:
-		if i, err := v.Int64(); err == nil {
-			return parseEpoch(i)
-		}
-		if f, err := v.Float64(); err == nil {
-			return parseEpoch(int64(f))
-		}
-		return time.Time{}
-	case string:
-		text := strings.TrimSpace(v)
-		if text == "" {
-			return time.Time{}
-		}
-		if parsed, err := time.Parse(time.RFC3339Nano, text); err == nil {
-			return parsed.Local()
-		}
-		if parsed, err := time.Parse(time.RFC3339, text); err == nil {
-			return parsed.Local()
-		}
-		if i, err := strconv.ParseInt(text, 10, 64); err == nil {
-			return parseEpoch(i)
-		}
-		if f, err := strconv.ParseFloat(text, 64); err == nil {
-			return parseEpoch(int64(f))
-		}
-		return time.Time{}
-	default:
-		text := strings.TrimSpace(fmt.Sprintf("%v", value))
-		if text == "" {
-			return time.Time{}
-		}
-		if i, err := strconv.ParseInt(text, 10, 64); err == nil {
-			return parseEpoch(i)
-		}
-		if f, err := strconv.ParseFloat(text, 64); err == nil {
-			return parseEpoch(int64(f))
-		}
-		return time.Time{}
-	}
+	return utils.ParseAnyTime(value)
 }
 
 func mapCASLObjectStatus(statusRaw string, blocked bool) (models.ObjectStatus, string, bool) {
@@ -558,19 +447,14 @@ func mergeCASLObjectGroup(dst, src models.ObjectGroup) models.ObjectGroup {
 }
 
 func appendCASLUniqueInt(dst []int, value int) []int {
-	if value <= 0 || containsCASLInt(dst, value) {
+	if value <= 0 || slices.Contains(dst, value) {
 		return dst
 	}
 	return append(dst, value)
 }
 
 func containsCASLInt(values []int, target int) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, target)
 }
 
 func collectCASLGroupCandidatesRecursive(keyHint string, raw any, depth int, out *[]caslGroupCandidate) {
@@ -879,28 +763,7 @@ func extractGroupNumber(value any, fallback int) int {
 }
 
 func boolFromAny(value any) (bool, bool) {
-	switch typed := value.(type) {
-	case bool:
-		return typed, true
-	case int:
-		return typed > 0, true
-	case int64:
-		return typed > 0, true
-	case float64:
-		return typed > 0, true
-	case string:
-		raw := strings.TrimSpace(strings.ToLower(typed))
-		switch raw {
-		case "1", "true", "on", "armed", "guard", "group_on", "взято":
-			return true, true
-		case "0", "false", "off", "disarmed", "not_guard", "group_off", "знято":
-			return false, true
-		default:
-			return false, false
-		}
-	default:
-		return false, false
-	}
+	return utils.BoolFromAny(value)
 }
 
 func formatCASLCoordinates(lat, lng string) string {
@@ -928,7 +791,7 @@ func mapCASLObjectID(parts ...string) int {
 	if base == 0 {
 		base = stableCASLID(parts...)
 	}
-	return caslObjectIDNamespaceStart + (base % caslObjectIDNamespaceSize)
+	return ids.CASLObjectIDNamespaceStart + (base % ids.CASLObjectIDNamespaceSize)
 }
 
 func preferredCASLObjectNumber(rawObjID string, name string, ppkNum int64) string {
@@ -1009,10 +872,6 @@ func normalizeCASLAlarmState(raw int64) int64 {
 	return 1
 }
 
-func isCASLObjectID(id int) bool {
-	return id >= caslObjectIDNamespaceStart && id <= caslObjectIDNamespaceEnd
-}
-
 func stableCASLID(parts ...string) int {
 	h := fnv.New32a()
 	for _, part := range parts {
@@ -1040,7 +899,7 @@ func stableCASLEventID(objID string, ts int64, seed string, index int) int {
 	if base == 0 {
 		return nextCASLEventID()
 	}
-	return caslObjectIDNamespaceStart + (base % caslObjectIDNamespaceSize)
+	return ids.CASLObjectIDNamespaceStart + (base % ids.CASLObjectIDNamespaceSize)
 }
 
 func stableCASLAlarmSeed(code string, contactID string, zoneNumber int) string {
@@ -1059,12 +918,12 @@ func stableCASLAlarmID(objKey string, ts int64, seed string) int {
 	if base == 0 {
 		return nextCASLEventID()
 	}
-	return caslObjectIDNamespaceStart + (base % caslObjectIDNamespaceSize)
+	return ids.CASLObjectIDNamespaceStart + (base % ids.CASLObjectIDNamespaceSize)
 }
 
 func nextCASLEventID() int {
 	base := int(time.Now().UnixMilli() & 0x7fffffff)
-	return caslObjectIDNamespaceStart + (base % caslObjectIDNamespaceSize)
+	return ids.CASLObjectIDNamespaceStart + (base % ids.CASLObjectIDNamespaceSize)
 }
 
 func statusIsOK(status string) bool {
@@ -1173,20 +1032,5 @@ func isCASLSensitiveKey(key string) bool {
 }
 
 func asString(value any) string {
-	switch v := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return strings.TrimSpace(v)
-	case fmt.Stringer:
-		return strings.TrimSpace(v.String())
-	case int:
-		return strconv.Itoa(v)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case float64:
-		return strconv.FormatInt(int64(v), 10)
-	default:
-		return strings.TrimSpace(fmt.Sprintf("%v", value))
-	}
+	return utils.AsString(value)
 }

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"image/color"
 	"strconv"
 	"strings"
 
@@ -34,12 +33,20 @@ func buildCaseHistoryEventList(group viewmodels.WorkAreaCaseHistoryGroup) fyne.C
 }
 
 func buildCaseHistoryEventLine(event models.Event) fyne.CanvasObject {
-	textColor := caseHistoryEventTextColor(event.SC1)
+	textColor, rowColor := eventRowColors(event.SC1)
 	text := canvas.NewText(caseHistoryEventText(event), textColor)
 	text.TextSize = fyne.CurrentApp().Settings().Theme().Size(fyneTheme.SizeNameText)
 	text.TextStyle = fyne.TextStyle{Bold: event.IsCritical()}
 
-	return container.NewPadded(text)
+	bg := canvas.NewRectangle(rowColor)
+	bg.CornerRadius = 6
+
+	return container.NewPadded(
+		container.NewStack(
+			bg,
+			container.NewPadded(text),
+		),
+	)
 }
 
 func caseHistoryEventText(event models.Event) string {
@@ -60,9 +67,4 @@ func caseHistoryEventText(event models.Event) string {
 		line += " — " + details
 	}
 	return line
-}
-
-func caseHistoryEventTextColor(sc1 int) color.Color {
-	text, _ := eventRowColors(sc1)
-	return text
 }

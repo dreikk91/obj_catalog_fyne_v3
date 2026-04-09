@@ -456,6 +456,42 @@ func (p *AlarmPanelWidget) loadCaseHistoryForAlarm(alarm models.Alarm) {
 		return
 	}
 
+	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+	useBridgeActiveHistory := !ids.IsCASLObjectID(alarm.ObjectID) &&
+		!ids.IsPhoenixObjectID(alarm.ObjectID) &&
+		uiCfg.NormalizedBridgeAlarmHistoryMode() == config.BridgeAlarmHistoryModeActiveOnly
+
+	if useBridgeActiveHistory {
+		if historyProvider, ok := p.Data.(contracts.ActiveAlarmHistoryProvider); ok {
+			p.mutex.Lock()
+			p.caseHistoryLoadingID = alarm.ID
+			p.mutex.Unlock()
+
+			fyne.Do(func() {
+				p.showCaseHistoryLoading(alarm)
+			})
+
+			go func(selected models.Alarm) {
+				msgs := historyProvider.GetActiveAlarmSourceMessages(selected)
+
+				fyne.Do(func() {
+					p.mutex.RLock()
+					stillSelected := p.selectedID == selected.ID && p.caseHistoryLoadingID == selected.ID
+					p.mutex.RUnlock()
+					if !stillSelected {
+						return
+					}
+					if len(msgs) == 0 {
+						p.showEmptyCaseHistory(selected)
+						return
+					}
+					p.showCaseHistorySourceMessages(selected, msgs)
+				})
+			}(alarm)
+			return
+		}
+	}
+
 	if len(alarm.SourceMsgs) > 0 {
 		p.showCaseHistorySourceMessages(alarm, alarm.SourceMsgs)
 		return
@@ -624,7 +660,8 @@ func (p *AlarmPanelWidget) showCaseHistorySourceMessages(alarm models.Alarm, sou
 		return
 	}
 
-	msgs := append([]models.AlarmMsg(nil), sourceMsgs...)
+	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+	msgs := prepareSourceMessagesForDisplay(alarm, sourceMsgs, uiCfg.BridgeAlarmHistoryMode)
 	if len(msgs) == 0 {
 		p.clearCaseHistory()
 		return
@@ -654,6 +691,44 @@ func (p *AlarmPanelWidget) showCaseHistorySourceMessages(alarm models.Alarm, sou
 	p.CaseHistoryAccordion.Open(0)
 	p.CaseHistoryAccordion.Refresh()
 	p.CaseHistorySection.Show()
+}
+
+func filterAlarmSourceMessagesSince(alarm models.Alarm, sourceMsgs []models.AlarmMsg) []models.AlarmMsg {
+	if len(sourceMsgs) == 0 {
+		return nil
+	}
+
+	msgs := append([]models.AlarmMsg(nil), sourceMsgs...)
+	if alarm.Time.IsZero() {
+		return msgs
+	}
+
+	filtered := make([]models.AlarmMsg, 0, len(msgs))
+	for _, msg := range msgs {
+		if !msg.Time.IsZero() && msg.Time.Before(alarm.Time) {
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	return filtered
+}
+
+func prepareSourceMessagesForDisplay(alarm models.Alarm, sourceMsgs []models.AlarmMsg, bridgeHistoryMode string) []models.AlarmMsg {
+	if len(sourceMsgs) == 0 {
+		return nil
+	}
+
+	msgs := append([]models.AlarmMsg(nil), sourceMsgs...)
+	if ids.IsCASLObjectID(alarm.ObjectID) {
+		return msgs
+	}
+	if !ids.IsCASLObjectID(alarm.ObjectID) &&
+		!ids.IsPhoenixObjectID(alarm.ObjectID) &&
+		config.NormalizeBridgeAlarmHistoryMode(bridgeHistoryMode) == config.BridgeAlarmHistoryModeActiveOnly {
+		return msgs
+	}
+
+	return filterAlarmSourceMessagesSince(alarm, msgs)
 }
 
 func alarmSourceDisplayName(objectID int) string {
@@ -800,4 +875,20 @@ func (p *AlarmPanelWidget) clearCaseHistory() {
 	p.CaseHistoryAccordion.Items = nil
 	p.CaseHistoryAccordion.Refresh()
 	p.CaseHistorySection.Hide()
+}
+
+func (p *AlarmPanelWidget) ReloadSelectedCaseHistory() {
+	if p == nil {
+		return
+	}
+
+	p.mutex.RLock()
+	if p.selectedIndex < 0 || p.selectedIndex >= len(p.CurrentAlarms) {
+		p.mutex.RUnlock()
+		return
+	}
+	selected := p.CurrentAlarms[p.selectedIndex]
+	p.mutex.RUnlock()
+
+	p.loadCaseHistoryForAlarm(selected)
 }

@@ -3,7 +3,6 @@ package data
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/database"
@@ -449,10 +448,6 @@ func buildDBAlarmMessageFromActiveRow(row database.ActAlarmsRow) dbAlarmMessage 
 	return buildDBAlarmMessage(ptrToTime(row.EvTime1), ptrToString(row.Ukr1), ptrToString(row.Info1), ptrToInt64(row.Zonen), ptrToInt(row.Sc1))
 }
 
-func buildDBAlarmMessageFromTimelineRow(row database.ActiveAlarmEventRow) dbAlarmMessage {
-	return buildDBAlarmMessage(ptrToTime(row.EvTime1), ptrToString(row.Ukr1), ptrToString(row.Info1), ptrToInt64(row.Zonen), ptrToInt(row.Sc1))
-}
-
 func buildDBAlarmMessage(eventTime time.Time, ukr string, info string, zoneNumber int64, sc1 int) dbAlarmMessage {
 	details := strings.TrimSpace(ukr)
 	info = strings.TrimSpace(info)
@@ -595,20 +590,6 @@ func mapDBSC1ToEventType(sc1 int) models.EventType {
 	default:
 		return models.SystemEvent
 	}
-}
-
-func isDBQueryContextCanceled(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "operation was cancelled") ||
-		strings.Contains(msg, "operation was canceled") ||
-		strings.Contains(msg, "deadline exceeded") ||
-		strings.Contains(msg, "context canceled")
 }
 
 func isDBAlarmEventType(eventType models.EventType) bool {

@@ -81,3 +81,52 @@ func TestBuildAlarmSourceMessagesFromEvents_FallsBackToAllEventsWithoutGroups(t 
 		t.Fatalf("newest fallback message = %q, want %q", got, "Системна")
 	}
 }
+
+func TestBuildAlarmSourceMessagesFromEvents_FiltersOutOlderThanAlarm(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 4, 9, 12, 0, 0, 0, time.Local)
+	events := []models.Event{
+		{
+			ID:         1,
+			Time:       base.Add(-1 * time.Minute),
+			Type:       models.EventFire,
+			ZoneNumber: 3,
+			Details:    "Стара тривога",
+			SC1:        1,
+		},
+		{
+			ID:         2,
+			Time:       base,
+			Type:       models.EventFire,
+			ZoneNumber: 3,
+			Details:    "Поточна тривога",
+			SC1:        1,
+		},
+		{
+			ID:         3,
+			Time:       base.Add(1 * time.Minute),
+			Type:       models.EventFault,
+			ZoneNumber: 3,
+			Details:    "Подія після тривоги",
+			SC1:        2,
+		},
+	}
+
+	alarm := models.Alarm{
+		Time:       base,
+		Type:       models.AlarmFire,
+		ZoneNumber: 3,
+	}
+
+	msgs := buildAlarmSourceMessagesFromEvents(alarm, events)
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 filtered source messages, got %d", len(msgs))
+	}
+	if got := msgs[0].Details; got != "Подія після тривоги" {
+		t.Fatalf("newest filtered message = %q, want %q", got, "Подія після тривоги")
+	}
+	if got := msgs[1].Details; got != "Поточна тривога" {
+		t.Fatalf("oldest filtered message = %q, want %q", got, "Поточна тривога")
+	}
+}

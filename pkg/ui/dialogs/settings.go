@@ -321,6 +321,36 @@ func ShowSettingsDialog(
 	objectLimitEntry.SetText(strconv.Itoa(uiCfg.ObjectLogLimit))
 	objectLimitEntry.SetPlaceHolder("0 = без обмеження")
 
+	bridgeHistoryModeSelect := widget.NewSelect(bridgeAlarmHistoryModeOptions(), nil)
+	bridgeHistoryModeSelect.SetSelected(bridgeAlarmHistoryModeLabel(uiCfg.BridgeAlarmHistoryMode))
+
+	eventProbeIntervalEntry := widget.NewEntry()
+	eventProbeIntervalEntry.SetText(strconv.Itoa(uiCfg.EventProbeIntervalSec))
+	eventProbeIntervalEntry.SetPlaceHolder(strconv.Itoa(config.DefaultEventProbeIntervalSec))
+
+	eventsReconcileEntry := widget.NewEntry()
+	eventsReconcileEntry.SetText(strconv.Itoa(uiCfg.EventsReconcileSec))
+	eventsReconcileEntry.SetPlaceHolder(strconv.Itoa(config.DefaultEventsReconcileSec))
+
+	alarmsReconcileEntry := widget.NewEntry()
+	alarmsReconcileEntry.SetText(strconv.Itoa(uiCfg.AlarmsReconcileSec))
+	alarmsReconcileEntry.SetPlaceHolder(strconv.Itoa(config.DefaultAlarmsReconcileSec))
+
+	objectsReconcileEntry := widget.NewEntry()
+	objectsReconcileEntry.SetText(strconv.Itoa(uiCfg.ObjectsReconcileSec))
+	objectsReconcileEntry.SetPlaceHolder(strconv.Itoa(config.DefaultObjectsReconcileSec))
+
+	fallbackRefreshEntry := widget.NewEntry()
+	fallbackRefreshEntry.SetText(strconv.Itoa(uiCfg.FallbackRefreshSec))
+	fallbackRefreshEntry.SetPlaceHolder(strconv.Itoa(config.DefaultFallbackRefreshSec))
+
+	maxProbeBackoffEntry := widget.NewEntry()
+	maxProbeBackoffEntry.SetText(strconv.Itoa(uiCfg.MaxProbeBackoffSec))
+	maxProbeBackoffEntry.SetPlaceHolder(strconv.Itoa(config.DefaultMaxProbeBackoffSec))
+
+	schedulerHelpLabel := widget.NewLabel("Оновлення Firebird, сек. Менші значення роблять інтерфейс актуальнішим, але сильніше навантажують сервер.")
+	schedulerHelpLabel.Wrapping = fyne.TextWrapWord
+
 	exportDirEntry := widget.NewEntry()
 	exportDirEntry.SetText(uiCfg.ExportDir)
 	exportDirEntry.SetPlaceHolder("Папка запуску програми")
@@ -350,7 +380,7 @@ func ShowSettingsDialog(
 		exportDirEntry,
 	)
 
-	colorsBtn := makeIconButton("Налаштувати кольори...", iconSearch(), widget.LowImportance, func() {
+	colorsBtn := makeIconButton("Налаштувати кольори подій...", iconSearch(), widget.LowImportance, func() {
 		ShowColorPaletteDialog(win, isDarkTheme, onColorsChanged)
 	})
 
@@ -416,8 +446,18 @@ func ShowSettingsDialog(
 			widget.NewFormItem("Режим логування", logLevelSelect),
 			widget.NewFormItem("Ліміт загального журналу", eventLimitEntry),
 			widget.NewFormItem("Ліміт журналу об'єкта", objectLimitEntry),
+			widget.NewFormItem("Хронологія МІСТ", bridgeHistoryModeSelect),
 			widget.NewFormItem("Папка експорту", exportDirRow),
-			widget.NewFormItem("Кольори подій/об'єктів", colorsBtn),
+			widget.NewFormItem("Кольори подій", colorsBtn),
+		)),
+		container.NewTabItem("Оновлення", widget.NewForm(
+			widget.NewFormItem("Пояснення", schedulerHelpLabel),
+			widget.NewFormItem("Probe нових подій", eventProbeIntervalEntry),
+			widget.NewFormItem("Reconcile журналу", eventsReconcileEntry),
+			widget.NewFormItem("Reconcile тривог", alarmsReconcileEntry),
+			widget.NewFormItem("Reconcile об'єктів", objectsReconcileEntry),
+			widget.NewFormItem("Fallback без probe", fallbackRefreshEntry),
+			widget.NewFormItem("Макс. backoff probe", maxProbeBackoffEntry),
 		)),
 	)
 
@@ -476,15 +516,28 @@ func ShowSettingsDialog(
 				fAlmSize, _ := strconv.ParseFloat(fontAlmEntry.Text, 32)
 				evLimit, _ := strconv.Atoi(strings.TrimSpace(eventLimitEntry.Text))
 				objLimit, _ := strconv.Atoi(strings.TrimSpace(objectLimitEntry.Text))
+				eventProbeIntervalSec, _ := strconv.Atoi(strings.TrimSpace(eventProbeIntervalEntry.Text))
+				eventsReconcileSec, _ := strconv.Atoi(strings.TrimSpace(eventsReconcileEntry.Text))
+				alarmsReconcileSec, _ := strconv.Atoi(strings.TrimSpace(alarmsReconcileEntry.Text))
+				objectsReconcileSec, _ := strconv.Atoi(strings.TrimSpace(objectsReconcileEntry.Text))
+				fallbackRefreshSec, _ := strconv.Atoi(strings.TrimSpace(fallbackRefreshEntry.Text))
+				maxProbeBackoffSec, _ := strconv.Atoi(strings.TrimSpace(maxProbeBackoffEntry.Text))
 
 				newUiCfg := config.UIConfig{
-					FontSize:        float32(fSize),
-					FontSizeObjects: float32(fObjSize),
-					FontSizeEvents:  float32(fEvSize),
-					FontSizeAlarms:  float32(fAlmSize),
-					ExportDir:       strings.TrimSpace(exportDirEntry.Text),
-					EventLogLimit:   evLimit,
-					ObjectLogLimit:  objLimit,
+					FontSize:               float32(fSize),
+					FontSizeObjects:        float32(fObjSize),
+					FontSizeEvents:         float32(fEvSize),
+					FontSizeAlarms:         float32(fAlmSize),
+					ExportDir:              strings.TrimSpace(exportDirEntry.Text),
+					EventLogLimit:          evLimit,
+					ObjectLogLimit:         objLimit,
+					BridgeAlarmHistoryMode: bridgeAlarmHistoryModeValue(bridgeHistoryModeSelect.Selected),
+					EventProbeIntervalSec:  eventProbeIntervalSec,
+					EventsReconcileSec:     eventsReconcileSec,
+					AlarmsReconcileSec:     alarmsReconcileSec,
+					ObjectsReconcileSec:    objectsReconcileSec,
+					FallbackRefreshSec:     fallbackRefreshSec,
+					MaxProbeBackoffSec:     maxProbeBackoffSec,
 				}
 
 				newVodafoneCfg := config.LoadVodafoneConfig(pref)
@@ -529,4 +582,29 @@ func uriPathToLocalPath(path string) string {
 		return path[1:]
 	}
 	return path
+}
+
+func bridgeAlarmHistoryModeOptions() []string {
+	return []string{
+		"Тільки активні події з ACTALARMS",
+		"Повна хронологія з журналу об'єкта",
+	}
+}
+
+func bridgeAlarmHistoryModeLabel(mode string) string {
+	switch config.NormalizeBridgeAlarmHistoryMode(mode) {
+	case config.BridgeAlarmHistoryModeLegacy:
+		return "Повна хронологія з журналу об'єкта"
+	default:
+		return "Тільки активні події з ACTALARMS"
+	}
+}
+
+func bridgeAlarmHistoryModeValue(label string) string {
+	switch strings.TrimSpace(label) {
+	case "Повна хронологія з журналу об'єкта":
+		return config.BridgeAlarmHistoryModeLegacy
+	default:
+		return config.BridgeAlarmHistoryModeActiveOnly
+	}
 }

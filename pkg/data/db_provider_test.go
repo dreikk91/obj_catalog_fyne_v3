@@ -1,8 +1,6 @@
 package data
 
 import (
-	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -144,24 +142,6 @@ func TestMapDBSC1ToEventType_PowerAndBattery(t *testing.T) {
 	}
 	if got := mapDBSC1ToEventType(4); got != models.EventBatteryLow {
 		t.Fatalf("mapDBSC1ToEventType(4) = %s, want %s", got, models.EventBatteryLow)
-	}
-}
-
-func TestIsDBQueryContextCanceled(t *testing.T) {
-	t.Parallel()
-
-	if !isDBQueryContextCanceled(context.DeadlineExceeded) {
-		t.Fatal("expected deadline exceeded to be treated as canceled")
-	}
-	if !isDBQueryContextCanceled(context.Canceled) {
-		t.Fatal("expected canceled context to be treated as canceled")
-	}
-	err := errors.New("failed to select active alarm events: operation was cancelled")
-	if !isDBQueryContextCanceled(err) {
-		t.Fatal("expected operation was cancelled to be treated as canceled")
-	}
-	if isDBQueryContextCanceled(errors.New("some other db error")) {
-		t.Fatal("unexpected canceled detection for generic error")
 	}
 }
 

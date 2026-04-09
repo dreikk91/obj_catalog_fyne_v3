@@ -85,6 +85,60 @@ func TestWorkAreaCaseHistoryViewModel_FindGroupForAlarm_PrefersMatchingZoneAndTy
 	}
 }
 
+func TestWorkAreaCaseHistoryViewModel_BuildGroups_DoesNotSplitCaseOnAlarmNotification(t *testing.T) {
+	vm := NewWorkAreaCaseHistoryViewModel()
+	object := &models.Object{ID: ids.CASLObjectIDNamespaceStart + 88, Name: "CASL object"}
+	base := time.Date(2026, 4, 6, 12, 30, 0, 0, time.Local)
+
+	events := []models.Event{
+		{ID: 4, Time: base.Add(4 * time.Minute), Type: models.EventRestore, ZoneNumber: 4, Details: "Норма в зоні 4"},
+		{ID: 3, Time: base.Add(3 * time.Minute), Type: models.EventOperatorAction, Details: "Взяття в роботу"},
+		{ID: 2, Time: base.Add(2 * time.Minute), Type: models.EventAlarmNotification, Details: "Тривога потрапила в стрічку"},
+		{ID: 1, Time: base.Add(1 * time.Minute), Type: models.EventBurglary, ZoneNumber: 4, Details: "Тривога в зоні 4"},
+	}
+
+	groups := vm.BuildGroups(object, events)
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 case group, got %d", len(groups))
+	}
+	if groups[0].Root.Type != models.EventBurglary {
+		t.Fatalf("expected burglary root, got %s", groups[0].Root.Type)
+	}
+	if len(groups[0].Events) != 4 {
+		t.Fatalf("expected all 4 events in one case, got %d", len(groups[0].Events))
+	}
+}
+
+func TestWorkAreaCaseHistoryViewModel_FindGroupForAlarm_UsesEventsInsideGroup(t *testing.T) {
+	vm := NewWorkAreaCaseHistoryViewModel()
+	object := &models.Object{ID: ids.CASLObjectIDNamespaceStart + 89, Name: "CASL object"}
+	base := time.Date(2026, 4, 6, 13, 30, 0, 0, time.Local)
+
+	events := []models.Event{
+		{ID: 1, Time: base.Add(1 * time.Minute), Type: models.EventBurglary, ZoneNumber: 2, Details: "Тривога в зоні 2"},
+		{ID: 2, Time: base.Add(2 * time.Minute), Type: models.EventAlarmNotification, Details: "Тривога потрапила в стрічку"},
+		{ID: 3, Time: base.Add(3 * time.Minute), Type: models.EventOperatorAction, Details: "Взяття в роботу"},
+		{ID: 4, Time: base.Add(4 * time.Minute), Type: models.EventRestore, ZoneNumber: 2, Details: "Норма в зоні 2"},
+		{ID: 5, Time: base.Add(10 * time.Minute), Type: models.EventFire, ZoneNumber: 8, Details: "Пожежа в зоні 8"},
+	}
+
+	group, ok := vm.FindGroupForAlarm(object, models.Alarm{
+		ObjectID:   object.ID,
+		Time:       base.Add(2 * time.Minute),
+		Type:       models.AlarmNotification,
+		ZoneNumber: 2,
+	}, events)
+	if !ok {
+		t.Fatalf("expected matching case group")
+	}
+	if group.Root.Type != models.EventBurglary {
+		t.Fatalf("expected burglary-root case for notification alarm, got %s", group.Root.Type)
+	}
+	if len(group.Events) != 4 {
+		t.Fatalf("expected 4 events in selected case, got %d", len(group.Events))
+	}
+}
+
 func TestWorkAreaCaseHistoryViewModel_BuildSections_GroupsByStage(t *testing.T) {
 	vm := NewWorkAreaCaseHistoryViewModel()
 	base := time.Date(2026, 4, 6, 13, 0, 0, 0, time.Local)

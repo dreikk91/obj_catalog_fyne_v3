@@ -50,6 +50,11 @@ type AlarmHistoryProvider interface {
 	GetAlarmSourceMessages(alarm models.Alarm) []models.AlarmMsg
 }
 
+// ActiveAlarmHistoryProvider defines optional chronology loading from currently active alarm rows only.
+type ActiveAlarmHistoryProvider interface {
+	GetActiveAlarmSourceMessages(alarm models.Alarm) []models.AlarmMsg
+}
+
 // AlarmProvider визначає інтерфейс для отримання тривог
 type AlarmProvider interface {
 	GetAlarms() []models.Alarm

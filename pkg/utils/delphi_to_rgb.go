@@ -10,6 +10,14 @@ type ColorPair struct {
 	Row  color.NRGBA
 }
 
+func cloneColorMapping(src map[int]ColorPair) map[int]ColorPair {
+	dst := make(map[int]ColorPair, len(src))
+	for code, pair := range src {
+		dst[code] = pair
+	}
+	return dst
+}
+
 // Базові (стандартні) карти кольорів для світлої теми
 func defaultLightColorMapping() map[int]ColorPair {
 	return map[int]ColorPair{
@@ -240,8 +248,10 @@ func defaultDarkColorMapping() map[int]ColorPair {
 
 // Поточні карти кольорів, які можна змінювати під час роботи додатку
 var (
-	lightColorMapping = defaultLightColorMapping()
-	darkColorMapping  = defaultDarkColorMapping()
+	defaultLightPalette = defaultLightColorMapping()
+	defaultDarkPalette  = defaultDarkColorMapping()
+	lightColorMapping   = cloneColorMapping(defaultLightPalette)
+	darkColorMapping    = cloneColorMapping(defaultDarkPalette)
 )
 
 // SelectColorNRGBA повертає поточні (можливо змінені користувачем) кольори для світлої теми
@@ -266,6 +276,28 @@ func SelectColorNRGBADark(colorValue int) (text, row color.NRGBA) {
 		color.NRGBA{R: 30, G: 30, B: 30, A: 255} // rgb(30,30,30)
 }
 
+// SelectObjectColorNRGBA повертає стандартні кольори списку об'єктів для світлої теми.
+// Ця палітра не змінюється через налаштування кольорів подій.
+func SelectObjectColorNRGBA(colorValue int) (text, row color.NRGBA) {
+	if c, ok := defaultLightPalette[colorValue]; ok {
+		return c.Text, c.Row
+	}
+
+	return color.NRGBA{R: 0, G: 0, B: 0, A: 255},
+		color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+}
+
+// SelectObjectColorNRGBADark повертає стандартні кольори списку об'єктів для темної теми.
+// Ця палітра не змінюється через налаштування кольорів подій.
+func SelectObjectColorNRGBADark(colorValue int) (text, row color.NRGBA) {
+	if c, ok := defaultDarkPalette[colorValue]; ok {
+		return c.Text, c.Row
+	}
+
+	return color.NRGBA{R: 220, G: 220, B: 220, A: 255},
+		color.NRGBA{R: 30, G: 30, B: 30, A: 255}
+}
+
 // GetEventRowColor повертає поточний колір фону рядка для коду події
 func GetEventRowColor(code int, isDark bool) color.NRGBA {
 	if isDark {
@@ -283,6 +315,23 @@ func GetEventRowColor(code int, isDark bool) color.NRGBA {
 	return row
 }
 
+// GetEventTextColor повертає поточний колір тексту для коду події.
+func GetEventTextColor(code int, isDark bool) color.NRGBA {
+	if isDark {
+		if c, ok := darkColorMapping[code]; ok {
+			return c.Text
+		}
+		text, _ := SelectColorNRGBADark(code)
+		return text
+	}
+
+	if c, ok := lightColorMapping[code]; ok {
+		return c.Text
+	}
+	text, _ := SelectColorNRGBA(code)
+	return text
+}
+
 // SetEventRowColor змінює тільки колір фону рядка для вказаного коду події.
 // Текст залишається таким, як у поточному мапінгу, щоб зберегти читабельність.
 func SetEventRowColor(code int, isDark bool, row color.NRGBA) {
@@ -294,7 +343,7 @@ func SetEventRowColor(code int, isDark bool, row color.NRGBA) {
 		c.Row = row
 		// якщо Text порожній, беремо стандартне значення
 		if c.Text == (color.NRGBA{}) {
-			if def, ok := defaultDarkColorMapping()[code]; ok {
+			if def, ok := defaultDarkPalette[code]; ok {
 				c.Text = def.Text
 			} else {
 				c.Text = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
@@ -310,10 +359,45 @@ func SetEventRowColor(code int, isDark bool, row color.NRGBA) {
 	}
 	c.Row = row
 	if c.Text == (color.NRGBA{}) {
-		if def, ok := defaultLightColorMapping()[code]; ok {
+		if def, ok := defaultLightPalette[code]; ok {
 			c.Text = def.Text
 		} else {
 			c.Text = color.NRGBA{R: 0, G: 0, B: 0, A: 255}
+		}
+	}
+	lightColorMapping[code] = c
+}
+
+// SetEventTextColor змінює тільки колір тексту для вказаного коду події.
+// Фон зберігається з поточного мапінгу або береться зі стандартної палітри.
+func SetEventTextColor(code int, isDark bool, text color.NRGBA) {
+	if isDark {
+		c, ok := darkColorMapping[code]
+		if !ok {
+			c = ColorPair{}
+		}
+		c.Text = text
+		if c.Row == (color.NRGBA{}) {
+			if def, ok := defaultDarkPalette[code]; ok {
+				c.Row = def.Row
+			} else {
+				c.Row = color.NRGBA{R: 30, G: 30, B: 30, A: 255}
+			}
+		}
+		darkColorMapping[code] = c
+		return
+	}
+
+	c, ok := lightColorMapping[code]
+	if !ok {
+		c = ColorPair{}
+	}
+	c.Text = text
+	if c.Row == (color.NRGBA{}) {
+		if def, ok := defaultLightPalette[code]; ok {
+			c.Row = def.Row
+		} else {
+			c.Row = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 		}
 	}
 	lightColorMapping[code] = c
@@ -323,8 +407,8 @@ func SetEventRowColor(code int, isDark bool, row color.NRGBA) {
 // для поточної (isDark=true/false) теми.
 func ResetEventColorsToDefault(isDark bool) {
 	if isDark {
-		darkColorMapping = defaultDarkColorMapping()
+		darkColorMapping = cloneColorMapping(defaultDarkPalette)
 	} else {
-		lightColorMapping = defaultLightColorMapping()
+		lightColorMapping = cloneColorMapping(defaultLightPalette)
 	}
 }

@@ -11,9 +11,9 @@ func ChangeItemColorNRGBA(
 ) (textColor, rowColor color.NRGBA) {
 
 	// Вибір палітри залежно від теми
-	selectEventColor := SelectColorNRGBA
+	selectObjectColor := SelectObjectColorNRGBA
 	if isDark {
-		selectEventColor = SelectColorNRGBADark
+		selectObjectColor = SelectObjectColorNRGBADark
 	}
 
 	// Дефолтні кольори (на випадок, якщо не підійде жоден case)
@@ -28,11 +28,11 @@ func ChangeItemColorNRGBA(
 	switch {
 	// 1. Під охороною, є зв'язок, немає тривоги, немає тех.тривоги
 	case isConstate == 1 && alarmstate == 0 && guardstate >= 1 && guardstate <= 3 && techAlarmState == 0:
-		textColor, rowColor = selectEventColor(10) // ArmedOn
+		textColor, rowColor = selectObjectColor(10) // ArmedOn
 
 	// 2. Є зв'язок, тривога, під охороною, немає тех.тривоги (дублюється в Python)
 	case isConstate == 1 && alarmstate == 1 && guardstate == 1 && techAlarmState >= 0:
-		textColor, rowColor = selectEventColor(1) // Alarm
+		textColor, rowColor = selectObjectColor(1) // Alarm
 
 	// 3-4. Немає тривоги, знято з охорони, немає тех.тривоги.
 	case alarmstate == 0 && guardstate == 0 && techAlarmState == 0 && (isConstate == 0 || isConstate == 1):
@@ -46,7 +46,7 @@ func ChangeItemColorNRGBA(
 
 	// 5. Є зв'язок, немає тривоги, guardstate=2, немає тех.тривоги
 	case isConstate == 1 && alarmstate == 0 && guardstate == 2 && techAlarmState == 0:
-		textColor, rowColor = selectEventColor(10) // ArmedOn
+		textColor, rowColor = selectObjectColor(10) // ArmedOn
 
 	// 6. Немає зв'язку, немає тривоги, під охороною, немає тех.тривоги
 	case isConstate == 0 && alarmstate == 0 && guardstate >= 1 && techAlarmState == 0:
@@ -60,7 +60,7 @@ func ChangeItemColorNRGBA(
 
 	// 7. Немає зв'язку, тривога, під охороною, немає тех.тривоги
 	case isConstate == 0 && alarmstate == 1 && guardstate == 1 && techAlarmState == 0:
-		textColor, rowColor = selectEventColor(1) // Alarm
+		textColor, rowColor = selectObjectColor(1) // Alarm
 
 	// 8. Немає зв'язку, тривога, знято з охорони, немає тех.тривоги
 	case isConstate == 0 && alarmstate == 1 && guardstate == 0 && techAlarmState == 0:
@@ -74,7 +74,7 @@ func ChangeItemColorNRGBA(
 
 	// 9. Є зв'язок, тривога, guardstate=2, немає тех.тривоги
 	case isConstate == 1 && alarmstate == 1 && guardstate == 2 && techAlarmState == 0:
-		textColor, rowColor = selectEventColor(10) // ArmedOn
+		textColor, rowColor = selectObjectColor(10) // ArmedOn
 		// Перевизначаємо колір тексту
 		if isDark {
 			textColor = color.NRGBA{R: 150, G: 130, B: 170, A: 255} // rgb(150,130,170)
@@ -84,7 +84,7 @@ func ChangeItemColorNRGBA(
 
 	// 10. Є зв'язок, немає тривоги, під охороною, є тех.тривога
 	case isConstate >= 0 && alarmstate == 0 && guardstate >= 1 && techAlarmState == 1:
-		textColor, rowColor = selectEventColor(2) // Tech alarm
+		textColor, rowColor = selectObjectColor(2) // Tech alarm
 	}
 
 	return textColor, rowColor

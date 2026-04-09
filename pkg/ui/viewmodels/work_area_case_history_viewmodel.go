@@ -101,14 +101,7 @@ func (vm *WorkAreaCaseHistoryViewModel) FindGroupForAlarm(
 	bestDelta := time.Duration(1<<63 - 1)
 
 	for idx, group := range groups {
-		score := 0
-		if caseRootMatchesAlarm(group.Root.Type, alarm.Type) {
-			score += 4
-		}
-		if alarm.ZoneNumber > 0 && group.Root.ZoneNumber == alarm.ZoneNumber {
-			score += 3
-		}
-		delta := absDuration(group.Root.Time.Sub(alarm.Time))
+		score, delta := scoreCaseHistoryGroupForAlarm(group, alarm)
 		if score > bestScore || (score == bestScore && delta < bestDelta) {
 			bestIdx = idx
 			bestScore = score
@@ -160,13 +153,36 @@ func isWorkAreaCaseRootEvent(event models.Event) bool {
 		models.EventPowerFail,
 		models.EventBatteryLow,
 		models.EventOffline,
-		models.EventAlarmNotification,
-		models.EventNotification,
 		models.EventDeviceBlocked:
 		return true
 	default:
 		return false
 	}
+}
+
+func scoreCaseHistoryGroupForAlarm(group WorkAreaCaseHistoryGroup, alarm models.Alarm) (int, time.Duration) {
+	bestScore := -1
+	bestDelta := time.Duration(1<<63 - 1)
+
+	for _, event := range group.Events {
+		score := 0
+		if caseRootMatchesAlarm(event.Type, alarm.Type) {
+			score += 4
+		}
+		if alarm.ZoneNumber > 0 && event.ZoneNumber == alarm.ZoneNumber {
+			score += 3
+		}
+		delta := absDuration(event.Time.Sub(alarm.Time))
+		if score > bestScore || (score == bestScore && delta < bestDelta) {
+			bestScore = score
+			bestDelta = delta
+		}
+	}
+
+	if bestScore >= 0 {
+		return bestScore, bestDelta
+	}
+	return 0, absDuration(group.Root.Time.Sub(alarm.Time))
 }
 
 func caseRootMatchesAlarm(eventType models.EventType, alarmType models.AlarmType) bool {

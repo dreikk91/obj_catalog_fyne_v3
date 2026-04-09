@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/eventbus"
 
 	"github.com/rs/zerolog/log"
@@ -12,15 +13,6 @@ import (
 type latestEventIDProvider interface {
 	GetLatestEventID() (int64, error)
 }
-
-const (
-	eventProbeInterval       = 2 * time.Second
-	eventsReconcileInterval  = 30 * time.Second
-	alarmsReconcileInterval  = 10 * time.Second
-	objectsReconcileInterval = 20 * time.Second
-	fallbackRefreshInterval  = 4 * time.Second
-	maxProbeBackoffInterval  = 30 * time.Second
-)
 
 func shouldRefreshForLatestEventID(latestID, lastKnownID int64, hasLastKnownID bool) (refresh bool, nextLastKnownID int64, nextHasLastKnownID bool) {
 	if !hasLastKnownID {
@@ -48,6 +40,14 @@ func (a *Application) startGettingEvents() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	a.refreshLoopCancel = cancel
+
+	uiCfg := config.LoadUIConfig(a.fyneApp.Preferences())
+	eventProbeInterval := time.Duration(uiCfg.EventProbeIntervalSec) * time.Second
+	eventsReconcileInterval := time.Duration(uiCfg.EventsReconcileSec) * time.Second
+	alarmsReconcileInterval := time.Duration(uiCfg.AlarmsReconcileSec) * time.Second
+	objectsReconcileInterval := time.Duration(uiCfg.ObjectsReconcileSec) * time.Second
+	fallbackRefreshInterval := time.Duration(uiCfg.FallbackRefreshSec) * time.Second
+	maxProbeBackoffInterval := time.Duration(uiCfg.MaxProbeBackoffSec) * time.Second
 
 	go func() {
 		eventProbeTicker := time.NewTicker(eventProbeInterval)

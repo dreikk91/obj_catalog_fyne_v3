@@ -110,7 +110,7 @@ func GetGlobalEvents(ctx context.Context, db *sqlx.DB, lastID int64) ([]EventRow
 // GetLastEventID повертає ID останньої події в базі
 func GetLastEventID(ctx context.Context, db *sqlx.DB) (int64, error) {
 	var lastID int64
-	query := `SELECT FIRST 1 ID FROM EVLOG ORDER BY ID DESC`
+	query := `SELECT COALESCE(MAX(ID), 0) FROM EVLOG`
 	err := db.GetContext(ctx, &lastID, query)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get last event id: %w", err)

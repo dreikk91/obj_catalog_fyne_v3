@@ -145,6 +145,30 @@ func TestObjectListViewModel_ApplyFilters_BySourceAndSIMSearch(t *testing.T) {
 	}
 }
 
+func TestObjectListViewModel_ApplyFilters_DoesNotAutoSelectOnInitialLoad(t *testing.T) {
+	vm := NewObjectListViewModel()
+	all := []models.Object{
+		{ID: 10, Name: "Bridge One"},
+		{ID: 11, Name: "Bridge Two"},
+	}
+
+	out := vm.ApplyFilters(ObjectListFilterInput{
+		AllObjects:    all,
+		CurrentFilter: FilterAll,
+		CurrentSource: ObjectSourceAll,
+	})
+
+	if out.NewSelectedRow != -1 {
+		t.Fatalf("expected no implicit selection on initial load, got %d", out.NewSelectedRow)
+	}
+	if out.HasSelectedObject {
+		t.Fatalf("expected no selected object on initial load")
+	}
+	if out.ShouldNotifySelection {
+		t.Fatalf("expected no selection notification on initial load")
+	}
+}
+
 func TestObjectListViewModel_ApplyFilters_MonitoringOffAndDebug(t *testing.T) {
 	vm := NewObjectListViewModel()
 	all := []models.Object{

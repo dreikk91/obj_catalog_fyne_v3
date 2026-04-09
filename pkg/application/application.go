@@ -701,6 +701,10 @@ func (a *Application) RefreshUI(cfg config.UIConfig) {
 		RefreshAlarms:  true,
 		RefreshEvents:  true,
 	})
+	a.startGettingEvents()
+	if a.alarmPanel != nil {
+		a.alarmPanel.ReloadSelectedCaseHistory()
+	}
 
 	log.Info().Msg("✅ Параметри інтерфейсу оновлено")
 }

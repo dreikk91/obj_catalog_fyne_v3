@@ -172,11 +172,10 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 				break
 			}
 		}
+		if newSelectedRow == -1 && len(filtered) > 0 {
+			newSelectedRow = 0
+		}
 	}
-	if newSelectedRow == -1 && len(filtered) > 0 {
-		newSelectedRow = 0
-	}
-
 	out := ObjectListFilterOutput{
 		Filtered:           filtered,
 		CountAll:           countAll,
@@ -286,9 +285,9 @@ func matchesSearchTerms(obj models.Object, source string, terms []string) bool {
 // GetRowColors визначає кольори тексту та фону для рядка списку об'єктів.
 // Логіка перенесена з View (MVVM).
 func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (textColor, rowColor color.NRGBA) {
-	selectEventColor := utils.SelectColorNRGBA
+	selectObjectColor := utils.SelectObjectColorNRGBA
 	if isDark {
-		selectEventColor = utils.SelectColorNRGBADark
+		selectObjectColor = utils.SelectObjectColorNRGBADark
 	}
 
 	// Спеціальні випадки для Phoenix
@@ -334,11 +333,11 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 	}
 
 	if item.AlarmState > 0 || item.Status == models.StatusFire {
-		return selectEventColor(1)
+		return selectObjectColor(1)
 	}
 
 	if item.TechAlarmState > 0 || item.Status == models.StatusFault {
-		return selectEventColor(2)
+		return selectObjectColor(2)
 	}
 
 	if item.IsConnState == 0 || item.Status == models.StatusOffline {

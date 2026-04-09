@@ -18,10 +18,25 @@ func buildAlarmSourceMessagesFromEvents(alarm models.Alarm, events []models.Even
 
 	groups := groupAlarmEvents(events)
 	if group, ok := selectAlarmEventGroup(groups, alarm); ok {
-		return mapAlarmEventsToSourceMsgs(group.Events)
+		return mapAlarmEventsToSourceMsgs(filterAlarmEventsSince(group.Events, alarm.Time))
 	}
 
-	return mapAlarmEventsToSourceMsgs(events)
+	return mapAlarmEventsToSourceMsgs(filterAlarmEventsSince(events, alarm.Time))
+}
+
+func filterAlarmEventsSince(events []models.Event, since time.Time) []models.Event {
+	if len(events) == 0 || since.IsZero() {
+		return append([]models.Event(nil), events...)
+	}
+
+	filtered := make([]models.Event, 0, len(events))
+	for _, event := range events {
+		if !event.Time.IsZero() && event.Time.Before(since) {
+			continue
+		}
+		filtered = append(filtered, event)
+	}
+	return filtered
 }
 
 func groupAlarmEvents(events []models.Event) []alarmEventGroup {

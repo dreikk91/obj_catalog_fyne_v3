@@ -1,12 +1,169 @@
 package data
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/models"
 )
+
+func TestSelectDBAlarmMessage_PrefersLatestAlarmOverNewerRestore(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 4, 8, 12, 0, 0, 0, time.Local)
+	messages := []dbAlarmMessage{
+		{
+			Time:      base.Add(2 * time.Minute),
+			EventType: models.EventRestore,
+			IsAlarm:   false,
+			Details:   "Відновлення",
+		},
+		{
+			Time:      base.Add(1 * time.Minute),
+			EventType: models.EventFault,
+			IsAlarm:   true,
+			Details:   "Несправність",
+		},
+	}
+	sortDBAlarmMessages(messages)
+
+	selected, ok := selectDBAlarmMessage(messages)
+	if !ok {
+		t.Fatalf("expected selected message")
+	}
+	if selected.EventType != models.EventFault {
+		t.Fatalf("selected type = %s, want %s", selected.EventType, models.EventFault)
+	}
+	if selected.Details != "Несправність" {
+		t.Fatalf("selected details = %q, want %q", selected.Details, "Несправність")
+	}
+}
+
+func TestSelectDBAlarmMessage_PrefersPrimaryAlarmOverNewerFault(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 4, 8, 13, 0, 0, 0, time.Local)
+	messages := []dbAlarmMessage{
+		{
+			Time:      base.Add(3 * time.Minute),
+			EventType: models.EventFault,
+			IsAlarm:   true,
+			Details:   "Несправність",
+		},
+		{
+			Time:      base.Add(2 * time.Minute),
+			EventType: models.EventRestore,
+			IsAlarm:   false,
+			Details:   "Відновлення",
+		},
+		{
+			Time:      base.Add(1 * time.Minute),
+			EventType: models.EventFire,
+			IsAlarm:   true,
+			Details:   "Перша тривога",
+		},
+	}
+	sortDBAlarmMessages(messages)
+
+	selected, ok := selectDBAlarmMessage(messages)
+	if !ok {
+		t.Fatalf("expected selected message")
+	}
+	if selected.Details != "Перша тривога" {
+		t.Fatalf("selected details = %q, want %q", selected.Details, "Перша тривога")
+	}
+}
+
+func TestResolveDBGroupedAlarmSC1_StaysFireWhenLatestIsFaultAfterAlarm(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 4, 8, 13, 30, 0, 0, time.Local)
+	messages := []dbAlarmMessage{
+		{
+			Time:      base.Add(2 * time.Minute),
+			EventType: models.EventFault,
+			SC1:       2,
+		},
+		{
+			Time:      base.Add(1 * time.Minute),
+			EventType: models.EventFire,
+			SC1:       1,
+		},
+	}
+	sortDBAlarmMessages(messages)
+
+	if got := resolveDBGroupedAlarmSC1(messages, 0); got != 1 {
+		t.Fatalf("resolveDBGroupedAlarmSC1() = %d, want 1", got)
+	}
+}
+
+func TestMapDBAlarmMessagesToSourceMsgs_PreservesOrderAndFlags(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, 4, 8, 14, 0, 0, 0, time.Local)
+	messages := []dbAlarmMessage{
+		{
+			Time:       base.Add(2 * time.Minute),
+			Details:    "Актуальна",
+			IsAlarm:    true,
+			ZoneNumber: 4,
+			SC1:        1,
+		},
+		{
+			Time:       base.Add(1 * time.Minute),
+			Details:    "Стара",
+			IsAlarm:    false,
+			ZoneNumber: 4,
+			SC1:        5,
+		},
+	}
+
+	source := mapDBAlarmMessagesToSourceMsgs(messages)
+	if len(source) != 2 {
+		t.Fatalf("expected 2 source messages, got %d", len(source))
+	}
+	if !source[0].IsAlarm || source[0].Details != "Актуальна" {
+		t.Fatalf("unexpected first source message: %+v", source[0])
+	}
+	if source[1].IsAlarm || source[1].Details != "Стара" {
+		t.Fatalf("unexpected second source message: %+v", source[1])
+	}
+	if source[0].SC1 != 1 || source[1].SC1 != 5 {
+		t.Fatalf("unexpected source SC1 values: %+v", source)
+	}
+}
+
+func TestMapDBSC1ToEventType_PowerAndBattery(t *testing.T) {
+	t.Parallel()
+
+	if got := mapDBSC1ToEventType(3); got != models.EventPowerFail {
+		t.Fatalf("mapDBSC1ToEventType(3) = %s, want %s", got, models.EventPowerFail)
+	}
+	if got := mapDBSC1ToEventType(4); got != models.EventBatteryLow {
+		t.Fatalf("mapDBSC1ToEventType(4) = %s, want %s", got, models.EventBatteryLow)
+	}
+}
+
+func TestIsDBQueryContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	if !isDBQueryContextCanceled(context.DeadlineExceeded) {
+		t.Fatal("expected deadline exceeded to be treated as canceled")
+	}
+	if !isDBQueryContextCanceled(context.Canceled) {
+		t.Fatal("expected canceled context to be treated as canceled")
+	}
+	err := errors.New("failed to select active alarm events: operation was cancelled")
+	if !isDBQueryContextCanceled(err) {
+		t.Fatal("expected operation was cancelled to be treated as canceled")
+	}
+	if isDBQueryContextCanceled(errors.New("some other db error")) {
+		t.Fatal("unexpected canceled detection for generic error")
+	}
+}
 
 func TestFormatDBObjectName(t *testing.T) {
 	t.Parallel()

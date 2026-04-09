@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"fmt"
 	"image/color"
 	"strconv"
 	"strings"
@@ -35,20 +36,25 @@ type AlarmPanelWidget struct {
 	CaseHistoryVM *viewmodels.WorkAreaCaseHistoryViewModel
 
 	// Кеш даних
-	AllAlarms            []models.Alarm
-	CurrentAlarms        []models.Alarm
-	mutex                sync.RWMutex
-	isRefreshing         bool
-	currentSource        string
-	selectedIndex        int
-	selectedID           int
-	lastClickTime        time.Time
-	processBtn           *widget.Button
-	lastKnownIDs         map[int]struct{}
-	CaseHistoryTitle     *widget.Label
-	CaseHistoryAccordion *widget.Accordion
-	CaseHistorySection   *fyne.Container
-	caseHistoryLoadingID int
+	AllAlarms             []models.Alarm
+	CurrentAlarms         []models.Alarm
+	mutex                 sync.RWMutex
+	isRefreshing          bool
+	currentSource         string
+	selectedIndex         int
+	selectedID            int
+	lastClickTime         time.Time
+	processBtn            *widget.Button
+	lastKnownIDs          map[int]struct{}
+	CaseHistoryTitle      *widget.Label
+	CaseHistoryAccordion  *widget.Accordion
+	CaseHistorySection    *fyne.Container
+	caseHistoryLoadingID  int
+	caseHistoryAlarm      models.Alarm
+	caseHistoryGroup      viewmodels.WorkAreaCaseHistoryGroup
+	hasCaseHistoryGroup   bool
+	caseHistorySourceMsgs []models.AlarmMsg
+	hasCaseHistorySource  bool
 
 	// OnAlarmSelected викликається при кожному кліку по тривозі (одинарному).
 	OnAlarmSelected func(alarm models.Alarm)
@@ -87,7 +93,7 @@ func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 			panel.mutex.Lock()
 			panel.currentSource = viewmodels.NormalizeObjectSourceFilter(selected)
 			panel.mutex.Unlock()
-			go panel.Refresh()
+			panel.Refresh()
 		},
 	)
 	panel.SourceSelect.SetSelected(panel.SourceSelect.Options[0])
@@ -228,7 +234,7 @@ func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 	})
 	panel.processBtn.Disable()
 
-	panel.CaseHistoryTitle = widget.NewLabel("Хронологія вибраної тривоги CASL")
+	panel.CaseHistoryTitle = widget.NewLabel("Хронологія вибраної тривоги")
 	panel.CaseHistoryTitle.TextStyle = fyne.TextStyle{Bold: true}
 	panel.CaseHistoryTitle.Wrapping = fyne.TextWrapWord
 	panel.CaseHistoryAccordion = widget.NewAccordion()
@@ -250,13 +256,17 @@ func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 	)
 
 	// Перший запуск завантаження
-	go panel.Refresh()
+	panel.Refresh()
 
 	return panel
 }
 
 // Refresh оновлює панель асинхронно
 func (p *AlarmPanelWidget) Refresh() {
+	go p.refreshData()
+}
+
+func (p *AlarmPanelWidget) refreshData() {
 	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
 
 	if p.Data == nil {
@@ -365,6 +375,11 @@ func (p *AlarmPanelWidget) OnThemeChanged(fontSize float32) {
 	fyne.Do(func() {
 		p.mutex.RLock()
 		texts := alarmListTexts(p.CurrentAlarms)
+		alarm := p.caseHistoryAlarm
+		group := p.caseHistoryGroup
+		hasGroup := p.hasCaseHistoryGroup
+		sourceMsgs := append([]models.AlarmMsg(nil), p.caseHistorySourceMsgs...)
+		hasSource := p.hasCaseHistorySource
 		p.mutex.RUnlock()
 
 		if p.TitleText != nil {
@@ -383,6 +398,13 @@ func (p *AlarmPanelWidget) OnThemeChanged(fontSize float32) {
 		}
 		if p.CaseHistoryAccordion != nil {
 			p.CaseHistoryAccordion.Refresh()
+		}
+		if hasSource {
+			p.showCaseHistorySourceMessages(alarm, sourceMsgs)
+			return
+		}
+		if hasGroup {
+			p.showCaseHistoryGroup(alarm, group)
 		}
 	})
 }
@@ -429,7 +451,46 @@ func adjustAlarmRowColor(c color.NRGBA) color.NRGBA {
 }
 
 func (p *AlarmPanelWidget) loadCaseHistoryForAlarm(alarm models.Alarm) {
-	if p == nil || p.CaseHistoryVM == nil || p.Data == nil || !ids.IsCASLObjectID(alarm.ObjectID) {
+	if p == nil || p.CaseHistoryVM == nil || p.Data == nil {
+		p.clearCaseHistory()
+		return
+	}
+
+	if len(alarm.SourceMsgs) > 0 {
+		p.showCaseHistorySourceMessages(alarm, alarm.SourceMsgs)
+		return
+	}
+
+	if historyProvider, ok := p.Data.(contracts.AlarmHistoryProvider); ok && !ids.IsCASLObjectID(alarm.ObjectID) {
+		p.mutex.Lock()
+		p.caseHistoryLoadingID = alarm.ID
+		p.mutex.Unlock()
+
+		fyne.Do(func() {
+			p.showCaseHistoryLoading(alarm)
+		})
+
+		go func(selected models.Alarm) {
+			msgs := historyProvider.GetAlarmSourceMessages(selected)
+
+			fyne.Do(func() {
+				p.mutex.RLock()
+				stillSelected := p.selectedID == selected.ID && p.caseHistoryLoadingID == selected.ID
+				p.mutex.RUnlock()
+				if !stillSelected {
+					return
+				}
+				if len(msgs) == 0 {
+					p.showEmptyCaseHistory(selected)
+					return
+				}
+				p.showCaseHistorySourceMessages(selected, msgs)
+			})
+		}(alarm)
+		return
+	}
+
+	if !ids.IsCASLObjectID(alarm.ObjectID) {
 		p.clearCaseHistory()
 		return
 	}
@@ -468,8 +529,15 @@ func (p *AlarmPanelWidget) showCaseHistoryLoading(alarm models.Alarm) {
 		return
 	}
 
+	p.mutex.Lock()
+	p.caseHistoryAlarm = alarm
+	p.hasCaseHistoryGroup = false
+	p.caseHistorySourceMsgs = nil
+	p.hasCaseHistorySource = false
+	p.mutex.Unlock()
+
 	if p.CaseHistoryTitle != nil {
-		p.CaseHistoryTitle.SetText("CASL: завантаження хронології для №" + alarm.GetObjectNumberDisplay())
+		p.CaseHistoryTitle.SetText(alarmSourceDisplayName(alarm.ObjectID) + ": завантаження хронології для №" + alarm.GetObjectNumberDisplay())
 	}
 	loading := widget.NewProgressBarInfinite()
 	loading.Start()
@@ -486,8 +554,15 @@ func (p *AlarmPanelWidget) showEmptyCaseHistory(alarm models.Alarm) {
 		return
 	}
 
+	p.mutex.Lock()
+	p.caseHistoryAlarm = alarm
+	p.hasCaseHistoryGroup = false
+	p.caseHistorySourceMsgs = nil
+	p.hasCaseHistorySource = false
+	p.mutex.Unlock()
+
 	if p.CaseHistoryTitle != nil {
-		title := "CASL: №" + alarm.GetObjectNumberDisplay()
+		title := alarmSourceDisplayName(alarm.ObjectID) + ": №" + alarm.GetObjectNumberDisplay()
 		if name := strings.TrimSpace(alarm.ObjectName); name != "" {
 			title += " " + name
 		}
@@ -507,6 +582,14 @@ func (p *AlarmPanelWidget) showCaseHistoryGroup(alarm models.Alarm, group viewmo
 	if p == nil || p.CaseHistorySection == nil || p.CaseHistoryAccordion == nil {
 		return
 	}
+
+	p.mutex.Lock()
+	p.caseHistoryAlarm = alarm
+	p.caseHistoryGroup = group
+	p.hasCaseHistoryGroup = true
+	p.caseHistorySourceMsgs = nil
+	p.hasCaseHistorySource = false
+	p.mutex.Unlock()
 
 	if p.CaseHistoryTitle != nil {
 		title := "CASL: №" + alarm.GetObjectNumberDisplay()
@@ -528,6 +611,173 @@ func (p *AlarmPanelWidget) showCaseHistoryGroup(alarm models.Alarm, group viewmo
 	p.CaseHistoryAccordion.Open(0)
 	p.CaseHistoryAccordion.Refresh()
 	p.CaseHistorySection.Show()
+	fyne.Do(func() {
+		if len(p.CaseHistoryAccordion.Items) == 0 {
+			return
+		}
+		scrollCaseHistoryToBottom(p.CaseHistoryAccordion.Items[0].Detail)
+	})
+}
+
+func (p *AlarmPanelWidget) showCaseHistorySourceMessages(alarm models.Alarm, sourceMsgs []models.AlarmMsg) {
+	if p == nil || p.CaseHistorySection == nil || p.CaseHistoryAccordion == nil {
+		return
+	}
+
+	msgs := append([]models.AlarmMsg(nil), sourceMsgs...)
+	if len(msgs) == 0 {
+		p.clearCaseHistory()
+		return
+	}
+
+	p.mutex.Lock()
+	p.caseHistoryAlarm = alarm
+	p.caseHistoryGroup = viewmodels.WorkAreaCaseHistoryGroup{}
+	p.hasCaseHistoryGroup = false
+	p.caseHistorySourceMsgs = append([]models.AlarmMsg(nil), msgs...)
+	p.hasCaseHistorySource = true
+	p.mutex.Unlock()
+
+	sourceTitle := alarmSourceDisplayName(alarm.ObjectID)
+	if p.CaseHistoryTitle != nil {
+		title := sourceTitle + ": №" + alarm.GetObjectNumberDisplay()
+		if name := strings.TrimSpace(alarm.ObjectName); name != "" {
+			title += " " + name
+		}
+		p.CaseHistoryTitle.SetText(title)
+	}
+
+	itemTitle := fmt.Sprintf("Хронологія подій (%d)", len(msgs))
+	p.CaseHistoryAccordion.Items = []*widget.AccordionItem{
+		widget.NewAccordionItem(itemTitle, buildAlarmSourceMessagesList(msgs)),
+	}
+	p.CaseHistoryAccordion.Open(0)
+	p.CaseHistoryAccordion.Refresh()
+	p.CaseHistorySection.Show()
+}
+
+func alarmSourceDisplayName(objectID int) string {
+	switch {
+	case ids.IsCASLObjectID(objectID):
+		return "CASL"
+	case ids.IsPhoenixObjectID(objectID):
+		return "Phoenix"
+	default:
+		return "БД/МІСТ"
+	}
+}
+
+func buildAlarmSourceMessagesList(messages []models.AlarmMsg) fyne.CanvasObject {
+	if len(messages) == 0 {
+		label := widget.NewLabel("Події для цього кейсу відсутні.")
+		label.Wrapping = fyne.TextWrapWord
+		return container.NewPadded(label)
+	}
+
+	msgs := append([]models.AlarmMsg(nil), messages...)
+	rowsText := make([]string, len(msgs))
+	for i, msg := range msgs {
+		rowsText[i] = formatAlarmSourceMessageText(msg)
+	}
+
+	list := widget.NewList(
+		func() int {
+			return len(msgs)
+		},
+		func() fyne.CanvasObject {
+			bg := canvas.NewRectangle(color.Transparent)
+			txt := canvas.NewText("", color.White)
+			txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
+			return container.NewStack(bg, container.NewPadded(txt))
+		},
+		func(id widget.ListItemID, obj fyne.CanvasObject) {
+			if id < 0 || int(id) >= len(msgs) {
+				return
+			}
+
+			stack := obj.(*fyne.Container)
+			bg := stack.Objects[0].(*canvas.Rectangle)
+			txtContainer := stack.Objects[1].(*fyne.Container)
+			txt := txtContainer.Objects[0].(*canvas.Text)
+
+			msg := msgs[id]
+			textColor, rowColor := eventRowColors(alarmSourceMessageSC1(msg))
+
+			bg.FillColor = rowColor
+			bg.Refresh()
+
+			txt.Color = textColor
+			txt.TextStyle = fyne.TextStyle{Bold: msg.IsAlarm}
+			txt.Text = rowsText[id]
+			txt.Refresh()
+		},
+	)
+
+	listHeight := float32(len(msgs)) * 40
+	if len(msgs) > caseHistoryVisibleEventRows {
+		listHeight = 220
+	}
+	if listHeight < 80 {
+		listHeight = 80
+	}
+
+	widthGuide := canvas.NewRectangle(color.Transparent)
+	widthGuide.SetMinSize(fyne.NewSize(journalListMinWidth, 1))
+	heightGuide := canvas.NewRectangle(color.Transparent)
+	heightGuide.SetMinSize(fyne.NewSize(1, listHeight))
+
+	hScroll := container.NewHScroll(container.NewStack(list, widthGuide, heightGuide))
+	ensureJournalListMinWidth(widthGuide, rowsText, fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText), fyne.TextStyle{Bold: true})
+	return hScroll
+}
+
+func formatAlarmSourceMessageText(msg models.AlarmMsg) string {
+	text := "—"
+	if !msg.Time.IsZero() {
+		text = msg.Time.Local().Format("02.01.2006 15:04:05")
+	}
+
+	state := "Подія"
+	if msg.IsAlarm {
+		state = "Тривога"
+	}
+	text += " | " + state
+
+	if msg.Number > 0 {
+		text += " | Зона " + strconv.Itoa(msg.Number)
+	}
+
+	details := strings.TrimSpace(msg.Details)
+	code := strings.TrimSpace(msg.Code)
+	contactID := strings.TrimSpace(msg.ContactID)
+	switch {
+	case details != "":
+		text += " — " + details
+	case code != "":
+		text += " — " + code
+	case contactID != "":
+		text += " — " + contactID
+	}
+
+	if code != "" && details != "" {
+		text += " [code=" + code + "]"
+	}
+	if contactID != "" && details != "" {
+		text += " [cid=" + contactID + "]"
+	}
+	return text
+}
+
+func alarmSourceMessageSC1(msg models.AlarmMsg) int {
+	sc1 := msg.SC1
+	if sc1 == 0 {
+		if msg.IsAlarm {
+			sc1 = 1
+		} else {
+			sc1 = 6
+		}
+	}
+	return sc1
 }
 
 func (p *AlarmPanelWidget) clearCaseHistory() {
@@ -535,8 +785,17 @@ func (p *AlarmPanelWidget) clearCaseHistory() {
 		return
 	}
 
+	p.mutex.Lock()
+	p.caseHistoryLoadingID = 0
+	p.caseHistoryAlarm = models.Alarm{}
+	p.caseHistoryGroup = viewmodels.WorkAreaCaseHistoryGroup{}
+	p.hasCaseHistoryGroup = false
+	p.caseHistorySourceMsgs = nil
+	p.hasCaseHistorySource = false
+	p.mutex.Unlock()
+
 	if p.CaseHistoryTitle != nil {
-		p.CaseHistoryTitle.SetText("Хронологія вибраної тривоги CASL")
+		p.CaseHistoryTitle.SetText("Хронологія вибраної тривоги")
 	}
 	p.CaseHistoryAccordion.Items = nil
 	p.CaseHistoryAccordion.Refresh()

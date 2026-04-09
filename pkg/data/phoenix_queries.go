@@ -237,6 +237,83 @@ SELECT ISNULL(MAX(Event_id), 0) AS last_event_id
 FROM vwArchives WITH (NOLOCK)
 `
 
+const phoenixActiveAlarmsQuery = `
+SELECT
+	T.Event_id AS event_id,
+	T.Panel_id AS panel_id,
+	T.Group_ AS group_no,
+	T.Zone AS zone_no,
+	T.TimeEvent AS time_event,
+	CASE
+		WHEN T.Code IN ('LIN','LOFF') THEN NULL
+		WHEN COALESCE(G.Message, '') <> '' THEN G.Message
+		WHEN COALESCE(GR.DESCRIPTION, '') <> '' THEN GR.DESCRIPTION
+		ELSE NULL
+	END AS group_message,
+	T.Code AS event_code,
+	CASE
+		WHEN C.Code IN ('Z34','Z35') THEN C.Message
+		WHEN TC.idTCode IN (1,2,14,105,126) AND COALESCE(Z.Message, '') <> '' THEN Z.Message
+		WHEN TC.idTCode IN (26,27,131) THEN C.Message + COALESCE(SPACE(1) + Z.Message, '')
+		WHEN COALESCE(T.Zone,0) = 0 THEN C.Message + COALESCE(SPACE(1) + T.MeterCount, '')
+		WHEN TC.idTCode IN (20,36,41,42) THEN C.Message + COALESCE(SPACE(1) + T.MeterCount, '')
+		WHEN (C.AccessCode = '1') AND COALESCE(U.UserName,'') <> '' THEN U.UserName
+		WHEN (C.AccessCode = '0') AND COALESCE(ZGR.Message, '') <> '' THEN ZGR.Message
+		WHEN TC.idTCode IN (151,152) THEN C.Message + COALESCE(SPACE(1) + (
+			SELECT TOP (1) LO.OutputName
+			FROM Mphone M WITH (NOLOCK)
+			INNER JOIN LunOutput LO WITH (NOLOCK) ON LO.Mphone_id = M.Mphone_id
+			WHERE M.Panel_id = T.Panel_id AND LO.OutputNum = T.Zone
+		), '')
+		ELSE C.Message + COALESCE(SPACE(1) + T.MeterCount, '')
+	END AS code_message,
+	TC.idTCode AS type_code_id,
+	TC.Message AS type_code_message,
+	G.Message AS group_name,
+	Z.Message AS zone_name,
+	T.Line AS line,
+	T.Event_Parent_id AS event_parent_id,
+	T.StateEvent AS state_event,
+	T.Priority AS priority,
+	Co.CompanyName AS company_name,
+	Co.Address AS company_address,
+	CASE
+		WHEN TC.idTCode IN (1,2) AND COALESCE(Z.IsAlarmButton,'0') <> '0' THEN Z.IsAlarmButton
+		WHEN COALESCE(ZGR.IsAlarmButton,'0') <> '0' THEN ZGR.IsAlarmButton
+		ELSE NULL
+	END AS is_alarm_button,
+	CASE
+		WHEN T.BitMask & 2 = 2 THEN 5
+		WHEN COALESCE(T.StateEvent, 0) IN (2,3) THEN 1
+		WHEN COALESCE(P.TestPanel, '0') = '1' THEN 2
+		WHEN COALESCE(P.Disabled, '0') = '1' THEN 3
+		ELSE 0
+	END AS object_status,
+	CASE
+		WHEN T.BitMask & 4 = 4 THEN 1
+		ELSE 0
+	END AS unknown_object,
+	G.disabled AS group_disabled,
+	P.Disabled AS panel_disabled,
+	P.TestPanel AS test_panel
+FROM Temp T WITH (NOLOCK)
+LEFT JOIN Groups G WITH (NOLOCK) ON G.Panel_id = T.Panel_id AND G.Group_ = T.Group_
+LEFT JOIN Code C WITH (NOLOCK) ON C.Code = T.Code AND C.CodeGroup = T.CodeGroup
+LEFT JOIN TypeCode TC WITH (NOLOCK) ON TC.idTCode = C.idTCode
+LEFT JOIN Users U WITH (NOLOCK) ON U.Panel_id = T.Panel_id AND U.Group_ = T.Group_ AND U.UserCode = T.Zone
+LEFT JOIN Zones Z WITH (NOLOCK) ON Z.Panel_id = T.Panel_id AND Z.Group_ = T.Group_ AND Z.Zone = T.Zone
+LEFT JOIN GroupResponse GR WITH (NOLOCK) ON T.Panel_id = CAST(GR.Group_id AS VARCHAR(15))
+LEFT JOIN Company Co WITH (NOLOCK) ON Co.ID = G.CompanyID
+LEFT JOIN dbo.Zones_GroupResponse ZGR WITH (NOLOCK) ON
+	GR.Group_id = ZGR.Group_id
+	AND (T.Zone = ZGR.Zone AND T.Panel_id = CAST(ZGR.Group_id AS VARCHAR(15)))
+INNER JOIN vwRealPanel P WITH (NOLOCK) ON P.Panel_id = T.Panel_id
+WHERE
+	1 = 1
+	AND (COALESCE(P.Pult_Id, 0) IN (0,1,2) OR P.Pult_Id IS NULL)
+ORDER BY TC.Priority, T.Event_Parent_id, T.Event_id
+`
+
 const phoenixInitialEventsQuery = `
 SELECT TOP (500)
 	A.Event_id AS event_id,

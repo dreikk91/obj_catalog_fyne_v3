@@ -10,6 +10,9 @@ import (
 func classifyCASLEventType(code string) models.EventType {
 	value := strings.ToUpper(strings.TrimSpace(code))
 	valueLower := strings.ToLower(strings.TrimSpace(code))
+	if eventType, ok := classifyCASLKnownNonAlarmValue(value, valueLower); ok {
+		return eventType
+	}
 
 	switch {
 	case strings.Contains(value, "GRD_OBJ_NOTIF"):
@@ -28,6 +31,8 @@ func classifyCASLEventType(code string) models.EventType {
 		return models.EventDeviceBlocked
 	case strings.Contains(value, "DEVICE_UNBLOCK"), strings.Contains(value, "ENABL_PPK_OK"), strings.Contains(value, "DISABL_PPK_OK"):
 		return models.EventDeviceUnblocked
+	case isCASLAlarmRestoreValue(value):
+		return models.EventRestore
 	case strings.Contains(value, "GRD_OBJ_"):
 		return models.EventOperatorAction
 	case strings.Contains(value, "PPK_FW_VERSION"),
@@ -51,9 +56,23 @@ func classifyCASLEventType(code string) models.EventType {
 		return models.EventGas
 	case strings.Contains(valueLower, "газ"):
 		return models.EventGas
-	case strings.Contains(value, "BURGLARY"), strings.Contains(value, "INTRUSION"), strings.Contains(value, "BRUTFORS"), strings.Contains(value, "ZONE_ALM"), strings.Contains(value, "ALM_INNER_ZONE"):
+	case strings.Contains(value, "BURGLARY"),
+		strings.Contains(value, "INTRUSION"),
+		strings.Contains(value, "BRUTFORS"),
+		strings.Contains(value, "ZONE_ALM"),
+		strings.Contains(value, "ALM_INNER_ZONE"),
+		strings.Contains(value, "ALM_IO"),
+		value == "E130",
+		value == "E131",
+		value == "E132",
+		value == "E133",
+		value == "E134",
+		value == "E139":
 		return models.EventBurglary
-	case strings.Contains(valueLower, "проник"), strings.Contains(valueLower, "злом"), strings.Contains(valueLower, "охорон") && strings.Contains(valueLower, "тривог"):
+	case strings.Contains(valueLower, "проник"),
+		strings.Contains(valueLower, "злом"),
+		strings.Contains(valueLower, "тривога io"),
+		strings.Contains(valueLower, "охорон") && strings.Contains(valueLower, "тривог"):
 		return models.EventBurglary
 	case strings.Contains(value, "SABOTAGE"), strings.Contains(value, "TAMPER"), strings.Contains(value, "SENS_TAMP"), strings.Contains(value, "EXT_MOD_TAMP"), strings.Contains(value, "HUB_TAMP"):
 		return models.EventTamper
@@ -145,6 +164,211 @@ func classifyCASLEventType(code string) models.EventType {
 	default:
 		return models.EventFault
 	}
+}
+
+var caslExplicitNonAlarmMessageKeys = map[string]struct{}{
+	"ALM_BTN_RLZ":                             {},
+	"ALARM_ELIMINATED":                        {},
+	"BURGLARY_RESTORAL":                       {},
+	"CO_OKEY":                                 {},
+	"EMERGENCY_A_REST":                        {},
+	"EMERGENCY_RESTORAL":                      {},
+	"EXT_MOD_TAMP_N":                          {},
+	"FIRE_ALARM_DEACTIVATED_MANUAL":           {},
+	"FIRE_ALARM_FINISH":                       {},
+	"FIRE_ALARM_RESTORE":                      {},
+	"FIRE_RESTORAL":                           {},
+	"FIRE_TEST_END":                           {},
+	"GAS_A_RESTORE":                           {},
+	"GAS_ALARM_FINISH":                        {},
+	"GAS_RESTORAL":                            {},
+	"GAS_T_RESTORE":                           {},
+	"HEAT_ALARM_RESTORE":                      {},
+	"HEAT_RESTORAL":                           {},
+	"HEAT_TROUBLE_RESTORE":                    {},
+	"HUB_TAMP_N":                              {},
+	"INTERFERENCE_DETECT_OK":                  {},
+	"INTERFERENCE_DETECT_OK_NEW":              {},
+	"MALFUNCTION_RESOLVED_DEVICE_IN_ROOM":     {},
+	"MALFUNCTION_RESOLVED_DEVICE_IN_ROOM_NEW": {},
+	"MEDICAL_ALARM_FINISH":                    {},
+	"MEDICAL_ALARM_FINISH_NEW":                {},
+	"MED_ALARM_RESTORE":                       {},
+	"MED_RESTORAL":                            {},
+	"NORM_24":                                 {},
+	"NORM_IO":                                 {},
+	"OO_LINE_NORM":                            {},
+	"PANIC_ALARM_RESTORE":                     {},
+	"PANIC_RESTORAL":                          {},
+	"POWER_UNIT_OK":                           {},
+	"SMOKE_CHAMBER_OK":                        {},
+	"SENS_TAMP_N":                             {},
+	"SPRIN_ALARM_RES":                         {},
+	"SPRIN_RESTORE":                           {},
+	"TEMP_IS_OK":                              {},
+	"TEMP_IS_OK_AFTER_LOW":                    {},
+	"TMP_OK":                                  {},
+	"UNTYPED_ALARM_RESTORAL":                  {},
+	"UNTYPED_ZONE_RESTORAL":                   {},
+	"WATER_ALARM_RES":                         {},
+	"WATER_LEAK_FINISH":                       {},
+	"WATER_RES":                               {},
+	"ZONE_NORM":                               {},
+}
+
+func isCASLNotAlarmMessageKey(value string) bool {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	if value == "" {
+		return false
+	}
+	if _, ok := caslExplicitNonAlarmMessageKeys[value]; ok {
+		return true
+	}
+	switch {
+	case strings.Contains(value, "_RESTORE"),
+		strings.Contains(value, "_RESTORAL"),
+		strings.Contains(value, "_RES"),
+		strings.Contains(value, "_FINISH"),
+		strings.Contains(value, "_A_REST"),
+		strings.Contains(value, "_T_REST"),
+		strings.Contains(value, "_OK"),
+		strings.HasPrefix(value, "OK_"),
+		strings.Contains(value, "TROUBLE"),
+		strings.Contains(value, "BYPASS"),
+		strings.Contains(value, "UNBYPASS"),
+		strings.Contains(value, "STATUS_REPORT"),
+		strings.Contains(value, "SERVICE_"),
+		strings.Contains(value, "UPD_"),
+		strings.Contains(value, "RESTART"),
+		strings.Contains(value, "TEST"):
+		return true
+	default:
+		return false
+	}
+}
+
+func classifyCASLKnownNonAlarmValue(value string, valueLower string) (models.EventType, bool) {
+	if value == "" {
+		return "", false
+	}
+	if strings.HasPrefix(value, "GRD_OBJ_") {
+		return "", false
+	}
+	if strings.Contains(value, "UPD_START") || strings.Contains(value, "UPD_END") || strings.Contains(value, "FIRMWARE") ||
+		strings.Contains(valueLower, "оновлен") || (strings.Contains(valueLower, "застосуван") && strings.Contains(valueLower, "налаштуван")) {
+		return models.SystemEvent, true
+	}
+	if isCASLPeriodicTestValue(value, valueLower) {
+		return models.EventTest, true
+	}
+	if isCASLAlarmRestoreValue(value) {
+		return models.EventRestore, true
+	}
+	if !isCASLNotAlarmMessageKey(value) {
+		return "", false
+	}
+
+	switch {
+	case strings.Contains(value, "GROUP_ON"),
+		strings.Contains(value, "ON_WITH_PPL"),
+		strings.Contains(value, "_ARMED"),
+		value == "R402",
+		value == "ARM":
+		return models.EventArm, true
+	case strings.Contains(value, "GROUP_OFF"),
+		strings.Contains(value, "OFF_WITH_PPL"),
+		strings.Contains(value, "_DISARM"),
+		value == "R401",
+		value == "DISARM":
+		return models.EventDisarm, true
+	case strings.Contains(value, "POWER_OK"), strings.Contains(value, "OK_220"), strings.Contains(value, "EXTERNAL_POWER_OK"):
+		return models.EventPowerOK, true
+	case strings.Contains(value, "ONLINE"), strings.Contains(value, "PPK_CONN_OK"):
+		return models.EventOnline, true
+	case strings.Contains(value, "NO_CONN"), strings.Contains(value, "OFFLINE"), strings.Contains(value, "LOST"):
+		return models.EventOffline, true
+	case strings.Contains(value, "BATT"), strings.Contains(value, "BATTERY") && strings.Contains(value, "LOW"):
+		return models.EventBatteryLow, true
+	case strings.Contains(value, "TEST"):
+		return models.EventTest, true
+	case strings.Contains(value, "RESTORE"),
+		strings.Contains(value, "RESTORAL"),
+		strings.Contains(value, "_RES"),
+		strings.Contains(value, "_FINISH"),
+		strings.Contains(value, "_A_REST"),
+		strings.Contains(value, "_T_REST"),
+		strings.HasPrefix(value, "R"),
+		strings.HasPrefix(value, "OK_"),
+		strings.HasSuffix(value, "_OK"):
+		return models.EventRestore, true
+	case strings.Contains(value, "ZONE_NORM"),
+		strings.Contains(value, "NORM_"),
+		strings.Contains(valueLower, "норма"),
+		strings.Contains(valueLower, "віднов"),
+		strings.Contains(valueLower, "восстанов"):
+		return models.EventRestore, true
+	case strings.Contains(value, "PPK_FW_VERSION"),
+		strings.Contains(value, "STATUS_REPORT"),
+		strings.Contains(value, "SERVICE"),
+		strings.Contains(value, "RESTART"):
+		return models.EventService, true
+	case strings.Contains(value, "NO_220"), strings.Contains(value, "MAIN_AC_LOSS"):
+		return models.EventPowerFail, true
+	case strings.Contains(value, "TROUBLE"), strings.Contains(value, "BAD"), strings.Contains(value, "MISS"), strings.Contains(value, "FAIL"):
+		return models.EventFault, true
+	default:
+		return models.EventService, true
+	}
+}
+
+func isCASLAlarmRestoreValue(value string) bool {
+	if value == "" {
+		return false
+	}
+
+	restoreMarkers := []string{
+		"RESTORE",
+		"RESTORAL",
+		"_FINISH",
+		"_A_REST",
+		"_T_REST",
+		"ALARM_RES",
+		"ALM_BTN_RLZ",
+		"ALARM_ELIMINATED",
+	}
+	alarmishTokens := []string{
+		"ALARM",
+		"PANIC",
+		"EMERGENCY",
+		"SPRIN",
+		"BURGLARY",
+		"FIRE",
+		"GAS",
+		"HEAT",
+		"MED",
+		"MEDICAL",
+		"WATER",
+		"LEAK",
+		"CO_",
+		"BTN",
+	}
+
+	if strings.Contains(value, "CO_OKEY") || strings.Contains(value, "TAMP_N") {
+		return true
+	}
+
+	for _, marker := range restoreMarkers {
+		if !strings.Contains(value, marker) {
+			continue
+		}
+		for _, token := range alarmishTokens {
+			if strings.Contains(value, token) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func isCASLPeriodicTestValue(value string, valueLower string) bool {
@@ -1115,7 +1339,7 @@ func classifyCASLEventTypeWithContext(code string, contactID string, sourceType 
 	if normalizedType != "" {
 		if mapped := mapCASLTapeEventType(normalizedType); mapped != models.EventFault || strings.EqualFold(normalizedType, "fault") {
 			fallbackType = mapped
-			if !isCASLActionSource(normalizedType) {
+			if !isCASLActionSource(normalizedType) && !strings.EqualFold(normalizedType, "fault") {
 				return mapped
 			}
 		}
@@ -1140,6 +1364,63 @@ func classifyCASLEventTypeWithContext(code string, contactID string, sourceType 
 	}
 
 	return fallbackType
+}
+
+func classifyCASLActiveAlarmEventType(base models.EventType, isAlarm bool, hasExplicitAlarmFlag bool) models.EventType {
+	if !hasExplicitAlarmFlag {
+		return base
+	}
+
+	switch base {
+	case models.EventRestore,
+		models.EventPowerOK,
+		models.EventOnline,
+		models.EventArm,
+		models.EventDisarm,
+		models.EventTest,
+		models.SystemEvent,
+		models.EventNotification,
+		models.EventOperatorAction,
+		models.EventManagerAssigned,
+		models.EventManagerArrived,
+		models.EventManagerCanceled,
+		models.EventAlarmFinished,
+		models.EventDeviceBlocked,
+		models.EventDeviceUnblocked,
+		models.EventService:
+		return base
+	}
+
+	if isAlarm {
+		switch base {
+		case models.EventFire,
+			models.EventBurglary,
+			models.EventPanic,
+			models.EventMedical,
+			models.EventGas,
+			models.EventTamper,
+			models.EventPowerFail,
+			models.EventBatteryLow,
+			models.EventOffline,
+			models.EventAlarmNotification:
+			return base
+		default:
+			return models.EventAlarmNotification
+		}
+	}
+
+	switch base {
+	case models.EventFire,
+		models.EventBurglary,
+		models.EventPanic,
+		models.EventMedical,
+		models.EventGas,
+		models.EventTamper,
+		models.EventAlarmNotification:
+		return models.EventFault
+	default:
+		return base
+	}
 }
 
 func mapEventTypeToAlarmType(eventType models.EventType) (models.AlarmType, bool) {
@@ -1168,6 +1449,39 @@ func mapEventTypeToAlarmType(eventType models.EventType) (models.AlarmType, bool
 		return models.AlarmSystemEvent, true
 	case models.EventFault:
 		return models.AlarmFault, true
+	default:
+		return "", false
+	}
+}
+
+func mapCASLAlarmType(raw string) (models.AlarmType, bool) {
+	switch strings.TrimSpace(raw) {
+	case string(models.AlarmOperator):
+		return models.AlarmOperator, true
+	case string(models.AlarmDevice):
+		return models.AlarmDevice, true
+	case string(models.AlarmMobile):
+		return models.AlarmMobile, true
+	case string(models.AlarmFire):
+		return models.AlarmFire, true
+	case string(models.AlarmBurglary):
+		return models.AlarmBurglary, true
+	case string(models.AlarmPanic):
+		return models.AlarmPanic, true
+	case string(models.AlarmMedical):
+		return models.AlarmMedical, true
+	case string(models.AlarmGas):
+		return models.AlarmGas, true
+	case string(models.AlarmTamper):
+		return models.AlarmTamper, true
+	case string(models.AlarmFault):
+		return models.AlarmFault, true
+	case string(models.AlarmPowerFail):
+		return models.AlarmPowerFail, true
+	case string(models.AlarmBatteryLow):
+		return models.AlarmBatteryLow, true
+	case string(models.AlarmOffline):
+		return models.AlarmOffline, true
 	default:
 		return "", false
 	}

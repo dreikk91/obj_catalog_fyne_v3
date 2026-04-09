@@ -270,27 +270,40 @@ func extractCASLDictionaryLanguageMap(dict map[string]any, lang string) map[stri
 }
 
 func (p *CASLCloudProvider) loadTranslatorMap(ctx context.Context, deviceType string) map[string]string {
+	texts, _ := p.loadTranslatorCatalog(ctx, deviceType)
+	return texts
+}
+
+func (p *CASLCloudProvider) loadTranslatorAlarmFlags(ctx context.Context, deviceType string) map[string]bool {
+	_, flags := p.loadTranslatorCatalog(ctx, deviceType)
+	return flags
+}
+
+func (p *CASLCloudProvider) loadTranslatorCatalog(ctx context.Context, deviceType string) (map[string]string, map[string]bool) {
 	key := strings.TrimSpace(deviceType)
 	if key == "" {
-		return nil
+		return nil, nil
 	}
 
 	p.mu.RLock()
 	if !p.translatorDisabledUntil.IsZero() && time.Now().Before(p.translatorDisabledUntil) {
 		p.mu.RUnlock()
-		return nil
+		return nil, nil
 	}
-	if cached, ok := p.cachedTranslators[key]; ok && time.Since(p.cachedTransAt[key]) <= caslTranslatorTTL {
-		if len(cached) == 0 {
-			p.mu.RUnlock()
-			return nil
-		}
-		out := make(map[string]string, len(cached))
-		for k, v := range cached {
-			out[k] = v
-		}
+	cachedAt, hasCachedAt := p.cachedTransAt[key]
+	cachedTexts, hasCachedTexts := p.cachedTranslators[key]
+	cachedFlags, hasCachedFlags := p.cachedTranslatorAlarms[key]
+	if hasCachedAt && time.Since(cachedAt) <= caslTranslatorTTL && (hasCachedTexts || hasCachedFlags) {
+		out := cloneStringMap(cachedTexts)
+		flags := cloneBoolMap(cachedFlags)
 		p.mu.RUnlock()
-		return out
+		if len(out) == 0 {
+			out = nil
+		}
+		if len(flags) == 0 {
+			flags = nil
+		}
+		return out, flags
 	}
 	p.mu.RUnlock()
 
@@ -300,24 +313,22 @@ func (p *CASLCloudProvider) loadTranslatorMap(ctx context.Context, deviceType st
 
 			rawAll, retryErr := p.GetMessageTranslatorByDeviceType(ctx, "")
 			if retryErr == nil {
-				flat := extractCASLTranslatorByType(rawAll, key)
-				if len(flat) > 0 {
+				texts, flags := extractCASLTranslatorCatalogByType(rawAll, key)
+				if len(texts) > 0 || len(flags) > 0 {
 					p.mu.Lock()
-					p.cachedTranslators[key] = flat
+					p.cachedTranslators[key] = cloneStringMap(texts)
+					p.cachedTranslatorAlarms[key] = cloneBoolMap(flags)
 					p.cachedTransAt[key] = time.Now()
 					p.mu.Unlock()
 
-					out := make(map[string]string, len(flat))
-					for k, v := range flat {
-						out[k] = v
-					}
-					return out
+					return cloneStringMap(texts), cloneBoolMap(flags)
 				}
 			}
 		}
 
 		p.mu.Lock()
 		p.cachedTranslators[key] = map[string]string{}
+		p.cachedTranslatorAlarms[key] = map[string]bool{}
 		p.cachedTransAt[key] = time.Now()
 		shouldLog := true
 		if isCASLWrongFormatErr(err) {
@@ -329,28 +340,26 @@ func (p *CASLCloudProvider) loadTranslatorMap(ctx context.Context, deviceType st
 		if shouldLog {
 			log.Debug().Err(err).Str("deviceType", key).Msg("CASL: не вдалося отримати translator для типу пристрою")
 		}
-		return nil
+		return nil, nil
 	}
 
-	flat := flattenCASLTranslatorMap(rawTranslator)
-	if len(flat) == 0 {
+	texts, flags := flattenCASLTranslatorCatalog(rawTranslator)
+	if len(texts) == 0 && len(flags) == 0 {
 		p.mu.Lock()
 		p.cachedTranslators[key] = map[string]string{}
+		p.cachedTranslatorAlarms[key] = map[string]bool{}
 		p.cachedTransAt[key] = time.Now()
 		p.mu.Unlock()
-		return nil
+		return nil, nil
 	}
 
 	p.mu.Lock()
-	p.cachedTranslators[key] = flat
+	p.cachedTranslators[key] = cloneStringMap(texts)
+	p.cachedTranslatorAlarms[key] = cloneBoolMap(flags)
 	p.cachedTransAt[key] = time.Now()
 	p.mu.Unlock()
 
-	out := make(map[string]string, len(flat))
-	for k, v := range flat {
-		out[k] = v
-	}
-	return out
+	return cloneStringMap(texts), cloneBoolMap(flags)
 }
 
 func flattenStringMap(value any) map[string]string {
@@ -392,46 +401,73 @@ func flattenStringMap(value any) map[string]string {
 }
 
 func extractCASLTranslatorByType(raw any, deviceType string) map[string]string {
-	flat := flattenCASLTranslatorMap(raw)
-	if len(flat) == 0 {
-		return nil
+	texts, _ := extractCASLTranslatorCatalogByType(raw, deviceType)
+	return texts
+}
+
+func extractCASLTranslatorAlarmFlagsByType(raw any, deviceType string) map[string]bool {
+	_, flags := extractCASLTranslatorCatalogByType(raw, deviceType)
+	return flags
+}
+
+func extractCASLTranslatorCatalogByType(raw any, deviceType string) (map[string]string, map[string]bool) {
+	texts, flags := flattenCASLTranslatorCatalog(raw)
+	if len(texts) == 0 && len(flags) == 0 {
+		return nil, nil
 	}
 
 	root, ok := raw.(map[string]any)
 	if !ok {
-		return flat
+		return texts, flags
 	}
 
 	key := strings.TrimSpace(deviceType)
 	if key == "" {
-		return flat
+		return texts, flags
 	}
 
 	candidates := []string{key, strings.ToUpper(key), strings.ToLower(key)}
 	for _, candidate := range candidates {
 		if nested, exists := root[candidate]; exists {
-			if mapped := flattenCASLTranslatorMap(nested); len(mapped) > 0 {
-				return mapped
+			nestedTexts, nestedFlags := flattenCASLTranslatorCatalog(nested)
+			if len(nestedTexts) > 0 || len(nestedFlags) > 0 {
+				return nestedTexts, nestedFlags
 			}
 		}
 	}
 
-	return flat
+	return texts, flags
 }
 
 func flattenCASLTranslatorMap(value any) map[string]string {
-	result := make(map[string]string)
+	texts, _ := flattenCASLTranslatorCatalog(value)
+	return texts
+}
 
-	setIfEmpty := func(key string, text string) {
+func flattenCASLTranslatorCatalog(value any) (map[string]string, map[string]bool) {
+	texts := make(map[string]string)
+	flags := make(map[string]bool)
+
+	setTextIfEmpty := func(key string, text string) {
 		key = strings.TrimSpace(key)
 		text = strings.TrimSpace(text)
 		if key == "" || text == "" {
 			return
 		}
-		if _, exists := result[key]; exists {
+		if _, exists := texts[key]; exists {
 			return
 		}
-		result[key] = text
+		texts[key] = text
+	}
+	setFlagIfEmpty := func(key string, isAlarm bool) {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return
+		}
+		if _, exists := flags[key]; exists {
+			return
+		}
+		flags[key] = isAlarm
 	}
 
 	var walk func(v any)
@@ -441,7 +477,12 @@ func flattenCASLTranslatorMap(value any) map[string]string {
 			if codes := extractCASLTranslatorCodes(typed); len(codes) > 0 {
 				if text := extractCASLTranslatorText(typed); text != "" {
 					for _, code := range codes {
-						setIfEmpty(code, text)
+						setTextIfEmpty(code, text)
+					}
+				}
+				if isAlarm, ok := extractCASLTranslatorIsAlarm(typed); ok {
+					for _, code := range codes {
+						setFlagIfEmpty(code, isAlarm)
 					}
 				}
 			}
@@ -453,7 +494,10 @@ func flattenCASLTranslatorMap(value any) map[string]string {
 				}
 				if looksLikeCASLTranslatorCode(candidate) {
 					if text := extractCASLTranslatorText(nested); text != "" {
-						setIfEmpty(candidate, text)
+						setTextIfEmpty(candidate, text)
+					}
+					if isAlarm, ok := extractCASLTranslatorIsAlarm(nested); ok {
+						setFlagIfEmpty(candidate, isAlarm)
 					}
 				}
 				walk(nested)
@@ -466,7 +510,7 @@ func flattenCASLTranslatorMap(value any) map[string]string {
 	}
 
 	walk(value)
-	return result
+	return texts, flags
 }
 
 func extractCASLTranslatorCode(entry map[string]any) string {
@@ -544,6 +588,30 @@ func extractCASLTranslatorTypeEvent(entry map[string]any) string {
 	return ""
 }
 
+func extractCASLTranslatorIsAlarm(value any) (bool, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, key := range []string{"isAlarm", "is_alarm"} {
+			raw, ok := typed[key]
+			if !ok {
+				continue
+			}
+			text := strings.TrimSpace(strings.ToLower(asString(raw)))
+			switch text {
+			case "1", "true", "yes":
+				return true, true
+			case "0", "false", "no":
+				return false, true
+			}
+			if parseCASLAnyInt(raw) > 0 {
+				return true, true
+			}
+			return false, true
+		}
+	}
+	return false, false
+}
+
 func isCASLTranslatorNumericCode(value string) bool {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -555,6 +623,28 @@ func isCASLTranslatorNumericCode(value string) bool {
 		}
 	}
 	return true
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(source))
+	for key, value := range source {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneBoolMap(source map[string]bool) map[string]bool {
+	if len(source) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(source))
+	for key, value := range source {
+		out[key] = value
+	}
+	return out
 }
 
 func extractCASLTranslatorText(value any) string {

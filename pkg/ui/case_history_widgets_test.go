@@ -6,10 +6,12 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 
-	apptheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/models"
+	apptheme "obj_catalog_fyne_v3/pkg/theme"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
 func TestBuildCaseHistoryEventLine_LightThemePreservesContrastBackground(t *testing.T) {
@@ -62,5 +64,58 @@ func TestBuildCaseHistoryEventLine_LightThemePreservesContrastBackground(t *test
 	}
 	if got, want := color.NRGBAModel.Convert(txt.Color).(color.NRGBA), (color.NRGBA{R: 255, G: 255, B: 255, A: 255}); got != want {
 		t.Fatalf("unexpected text color: got %+v want %+v", got, want)
+	}
+}
+
+func TestBuildCaseHistoryEventList_LimitsHeightAndUsesVerticalScrollForLongHistory(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	app.Settings().SetTheme(apptheme.NewLightTheme(12))
+
+	events := make([]models.Event, 0, 7)
+	for i := 0; i < 7; i++ {
+		events = append(events, models.Event{
+			ID:      i + 1,
+			Type:    models.EventOperatorAction,
+			Details: "Подія " + string(rune('A'+i)),
+		})
+	}
+
+	obj := buildCaseHistoryEventList(viewmodels.WorkAreaCaseHistoryGroup{
+		Root:   events[0],
+		Events: events,
+		Title:  "CASL кейс",
+	})
+
+	scroll, ok := obj.(*container.Scroll)
+	if !ok {
+		t.Fatalf("expected vertical scroll for long case history, got %T", obj)
+	}
+	if scroll.MinSize().Height <= 0 {
+		t.Fatalf("expected positive scroll min height, got %f", scroll.MinSize().Height)
+	}
+}
+
+func TestBuildCaseHistoryEventList_ShortHistoryDoesNotWrapIntoScroll(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	app.Settings().SetTheme(apptheme.NewLightTheme(12))
+
+	events := []models.Event{
+		{ID: 1, Type: models.EventBurglary, Details: "Початок"},
+		{ID: 2, Type: models.EventOperatorAction, Details: "Оператор"},
+		{ID: 3, Type: models.EventRestore, Details: "Відновлення"},
+	}
+
+	obj := buildCaseHistoryEventList(viewmodels.WorkAreaCaseHistoryGroup{
+		Root:   events[0],
+		Events: events,
+		Title:  "CASL кейс",
+	})
+
+	if _, ok := obj.(*container.Scroll); ok {
+		t.Fatalf("did not expect scroll for short case history")
 	}
 }

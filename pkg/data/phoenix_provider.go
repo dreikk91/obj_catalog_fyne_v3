@@ -258,6 +258,15 @@ func (p *PhoenixDataProvider) GetObjectEvents(objectID string) []models.Event {
 	return events
 }
 
+func (p *PhoenixDataProvider) GetAlarmSourceMessages(alarm models.Alarm) []models.AlarmMsg {
+	if len(alarm.SourceMsgs) > 0 {
+		return append([]models.AlarmMsg(nil), alarm.SourceMsgs...)
+	}
+
+	events := p.GetObjectEvents(strconv.Itoa(alarm.ObjectID))
+	return buildAlarmSourceMessagesFromEvents(alarm, events)
+}
+
 func (p *PhoenixDataProvider) GetLatestEventID() (int64, error) {
 	if p == nil || p.db == nil {
 		return 0, fmt.Errorf("phoenix database is not initialized")
@@ -295,6 +304,13 @@ func (p *PhoenixDataProvider) GetAlarms() []models.Alarm {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
+
+	var activeRows []phoenixActiveAlarmRow
+	if err := p.db.SelectContext(ctx, &activeRows, phoenixActiveAlarmsQuery); err != nil {
+		log.Error().Err(err).Msg("Phoenix: помилка отримання активних тривог із Temp")
+	} else if len(activeRows) > 0 {
+		return p.buildPhoenixActiveAlarms(activeRows)
+	}
 
 	var rows []phoenixObjectGroupRow
 	if err := p.db.SelectContext(ctx, &rows, phoenixObjectsListQuery); err != nil {
@@ -466,6 +482,224 @@ func (p *PhoenixDataProvider) buildPhoenixAlarms(rows []phoenixObjectGroupRow) [
 	return alarms
 }
 
+func (p *PhoenixDataProvider) buildPhoenixActiveAlarms(rows []phoenixActiveAlarmRow) []models.Alarm {
+	if len(rows) == 0 {
+		return nil
+	}
+
+	groupedMessages := make(map[string][]phoenixActiveAlarmMessage, len(rows))
+	groupOrder := make([]string, 0, len(rows))
+
+	for _, row := range rows {
+		panelID := strings.TrimSpace(row.PanelID)
+		if panelID == "" {
+			continue
+		}
+
+		groupKey := phoenixActiveAlarmCaseKey(row)
+		if groupKey == "" {
+			continue
+		}
+		if _, exists := groupedMessages[groupKey]; !exists {
+			groupOrder = append(groupOrder, groupKey)
+		}
+		groupedMessages[groupKey] = append(groupedMessages[groupKey], buildPhoenixActiveAlarmMessage(row))
+	}
+
+	alarms := make([]models.Alarm, 0, len(groupedMessages))
+	for _, groupKey := range groupOrder {
+		messages := groupedMessages[groupKey]
+		if len(messages) == 0 {
+			continue
+		}
+
+		sort.SliceStable(messages, func(i, j int) bool {
+			left := messages[i].Time
+			right := messages[j].Time
+			if left.Equal(right) {
+				return messages[i].SortID > messages[j].SortID
+			}
+			return left.After(right)
+		})
+
+		selected, ok := selectPhoenixActiveAlarmMessage(messages)
+		if !ok {
+			continue
+		}
+		selectedRow := selected.Row
+		panelID := strings.TrimSpace(selectedRow.PanelID)
+		if panelID == "" {
+			continue
+		}
+
+		alarmType, mapped := mapEventTypeToAlarmType(selected.EventType)
+		if !mapped {
+			alarmType = models.AlarmSystemEvent
+		}
+
+		details := strings.TrimSpace(selected.Details)
+		if details == "" {
+			details = "Тривога Phoenix"
+		}
+
+		alarmID := ids.StablePhoenixID(
+			panelID,
+			groupKey,
+			"alarm_case",
+		)
+		rowSC1 := resolvePhoenixGroupedAlarmSC1(messages, phoenixActiveAlarmMessageSC1(selected))
+
+		alarms = append(alarms, models.Alarm{
+			ID:           alarmID,
+			ObjectID:     p.registerPanelID(panelID),
+			ObjectNumber: panelID,
+			ObjectName:   phoenixObjectName(panelID, selectedRow.CompanyName, selectedRow.GroupName),
+			Address:      strings.TrimSpace(nullString(selectedRow.Address)),
+			Time:         selected.Time,
+			Details:      details,
+			Type:         alarmType,
+			ZoneNumber:   int(nullInt64(selectedRow.ZoneNo)),
+			ZoneName:     strings.TrimSpace(nullString(selectedRow.ZoneName)),
+			SC1:          rowSC1,
+			SourceMsgs:   mapPhoenixActiveAlarmMessagesToAlarmMsgs(messages),
+		})
+	}
+
+	sort.SliceStable(alarms, func(i, j int) bool {
+		left := alarms[i].Time
+		right := alarms[j].Time
+		if left.Equal(right) {
+			return alarms[i].ID > alarms[j].ID
+		}
+		return left.After(right)
+	})
+
+	return alarms
+}
+
+type phoenixActiveAlarmMessage struct {
+	Row       phoenixActiveAlarmRow
+	Time      time.Time
+	Details   string
+	EventType models.EventType
+	IsAlarm   bool
+	SortID    int64
+}
+
+func buildPhoenixActiveAlarmMessage(row phoenixActiveAlarmRow) phoenixActiveAlarmMessage {
+	details := strings.TrimSpace(phoenixActiveAlarmDetails(row))
+	eventType := phoenixActiveAlarmEventType(row, details)
+	_, isAlarm := mapEventTypeToAlarmType(eventType)
+
+	eventTime := time.Now()
+	if ts := nullTime(row.TimeEvent); !ts.IsZero() {
+		eventTime = normalizePhoenixEventTime(ts)
+	}
+
+	sortID := int64(0)
+	if row.EventID.Valid && row.EventID.Int64 > 0 {
+		sortID = row.EventID.Int64
+	} else if row.EventParentID.Valid && row.EventParentID.Int64 > 0 {
+		sortID = row.EventParentID.Int64
+	}
+
+	return phoenixActiveAlarmMessage{
+		Row:       row,
+		Time:      eventTime,
+		Details:   details,
+		EventType: eventType,
+		IsAlarm:   isAlarm,
+		SortID:    sortID,
+	}
+}
+
+func selectPhoenixActiveAlarmMessage(messages []phoenixActiveAlarmMessage) (phoenixActiveAlarmMessage, bool) {
+	if len(messages) == 0 {
+		return phoenixActiveAlarmMessage{}, false
+	}
+
+	// Пріоритет 1: тривожні події типу "пожежа/проникнення/паніка/...".
+	for _, msg := range messages {
+		if isPrimaryAlarmEventType(msg.EventType) {
+			return msg, true
+		}
+	}
+	// Пріоритет 2: інші тривожні стани (fault/offline/...).
+	for _, msg := range messages {
+		if msg.IsAlarm {
+			return msg, true
+		}
+	}
+
+	return messages[0], true
+}
+
+func resolvePhoenixGroupedAlarmSC1(messages []phoenixActiveAlarmMessage, fallback int) int {
+	if len(messages) == 0 {
+		return fallback
+	}
+
+	latest := messages[0]
+	if latest.EventType == models.EventFault && hasPrimaryPhoenixAlarmMessage(messages) {
+		// Спецправило: після тривоги несправність не знімає "пожежний" колір головного рядка.
+		return 1
+	}
+
+	latestSC1 := phoenixActiveAlarmMessageSC1(latest)
+	if latestSC1 != 0 {
+		return latestSC1
+	}
+	for _, msg := range messages {
+		msgSC1 := phoenixActiveAlarmMessageSC1(msg)
+		if msgSC1 != 0 {
+			return msgSC1
+		}
+	}
+	return fallback
+}
+
+func hasPrimaryPhoenixAlarmMessage(messages []phoenixActiveAlarmMessage) bool {
+	for _, msg := range messages {
+		if isPrimaryAlarmEventType(msg.EventType) {
+			return true
+		}
+	}
+	return false
+}
+
+func phoenixActiveAlarmMessageSC1(msg phoenixActiveAlarmMessage) int {
+	return phoenixEventSC1(msg.Row.TypeCodeID, msg.Row.EventCode, msg.Details)
+}
+
+func mapPhoenixActiveAlarmMessagesToAlarmMsgs(messages []phoenixActiveAlarmMessage) []models.AlarmMsg {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	result := make([]models.AlarmMsg, 0, len(messages))
+	for _, msg := range messages {
+		result = append(result, models.AlarmMsg{
+			Time:    msg.Time,
+			Code:    strings.TrimSpace(nullString(msg.Row.EventCode)),
+			Number:  int(nullInt64(msg.Row.ZoneNo)),
+			Details: strings.TrimSpace(msg.Details),
+			SC1:     phoenixActiveAlarmMessageSC1(msg),
+			IsAlarm: msg.IsAlarm,
+		})
+	}
+	return result
+}
+
+func phoenixActiveAlarmCaseKey(row phoenixActiveAlarmRow) string {
+	panelID := strings.TrimSpace(row.PanelID)
+	if panelID == "" {
+		return ""
+	}
+	// Для стрічки активних тривог Phoenix групуємо події на рівні об'єкта:
+	// один рядок = один panel_id, а в SourceMsgs зберігаємо повну хронологію.
+	return panelID
+}
+
 func (p *PhoenixDataProvider) applyPhoenixObjectState(obj *models.Object, row phoenixObjectGroupRow) {
 	if obj == nil {
 		return
@@ -623,21 +857,7 @@ func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {
 	panelID := strings.TrimSpace(row.PanelID)
 	objectID := p.registerPanelID(panelID)
 
-	details := strings.TrimSpace(nullString(row.CodeMessage))
-	if zoneName := strings.TrimSpace(nullString(row.ZoneName)); zoneName != "" {
-		if details != "" {
-			details += " [" + zoneName + "]"
-		} else {
-			details = zoneName
-		}
-	}
-	if groupName := strings.TrimSpace(nullString(row.GroupName)); groupName != "" {
-		if details != "" {
-			details += " | " + groupName
-		} else {
-			details = groupName
-		}
-	}
+	details := phoenixAlarmDetails(row.CodeMessage, row.ZoneName, int(nullInt64(row.GroupNo)), row.GroupName)
 
 	return models.Event{
 		ID:           stablePhoenixEventID(panelID, row.EventID),
@@ -650,6 +870,62 @@ func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {
 		Details:      details,
 		SC1:          phoenixEventSC1(row.TypeCodeID, row.EventCode, details),
 	}
+}
+
+func phoenixAlarmDetails(codeMessage sql.NullString, zoneName sql.NullString, groupNo int, groupName sql.NullString) string {
+	details := strings.TrimSpace(nullString(codeMessage))
+	if zone := strings.TrimSpace(nullString(zoneName)); zone != "" {
+		if details != "" {
+			details += " [" + zone + "]"
+		} else {
+			details = zone
+		}
+	}
+
+	group := strings.TrimSpace(nullString(groupName))
+	if group == "" && groupNo > 0 {
+		group = fmt.Sprintf("Група %d", groupNo)
+	}
+	if group == "" {
+		return details
+	}
+	if details != "" {
+		return details + " | " + group
+	}
+	return group
+}
+
+func phoenixActiveAlarmDetails(row phoenixActiveAlarmRow) string {
+	details := strings.TrimSpace(nullString(row.CodeMessage))
+	zone := strings.TrimSpace(nullString(row.ZoneName))
+	if zone != "" && !strings.Contains(strings.ToLower(details), strings.ToLower(zone)) {
+		if details != "" {
+			details += " [" + zone + "]"
+		} else {
+			details = zone
+		}
+	}
+	group := strings.TrimSpace(nullString(row.GroupMessage))
+	if group == "" {
+		group = strings.TrimSpace(nullString(row.GroupName))
+	}
+	if group == "" && row.GroupNo > 0 {
+		group = fmt.Sprintf("Група %d", row.GroupNo)
+	}
+	if details != "" && group != "" {
+		return details + " | " + group
+	}
+	if details != "" {
+		return details
+	}
+	return group
+}
+
+func phoenixActiveAlarmEventType(row phoenixActiveAlarmRow, details string) models.EventType {
+	if nullBool(row.IsAlarmButton) {
+		return models.EventPanic
+	}
+	return phoenixEventType(row.EventCode, row.TypeCodeID, details)
 }
 
 func mapPhoenixEventRows(rows []phoenixEventRow, mapRow func(phoenixEventRow) models.Event) []models.Event {
@@ -802,50 +1078,168 @@ func phoenixSignalText(level sql.NullInt64) string {
 }
 
 func phoenixEventType(code sql.NullString, typeCodeID sql.NullInt64, details string) models.EventType {
+	codeValue := strings.ToUpper(strings.TrimSpace(nullString(code)))
+	baseType := models.EventType("")
 	if typeCodeID.Valid {
 		if eventType, ok := phoenixEventTypeByTypeCode(typeCodeID.Int64); ok {
-			return eventType
+			baseType = eventType
 		}
 	}
 
-	text := strings.ToLower(strings.TrimSpace(nullString(code) + " " + details))
+	derivedType, hasDerivedType := phoenixEventTypeByCodeAndDetails(codeValue, details)
+	if baseType != "" {
+		if hasDerivedType && shouldOverridePhoenixBaseEventType(baseType, derivedType) {
+			return derivedType
+		}
+		return baseType
+	}
+	if hasDerivedType {
+		return derivedType
+	}
+	return models.SystemEvent
+}
+
+func phoenixEventTypeByCodeAndDetails(code string, details string) (models.EventType, bool) {
+	if eventType, ok := phoenixEventTypeByCIDCode(code); ok {
+		return eventType, true
+	}
+
+	text := strings.ToLower(strings.TrimSpace(code + " " + details))
 	switch {
-	case strings.HasPrefix(strings.TrimSpace(nullString(code)), "R"), strings.Contains(text, "віднов"), strings.Contains(text, "норма"):
-		return models.EventRestore
+	case (strings.HasPrefix(strings.TrimSpace(code), "R") && hasPhoenixCodeDigits(code)),
+		strings.Contains(text, "віднов"),
+		strings.Contains(text, "норма"):
+		return models.EventRestore, true
 	case strings.Contains(text, "220"), strings.Contains(text, "основного живлення"):
 		if strings.Contains(text, "втрата") || strings.Contains(text, "проблем") {
-			return models.EventPowerFail
+			return models.EventPowerFail, true
 		}
-		return models.EventPowerOK
+		return models.EventPowerOK, true
 	case strings.Contains(text, "акб"):
 		if strings.Contains(text, "проблем") || strings.Contains(text, "низь") {
-			return models.EventBatteryLow
+			return models.EventBatteryLow, true
 		}
-		return models.EventRestore
+		return models.EventRestore, true
 	case strings.Contains(text, "напад"), strings.Contains(text, "тривожн"):
-		return models.EventPanic
+		return models.EventPanic, true
 	case strings.Contains(text, "медич"):
-		return models.EventMedical
+		return models.EventMedical, true
 	case strings.Contains(text, "газ"):
-		return models.EventGas
+		return models.EventGas, true
 	case strings.Contains(text, "тампер"):
 		if strings.Contains(text, "норма") || strings.Contains(text, "віднов") {
-			return models.EventRestore
+			return models.EventRestore, true
 		}
-		return models.EventTamper
+		return models.EventTamper, true
 	case strings.Contains(text, "знят"):
-		return models.EventDisarm
+		return models.EventDisarm, true
 	case strings.Contains(text, "постан"), strings.Contains(text, "взят"):
-		return models.EventArm
+		return models.EventArm, true
 	case strings.Contains(text, "зв'язку"), strings.Contains(text, "offline"):
-		return models.EventOffline
+		return models.EventOffline, true
 	case strings.Contains(text, "несправ"), strings.Contains(text, "обрив"), strings.Contains(text, "кз"):
-		return models.EventFault
+		return models.EventFault, true
+	case strings.Contains(text, "проник"), strings.Contains(text, "охорон"):
+		return models.EventBurglary, true
 	case strings.Contains(text, "пожеж"), strings.Contains(text, "тривог"):
-		return models.EventFire
+		return models.EventFire, true
 	default:
-		return models.SystemEvent
+		return "", false
 	}
+}
+
+func hasPhoenixCodeDigits(code string) bool {
+	for _, ch := range code {
+		if ch >= '0' && ch <= '9' {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldOverridePhoenixBaseEventType(base models.EventType, candidate models.EventType) bool {
+	if candidate == "" || candidate == base {
+		return false
+	}
+	switch base {
+	case models.EventFault, models.SystemEvent, models.EventService, models.EventNotification:
+		return true
+	default:
+		return false
+	}
+}
+
+func phoenixEventTypeByCIDCode(code string) (models.EventType, bool) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return "", false
+	}
+
+	cid, ok := extractPhoenixCIDCode(code)
+	if !ok {
+		return "", false
+	}
+
+	isRestore := strings.HasPrefix(code, "R")
+	if isRestore {
+		switch cid {
+		case 301:
+			return models.EventPowerOK, true
+		case 350:
+			return models.EventOnline, true
+		case 401:
+			return models.EventDisarm, true
+		default:
+			if cid >= 100 && cid < 200 {
+				return models.EventRestore, true
+			}
+		}
+	}
+
+	switch cid {
+	case 110:
+		return models.EventFire, true
+	case 120:
+		return models.EventPanic, true
+	case 130:
+		return models.EventBurglary, true
+	case 151:
+		return models.EventGas, true
+	case 301:
+		return models.EventPowerFail, true
+	case 302:
+		return models.EventBatteryLow, true
+	case 350:
+		return models.EventOffline, true
+	case 383:
+		return models.EventTamper, true
+	case 401:
+		return models.EventArm, true
+	default:
+		return "", false
+	}
+}
+
+func extractPhoenixCIDCode(code string) (int, bool) {
+	digits := make([]rune, 0, 3)
+	for _, ch := range code {
+		if ch < '0' || ch > '9' {
+			continue
+		}
+		digits = append(digits, ch)
+		if len(digits) == 3 {
+			break
+		}
+	}
+	if len(digits) < 3 {
+		return 0, false
+	}
+
+	value, err := strconv.Atoi(string(digits))
+	if err != nil {
+		return 0, false
+	}
+	return value, true
 }
 
 func phoenixEventTypeByTypeCode(typeCodeID int64) (models.EventType, bool) {

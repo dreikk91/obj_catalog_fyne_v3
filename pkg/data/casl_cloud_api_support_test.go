@@ -418,3 +418,256 @@ func TestCASLProvider_CommandWrappers(t *testing.T) {
 		t.Fatalf("expected 1 login call, got %d", loginCalls)
 	}
 }
+
+func TestCASLProvider_ReadEventsJournalRejectsEventWithoutTime(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-events","user_id":"u1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+			switch cmdType {
+			case "read_events":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"code":"TEST","ppk_num":1003}]}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	_, err := provider.ReadEventsJournal(context.Background(), CASLReadEventsRequest{})
+	if err == nil || !strings.Contains(err.Error(), ".time must be > 0") {
+		t.Fatalf("expected validation error for missing event time, got %v", err)
+	}
+}
+
+func TestCASLProvider_ReadDeviceStateByIDRejectsEmptyState(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-state","user_id":"u1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+			switch cmdType {
+			case "read_device_state":
+				_, _ = w.Write([]byte(`{"status":"ok","state":{}}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	_, err := provider.ReadDeviceStateByID(context.Background(), "23")
+	if err == nil || !strings.Contains(err.Error(), "state payload is empty") {
+		t.Fatalf("expected validation error for empty state, got %v", err)
+	}
+}
+
+func TestCASLProvider_GetStatisticRejectsMissingIdentifiersInResponse(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-stats","user_id":"u1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+			switch cmdType {
+			case "get_statistic":
+				_, _ = w.Write([]byte(`{"status":"ok","data":{"customWins":13}}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	_, err := provider.GetStatistic(context.Background(), CASLGetStatisticRequest{DeviceID: "23", ObjectID: "24"})
+	if err == nil || !strings.Contains(err.Error(), "data.device_id is required") {
+		t.Fatalf("expected validation error for incomplete statistic payload, got %v", err)
+	}
+}
+
+func TestCASLProvider_ReadGeneralTapeObjectsRejectsNonObjectRow(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-tape","user_id":"u1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+			switch cmdType {
+			case "get_general_tape_objects":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"event_id":"1"},"broken-row"]}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	_, err := provider.ReadGeneralTapeObjects(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `data[1]`) {
+		t.Fatalf("expected strict array decode error, got %v", err)
+	}
+}
+
+func TestCASLProvider_ReadGeneralTapeItemRejectsNonObjectRow(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-tape-item","user_id":"u1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+			switch cmdType {
+			case "get_general_tape_item":
+				_, _ = w.Write([]byte(`{"status":"ok","data":{"25":[{"event_id":"1"},123]}}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	_, err := provider.ReadGeneralTapeItem(context.Background(), []string{"25"})
+	if err == nil || !strings.Contains(err.Error(), `obj_id "25"`) || !strings.Contains(err.Error(), `data[1]`) {
+		t.Fatalf("expected strict nested tape-item decode error, got %v", err)
+	}
+}
+
+func TestCASLProvider_ReadDictionaryRejectsNonObjectDictionary(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-dict","user_id":"u1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","dictionary":[1,2,3]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	_, err := provider.ReadDictionary(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "read_dictionary.dictionary") {
+		t.Fatalf("expected strict dictionary decode error, got %v", err)
+	}
+}
+
+func TestCASLProvider_MonitorRejectsArrayData(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-monitor","user_id":"u1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","data":["ok"]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	_, err := provider.Monitor(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `expected object data`) {
+		t.Fatalf("expected strict monitor decode error, got %v", err)
+	}
+}
+
+func TestCASLProvider_GetRTSPURLRejectsArrayData(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-rtsp","user_id":"u1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","data":["rtsp://camera"]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	_, err := provider.GetRTSPURL(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `expected object data`) {
+		t.Fatalf("expected strict rtsp decode error, got %v", err)
+	}
+}
+
+func TestCASLProvider_GetMessageTranslatorByDeviceTypeRejectsArrayData(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslCommandPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","data":["R401"]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "token", 1)
+	_, err := provider.GetMessageTranslatorByDeviceType(context.Background(), "MAKS_PRO")
+	if err == nil || !strings.Contains(err.Error(), `expected object data`) {
+		t.Fatalf("expected strict translator decode error, got %v", err)
+	}
+}

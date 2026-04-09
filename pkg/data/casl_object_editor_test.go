@@ -191,6 +191,177 @@ func TestCASLProvider_GetCASLObjectEditorSnapshotBootstrap(t *testing.T) {
 	}
 }
 
+func TestCASLProvider_GetCASLObjectEditorSnapshotRejectsInvalidUserReference(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-editor-invalid-user","user_id":"1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmd := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+			switch cmd {
+			case "read_user":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"last_name":"Broken","phone_numbers":[{"active":true,"number":"+380501112233"}]}]}`))
+			case "read_pult":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"pult_id":"1","name":"Пульт 1"}]}`))
+			case "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{"device_types":{"TYPE_DEVICE_Ajax":"Ajax"}}}`))
+			default:
+				t.Fatalf("unexpected bootstrap command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	_, err := provider.GetCASLObjectEditorSnapshot(context.Background(), 0)
+	if err == nil || !strings.Contains(err.Error(), "user_id is required") {
+		t.Fatalf("expected validation error for invalid user reference, got %v", err)
+	}
+}
+
+func TestCASLProvider_GetCASLObjectEditorSnapshotRejectsInvalidFullObject(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-editor-invalid-object","user_id":"1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmd := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+			switch cmd {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"29","name":"1007 Офіс","device_id":"28","device_number":1007}]}`))
+			case "get_grd_object_full":
+				_, _ = w.Write([]byte(`{"status":"ok","name":"","pult_id":"1","rooms":[],"device":{"id":"","number":0}}`))
+			case "read_user":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"user_id":"3","last_name":"Менеджер","first_name":"Марія","role":"MANAGER"}]}`))
+			case "read_pult":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"pult_id":"1","name":"Пульт 1"}]}`))
+			case "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{"device_types":{"TYPE_DEVICE_Ajax":"Ajax"}}}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	internalID := int64(mapCASLObjectID("29", "1007 Офіс", "1007"))
+	_, err := provider.GetCASLObjectEditorSnapshot(context.Background(), internalID)
+	if err == nil || !strings.Contains(err.Error(), "name is required") {
+		t.Fatalf("expected validation error for invalid full object, got %v", err)
+	}
+}
+
+func TestCASLProvider_GetCASLObjectEditorSnapshotRejectsRoomUserWithoutID(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-editor-room-user","user_id":"1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmd := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+			switch cmd {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"29","name":"1007 Офіс","device_id":"28","device_number":1007}]}`))
+			case "get_grd_object_full":
+				_, _ = w.Write([]byte(`{
+					"status":"ok",
+					"name":"1007 Офіс",
+					"pult_id":"1",
+					"rooms":[{"room_id":"36","users":[{"priority":1}]}],
+					"device":{"id":"28","number":1007}
+				}`))
+			case "read_user":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_pult":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"pult_id":"1","name":"Пульт 1"}]}`))
+			case "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{}}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	internalID := int64(mapCASLObjectID("29", "1007 Офіс", "1007"))
+	_, err := provider.GetCASLObjectEditorSnapshot(context.Background(), internalID)
+	if err == nil || !strings.Contains(err.Error(), "rooms[0].users[0].user_id is required") {
+		t.Fatalf("expected validation error for invalid room user, got %v", err)
+	}
+}
+
+func TestCASLProvider_GetCASLObjectEditorSnapshotRejectsInvalidRoomLine(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-editor-room-line","user_id":"1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmd := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+			switch cmd {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"29","name":"1007 Офіс","device_id":"28","device_number":1007}]}`))
+			case "get_grd_object_full":
+				_, _ = w.Write([]byte(`{
+					"status":"ok",
+					"name":"1007 Офіс",
+					"pult_id":"1",
+					"rooms":[{"room_id":"36","lines":{"bad":{"adapter_type":"","group_number":0}}}],
+					"device":{"id":"28","number":1007}
+				}`))
+			case "read_user":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_pult":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"pult_id":"1","name":"Пульт 1"}]}`))
+			case "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{}}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	internalID := int64(mapCASLObjectID("29", "1007 Офіс", "1007"))
+	_, err := provider.GetCASLObjectEditorSnapshot(context.Background(), internalID)
+	if err == nil || !strings.Contains(err.Error(), `rooms[0].lines["bad"] key must be a positive line number`) {
+		t.Fatalf("expected validation error for invalid room line, got %v", err)
+	}
+}
+
 func TestCASLProvider_GetCASLObjectEditorSnapshot_DeviceMapTimeout(t *testing.T) {
 	t.Parallel()
 
@@ -211,6 +382,7 @@ func TestCASLProvider_GetCASLObjectEditorSnapshot_DeviceMapTimeout(t *testing.T)
 				_, _ = w.Write([]byte(`{
 					"status":"ok",
 					"name":"1007 Офіс",
+					"pult_id":"1",
 					"address":"Львів, Зелена 69",
 					"rooms":[],
 					"device":{"id":"28","number":1007,"name":"MAKS PRO","type":"TYPE_DEVICE_Ajax"},
@@ -276,6 +448,7 @@ func TestCASLProvider_GetCASLObjectEditorSnapshot_BusinessCoeffString(t *testing
 				_, _ = w.Write([]byte(`{
 					"status":"ok",
 					"name":"1007 Офіс",
+					"pult_id":"1",
 					"bissnes_coeff":"1.5",
 					"rooms":[],
 					"device":{"id":"28","number":1007,"name":"MAKS PRO","type":"TYPE_DEVICE_Ajax"},

@@ -45,6 +45,11 @@ type EventProvider interface {
 	GetObjectEvents(objectID string) []models.Event
 }
 
+// AlarmHistoryProvider defines optional lazy chronology loading for a single alarm.
+type AlarmHistoryProvider interface {
+	GetAlarmSourceMessages(alarm models.Alarm) []models.AlarmMsg
+}
+
 // AlarmProvider визначає інтерфейс для отримання тривог
 type AlarmProvider interface {
 	GetAlarms() []models.Alarm

@@ -364,6 +364,29 @@ func (p *CombinedDataProvider) GetObjectEvents(objectID string) []models.Event {
 	return events
 }
 
+func (p *CombinedDataProvider) GetAlarmSourceMessages(alarm models.Alarm) []models.AlarmMsg {
+	if p == nil {
+		return nil
+	}
+
+	provider := p.providerForObjectID(strconv.Itoa(alarm.ObjectID))
+	if historyProvider, ok := provider.(contracts.AlarmHistoryProvider); ok {
+		return historyProvider.GetAlarmSourceMessages(alarm)
+	}
+
+	for _, source := range p.sources {
+		historyProvider, ok := source.Provider.(contracts.AlarmHistoryProvider)
+		if !ok {
+			continue
+		}
+		if msgs := historyProvider.GetAlarmSourceMessages(alarm); len(msgs) > 0 {
+			return msgs
+		}
+	}
+
+	return nil
+}
+
 func (p *CombinedDataProvider) GetAlarms() []models.Alarm {
 	alarms := make([]models.Alarm, 0, 64)
 	if p != nil {

@@ -92,3 +92,30 @@ type phoenixEventRow struct {
 	CompanyName sql.NullString `db:"company_name"`
 	Address     sql.NullString `db:"company_address"`
 }
+
+type phoenixActiveAlarmRow struct {
+	EventID       sql.NullInt64  `db:"event_id"`
+	PanelID       string         `db:"panel_id"`
+	GroupNo       int            `db:"group_no"`
+	ZoneNo        sql.NullInt64  `db:"zone_no"`
+	TimeEvent     sql.NullTime   `db:"time_event"`
+	EventCode     sql.NullString `db:"event_code"`
+	CodeMessage   sql.NullString `db:"code_message"`
+	TypeCodeID    sql.NullInt64  `db:"type_code_id"`
+	TypeMessage   sql.NullString `db:"type_code_message"`
+	GroupName     sql.NullString `db:"group_name"`
+	GroupMessage  sql.NullString `db:"group_message"`
+	ZoneName      sql.NullString `db:"zone_name"`
+	CompanyName   sql.NullString `db:"company_name"`
+	Address       sql.NullString `db:"company_address"`
+	Line          sql.NullString `db:"line"`
+	EventParentID sql.NullInt64  `db:"event_parent_id"`
+	StateEvent    sql.NullInt64  `db:"state_event"`
+	Priority      sql.NullInt64  `db:"priority"`
+	ObjectStatus  sql.NullInt64  `db:"object_status"`
+	UnknownObject sql.NullInt64  `db:"unknown_object"`
+	IsAlarmButton sql.NullBool   `db:"is_alarm_button"`
+	GroupDisabled sql.NullBool   `db:"group_disabled"`
+	PanelDisabled sql.NullBool   `db:"panel_disabled"`
+	TestPanel     sql.NullBool   `db:"test_panel"`
+}

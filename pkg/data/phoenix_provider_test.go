@@ -82,6 +82,18 @@ func TestPhoenixEventType(t *testing.T) {
 			want:   models.EventFault,
 		},
 		{
+			name:   "intrusion cid overrides faulty type code",
+			code:   sql.NullString{String: "E130", Valid: true},
+			typeID: sql.NullInt64{Int64: 15, Valid: true},
+			want:   models.EventBurglary,
+		},
+		{
+			name:   "power fail cid overrides faulty type code",
+			code:   sql.NullString{String: "E301", Valid: true},
+			typeID: sql.NullInt64{Int64: 15, Valid: true},
+			want:   models.EventPowerFail,
+		},
+		{
 			name:   "power fail by type code",
 			code:   sql.NullString{String: "E301", Valid: true},
 			typeID: sql.NullInt64{Int64: 6, Valid: true},
@@ -343,6 +355,259 @@ func TestPhoenixBuildPhoenixAlarms_ReturnsOnlyActiveAlarmRows(t *testing.T) {
 	}
 	if alarm.SC1 != 1 {
 		t.Fatalf("SC1 = %d, want 1", alarm.SC1)
+	}
+}
+
+func TestPhoenixBuildActiveAlarms_UsesTempRowsAndMapsAlarmType(t *testing.T) {
+	provider := NewPhoenixDataProvider(nil, "")
+	rows := []phoenixActiveAlarmRow{
+		{
+			EventID:      sql.NullInt64{Int64: 501, Valid: true},
+			PanelID:      "L00041",
+			GroupNo:      2,
+			ZoneNo:       sql.NullInt64{Int64: 7, Valid: true},
+			TimeEvent:    sql.NullTime{Time: time.Date(2026, time.April, 8, 9, 30, 0, 0, time.UTC), Valid: true},
+			EventCode:    sql.NullString{String: "E130", Valid: true},
+			CodeMessage:  sql.NullString{String: "Проникнення", Valid: true},
+			TypeCodeID:   sql.NullInt64{Int64: 1, Valid: true},
+			GroupMessage: sql.NullString{String: "Склад", Valid: true},
+			GroupName:    sql.NullString{String: "Склад", Valid: true},
+			ZoneName:     sql.NullString{String: "Двері", Valid: true},
+			CompanyName:  sql.NullString{String: "Компанія 41", Valid: true},
+			Address:      sql.NullString{String: "Адреса 41", Valid: true},
+		},
+		{
+			EventID:      sql.NullInt64{Int64: 502, Valid: true},
+			PanelID:      "L00042",
+			GroupNo:      3,
+			TimeEvent:    sql.NullTime{Time: time.Date(2026, time.April, 8, 9, 31, 0, 0, time.UTC), Valid: true},
+			EventCode:    sql.NullString{String: "E110", Valid: true},
+			CodeMessage:  sql.NullString{String: "Пожежа", Valid: true},
+			TypeCodeID:   sql.NullInt64{Int64: 14, Valid: true},
+			GroupMessage: sql.NullString{String: "Тест", Valid: true},
+			GroupName:    sql.NullString{String: "Тест", Valid: true},
+			CompanyName:  sql.NullString{String: "Компанія 41", Valid: true},
+		},
+	}
+
+	alarms := provider.buildPhoenixActiveAlarms(rows)
+	if len(alarms) != 2 {
+		t.Fatalf("buildPhoenixActiveAlarms() returned %d alarms, want 2", len(alarms))
+	}
+
+	alarm := alarms[1]
+	if alarm.ObjectNumber != "L00041" {
+		t.Fatalf("ObjectNumber = %q, want L00041", alarm.ObjectNumber)
+	}
+	if alarm.Type != models.AlarmBurglary {
+		t.Fatalf("Type = %q, want %q", alarm.Type, models.AlarmBurglary)
+	}
+	if alarm.ZoneNumber != 7 {
+		t.Fatalf("ZoneNumber = %d, want 7", alarm.ZoneNumber)
+	}
+	if alarm.Details != "Проникнення [Двері] | Склад" {
+		t.Fatalf("Details = %q, want %q", alarm.Details, "Проникнення [Двері] | Склад")
+	}
+	if alarm.SC1 != 1 {
+		t.Fatalf("SC1 = %d, want 1", alarm.SC1)
+	}
+	if alarms[0].Type != models.AlarmFire {
+		t.Fatalf("latest alarm type = %q, want %q", alarms[0].Type, models.AlarmFire)
+	}
+	if alarms[0].ObjectNumber != "L00042" {
+		t.Fatalf("newest object number = %q, want %q", alarms[0].ObjectNumber, "L00042")
+	}
+}
+
+func TestPhoenixBuildActiveAlarms_GroupKeepsLatestAlarmEvenAfterRestore(t *testing.T) {
+	provider := NewPhoenixDataProvider(nil, "")
+
+	alarmTime := time.Date(2026, time.April, 8, 12, 0, 0, 0, time.UTC)
+	restoreTime := alarmTime.Add(2 * time.Minute)
+
+	rows := []phoenixActiveAlarmRow{
+		{
+			EventID:       sql.NullInt64{Int64: 7001, Valid: true},
+			EventParentID: sql.NullInt64{Int64: 9001, Valid: true},
+			PanelID:       "L00050",
+			GroupNo:       1,
+			ZoneNo:        sql.NullInt64{Int64: 4, Valid: true},
+			TimeEvent:     sql.NullTime{Time: alarmTime, Valid: true},
+			EventCode:     sql.NullString{String: "E130", Valid: true},
+			CodeMessage:   sql.NullString{String: "Проникнення", Valid: true},
+			TypeCodeID:    sql.NullInt64{Int64: 1, Valid: true},
+			GroupMessage:  sql.NullString{String: "Офіс", Valid: true},
+			GroupName:     sql.NullString{String: "Офіс", Valid: true},
+			ZoneName:      sql.NullString{String: "Двері", Valid: true},
+			CompanyName:   sql.NullString{String: "Компанія 50", Valid: true},
+		},
+		{
+			EventID:       sql.NullInt64{Int64: 7002, Valid: true},
+			EventParentID: sql.NullInt64{Int64: 9001, Valid: true},
+			PanelID:       "L00050",
+			GroupNo:       1,
+			ZoneNo:        sql.NullInt64{Int64: 4, Valid: true},
+			TimeEvent:     sql.NullTime{Time: restoreTime, Valid: true},
+			EventCode:     sql.NullString{String: "R130", Valid: true},
+			CodeMessage:   sql.NullString{String: "Відновлення", Valid: true},
+			TypeCodeID:    sql.NullInt64{Int64: 2, Valid: true},
+			GroupMessage:  sql.NullString{String: "Офіс", Valid: true},
+			GroupName:     sql.NullString{String: "Офіс", Valid: true},
+			ZoneName:      sql.NullString{String: "Двері", Valid: true},
+			CompanyName:   sql.NullString{String: "Компанія 50", Valid: true},
+		},
+	}
+
+	alarms := provider.buildPhoenixActiveAlarms(rows)
+	if len(alarms) != 1 {
+		t.Fatalf("buildPhoenixActiveAlarms() returned %d alarms, want 1 grouped alarm", len(alarms))
+	}
+
+	alarm := alarms[0]
+	if alarm.Type != models.AlarmBurglary {
+		t.Fatalf("Type = %q, want %q", alarm.Type, models.AlarmBurglary)
+	}
+	if got, want := alarm.Details, "Проникнення [Двері] | Офіс"; got != want {
+		t.Fatalf("Details = %q, want %q", got, want)
+	}
+	if !alarm.Time.Equal(normalizePhoenixEventTime(alarmTime)) {
+		t.Fatalf("Time = %v, want %v", alarm.Time, normalizePhoenixEventTime(alarmTime))
+	}
+	if alarm.SC1 != 5 {
+		t.Fatalf("SC1 = %d, want 5 (latest restore color)", alarm.SC1)
+	}
+	if len(alarm.SourceMsgs) != 2 {
+		t.Fatalf("expected 2 source messages, got %d", len(alarm.SourceMsgs))
+	}
+	if alarm.SourceMsgs[0].IsAlarm {
+		t.Fatalf("newest source message must be restore/non-alarm, got %+v", alarm.SourceMsgs[0])
+	}
+	if alarm.SourceMsgs[0].SC1 != 5 || alarm.SourceMsgs[1].SC1 != 1 {
+		t.Fatalf("unexpected source message SC1 sequence: %+v", alarm.SourceMsgs)
+	}
+	if !alarm.SourceMsgs[1].IsAlarm {
+		t.Fatalf("older source message must be alarm, got %+v", alarm.SourceMsgs[1])
+	}
+}
+
+func TestPhoenixBuildActiveAlarms_GroupUsesNewestAlarmWhenSeveralAlarmsExist(t *testing.T) {
+	provider := NewPhoenixDataProvider(nil, "")
+
+	firstAlarm := time.Date(2026, time.April, 8, 13, 0, 0, 0, time.UTC)
+	restore := firstAlarm.Add(1 * time.Minute)
+	secondAlarm := firstAlarm.Add(2 * time.Minute)
+
+	rows := []phoenixActiveAlarmRow{
+		{
+			EventID:       sql.NullInt64{Int64: 7101, Valid: true},
+			EventParentID: sql.NullInt64{Int64: 9101, Valid: true},
+			PanelID:       "L00051",
+			GroupNo:       2,
+			TimeEvent:     sql.NullTime{Time: firstAlarm, Valid: true},
+			EventCode:     sql.NullString{String: "E130", Valid: true},
+			CodeMessage:   sql.NullString{String: "Перша тривога", Valid: true},
+			TypeCodeID:    sql.NullInt64{Int64: 1, Valid: true},
+			GroupMessage:  sql.NullString{String: "Склад", Valid: true},
+			GroupName:     sql.NullString{String: "Склад", Valid: true},
+			CompanyName:   sql.NullString{String: "Компанія 51", Valid: true},
+		},
+		{
+			EventID:       sql.NullInt64{Int64: 7102, Valid: true},
+			EventParentID: sql.NullInt64{Int64: 9101, Valid: true},
+			PanelID:       "L00051",
+			GroupNo:       2,
+			TimeEvent:     sql.NullTime{Time: restore, Valid: true},
+			EventCode:     sql.NullString{String: "R130", Valid: true},
+			CodeMessage:   sql.NullString{String: "Відновлення", Valid: true},
+			TypeCodeID:    sql.NullInt64{Int64: 2, Valid: true},
+			GroupMessage:  sql.NullString{String: "Склад", Valid: true},
+			GroupName:     sql.NullString{String: "Склад", Valid: true},
+			CompanyName:   sql.NullString{String: "Компанія 51", Valid: true},
+		},
+		{
+			EventID:       sql.NullInt64{Int64: 7103, Valid: true},
+			EventParentID: sql.NullInt64{Int64: 9101, Valid: true},
+			PanelID:       "L00051",
+			GroupNo:       2,
+			TimeEvent:     sql.NullTime{Time: secondAlarm, Valid: true},
+			EventCode:     sql.NullString{String: "E110", Valid: true},
+			CodeMessage:   sql.NullString{String: "Пожежа", Valid: true},
+			TypeCodeID:    sql.NullInt64{Int64: 14, Valid: true},
+			GroupMessage:  sql.NullString{String: "Склад", Valid: true},
+			GroupName:     sql.NullString{String: "Склад", Valid: true},
+			CompanyName:   sql.NullString{String: "Компанія 51", Valid: true},
+		},
+	}
+
+	alarms := provider.buildPhoenixActiveAlarms(rows)
+	if len(alarms) != 1 {
+		t.Fatalf("buildPhoenixActiveAlarms() returned %d alarms, want 1 grouped alarm", len(alarms))
+	}
+
+	alarm := alarms[0]
+	if alarm.Type != models.AlarmFire {
+		t.Fatalf("Type = %q, want %q", alarm.Type, models.AlarmFire)
+	}
+	if got, want := alarm.Details, "Пожежа | Склад"; got != want {
+		t.Fatalf("Details = %q, want %q", got, want)
+	}
+	if !alarm.Time.Equal(normalizePhoenixEventTime(secondAlarm)) {
+		t.Fatalf("Time = %v, want %v", alarm.Time, normalizePhoenixEventTime(secondAlarm))
+	}
+	if len(alarm.SourceMsgs) != 3 {
+		t.Fatalf("expected 3 source messages, got %d", len(alarm.SourceMsgs))
+	}
+	if !alarm.SourceMsgs[0].IsAlarm {
+		t.Fatalf("newest source message should be alarm, got %+v", alarm.SourceMsgs[0])
+	}
+}
+
+func TestPhoenixBuildActiveAlarms_GroupKeepsFireColorWhenLatestIsFault(t *testing.T) {
+	provider := NewPhoenixDataProvider(nil, "")
+
+	alarmTime := time.Date(2026, time.April, 8, 14, 0, 0, 0, time.UTC)
+	faultTime := alarmTime.Add(2 * time.Minute)
+
+	rows := []phoenixActiveAlarmRow{
+		{
+			EventID:       sql.NullInt64{Int64: 7201, Valid: true},
+			EventParentID: sql.NullInt64{Int64: 9201, Valid: true},
+			PanelID:       "L00052",
+			GroupNo:       1,
+			TimeEvent:     sql.NullTime{Time: alarmTime, Valid: true},
+			EventCode:     sql.NullString{String: "E110", Valid: true},
+			CodeMessage:   sql.NullString{String: "Пожежа", Valid: true},
+			TypeCodeID:    sql.NullInt64{Int64: 14, Valid: true},
+			GroupMessage:  sql.NullString{String: "Офіс", Valid: true},
+			GroupName:     sql.NullString{String: "Офіс", Valid: true},
+			CompanyName:   sql.NullString{String: "Компанія 52", Valid: true},
+		},
+		{
+			EventID:       sql.NullInt64{Int64: 7202, Valid: true},
+			EventParentID: sql.NullInt64{Int64: 9201, Valid: true},
+			PanelID:       "L00052",
+			GroupNo:       1,
+			TimeEvent:     sql.NullTime{Time: faultTime, Valid: true},
+			EventCode:     sql.NullString{String: "E300", Valid: true},
+			CodeMessage:   sql.NullString{String: "Несправність лінії", Valid: true},
+			TypeCodeID:    sql.NullInt64{Int64: 15, Valid: true},
+			GroupMessage:  sql.NullString{String: "Офіс", Valid: true},
+			GroupName:     sql.NullString{String: "Офіс", Valid: true},
+			CompanyName:   sql.NullString{String: "Компанія 52", Valid: true},
+		},
+	}
+
+	alarms := provider.buildPhoenixActiveAlarms(rows)
+	if len(alarms) != 1 {
+		t.Fatalf("buildPhoenixActiveAlarms() returned %d alarms, want 1 grouped alarm", len(alarms))
+	}
+
+	alarm := alarms[0]
+	if alarm.Type != models.AlarmFire {
+		t.Fatalf("Type = %q, want %q", alarm.Type, models.AlarmFire)
+	}
+	if alarm.SC1 != 1 {
+		t.Fatalf("SC1 = %d, want 1 (fire color while latest is fault)", alarm.SC1)
 	}
 }
 

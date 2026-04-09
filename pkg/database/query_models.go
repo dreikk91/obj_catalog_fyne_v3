@@ -101,3 +101,12 @@ type ActAlarmsRow struct {
 	Ukr1          *string    `db:"UKR1"`
 	Sc1           *int       `db:"SC1"`
 }
+
+type ActiveAlarmEventRow struct {
+	EvTime1 *time.Time `db:"EVTIME1"`
+	ObjN    *int64     `db:"OBJN"`
+	Zonen   *int64     `db:"ZONEN"`
+	Info1   *string    `db:"INFO1"`
+	Ukr1    *string    `db:"UKR1"`
+	Sc1     *int       `db:"SC1"`
+}

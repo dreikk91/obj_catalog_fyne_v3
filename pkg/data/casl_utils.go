@@ -61,8 +61,136 @@ func parseCASLAnyInt(value any) int {
 	return utils.ParseAnyInt(value)
 }
 
+func tryParseCASLAnyInt(value any) (int, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return 0, false
+	case int:
+		return typed, true
+	case int64:
+		return int(typed), true
+	case int32:
+		return int(typed), true
+	case float64:
+		return int(typed), true
+	case float32:
+		return int(typed), true
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return int(parsed), true
+		}
+		if parsed, err := typed.Float64(); err == nil {
+			return int(parsed), true
+		}
+		return 0, false
+	case string:
+		text := strings.TrimSpace(typed)
+		if text == "" {
+			return 0, false
+		}
+		if parsed, err := strconv.Atoi(text); err == nil {
+			return parsed, true
+		}
+		if parsed, err := strconv.ParseFloat(text, 64); err == nil {
+			return int(parsed), true
+		}
+		return 0, false
+	default:
+		return 0, false
+	}
+}
+
 func parseCASLAnyTime(value any) time.Time {
 	return utils.ParseAnyTime(value)
+}
+
+func tryParseCASLAnyTime(value any) (time.Time, bool) {
+	parseEpoch := func(epoch int64) (time.Time, bool) {
+		if epoch == 0 {
+			return time.Time{}, false
+		}
+		if epoch > 1_000_000_000_000 || epoch < -1_000_000_000_000 {
+			return time.UnixMilli(epoch).Local(), true
+		}
+		if epoch > 1_000_000_000 || epoch < -1_000_000_000 {
+			return time.Unix(epoch, 0).Local(), true
+		}
+		return time.Time{}, false
+	}
+
+	switch typed := value.(type) {
+	case nil:
+		return time.Time{}, false
+	case time.Time:
+		if typed.IsZero() {
+			return time.Time{}, false
+		}
+		return typed.Local(), true
+	case int64:
+		return parseEpoch(typed)
+	case int:
+		return parseEpoch(int64(typed))
+	case float64:
+		return parseEpoch(int64(typed))
+	case float32:
+		return parseEpoch(int64(typed))
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return parseEpoch(parsed)
+		}
+		if parsed, err := typed.Float64(); err == nil {
+			return parseEpoch(int64(parsed))
+		}
+		return time.Time{}, false
+	case string:
+		text := strings.TrimSpace(typed)
+		if text == "" {
+			return time.Time{}, false
+		}
+		if parsed, err := time.Parse(time.RFC3339Nano, text); err == nil {
+			return parsed.Local(), true
+		}
+		if parsed, err := time.Parse(time.RFC3339, text); err == nil {
+			return parsed.Local(), true
+		}
+		if parsed, err := strconv.ParseInt(text, 10, 64); err == nil {
+			return parseEpoch(parsed)
+		}
+		if parsed, err := strconv.ParseFloat(text, 64); err == nil {
+			return parseEpoch(int64(parsed))
+		}
+		return time.Time{}, false
+	default:
+		return time.Time{}, false
+	}
+}
+
+func firstCASLTextValue(values ...any) string {
+	for _, value := range values {
+		text := strings.TrimSpace(asString(value))
+		if text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func firstCASLIntValue(values ...any) (int, bool) {
+	for _, value := range values {
+		if parsed, ok := tryParseCASLAnyInt(value); ok {
+			return parsed, true
+		}
+	}
+	return 0, false
+}
+
+func firstCASLTimeValue(values ...any) (time.Time, bool) {
+	for _, value := range values {
+		if parsed, ok := tryParseCASLAnyTime(value); ok {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func mapCASLObjectStatus(statusRaw string, blocked bool) (models.ObjectStatus, string, bool) {

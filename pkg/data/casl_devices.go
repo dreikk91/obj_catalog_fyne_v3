@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 func (p *CASLCloudProvider) loadDevices(ctx context.Context) ([]caslDevice, error) {
@@ -134,6 +136,9 @@ func (p *CASLCloudProvider) readDevices(ctx context.Context) ([]caslDevice, erro
 	if err := p.postCommand(ctx, payload, &resp, true); err != nil {
 		return nil, err
 	}
+	if err := validateCASLDevices(resp.Data); err != nil {
+		return nil, err
+	}
 
 	return append([]caslDevice(nil), resp.Data...), nil
 }
@@ -163,72 +168,138 @@ func decodeCASLDeviceLines(raw json.RawMessage) []caslDeviceLine {
 		return nil
 	}
 
-	if body[0] == '[' {
-		var lines []caslDeviceLine
-		if err := json.Unmarshal(body, &lines); err == nil {
-			return lines
-		}
+	var generic any
+	if err := json.Unmarshal(body, &generic); err != nil {
 		return nil
 	}
 
-	if body[0] != '{' {
-		return nil
-	}
-
-	var source map[string]any
-	if err := json.Unmarshal(body, &source); err != nil {
-		return nil
-	}
-	if len(source) == 0 {
-		return nil
-	}
-
-	keys := make([]string, 0, len(source))
-	for key := range source {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	lines := make([]caslDeviceLine, 0, len(keys))
-	for _, key := range keys {
-		line, ok := decodeCASLDeviceLineFromAny(source[key], key)
-		if !ok {
-			continue
-		}
-		lines = append(lines, line)
+	decoded := decodeCASLLinePayloads(generic)
+	lines := make([]caslDeviceLine, 0, len(decoded))
+	for _, item := range decoded {
+		lines = append(lines, mapCASLDecodedLineToDeviceLine(item))
 	}
 	return lines
 }
 
-func decodeCASLDeviceLineFromAny(value any, fallbackKey string) (caslDeviceLine, bool) {
-	var line caslDeviceLine
-	fallbackNum := parseCASLID(fallbackKey)
-	if fallbackNum > 0 {
-		line.Number = caslInt64(fallbackNum)
-		line.ID = caslInt64(fallbackNum)
-	}
+type caslDecodedLine struct {
+	LineID        *int64
+	LineNumber    int
+	GroupNumber   int
+	AdapterType   string
+	AdapterNumber int
+	Description   string
+	LineType      string
+	IsBlocked     bool
+	RoomID        string
+}
 
-	switch typed := value.(type) {
-	case string:
-		line.Name = caslText(strings.TrimSpace(typed))
-		return line, strings.TrimSpace(line.Name.String()) != ""
-	case map[string]any:
-		if encoded, err := json.Marshal(typed); err == nil {
-			_ = json.Unmarshal(encoded, &line)
-		}
-		if line.ID.Int64() <= 0 && fallbackNum > 0 {
-			line.ID = caslInt64(fallbackNum)
-		}
-		if line.Number.Int64() <= 0 && fallbackNum > 0 {
-			line.Number = caslInt64(fallbackNum)
-		}
-		if line.Name.String() == "" {
-			if text := strings.TrimSpace(asString(typed["description"])); text != "" {
-				line.Name = caslText(text)
+func decodeCASLLinePayloads(raw any) []caslDecodedLine {
+	lines := make([]caslDecodedLine, 0, 16)
+	switch typed := raw.(type) {
+	case []any:
+		for idx, item := range typed {
+			if line, ok := decodeCASLLineFromAny(item, strconv.Itoa(idx+1)); ok {
+				lines = append(lines, line)
 			}
 		}
-		return line, line.Name.String() != "" || line.ID.Int64() > 0 || line.Number.Int64() > 0
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if line, ok := decodeCASLLineFromAny(typed[key], key); ok {
+				lines = append(lines, line)
+			}
+		}
+	}
+
+	sort.SliceStable(lines, func(i, j int) bool {
+		return lines[i].LineNumber < lines[j].LineNumber
+	})
+	return lines
+}
+
+func decodeCASLLineFromAny(value any, fallbackKey string) (caslDecodedLine, bool) {
+	line := caslDecodedLine{
+		LineNumber: parseCASLID(fallbackKey),
+	}
+	switch typed := value.(type) {
+	case string:
+		text := strings.TrimSpace(typed)
+		if text == "" {
+			return line, false
+		}
+		line.Description = text
+		line.LineType = "EMPTY"
+		return line, true
+	case map[string]any:
+		lineID := int64(parseCASLAnyInt(firstCASLAny(typed["line_id"], typed["id"])))
+		if lineID > 0 {
+			line.LineID = &lineID
+		}
+		if parsed := parseCASLAnyInt(firstCASLAny(typed["line_number"], typed["number"])); parsed > 0 {
+			line.LineNumber = parsed
+		}
+		line.GroupNumber = parseCASLAnyInt(typed["group_number"])
+		line.AdapterType = strings.TrimSpace(asString(typed["adapter_type"]))
+		line.AdapterNumber = parseCASLAnyInt(typed["adapter_number"])
+		line.Description = strings.TrimSpace(firstCASLString(typed["description"], typed["name"]))
+		line.LineType = strings.TrimSpace(firstCASLString(typed["line_type"], typed["type"]))
+		line.IsBlocked = parseCASLAnyInt(typed["isBlocked"]) > 0 || strings.EqualFold(strings.TrimSpace(asString(typed["isBlocked"])), "true")
+		line.RoomID = strings.TrimSpace(asString(typed["room_id"]))
+		return line, line.LineNumber > 0 || line.LineID != nil
 	default:
 		return line, false
 	}
+}
+
+func mapCASLDecodedLineToDeviceLine(line caslDecodedLine) caslDeviceLine {
+	result := caslDeviceLine{
+		GroupNumber:   caslInt64(line.GroupNumber),
+		AdapterType:   caslText(line.AdapterType),
+		AdapterNumber: caslInt64(line.AdapterNumber),
+		Description:   caslText(line.Description),
+		LineType:      caslText(line.LineType),
+		IsBlocked:     line.IsBlocked,
+		RoomID:        caslText(line.RoomID),
+	}
+	if line.LineID != nil && *line.LineID > 0 {
+		result.ID = caslInt64(*line.LineID)
+	}
+	if line.LineNumber > 0 {
+		result.Number = caslInt64(line.LineNumber)
+	}
+	if result.Description.String() != "" {
+		result.Name = result.Description
+	}
+	if result.LineType.String() != "" {
+		result.Type = result.LineType
+	}
+	if result.ID.Int64() <= 0 && result.Number.Int64() > 0 {
+		result.ID = result.Number
+	}
+	if result.Number.Int64() <= 0 && result.ID.Int64() > 0 {
+		result.Number = result.ID
+	}
+	return result
+}
+
+func mapCASLDecodedLineToEditorLine(line caslDecodedLine) contracts.CASLDeviceLineDetails {
+	result := contracts.CASLDeviceLineDetails{
+		LineNumber:    line.LineNumber,
+		GroupNumber:   line.GroupNumber,
+		AdapterType:   line.AdapterType,
+		AdapterNumber: line.AdapterNumber,
+		Description:   line.Description,
+		LineType:      line.LineType,
+		IsBlocked:     line.IsBlocked,
+		RoomID:        line.RoomID,
+	}
+	if line.LineID != nil && *line.LineID > 0 {
+		lineID := *line.LineID
+		result.LineID = &lineID
+	}
+	return result
 }

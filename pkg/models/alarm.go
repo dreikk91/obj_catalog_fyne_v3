@@ -51,6 +51,18 @@ type Alarm struct {
 	IsProcessed  bool      // Чи оброблена тривога
 	ProcessedBy  string    // Ким оброблена
 	ProcessNote  string    // Примітка при обробці
+	SourceMsgs   []AlarmMsg
+}
+
+// AlarmMsg представляє джерельне повідомлення тривожного кейсу (ppk_msgs-ланцюжок).
+type AlarmMsg struct {
+	Time      time.Time
+	Code      string
+	ContactID string
+	Number    int
+	Details   string
+	SC1       int
+	IsAlarm   bool
 }
 
 // GetTypeDisplay повертає текстовий опис типу тривоги українською

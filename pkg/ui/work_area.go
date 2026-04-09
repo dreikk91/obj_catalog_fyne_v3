@@ -475,7 +475,7 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 		},
 		func() fyne.CanvasObject {
 			label := widget.NewLabel("Data")
-			label.Truncation = fyne.TextTruncateEllipsis
+			label.Wrapping = fyne.TextWrapWord
 			btn := widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
 			btn.Hide()
 			return container.NewBorder(nil, nil, nil, btn, label)
@@ -490,6 +490,13 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 				label.SetText("")
 				btn.Hide()
 				return
+			}
+
+			label.Truncation = fyne.TextTruncateOff
+			if id.Col == 1 || id.Col == 2 {
+				label.Wrapping = fyne.TextWrapWord
+			} else {
+				label.Wrapping = fyne.TextWrapOff
 			}
 
 			var text string
@@ -528,39 +535,42 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 		},
 	)
 
-	w.ZonesTable.SetColumnWidth(0, 50)
-	w.ZonesTable.SetColumnWidth(1, 200)
-	w.ZonesTable.SetColumnWidth(2, 100)
-	w.ZonesTable.SetColumnWidth(3, 100)
-	w.ZonesTable.SetColumnWidth(4, 40)
+	w.ZonesTable.SetColumnWidth(0, zoneTableNumberColumnWidth)
+	w.ZonesTable.SetColumnWidth(1, zoneTableNameDefaultWidth)
+	w.ZonesTable.SetColumnWidth(2, zoneTableTypeColumnWidth)
+	w.ZonesTable.SetColumnWidth(3, zoneTableStatusColumnWidth)
+	w.ZonesTable.SetColumnWidth(4, zoneTableCopyColumnWidth)
 
 	w.ZonesFlatContent = container.NewBorder(
 		nil,
 		nil,
 		nil,
 		nil,
-		container.New(&zonesTableLayout{table: w.ZonesTable}, w.ZonesTable),
+		container.New(&zonesTableLayout{
+			table: w.ZonesTable,
+			zones: func() []models.Zone { return w.Zones },
+		}, w.ZonesTable),
 	)
 	w.ZonesContent = container.NewMax(w.ZonesFlatContent)
+	w.refreshZonesTableLayout()
 
 	return w.ZonesContent
 }
 
 type zonesTableLayout struct {
 	table         *widget.Table
+	zones         func() []models.Zone
 	lastNameWidth float32
 }
 
 func (l *zonesTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
-	// Fixed columns: ID(50) + Type(100) + Status(100) + Copy(40) = 290
-	fixedWidth := float32(290)
-	available := size.Width - fixedWidth - 10
-	if available < 150 {
-		available = 150
-	}
+	available := zoneTableNameColumnWidth(size.Width)
 
 	if l.lastNameWidth != available {
 		l.table.SetColumnWidth(1, available)
+		if l.zones != nil {
+			updateZoneTableRowHeights(l.table, l.zones(), available)
+		}
 		l.lastNameWidth = available
 		l.table.Refresh()
 	}
@@ -599,33 +609,78 @@ func (w *WorkAreaPanel) buildGroupedZonesSection(
 
 	table := widget.NewTable(
 		func() (int, int) {
-			return len(section.Zones), 4
+			return len(section.Zones), 5
 		},
 		func() fyne.CanvasObject {
-			return widget.NewLabel("Data")
+			label := widget.NewLabel("Data")
+			label.Truncation = fyne.TextTruncateOff
+			label.Wrapping = fyne.TextWrapWord
+			btn := widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
+			btn.Hide()
+			return container.NewBorder(nil, nil, nil, btn, label)
 		},
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			label := obj.(*widget.Label)
+			cell := obj.(*fyne.Container)
+			label := cell.Objects[0].(*widget.Label)
+			btn := cell.Objects[1].(*widget.Button)
 			zone := section.Zones[id.Row]
+			label.Truncation = fyne.TextTruncateOff
+			if id.Col == 1 || id.Col == 2 {
+				label.Wrapping = fyne.TextWrapWord
+			} else {
+				label.Wrapping = fyne.TextWrapOff
+			}
 
+			var text string
 			switch id.Col {
 			case 0:
-				label.SetText("№" + strconv.Itoa(zone.Number))
+				text = "№" + strconv.Itoa(zone.Number)
 			case 1:
-				label.SetText(zone.Name)
+				text = zone.Name
 			case 2:
-				label.SetText(zone.SensorType)
+				text = zone.SensorType
 			case 3:
-				label.SetText(zone.GetStatusDisplay())
+				text = zone.GetStatusDisplay()
+			case 4:
+				text = ""
+				label.Hide()
+				btn.Show()
+				btn.OnTapped = func() {
+					objectName := ""
+					if w.CurrentObject != nil {
+						objectName = strings.TrimSpace(w.CurrentObject.Name)
+					}
+					copyText := fmt.Sprintf("Зона %d: %s", zone.Number, zone.Name)
+					if objectName != "" {
+						copyText += " (" + objectName + ")"
+					}
+					w.Window.Clipboard().SetContent(copyText)
+					ShowToast(w.Window, "Скопійовано зону")
+				}
+				return
 			default:
-				label.SetText("")
+				text = ""
+			}
+
+			label.SetText(text)
+			label.Show()
+			if id.Col == 1 {
+				btn.Show()
+				btn.OnTapped = func() {
+					w.Window.Clipboard().SetContent(zone.Name)
+					ShowToast(w.Window, "Скопійовано назву зони")
+				}
+			} else {
+				btn.Hide()
 			}
 		},
 	)
-	table.SetColumnWidth(0, 50)
-	table.SetColumnWidth(1, 220)
-	table.SetColumnWidth(2, 140)
-	table.SetColumnWidth(3, 110)
+	table.SetColumnWidth(0, zoneTableNumberColumnWidth)
+	table.SetColumnWidth(1, groupedZoneTableNameWidth)
+	table.SetColumnWidth(2, groupedZoneTableTypeWidth)
+	table.SetColumnWidth(3, groupedZoneTableStatusWidth)
+	table.SetColumnWidth(4, zoneTableCopyColumnWidth)
+	updateGroupedZoneTableRowHeights(table, section.Zones)
 
 	return container.NewPadded(table)
 }
@@ -965,6 +1020,7 @@ func (w *WorkAreaPanel) syncZonesDataBinding() {
 		return
 	}
 	_ = SetUntypedList(w.ZonesData, w.Zones)
+	w.refreshZonesTableLayout()
 }
 
 func (w *WorkAreaPanel) syncContactsDataBinding() {
@@ -1079,6 +1135,13 @@ func (w *WorkAreaPanel) zoneByRow(row int) (models.Zone, bool) {
 	}
 	zone, ok := value.(models.Zone)
 	return zone, ok
+}
+
+func (w *WorkAreaPanel) refreshZonesTableLayout() {
+	if w == nil || w.ZonesTable == nil {
+		return
+	}
+	updateZoneTableRowHeights(w.ZonesTable, w.Zones, zoneTableNameColumnWidth(w.ZonesTable.Size().Width))
 }
 
 // RefreshCurrentObjectEvents оновлює тільки журнал подій для поточного об'єкта.

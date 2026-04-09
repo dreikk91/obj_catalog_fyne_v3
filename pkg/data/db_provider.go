@@ -3,10 +3,12 @@ package data
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/models"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -304,6 +306,11 @@ func (p *DBDataProvider) GetObjectEvents(objectID string) []models.Event {
 	return events
 }
 
+func (p *DBDataProvider) GetAlarmSourceMessages(alarm models.Alarm) []models.AlarmMsg {
+	events := p.GetObjectEvents(strconv.Itoa(alarm.ObjectID))
+	return buildAlarmSourceMessagesFromEvents(alarm, events)
+}
+
 func mapDBEventRows(rows []database.EventRow, objectID int) []models.Event {
 	events := make([]models.Event, 0, len(rows))
 	for _, row := range rows {
@@ -345,61 +352,283 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 		return nil
 	}
 
-	var alarms []models.Alarm
-	for _, row := range rows {
-		// Визначаємо тип тривоги за SC1
-		alarmType := models.AlarmFire
+	type alarmBase struct {
+		objN      int64
+		shortName *string
+		address   *string
+	}
 
-		switch *row.Sc1 {
-		case 1:
-			alarmType = models.AlarmFire
-		case 2:
-			alarmType = models.AlarmFault
-		case 12:
-			alarmType = models.AlarmOffline
-		default:
-			alarmType = models.AlarmFault
+	baseByObject := make(map[int64]alarmBase, len(rows))
+	activeMsgsByObject := make(map[int64][]dbAlarmMessage, len(rows))
+	objectOrder := make([]int64, 0, len(rows))
+
+	for _, row := range rows {
+		objN := ptrToInt64(row.ObjN)
+		if objN <= 0 {
+			continue
+		}
+		if _, exists := baseByObject[objN]; !exists {
+			baseByObject[objN] = alarmBase{
+				objN:      objN,
+				shortName: row.ObjShortName1,
+				address:   row.Address1,
+			}
+			objectOrder = append(objectOrder, objN)
+		}
+		activeMsgsByObject[objN] = append(activeMsgsByObject[objN], buildDBAlarmMessageFromActiveRow(row))
+	}
+
+	alarms := make([]models.Alarm, 0, len(objectOrder))
+	for _, objN := range objectOrder {
+		base := baseByObject[objN]
+		activeMsgs := append([]dbAlarmMessage(nil), activeMsgsByObject[objN]...)
+		if len(activeMsgs) == 0 {
+			continue
+		}
+		sortDBAlarmMessages(activeMsgs)
+
+		selected, ok := selectDBAlarmMessage(activeMsgs)
+		if !ok {
+			continue
 		}
 
-		// if row.Sc1 != nil && *row.Sc1 == 1 {
-		// 	alarmType = models.AlarmFire
-		// } else {
-		// 	alarmType = models.AlarmFault
-		// }
-
-		details := ptrToString(row.Ukr1)
-		info1 := ptrToString(row.Info1)
-		if info1 != "" {
-			if details != "" {
-				details += " (" + info1 + ")"
+		alarmType := selected.AlarmType
+		if !selected.HasAlarmType {
+			if fallback, hasFallback := selectDBAlarmMessage(activeMsgs); hasFallback && fallback.HasAlarmType {
+				alarmType = fallback.AlarmType
 			} else {
-				details = info1
+				alarmType = models.AlarmFault
 			}
 		}
 
+		details := strings.TrimSpace(selected.Details)
+		if details == "" {
+			details = "Тривога МІСТ"
+		}
+
 		alarm := models.Alarm{
-			ID:           int(ptrToInt64(row.ObjN)),
-			ObjectID:     int(ptrToInt64(row.ObjN)),
-			ObjectNumber: strconv.FormatInt(ptrToInt64(row.ObjN), 10),
-			ObjectName:   formatDBObjectName(row.ObjN, row.ObjShortName1),
-			Address:      ptrToString(row.Address1),
+			ID:           int(objN),
+			ObjectID:     int(objN),
+			ObjectNumber: strconv.FormatInt(objN, 10),
+			ObjectName:   formatDBObjectName(&base.objN, base.shortName),
+			Address:      ptrToString(base.address),
 			Details:      details,
-			Time:         ptrToTime(row.EvTime1),
+			Time:         selected.Time,
 			Type:         alarmType,
-			SC1:          ptrToInt(row.Sc1),
+			ZoneNumber:   selected.ZoneNumber,
+			SC1:          resolveDBGroupedAlarmSC1(activeMsgs, selected.SC1),
 		}
 		alarms = append(alarms, alarm)
 	}
 
-	log.Debug().Int("alarmsCount", len(alarms)).Msg("Тривоги завантажено")
-	if len(alarms) > 0 {
+	sort.SliceStable(alarms, func(i, j int) bool {
+		left := alarms[i].Time
+		right := alarms[j].Time
+		if left.Equal(right) {
+			return alarms[i].ID > alarms[j].ID
+		}
+		return left.After(right)
+	})
 
-		// log.Info().Int("count", len(alarms)).Msg("Активні тривоги знайдено!")
-		// for _, a := range alarms {
-		// 	log.Warn().Int("id", a.ID).Str("object", a.ObjectName).Str("address", a.Address).Msg("Тривога")
-		// }
-	}
+	log.Debug().Int("alarmsCount", len(alarms)).Msg("Тривоги завантажено")
 	return alarms
+}
+
+type dbAlarmMessage struct {
+	Time         time.Time
+	Details      string
+	EventType    models.EventType
+	AlarmType    models.AlarmType
+	HasAlarmType bool
+	IsAlarm      bool
+	ZoneNumber   int
+	SC1          int
+}
+
+func buildDBAlarmMessageFromActiveRow(row database.ActAlarmsRow) dbAlarmMessage {
+	return buildDBAlarmMessage(ptrToTime(row.EvTime1), ptrToString(row.Ukr1), ptrToString(row.Info1), ptrToInt64(row.Zonen), ptrToInt(row.Sc1))
+}
+
+func buildDBAlarmMessageFromTimelineRow(row database.ActiveAlarmEventRow) dbAlarmMessage {
+	return buildDBAlarmMessage(ptrToTime(row.EvTime1), ptrToString(row.Ukr1), ptrToString(row.Info1), ptrToInt64(row.Zonen), ptrToInt(row.Sc1))
+}
+
+func buildDBAlarmMessage(eventTime time.Time, ukr string, info string, zoneNumber int64, sc1 int) dbAlarmMessage {
+	details := strings.TrimSpace(ukr)
+	info = strings.TrimSpace(info)
+	if info != "" {
+		if details != "" {
+			details += " (" + info + ")"
+		} else {
+			details = info
+		}
+	}
+
+	eventType := mapDBSC1ToEventType(sc1)
+	alarmType, hasAlarmType := mapEventTypeToAlarmType(eventType)
+
+	return dbAlarmMessage{
+		Time:         eventTime,
+		Details:      details,
+		EventType:    eventType,
+		AlarmType:    alarmType,
+		HasAlarmType: hasAlarmType,
+		IsAlarm:      isDBAlarmEventType(eventType),
+		ZoneNumber:   int(zoneNumber),
+		SC1:          sc1,
+	}
+}
+
+func sortDBAlarmMessages(messages []dbAlarmMessage) {
+	sort.SliceStable(messages, func(i, j int) bool {
+		left := messages[i].Time
+		right := messages[j].Time
+		return left.After(right)
+	})
+}
+
+func selectDBAlarmMessage(messages []dbAlarmMessage) (dbAlarmMessage, bool) {
+	if len(messages) == 0 {
+		return dbAlarmMessage{}, false
+	}
+
+	// Пріоритет 1: "справжня" тривога (пожежа/проникнення/паніка/...), навіть якщо після неї
+	// у хронології з'явилася несправність або відновлення.
+	for _, msg := range messages {
+		if isPrimaryAlarmEventType(msg.EventType) {
+			return msg, true
+		}
+	}
+	// Пріоритет 2: будь-яка інша тривожна подія (fault/offline/...).
+	for _, msg := range messages {
+		if msg.IsAlarm {
+			return msg, true
+		}
+	}
+	// Якщо тривог немає, беремо найновішу подію.
+	return messages[0], true
+}
+
+func resolveDBGroupedAlarmSC1(messages []dbAlarmMessage, fallback int) int {
+	if len(messages) == 0 {
+		return fallback
+	}
+
+	latest := messages[0]
+	if latest.EventType == models.EventFault && hasPrimaryAlarmMessage(messages) {
+		// Спецправило: якщо після тривоги прийшла несправність, головний рядок
+		// лишаємо в "пожежному" кольорі.
+		return 1
+	}
+
+	if latest.SC1 != 0 {
+		return latest.SC1
+	}
+	for _, msg := range messages {
+		if msg.SC1 != 0 {
+			return msg.SC1
+		}
+	}
+	return fallback
+}
+
+func hasPrimaryAlarmMessage(messages []dbAlarmMessage) bool {
+	for _, msg := range messages {
+		if isPrimaryAlarmEventType(msg.EventType) {
+			return true
+		}
+	}
+	return false
+}
+
+func mapDBAlarmMessagesToSourceMsgs(messages []dbAlarmMessage) []models.AlarmMsg {
+	if len(messages) == 0 {
+		return nil
+	}
+	result := make([]models.AlarmMsg, 0, len(messages))
+	for _, msg := range messages {
+		result = append(result, models.AlarmMsg{
+			Time:    msg.Time,
+			Number:  msg.ZoneNumber,
+			Details: msg.Details,
+			SC1:     msg.SC1,
+			IsAlarm: msg.IsAlarm,
+		})
+	}
+	return result
+}
+
+func mapDBSC1ToEventType(sc1 int) models.EventType {
+	switch sc1 {
+	case 1:
+		return models.EventFire
+	case 21:
+		return models.EventPanic
+	case 22:
+		return models.EventBurglary
+	case 23:
+		return models.EventMedical
+	case 24:
+		return models.EventGas
+	case 25:
+		return models.EventTamper
+	case 2:
+		return models.EventFault
+	case 3, 26:
+		return models.EventPowerFail
+	case 4, 27:
+		return models.EventBatteryLow
+	case 5, 9, 13, 17:
+		return models.EventRestore
+	case 10:
+		return models.EventArm
+	case 11, 14, 18:
+		return models.EventDisarm
+	case 28:
+		return models.EventOnline
+	case 12:
+		return models.EventOffline
+	case 29:
+		return models.EventDeviceBlocked
+	case 30:
+		return models.SystemEvent
+	default:
+		return models.SystemEvent
+	}
+}
+
+func isDBQueryContextCanceled(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "operation was cancelled") ||
+		strings.Contains(msg, "operation was canceled") ||
+		strings.Contains(msg, "deadline exceeded") ||
+		strings.Contains(msg, "context canceled")
+}
+
+func isDBAlarmEventType(eventType models.EventType) bool {
+	switch eventType {
+	case models.EventFire,
+		models.EventBurglary,
+		models.EventPanic,
+		models.EventMedical,
+		models.EventGas,
+		models.EventTamper,
+		models.EventFault,
+		models.EventOffline,
+		models.EventAlarmNotification,
+		models.EventPowerFail,
+		models.EventBatteryLow,
+		models.EventDeviceBlocked:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *DBDataProvider) ProcessAlarm(id string, user string, note string) {

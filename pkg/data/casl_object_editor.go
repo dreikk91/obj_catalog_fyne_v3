@@ -569,28 +569,28 @@ func (p *CASLCloudProvider) resolveCASLEditorObjectID(ctx context.Context, objec
 }
 
 func (p *CASLCloudProvider) loadCASLObjectEditorReferences(ctx context.Context) ([]contracts.CASLUserProfile, []contracts.CASLPultRef, map[string]any, error) {
-	usersRaw, err := p.ReadUsersRaw(ctx, 0, caslReadLimit)
+	usersRaw, err := p.readUsers(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	users := make([]contracts.CASLUserProfile, 0, len(usersRaw))
 	for _, raw := range usersRaw {
-		users = append(users, mapCASLUserProfile(raw))
+		users = append(users, mapCASLUserProfileFromUser(raw))
 	}
 	sort.SliceStable(users, func(i, j int) bool {
 		return caslUserDisplayName(users[i]) < caslUserDisplayName(users[j])
 	})
 
-	pultsRaw, err := p.ReadPults(ctx, 0, caslReadLimit)
+	pultsRaw, err := p.readPultsPublic(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	pults := make([]contracts.CASLPultRef, 0, len(pultsRaw))
 	for _, raw := range pultsRaw {
 		pults = append(pults, contracts.CASLPultRef{
-			PultID:   strings.TrimSpace(asString(raw["pult_id"])),
-			Name:     strings.TrimSpace(asString(raw["name"])),
-			Nickname: strings.TrimSpace(asString(raw["nickname"])),
+			PultID:   strings.TrimSpace(raw.PultID),
+			Name:     strings.TrimSpace(raw.Name),
+			Nickname: strings.TrimSpace(raw.Nickname),
 		})
 	}
 	sort.SliceStable(pults, func(i, j int) bool {
@@ -615,6 +615,9 @@ func (p *CASLCloudProvider) getCASLObjectFull(ctx context.Context, objID string)
 	}
 	if !statusIsOK(resp.Status) {
 		return contracts.CASLGuardObjectDetails{}, fmt.Errorf("casl get_grd_object_full status=%q error=%q", resp.Status, resp.Error)
+	}
+	if err := validateCASLObjectEditorResponse(resp); err != nil {
+		return contracts.CASLGuardObjectDetails{}, err
 	}
 
 	rooms := make([]contracts.CASLRoomDetails, 0, len(resp.Rooms))
@@ -967,67 +970,12 @@ func decodeCASLEditorDeviceLines(raw any) []contracts.CASLDeviceLineDetails {
 		return nil
 	}
 
-	lines := make([]contracts.CASLDeviceLineDetails, 0, 16)
-	switch typed := generic.(type) {
-	case []any:
-		for idx, item := range typed {
-			if line, ok := decodeCASLEditorDeviceLine(item, strconv.Itoa(idx+1)); ok {
-				lines = append(lines, line)
-			}
-		}
-	case map[string]any:
-		keys := make([]string, 0, len(typed))
-		for key := range typed {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			if line, ok := decodeCASLEditorDeviceLine(typed[key], key); ok {
-				lines = append(lines, line)
-			}
-		}
+	decoded := decodeCASLLinePayloads(generic)
+	lines := make([]contracts.CASLDeviceLineDetails, 0, len(decoded))
+	for _, item := range decoded {
+		lines = append(lines, mapCASLDecodedLineToEditorLine(item))
 	}
-
-	sort.SliceStable(lines, func(i, j int) bool {
-		return lines[i].LineNumber < lines[j].LineNumber
-	})
 	return lines
-}
-
-func decodeCASLEditorDeviceLine(value any, fallbackKey string) (contracts.CASLDeviceLineDetails, bool) {
-	number := parseCASLID(fallbackKey)
-	line := contracts.CASLDeviceLineDetails{
-		LineNumber: number,
-	}
-
-	switch typed := value.(type) {
-	case string:
-		text := strings.TrimSpace(typed)
-		if text == "" {
-			return line, false
-		}
-		line.Description = text
-		line.LineType = "EMPTY"
-		return line, true
-	case map[string]any:
-		lineID := int64(parseCASLAnyInt(firstCASLAny(typed["line_id"], typed["id"])))
-		if lineID > 0 {
-			line.LineID = &lineID
-		}
-		if parsed := parseCASLAnyInt(firstCASLAny(typed["line_number"], typed["number"])); parsed > 0 {
-			line.LineNumber = parsed
-		}
-		line.GroupNumber = parseCASLAnyInt(typed["group_number"])
-		line.AdapterType = strings.TrimSpace(asString(typed["adapter_type"]))
-		line.AdapterNumber = parseCASLAnyInt(typed["adapter_number"])
-		line.Description = strings.TrimSpace(firstCASLString(typed["description"], typed["name"]))
-		line.LineType = strings.TrimSpace(firstCASLString(typed["line_type"], typed["type"]))
-		line.IsBlocked = parseCASLAnyInt(typed["isBlocked"]) > 0 || strings.EqualFold(strings.TrimSpace(asString(typed["isBlocked"])), "true")
-		line.RoomID = strings.TrimSpace(asString(typed["room_id"]))
-		return line, line.LineNumber > 0 || line.LineID != nil
-	default:
-		return line, false
-	}
 }
 
 func mapCASLUserProfile(raw map[string]any) contracts.CASLUserProfile {
@@ -1053,6 +1001,27 @@ func mapCASLUserProfile(raw map[string]any) contracts.CASLUserProfile {
 		MiddleName:   strings.TrimSpace(asString(raw["middle_name"])),
 		Role:         strings.TrimSpace(asString(raw["role"])),
 		Tag:          strings.TrimSpace(asString(raw["tag"])),
+		PhoneNumbers: phones,
+	}
+}
+
+func mapCASLUserProfileFromUser(raw caslUser) contracts.CASLUserProfile {
+	phones := make([]contracts.CASLPhoneNumber, 0, len(raw.PhoneNumbers))
+	for _, item := range raw.PhoneNumbers {
+		phones = append(phones, contracts.CASLPhoneNumber{
+			Active: item.Active,
+			Number: strings.TrimSpace(item.Number),
+		})
+	}
+
+	return contracts.CASLUserProfile{
+		UserID:       strings.TrimSpace(raw.UserID),
+		Email:        strings.TrimSpace(raw.Email),
+		LastName:     strings.TrimSpace(raw.LastName),
+		FirstName:    strings.TrimSpace(raw.FirstName),
+		MiddleName:   strings.TrimSpace(raw.MiddleName),
+		Role:         strings.TrimSpace(raw.Role),
+		Tag:          strings.TrimSpace(raw.Tag.String()),
 		PhoneNumbers: phones,
 	}
 }

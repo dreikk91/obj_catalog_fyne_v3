@@ -291,18 +291,18 @@ func (p *CASLCloudProvider) ReadGuardRooms(ctx context.Context, skip int, limit 
 // ReadDictionary calls read_dictionary command.
 func (p *CASLCloudProvider) ReadDictionary(ctx context.Context) (map[string]any, error) {
 	var resp struct {
-		Status     string         `json:"status"`
-		Dictionary map[string]any `json:"dictionary"`
-		Error      string         `json:"error"`
+		Status     string          `json:"status"`
+		Dictionary json.RawMessage `json:"dictionary"`
+		Error      string          `json:"error"`
 	}
 
 	if err := p.postCommand(ctx, map[string]any{"type": "read_dictionary"}, &resp, true); err != nil {
 		return nil, err
 	}
-	if resp.Dictionary == nil {
+	if len(resp.Dictionary) == 0 || string(resp.Dictionary) == "null" {
 		return map[string]any{}, nil
 	}
-	return resp.Dictionary, nil
+	return decodeCASLObjectData(resp.Dictionary, "read_dictionary.dictionary")
 }
 
 // ReadAlarmEventsCatalog calls read_alarm_events command.
@@ -379,7 +379,7 @@ func (p *CASLCloudProvider) GetMessageTranslatorByDeviceType(ctx context.Context
 	if key == "" {
 		// Для translator endpoint не робимо auto-relogin на WRONG_FORMAT,
 		// інакше отримаємо шторм login+command запитів.
-		return p.readCommandDataAsAnyNoRelogin(ctx, map[string]any{"type": "get_msg_translator_by_device_type"}, true)
+		return p.readCommandDataAsMapNoRelogin(ctx, map[string]any{"type": "get_msg_translator_by_device_type"}, true)
 	}
 
 	// У різних інсталяціях CASL зустрічаються обидва варіанти:
@@ -388,7 +388,7 @@ func (p *CASLCloudProvider) GetMessageTranslatorByDeviceType(ctx context.Context
 		"type":       "get_msg_translator_by_device_type",
 		"typeDevice": key,
 	}
-	data, err := p.readCommandDataAsAnyNoRelogin(ctx, primary, true)
+	data, err := p.readCommandDataAsMapNoRelogin(ctx, primary, true)
 	if err == nil {
 		return data, nil
 	}
@@ -400,7 +400,7 @@ func (p *CASLCloudProvider) GetMessageTranslatorByDeviceType(ctx context.Context
 		"type":        "get_msg_translator_by_device_type",
 		"device_type": key,
 	}
-	return p.readCommandDataAsAnyNoRelogin(ctx, fallback, true)
+	return p.readCommandDataAsMapNoRelogin(ctx, fallback, true)
 }
 
 // ReadGeneralTapeObjects calls get_general_tape_objects command.
@@ -449,16 +449,13 @@ func (p *CASLCloudProvider) ReadGeneralTapeItem(ctx context.Context, objIDs []st
 			continue
 		}
 
-		rows := make([]map[string]any, 0, 8)
-		switch typed := rawRows.(type) {
-		case []any:
-			for _, row := range typed {
-				if mapped, ok := row.(map[string]any); ok {
-					rows = append(rows, mapped)
-				}
-			}
-		case map[string]any:
-			rows = append(rows, typed)
+		encoded, err := json.Marshal(rawRows)
+		if err != nil {
+			return nil, fmt.Errorf("casl command %q: obj_id %q rows encode: %w", asString(payload["type"]), objID, err)
+		}
+		rows, err := decodeCASLObjectArrayData(encoded, asString(payload["type"]))
+		if err != nil {
+			return nil, fmt.Errorf("casl command %q: obj_id %q rows: %w", asString(payload["type"]), objID, err)
 		}
 		if len(rows) == 0 {
 			continue
@@ -471,7 +468,7 @@ func (p *CASLCloudProvider) ReadGeneralTapeItem(ctx context.Context, objIDs []st
 
 // GetRTSPURL calls get_rtsp_url command and returns data payload.
 func (p *CASLCloudProvider) GetRTSPURL(ctx context.Context) (any, error) {
-	return p.readCommandDataAsAny(ctx, map[string]any{"type": "get_rtsp_url"}, true)
+	return p.readCommandDataAsMap(ctx, map[string]any{"type": "get_rtsp_url"}, true)
 }
 
 // ReadEventsJournal executes read_events (general journal) command.
@@ -509,6 +506,9 @@ func (p *CASLCloudProvider) ReadEventsJournal(ctx context.Context, req CASLReadE
 	rows := resp.Data
 	if len(rows) == 0 {
 		rows = resp.Events
+	}
+	if err := validateCASLObjectEvents(rows, "casl read_events"); err != nil {
+		return nil, err
 	}
 
 	result := make([]CASLObjectEvent, 0, len(rows))
@@ -557,6 +557,9 @@ func (p *CASLCloudProvider) ReadEventsByID(ctx context.Context, req CASLReadEven
 	rawEvents := resp.Data
 	if len(rawEvents) == 0 {
 		rawEvents = resp.Events
+	}
+	if err := validateCASLObjectEvents(rawEvents, "casl read_events_by_id"); err != nil {
+		return nil, err
 	}
 
 	result := make([]CASLObjectEvent, 0, len(rawEvents))
@@ -648,6 +651,9 @@ func (p *CASLCloudProvider) ReadDeviceStateByID(ctx context.Context, deviceID st
 	if err := p.postCommand(ctx, payload, &resp, true); err != nil {
 		return CASLDeviceStateInfo{}, err
 	}
+	if err := validateCASLDeviceState(resp.State, "casl read_device_state"); err != nil {
+		return CASLDeviceStateInfo{}, err
+	}
 
 	state := resp.State
 	return CASLDeviceStateInfo{
@@ -701,6 +707,9 @@ func (p *CASLCloudProvider) GetStatistic(ctx context.Context, req CASLGetStatist
 
 	var resp caslGetStatisticResponse
 	if err := p.postCommand(ctx, payload, &resp, true); err != nil {
+		return CASLStatsAlarms{}, err
+	}
+	if err := validateCASLStatsAlarmsData(resp.Data, "casl get_statistic"); err != nil {
 		return CASLStatsAlarms{}, err
 	}
 
@@ -817,46 +826,33 @@ func (p *CASLCloudProvider) FinishGuardObject(ctx context.Context, objID string,
 }
 
 func (p *CASLCloudProvider) readCommandDataAsMap(ctx context.Context, payload map[string]any, requireAuth bool) (map[string]any, error) {
-	data, err := p.readCommandDataAsAny(ctx, payload, requireAuth)
+	return p.readCommandDataAsMapWithRelogin(ctx, payload, requireAuth, true)
+}
+
+func (p *CASLCloudProvider) readCommandDataAsMapNoRelogin(ctx context.Context, payload map[string]any, requireAuth bool) (map[string]any, error) {
+	return p.readCommandDataAsMapWithRelogin(ctx, payload, requireAuth, false)
+}
+
+func (p *CASLCloudProvider) readCommandDataAsMapWithRelogin(ctx context.Context, payload map[string]any, requireAuth bool, allowRelogin bool) (map[string]any, error) {
+	raw, err := p.readCommandDataRawWithRelogin(ctx, payload, requireAuth, allowRelogin)
 	if err != nil {
 		return nil, err
 	}
-	if data == nil {
+	if len(raw) == 0 || string(raw) == "null" {
 		return map[string]any{}, nil
 	}
-	if mapped, ok := data.(map[string]any); ok {
-		return mapped, nil
-	}
-	return nil, fmt.Errorf("casl command %q: expected object data, got %T", asString(payload["type"]), data)
+	return decodeCASLObjectData(raw, asString(payload["type"]))
 }
 
 func (p *CASLCloudProvider) readCommandDataAsMaps(ctx context.Context, payload map[string]any, requireAuth bool) ([]map[string]any, error) {
-	data, err := p.readCommandDataAsAny(ctx, payload, requireAuth)
+	raw, err := p.readCommandDataRawWithRelogin(ctx, payload, requireAuth, true)
 	if err != nil {
 		return nil, err
 	}
-	if data == nil {
+	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
-
-	asSlice, ok := data.([]any)
-	if !ok {
-		if asMap, isMap := data.(map[string]any); isMap {
-			return []map[string]any{asMap}, nil
-		}
-		return nil, fmt.Errorf("casl command %q: expected array data, got %T", asString(payload["type"]), data)
-	}
-
-	result := make([]map[string]any, 0, len(asSlice))
-	for _, item := range asSlice {
-		mapped, isMap := item.(map[string]any)
-		if !isMap {
-			continue
-		}
-		result = append(result, mapped)
-	}
-
-	return result, nil
+	return decodeCASLObjectArrayData(raw, asString(payload["type"]))
 }
 
 func (p *CASLCloudProvider) readCommandDataAsAny(ctx context.Context, payload map[string]any, requireAuth bool) (any, error) {
@@ -868,6 +864,23 @@ func (p *CASLCloudProvider) readCommandDataAsAnyNoRelogin(ctx context.Context, p
 }
 
 func (p *CASLCloudProvider) readCommandDataAsAnyWithRelogin(ctx context.Context, payload map[string]any, requireAuth bool, allowRelogin bool) (any, error) {
+	raw, err := p.readCommandDataRawWithRelogin(ctx, payload, requireAuth, allowRelogin)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+
+	var data any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return nil, fmt.Errorf("casl decode %q data: %w", asString(payload["type"]), err)
+	}
+
+	return data, nil
+}
+
+func (p *CASLCloudProvider) readCommandDataRawWithRelogin(ctx context.Context, payload map[string]any, requireAuth bool, allowRelogin bool) (json.RawMessage, error) {
 	var resp struct {
 		Status string          `json:"status"`
 		Data   json.RawMessage `json:"data"`
@@ -876,16 +889,49 @@ func (p *CASLCloudProvider) readCommandDataAsAnyWithRelogin(ctx context.Context,
 	if err := p.postCommandWithRetry(ctx, payload, &resp, requireAuth, allowRelogin); err != nil {
 		return nil, err
 	}
-	if len(resp.Data) == 0 || string(resp.Data) == "null" {
-		return nil, nil
+	return resp.Data, nil
+}
+
+func decodeCASLObjectData(raw json.RawMessage, command string) (map[string]any, error) {
+	var mapped map[string]any
+	if err := json.Unmarshal(raw, &mapped); err == nil {
+		if mapped == nil {
+			return map[string]any{}, nil
+		}
+		return mapped, nil
 	}
 
-	var data any
-	if err := json.Unmarshal(resp.Data, &data); err != nil {
-		return nil, fmt.Errorf("casl decode %q data: %w", asString(payload["type"]), err)
+	var invalid any
+	if err := json.Unmarshal(raw, &invalid); err != nil {
+		return nil, fmt.Errorf("casl decode %q object data: %w", command, err)
+	}
+	return nil, fmt.Errorf("casl command %q: expected object data, got %T", command, invalid)
+}
+
+func decodeCASLObjectArrayData(raw json.RawMessage, command string) ([]map[string]any, error) {
+	var slice []json.RawMessage
+	if err := json.Unmarshal(raw, &slice); err == nil {
+		result := make([]map[string]any, 0, len(slice))
+		for idx, item := range slice {
+			mapped, mapErr := decodeCASLObjectData(item, command)
+			if mapErr != nil {
+				return nil, fmt.Errorf("casl command %q: data[%d]: %w", command, idx, mapErr)
+			}
+			result = append(result, mapped)
+		}
+		return result, nil
 	}
 
-	return data, nil
+	mapped, err := decodeCASLObjectData(raw, command)
+	if err == nil {
+		return []map[string]any{mapped}, nil
+	}
+
+	var invalid any
+	if decodeErr := json.Unmarshal(raw, &invalid); decodeErr != nil {
+		return nil, fmt.Errorf("casl decode %q array data: %w", command, decodeErr)
+	}
+	return nil, fmt.Errorf("casl command %q: expected array/object data, got %T", command, invalid)
 }
 
 func (p *CASLCloudProvider) doJSONGet(ctx context.Context, path string) ([]byte, caslStatusOnlyResponse, error) {

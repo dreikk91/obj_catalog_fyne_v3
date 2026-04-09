@@ -89,7 +89,10 @@ type CASLCloudProvider struct {
 
 	cachedDictionary        map[string]any
 	cachedDictionaryAt      time.Time
+	cachedAlarmEvents       map[string]bool
+	cachedAlarmEventsAt     time.Time
 	cachedTranslators       map[string]map[string]string
+	cachedTranslatorAlarms  map[string]map[string]bool
 	cachedTransAt           map[string]time.Time
 	translatorDisabledUntil time.Time
 
@@ -121,19 +124,21 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 		httpClient: &http.Client{
 			Timeout: caslHTTPTimeout,
 		},
-		objectByInternalID:   make(map[int]caslGrdObject),
-		deviceByDeviceID:     make(map[string]caslDevice),
-		deviceByObjectID:     make(map[string]caslDevice),
-		deviceByNumber:       make(map[int64]caslDevice),
-		cachedUsers:          make(map[string]caslUser),
-		cachedObjectEvents:   make(map[int][]models.Event),
-		cachedObjectEventsAt: make(map[int]time.Time),
-		cachedGroupStats:     make(map[string]map[int]int),
-		cachedTranslators:    make(map[string]map[string]string),
-		cachedTransAt:        make(map[string]time.Time),
-		eventsStartAtMs:      nowMS,
-		eventsCursorMs:       nowMS,
-		realtimeAlarmByObjID: make(map[string]models.Alarm),
+		objectByInternalID:     make(map[int]caslGrdObject),
+		deviceByDeviceID:       make(map[string]caslDevice),
+		deviceByObjectID:       make(map[string]caslDevice),
+		deviceByNumber:         make(map[int64]caslDevice),
+		cachedUsers:            make(map[string]caslUser),
+		cachedObjectEvents:     make(map[int][]models.Event),
+		cachedObjectEventsAt:   make(map[int]time.Time),
+		cachedGroupStats:       make(map[string]map[int]int),
+		cachedAlarmEvents:      make(map[string]bool),
+		cachedTranslators:      make(map[string]map[string]string),
+		cachedTranslatorAlarms: make(map[string]map[string]bool),
+		cachedTransAt:          make(map[string]time.Time),
+		eventsStartAtMs:        nowMS,
+		eventsCursorMs:         nowMS,
+		realtimeAlarmByObjID:   make(map[string]models.Alarm),
 	}
 }
 
@@ -160,6 +165,9 @@ func (p *CASLCloudProvider) readPultsPublic(ctx context.Context) ([]caslPult, er
 
 	var resp caslReadPultResponse
 	if err := p.postCommand(ctx, payload, &resp, false); err != nil {
+		return nil, err
+	}
+	if err := validateCASLPults(resp.Data); err != nil {
 		return nil, err
 	}
 

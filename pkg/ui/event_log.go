@@ -200,13 +200,17 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	)
 
 	// Перший запуск завантаження
-	go panel.Refresh()
+	panel.Refresh()
 
 	return panel
 }
 
 // Refresh оновлює журнал асинхронно
 func (p *EventLogPanel) Refresh() {
+	go p.refreshData()
+}
+
+func (p *EventLogPanel) refreshData() {
 	uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
 	p.OnThemeChanged(uiCfg.FontSizeEvents)
 	if p.Data == nil || p.IsPaused || p.isRefreshing {

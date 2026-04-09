@@ -29,42 +29,7 @@ func extractCASLRealtimeConnID(raw []byte) string {
 		}
 	}
 
-	text := strings.TrimSpace(string(raw))
-	if text == "" {
-		return ""
-	}
-	if isLikelyCASLConnID(text) {
-		return text
-	}
-
-	lower := strings.ToLower(text)
-	candidates := []string{"conn_id", "connid", "sid", "connection_id"}
-	for _, key := range candidates {
-		idx := strings.Index(lower, key)
-		if idx < 0 {
-			continue
-		}
-		tail := text[idx+len(key):]
-		tail = strings.TrimLeft(tail, " \t\r\n:=\">'`")
-		if tail == "" {
-			continue
-		}
-
-		end := len(tail)
-		for i, r := range tail {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
-				continue
-			}
-			end = i
-			break
-		}
-		id := strings.TrimSpace(tail[:end])
-		if isLikelyCASLConnID(id) {
-			return id
-		}
-	}
-
-	return ""
+	return extractCASLConnIDFromTextEnvelope(string(raw))
 }
 
 func extractCASLRealtimeRows(raw []byte) []CASLObjectEvent {
@@ -82,12 +47,13 @@ func decodeCASLRealtimePayload(raw []byte) (any, bool) {
 	if len(body) == 0 {
 		return nil, false
 	}
+	body = bytes.TrimPrefix(body, []byte{0xEF, 0xBB, 0xBF})
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil, false
+	}
 	if body[0] != '{' && body[0] != '[' {
-		idx := bytes.IndexAny(body, "{[")
-		if idx < 0 {
-			return nil, false
-		}
-		body = body[idx:]
+		return nil, false
 	}
 
 	var payload any
@@ -97,20 +63,56 @@ func decodeCASLRealtimePayload(raw []byte) (any, bool) {
 	return payload, true
 }
 
+func extractCASLConnIDFromTextEnvelope(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+	if isLikelyCASLConnID(text) {
+		return text
+	}
+
+	text = strings.TrimLeft(text, "{([ \t\r\n")
+	text = strings.TrimLeft(text, "\"'")
+	lower := strings.ToLower(text)
+
+	candidates := []string{"conn_id", "connid", "sid", "connection_id"}
+	for _, key := range candidates {
+		if !strings.HasPrefix(lower, key) {
+			continue
+		}
+		tail := text[len(key):]
+		tail = strings.TrimLeft(tail, " \t\r\n:=\">'`")
+		if tail == "" {
+			return ""
+		}
+
+		end := len(tail)
+		for i, r := range tail {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+				continue
+			}
+			end = i
+			break
+		}
+		id := strings.TrimSpace(tail[:end])
+		if isLikelyCASLConnID(id) {
+			return id
+		}
+		return ""
+	}
+
+	return ""
+}
+
 func collectCASLRealtimeRows(value any, fallbackType string, rows *[]CASLObjectEvent) {
 	switch typed := value.(type) {
 	case map[string]any:
-		nextType := fallbackType
-		if tag := strings.TrimSpace(asString(typed["tag"])); tag != "" {
-			nextType = tag
-		}
-		if eventName := strings.TrimSpace(asString(typed["event"])); eventName != "" {
-			nextType = eventName
-		}
+		nextType := caslRealtimeFallbackType(typed, fallbackType)
 		if row, ok := mapCASLRealtimeRow(typed, nextType); ok {
 			*rows = append(*rows, row)
 		}
-		for _, nested := range typed {
+		for _, nested := range caslRealtimeNestedPayloads(typed) {
 			collectCASLRealtimeRows(nested, nextType, rows)
 		}
 	case []any:
@@ -120,132 +122,115 @@ func collectCASLRealtimeRows(value any, fallbackType string, rows *[]CASLObjectE
 	}
 }
 
-func mapCASLRealtimeRow(source map[string]any, fallbackType string) (CASLObjectEvent, bool) {
-	deviceID := strings.TrimSpace(asString(source["device_id"]))
-	if deviceID == "" {
-		deviceID = strings.TrimSpace(asString(source["deviceId"]))
+func caslRealtimeFallbackType(source map[string]any, fallbackType string) string {
+	nextType := fallbackType
+	if tag := strings.TrimSpace(asString(source["tag"])); tag != "" {
+		nextType = tag
 	}
-	rawObjID := strings.TrimSpace(asString(source["obj_id"]))
-	if rawObjID == "" {
-		rawObjID = strings.TrimSpace(asString(source["object_id"]))
+	if eventName := strings.TrimSpace(asString(source["event"])); eventName != "" {
+		nextType = eventName
+	}
+	return nextType
+}
+
+func caslRealtimeNestedPayloads(source map[string]any) []any {
+	keys := []string{
+		"data",
+		"rows",
+		"events",
+		"payload",
+		"message",
+		"messages",
+		"result",
+		"body",
+		"items",
 	}
 
-	ppkNum := int64(parseCASLAnyInt(source["ppk_num"]))
-	if ppkNum <= 0 {
-		ppkNum = int64(parseCASLAnyInt(source["ppkNum"]))
+	nested := make([]any, 0, len(keys))
+	for _, key := range keys {
+		value, ok := source[key]
+		if !ok || value == nil {
+			continue
+		}
+		nested = append(nested, value)
 	}
-	if ppkNum <= 0 {
-		ppkNum = int64(parseCASLAnyInt(source["ppk"]))
-	}
-	if ppkNum <= 0 {
-		ppkNum = int64(parseCASLAnyInt(source["device_number"]))
-	}
-	if ppkNum <= 0 {
-		ppkNum = int64(parseCASLAnyInt(source["device_num"]))
-	}
+	return nested
+}
+
+func mapCASLRealtimeRow(source map[string]any, fallbackType string) (CASLObjectEvent, bool) {
+	deviceID := firstCASLTextValue(source["device_id"], source["deviceId"])
+	rawObjID := firstCASLTextValue(source["obj_id"], source["object_id"])
+
+	ppkNumValue, _ := firstCASLIntValue(
+		source["ppk_num"],
+		source["ppkNum"],
+		source["ppk"],
+		source["device_number"],
+		source["device_num"],
+	)
+	ppkNum := int64(ppkNumValue)
 	if ppkNum <= 0 && deviceID == "" && rawObjID == "" {
 		return CASLObjectEvent{}, false
 	}
 
-	number := int64(parseCASLAnyInt(source["number"]))
-	if number <= 0 {
-		number = int64(parseCASLAnyInt(source["zone"]))
-	}
-	if number <= 0 {
-		number = int64(parseCASLAnyInt(source["line"]))
-	}
-	if number <= 0 {
-		number = int64(parseCASLAnyInt(source["line_number"]))
-	}
-	if number <= 0 {
-		number = int64(parseCASLAnyInt(source["group"]))
-	}
-	if number <= 0 {
-		number = int64(parseCASLAnyInt(source["group_number"]))
-	}
+	numberValue, _ := firstCASLIntValue(
+		source["number"],
+		source["zone"],
+		source["line"],
+		source["line_number"],
+		source["group"],
+		source["group_number"],
+	)
+	number := int64(numberValue)
 
-	code := strings.TrimSpace(asString(source["code"]))
-	if code == "" {
-		code = strings.TrimSpace(asString(source["event_code"]))
-	}
-	if code == "" {
-		code = strings.TrimSpace(asString(source["ppk_action_type"]))
-	}
-	if code == "" {
-		code = strings.TrimSpace(asString(source["user_action_type"]))
-	}
-	if code == "" {
-		code = strings.TrimSpace(asString(source["mgr_action_type"]))
-	}
-	if code == "" {
-		code = strings.TrimSpace(asString(source["action"]))
-	}
-	if code == "" {
-		code = strings.TrimSpace(asString(source["subtype"]))
-	}
-	if code == "" {
-		code = strings.TrimSpace(asString(source["msg"]))
-	}
-	if code == "" {
-		code = strings.TrimSpace(asString(source["type_event"]))
-	}
-	contactID := strings.TrimSpace(asString(source["contact_id"]))
-	if contactID == "" {
-		contactID = strings.TrimSpace(asString(source["contactId"]))
-	}
-	rowType := strings.TrimSpace(asString(source["type"]))
-	if rowType == "" {
-		rowType = fallbackType
-	}
-	if rowType == "" {
-		rowType = strings.TrimSpace(asString(source["user_action_type"]))
-	}
-	if rowType == "" {
-		rowType = strings.TrimSpace(asString(source["module"]))
-	}
+	code := firstCASLTextValue(
+		source["code"],
+		source["event_code"],
+		source["ppk_action_type"],
+		source["user_action_type"],
+		source["mgr_action_type"],
+		source["action"],
+		source["subtype"],
+		source["msg"],
+		source["type_event"],
+	)
+	contactID := firstCASLTextValue(source["contact_id"], source["contactId"])
+	rowType := firstCASLTextValue(source["type"], fallbackType, source["user_action_type"], source["module"])
 	if code == "" && contactID == "" {
-		code = strings.TrimSpace(asString(source["status"]))
+		code = firstCASLTextValue(source["status"])
 	}
 	if code == "" && contactID == "" {
 		code = rowType
 	}
 
-	ts := parseCASLAnyTime(source["time"])
-	if ts.IsZero() {
-		ts = parseCASLAnyTime(source["timestamp"])
-	}
-	if ts.IsZero() {
-		ts = parseCASLAnyTime(source["ts"])
-	}
-	if ts.IsZero() {
-		ts = parseCASLAnyTime(source["create_date"])
+	ts, ok := firstCASLTimeValue(source["time"], source["timestamp"], source["ts"], source["create_date"])
+	if !ok {
+		return CASLObjectEvent{}, false
 	}
 
 	row := CASLObjectEvent{
 		PPKNum:    ppkNum,
 		DeviceID:  deviceID,
 		ObjID:     rawObjID,
-		ObjName:   strings.TrimSpace(asString(source["obj_name"])),
-		ObjAddr:   strings.TrimSpace(asString(source["obj_address"])),
-		Action:    strings.TrimSpace(asString(source["action"])),
-		AlarmType: strings.TrimSpace(asString(source["alarm_type"])),
-		MgrID:     strings.TrimSpace(asString(source["mgr_id"])),
-		UserID:    strings.TrimSpace(asString(source["user_id"])),
-		UserFIO:   strings.TrimSpace(asString(source["user_fio"])),
-		Time:      0,
+		ObjName:   firstCASLTextValue(source["obj_name"]),
+		ObjAddr:   firstCASLTextValue(source["obj_address"]),
+		Action:    firstCASLTextValue(source["action"]),
+		AlarmType: firstCASLTextValue(source["alarm_type"]),
+		MgrID:     firstCASLTextValue(source["mgr_id"]),
+		UserID:    firstCASLTextValue(source["user_id"]),
+		UserFIO:   firstCASLTextValue(source["user_fio"]),
+		Time:      ts.UnixMilli(),
 		Code:      code,
 		Type:      rowType,
+		Subtype:   firstCASLTextValue(source["type_event"], source["typeEvent"]),
 		Number:    number,
 		ContactID: contactID,
-		HozUserID: strings.TrimSpace(asString(source["hoz_user_id"])),
+		HozUserID: firstCASLTextValue(source["hoz_user_id"]),
 	}
 	if row.HozUserID == "" {
-		row.HozUserID = strings.TrimSpace(asString(source["user_id"]))
+		row.HozUserID = firstCASLTextValue(source["user_id"])
 	}
-	if !ts.IsZero() {
-		row.Time = ts.UnixMilli()
-	}
-	if row.Code == "" && row.ContactID == "" && row.Number == 0 && row.Action == "" {
+	if err := validateCASLRealtimeObjectEvent(row, "casl realtime"); err != nil {
 		return CASLObjectEvent{}, false
 	}
 	return row, true
@@ -262,11 +247,11 @@ func extractCASLConnIDFromAny(value any) string {
 		}
 		candidates := []string{"conn_id", "connId", "sid", "connection_id"}
 		for _, key := range candidates {
-			if id := strings.TrimSpace(asString(typed[key])); id != "" {
+			if id := strings.TrimSpace(asString(typed[key])); isLikelyCASLConnID(id) {
 				return id
 			}
 		}
-		for _, nested := range typed {
+		for _, nested := range caslRealtimeNestedPayloads(typed) {
 			if id := extractCASLConnIDFromAny(nested); id != "" {
 				return id
 			}
@@ -735,6 +720,7 @@ func isCASLEventAlarmCandidate(eventType models.EventType) bool {
 	switch eventType {
 	case models.EventFire,
 		models.EventBurglary,
+		models.EventAlarmNotification,
 		models.EventPanic,
 		models.EventMedical,
 		models.EventGas,
@@ -812,6 +798,36 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 	}
 	contextByObject := p.loadEventContextsByObjectNum(ctx, objFilter, contextByPPK)
 	dictMap := p.loadDictionaryMap(ctx)
+	customDeviceTypes := p.loadCASLCustomDeviceTypeSet(ctx)
+	needStandardAlarmFlags := len(customDeviceTypes) == 0
+	if !needStandardAlarmFlags {
+		for _, row := range rows {
+			ppkNum := row.PPKNum
+			if ppkNum <= 0 {
+				ppkNum = p.resolveCASLPPKByDeviceIDWithCache(ctx, row.DeviceID, resolvedByDeviceID, unresolvedByDeviceID)
+			}
+
+			deviceType := ""
+			if ctxItem, ok := contextByPPK[ppkNum]; ok {
+				deviceType = strings.TrimSpace(ctxItem.DeviceType)
+			} else if objCtx, ok := contextByObject[strings.TrimSpace(row.ObjID)]; ok {
+				deviceType = strings.TrimSpace(objCtx.DeviceType)
+			}
+			if deviceType == "" {
+				needStandardAlarmFlags = true
+				break
+			}
+			if _, isCustom := customDeviceTypes[strings.ToUpper(deviceType)]; !isCustom {
+				needStandardAlarmFlags = true
+				break
+			}
+		}
+	}
+
+	var standardAlarmFlags map[string]bool
+	if needStandardAlarmFlags {
+		standardAlarmFlags = p.loadAlarmEventsCatalogMap(ctx)
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -822,6 +838,9 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			action = strings.ToUpper(strings.TrimSpace(row.Code))
 		}
 		if action == "" {
+			continue
+		}
+		if row.Time <= 0 {
 			continue
 		}
 
@@ -878,8 +897,14 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		}
 
 		deviceType := ""
+		translatorAlarms := map[string]bool(nil)
+		isCustomDeviceType := false
 		if hasCtx {
 			deviceType = strings.TrimSpace(ctxItem.DeviceType)
+			translatorAlarms = ctxItem.TranslatorAlarms
+		}
+		if deviceType != "" {
+			_, isCustomDeviceType = customDeviceTypes[strings.ToUpper(deviceType)]
 		}
 
 		details := buildCASLUserActionDetails(row)
@@ -901,16 +926,31 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			classifierCode = action
 		}
 		eventType := classifyCASLEventTypeWithContext(classifierCode, strings.TrimSpace(row.ContactID), strings.TrimSpace(row.Type), details)
+		alarmFlags := translatorAlarms
+		if !isCustomDeviceType {
+			alarmFlags = standardAlarmFlags
+		}
+		if isAlarm, ok := resolveCASLAlarmFlagFromMap(alarmFlags, classifierCode, strings.TrimSpace(row.ContactID), strings.TrimSpace(row.Subtype)); ok {
+			eventType = classifyCASLActiveAlarmEventType(eventType, isAlarm, true)
+		} else if isAlarm, ok := resolveCASLAlarmFlagFromAlarmCatalog(standardAlarmFlags, classifierCode, strings.TrimSpace(row.ContactID), deviceType); ok && !isCustomDeviceType {
+			eventType = classifyCASLActiveAlarmEventType(eventType, isAlarm, true)
+		}
 		alarmType, include := mapEventTypeToAlarmType(eventType)
+		if action == "GRD_OBJ_NOTIF" {
+			if mapped, ok := mapCASLAlarmType(row.AlarmType); ok {
+				alarmType = mapped
+				include = true
+			} else if !include || alarmType == models.AlarmNotification {
+				alarmType = models.AlarmBurglary
+				include = true
+			}
+		}
 		if !include && action == "GRD_OBJ_NOTIF" {
-			alarmType = models.AlarmNotification
+			alarmType = models.AlarmBurglary
 			include = true
 		}
 
-		alarmTime := time.Now()
-		if row.Time > 0 {
-			alarmTime = time.UnixMilli(row.Time).Local()
-		}
+		alarmTime := time.UnixMilli(row.Time).Local()
 		_, err = strconv.Atoi(objectNum)
 		if err != nil {
 			log.Error().Err(err).Msg("CASL: не вдалося перетворити objectNum на int")

@@ -332,6 +332,9 @@ func (p *CASLCloudProvider) readGrdObjects(ctx context.Context) ([]caslGrdObject
 	if err := p.postCommand(ctx, payload, &resp, true); err != nil {
 		return nil, err
 	}
+	if err := validateCASLGuardObjects(resp.Data); err != nil {
+		return nil, err
+	}
 
 	return append([]caslGrdObject(nil), resp.Data...), nil
 }
@@ -352,15 +355,30 @@ func (p *CASLCloudProvider) readConnections(ctx context.Context) ([]caslConnecti
 	}
 
 	var rows []caslConnectionRecord
-	if err := json.Unmarshal(resp.Data, &rows); err == nil {
+	rowsErr := json.Unmarshal(resp.Data, &rows)
+	if rowsErr == nil {
+		if validateErr := validateCASLConnections(rows); validateErr != nil {
+			return nil, validateErr
+		}
 		return rows, nil
 	}
 
 	var single caslConnectionRecord
-	if err := json.Unmarshal(resp.Data, &single); err == nil {
+	singleErr := json.Unmarshal(resp.Data, &single)
+	if singleErr == nil {
 		if single.hasPayload() {
+			if validateErr := validateCASLConnections([]caslConnectionRecord{single}); validateErr != nil {
+				return nil, validateErr
+			}
 			return []caslConnectionRecord{single}, nil
 		}
+	}
+
+	if rowsErr != nil {
+		return nil, fmt.Errorf("casl read_connections: decode rows: %w", rowsErr)
+	}
+	if singleErr != nil {
+		return nil, fmt.Errorf("casl read_connections: decode record: %w", singleErr)
 	}
 
 	return nil, fmt.Errorf("casl read_connections: unsupported payload format")

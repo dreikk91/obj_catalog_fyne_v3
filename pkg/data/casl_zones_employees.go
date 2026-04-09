@@ -47,7 +47,7 @@ func (p *CASLCloudProvider) GetZones(objectID string) []models.Zone {
 					name = fmt.Sprintf("Зона %d", number)
 				}
 
-				sensorType := strings.TrimSpace(line.Type.String())
+				sensorType := p.resolveCASLDeviceLineTypeLabel(ctx, line)
 				if sensorType == "" {
 					sensorType = "Шлейф"
 				}
@@ -156,7 +156,13 @@ func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 				if userID != "" {
 					seenUserIDs[userID] = struct{}{}
 				}
-				contact := buildCASLContact(roomUser, priority)
+				detailedUser := roomUser
+				if userID != "" {
+					if user, ok := users[userID]; ok {
+						detailedUser = mergeCASLUsers(detailedUser, user)
+					}
+				}
+				contact := buildCASLContact(detailedUser, priority)
 				contact.GroupID = group.ID
 				contact.GroupNumber = group.Number
 				contact.GroupName = groupName
@@ -639,7 +645,6 @@ func hasCASLUserDetails(user caslUser) bool {
 		strings.TrimSpace(user.FirstName) != "" ||
 		strings.TrimSpace(user.MiddleName) != "" ||
 		strings.TrimSpace(user.Email) != "" ||
-		strings.TrimSpace(user.Role) != "" ||
 		strings.TrimSpace(user.Tag.String()) != "" {
 		return true
 	}
@@ -695,6 +700,28 @@ func (p *CASLCloudProvider) readUsers(ctx context.Context) ([]caslUser, error) {
 	if err := p.postCommand(ctx, payload, &resp, true); err != nil {
 		return nil, err
 	}
+	for idx := range resp.Data {
+		resp.Data[idx].PhoneNumbers = sanitizeCASLPhoneNumbers(resp.Data[idx].PhoneNumbers)
+	}
+	if err := validateCASLUsers(resp.Data); err != nil {
+		return nil, err
+	}
 
 	return append([]caslUser(nil), resp.Data...), nil
+}
+
+func sanitizeCASLPhoneNumbers(items []caslPhoneNumber) []caslPhoneNumber {
+	if len(items) == 0 {
+		return nil
+	}
+
+	result := make([]caslPhoneNumber, 0, len(items))
+	for _, item := range items {
+		item.Number = strings.TrimSpace(item.Number)
+		if item.Number == "" {
+			continue
+		}
+		result = append(result, item)
+	}
+	return result
 }

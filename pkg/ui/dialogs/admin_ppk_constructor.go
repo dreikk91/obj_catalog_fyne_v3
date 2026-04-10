@@ -14,7 +14,14 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowPPKConstructorDialog(parent fyne.Window, provider contracts.AdminProvider) {
+type ppkConstructorDialogProvider interface {
+	AddPPKConstructor(name string, channel int64, zoneCount int64) error
+	UpdatePPKConstructor(id int64, name string, channel int64, zoneCount int64) error
+	DeletePPKConstructor(id int64) error
+	ListPPKConstructor() ([]contracts.PPKConstructorItem, error)
+}
+
+func ShowPPKConstructorDialog(parent fyne.Window, provider ppkConstructorDialogProvider) {
 	win := fyne.CurrentApp().NewWindow("Конструктор ППК")
 	win.Resize(fyne.NewSize(1024, 768))
 

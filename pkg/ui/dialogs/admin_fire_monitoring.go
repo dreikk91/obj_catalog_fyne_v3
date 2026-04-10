@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,7 +19,12 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider contracts.AdminProvider) {
+type fireMonitoringSettingsDialogProvider interface {
+	GetFireMonitoringSettings() (contracts.FireMonitoringSettings, error)
+	SaveFireMonitoringSettings(settings contracts.FireMonitoringSettings) error
+}
+
+func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider fireMonitoringSettingsDialogProvider) {
 	win := fyne.CurrentApp().NewWindow("Налаштування пожежного моніторингу")
 	win.Resize(fyne.NewSize(1060, 680))
 
@@ -173,7 +179,7 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider contracts.Adm
 
 	runStatusCheck := func() {
 		serversMu.RLock()
-		snapshot := append([]contracts.FireMonitoringServer(nil), servers...)
+		snapshot := slices.Clone(servers)
 		serversMu.RUnlock()
 		if len(snapshot) == 0 {
 			return
@@ -240,7 +246,7 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider contracts.Adm
 		}
 
 		serversMu.Lock()
-		servers = append([]contracts.FireMonitoringServer(nil), s.Servers...)
+		servers = slices.Clone(s.Servers)
 		if len(servers) == 0 {
 			servers = []contracts.FireMonitoringServer{{Enabled: true}}
 		}
@@ -331,7 +337,7 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider contracts.Adm
 			Servers: func() []contracts.FireMonitoringServer {
 				serversMu.RLock()
 				defer serversMu.RUnlock()
-				return append([]contracts.FireMonitoringServer(nil), servers...)
+				return slices.Clone(servers)
 			}(),
 		}
 

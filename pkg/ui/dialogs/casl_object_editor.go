@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -622,7 +623,7 @@ func (s *caslObjectEditorState) rebuildOptions() {
 	if strings.TrimSpace(defaultLineTypeLabel) == "" && len(s.lineTypeOptions) > 0 {
 		defaultLineTypeLabel = s.lineTypeOptions[0]
 	}
-	if strings.TrimSpace(s.quickLineTypeEntry.Text) == "" || !containsString(s.lineTypeOptions, s.quickLineTypeEntry.Text) {
+	if strings.TrimSpace(s.quickLineTypeEntry.Text) == "" || !slices.Contains(s.lineTypeOptions, s.quickLineTypeEntry.Text) {
 		s.quickLineTypeEntry.SetText(defaultLineTypeLabel)
 	}
 
@@ -640,7 +641,7 @@ func (s *caslObjectEditorState) rebuildOptions() {
 	if strings.TrimSpace(defaultAdapterLabel) == "" && len(s.adapterOptions) > 0 {
 		defaultAdapterLabel = s.adapterOptions[0]
 	}
-	if len(s.adapterOptions) > 0 && !containsString(s.adapterOptions, s.lineAdapterTypeSelect.Selected) {
+	if len(s.adapterOptions) > 0 && !slices.Contains(s.adapterOptions, s.lineAdapterTypeSelect.Selected) {
 		s.lineAdapterTypeSelect.SetSelected(defaultAdapterLabel)
 	}
 }
@@ -702,7 +703,7 @@ func (s *caslObjectEditorState) selectRoom(index int) {
 	s.roomNameEntry.SetText(room.Name)
 	s.roomDescEntry.SetText(room.Description)
 	s.roomRTSPEntry.SetText(room.RTSP)
-	s.roomUsersLocal = append([]contracts.CASLRoomUserLink(nil), room.Users...)
+	s.roomUsersLocal = slices.Clone(room.Users)
 	s.roomUsersList.Refresh()
 	s.refreshRoomUserOptions(s.roomUserSearchEntry.Text)
 	s.refreshRoomImages(room.Images)
@@ -1275,7 +1276,7 @@ func (s *caslObjectEditorState) addUserToRoom() {
 		UserID:   userID,
 		Priority: len(s.roomUsersLocal) + 1,
 	}
-	previous := append([]contracts.CASLRoomUserLink(nil), s.roomUsersLocal...)
+	previous := slices.Clone(s.roomUsersLocal)
 	s.roomUsersLocal = append(s.roomUsersLocal, contracts.CASLRoomUserLink{
 		UserID:   userID,
 		Priority: request.Priority,
@@ -1305,7 +1306,7 @@ func (s *caslObjectEditorState) removeUserFromRoom() {
 		RoomID: room.RoomID,
 		UserID: s.roomUsersLocal[s.roomUserSelected].UserID,
 	}
-	previous := append([]contracts.CASLRoomUserLink(nil), s.roomUsersLocal...)
+	previous := slices.Clone(s.roomUsersLocal)
 	nextSelected := s.roomUserSelected
 	s.roomUsersLocal = append(s.roomUsersLocal[:s.roomUserSelected], s.roomUsersLocal[s.roomUserSelected+1:]...)
 	if nextSelected >= len(s.roomUsersLocal) {
@@ -1645,13 +1646,6 @@ func (s *caslObjectEditorState) displayDeviceType(raw string) string {
 	return caslDeviceTypeDisplayNameWithDict(s.snapshot.Dictionary, raw)
 }
 
-func (s *caslObjectEditorState) currentRoomImages() []string {
-	if room, ok := s.selectedRoom(); ok {
-		return append([]string(nil), room.Images...)
-	}
-	return nil
-}
-
 func (s *caslObjectEditorState) pickObjectCoordinatesOnMap() {
 	showCoordinatesMapPickerWithOptions(
 		s.win,
@@ -1705,7 +1699,7 @@ func (s *caslObjectEditorState) syncCurrentRoomUsers() {
 	if s.roomSelected < 0 || s.roomSelected >= len(s.snapshot.Object.Rooms) {
 		return
 	}
-	s.snapshot.Object.Rooms[s.roomSelected].Users = append([]contracts.CASLRoomUserLink(nil), s.roomUsersLocal...)
+	s.snapshot.Object.Rooms[s.roomSelected].Users = slices.Clone(s.roomUsersLocal)
 }
 
 func (s *caslObjectEditorState) refreshRoomUsersUI(selected int) {
@@ -1906,7 +1900,7 @@ func (s *caslObjectEditorState) refreshRoomUserOptions(filter string) {
 	s.roomUserSelect.Options = options
 	s.roomUserSelect.Refresh()
 	if len(options) > 1 {
-		if !containsString(options, s.roomUserSelect.Selected) {
+		if !slices.Contains(options, s.roomUserSelect.Selected) {
 			s.roomUserSelect.SetSelected(options[1])
 		}
 	} else {
@@ -2020,25 +2014,6 @@ func caslProfileName(user contracts.CASLUserProfile) string {
 		return "Користувач"
 	}
 	return strings.Join(parts, " ")
-}
-
-func parseCASLEditorDate(raw string) (int64, error) {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return 0, nil
-	}
-	parsed, err := time.ParseInLocation("02.01.2006", value, time.Local)
-	if err != nil {
-		return 0, err
-	}
-	return parsed.UnixMilli(), nil
-}
-
-func formatCASLEditorDate(raw int64) string {
-	if raw <= 0 {
-		return ""
-	}
-	return time.UnixMilli(raw).Format("02.01.2006")
 }
 
 func dateEntryUnixMilli(entry *widget.DateEntry) (int64, error) {
@@ -2161,7 +2136,7 @@ func setCASLImageStrip(box *fyne.Container, images []string, emptyText string, o
 	if box == nil {
 		return
 	}
-	items := make([]fyne.CanvasObject, 0, maxInt(len(images), 1))
+	items := make([]fyne.CanvasObject, 0, max(len(images), 1))
 	for idx, raw := range images {
 		if tile := newCASLImageTile(raw, idx+1, ownerLabel, provider, onDelete, onPreview); tile != nil {
 			items = append(items, tile)
@@ -2348,13 +2323,6 @@ func caslEncodeImageUpload(fileName string, data []byte) (string, string) {
 	return imageType, base64.StdEncoding.EncodeToString(data)
 }
 
-func maxInt(a int, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func minListIndex(value int, max int) int {
 	if max < 0 {
 		return -1
@@ -2366,15 +2334,6 @@ func minListIndex(value int, max int) int {
 		return max
 	}
 	return value
-}
-
-func containsString(items []string, target string) bool {
-	for _, item := range items {
-		if item == target {
-			return true
-		}
-	}
-	return false
 }
 
 func mappedOptionValue(label string, mapping map[string]string) string {
@@ -2600,10 +2559,6 @@ func labeledOptionMap(mapping map[string]string) ([]string, map[string]string) {
 	}
 	sort.Strings(options)
 	return options, result
-}
-
-func caslDictionaryOptions(dict map[string]any, keys ...string) ([]string, map[string]string) {
-	return labeledOptionMap(caslDictionaryOptionsMap(dict, keys...))
 }
 
 func caslLineTypeOptionsMap(dict map[string]any) map[string]string {

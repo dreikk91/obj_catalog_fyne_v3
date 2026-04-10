@@ -4,15 +4,15 @@ import "obj_catalog_fyne_v3/pkg/contracts"
 
 // ObjectWizardPersonalsState описує мінімальний стан/операції В/О для flow-кроку майстра.
 type ObjectWizardPersonalsState interface {
-	PersonalCount() int
-	SelectedPersonal() int
-	SetSelectedPersonal(idx int) bool
-	PersonalAt(idx int) (contracts.AdminObjectPersonal, bool)
-	AddPersonal(item contracts.AdminObjectPersonal) int
-	UpdatePersonal(idx int, item contracts.AdminObjectPersonal) bool
-	DeletePersonal(idx int) bool
-	PersonalFullName(item contracts.AdminObjectPersonal) string
-	NextPersonalNumber() int64
+	Count() int
+	Selected() int
+	SetSelected(idx int) bool
+	At(idx int) (contracts.AdminObjectPersonal, bool)
+	Add(item contracts.AdminObjectPersonal) int
+	Update(idx int, item contracts.AdminObjectPersonal) bool
+	Delete(idx int) bool
+	FullName(item contracts.AdminObjectPersonal) string
+	NextNumber() int64
 }
 
 // ObjectWizardPersonalsActionResult описує результат команди flow для UI.
@@ -52,29 +52,29 @@ func NewObjectWizardPersonalsFlowViewModel(tableVM *ObjectWizardPersonalsTableVi
 }
 
 func (vm *ObjectWizardPersonalsFlowViewModel) NextNumber(state ObjectWizardPersonalsState) int64 {
-	return state.NextPersonalNumber()
+	return state.NextNumber()
 }
 
 func (vm *ObjectWizardPersonalsFlowViewModel) SelectTableRow(state ObjectWizardPersonalsState, row int) {
 	if row <= 0 {
-		state.SetSelectedPersonal(-1)
+		state.SetSelected(-1)
 		return
 	}
 	idx := row - 1
-	state.SetSelectedPersonal(idx)
+	state.SetSelected(idx)
 }
 
 func (vm *ObjectWizardPersonalsFlowViewModel) ApplyAdd(state ObjectWizardPersonalsState, item contracts.AdminObjectPersonal) ObjectWizardPersonalsActionResult {
-	state.AddPersonal(item)
+	state.Add(item)
 	return ObjectWizardPersonalsActionResult{
-		StatusText:   vm.tableVM.StatusAdded(state.PersonalCount()),
+		StatusText:   vm.tableVM.StatusAdded(state.Count()),
 		RefreshTable: true,
 	}
 }
 
 func (vm *ObjectWizardPersonalsFlowViewModel) PrepareEdit(state ObjectWizardPersonalsState) ObjectWizardPersonalsEditPrompt {
-	selectedIdx := state.SelectedPersonal()
-	initial, ok := state.PersonalAt(selectedIdx)
+	selectedIdx := state.Selected()
+	initial, ok := state.At(selectedIdx)
 	if !ok {
 		return ObjectWizardPersonalsEditPrompt{
 			CanEdit:    false,
@@ -89,7 +89,7 @@ func (vm *ObjectWizardPersonalsFlowViewModel) PrepareEdit(state ObjectWizardPers
 }
 
 func (vm *ObjectWizardPersonalsFlowViewModel) ApplyUpdate(state ObjectWizardPersonalsState, idx int, item contracts.AdminObjectPersonal) ObjectWizardPersonalsActionResult {
-	if !state.UpdatePersonal(idx, item) {
+	if !state.Update(idx, item) {
 		return ObjectWizardPersonalsActionResult{
 			StatusText: vm.tableVM.StatusSelectionRequired(),
 		}
@@ -101,8 +101,8 @@ func (vm *ObjectWizardPersonalsFlowViewModel) ApplyUpdate(state ObjectWizardPers
 }
 
 func (vm *ObjectWizardPersonalsFlowViewModel) PrepareDelete(state ObjectWizardPersonalsState) ObjectWizardPersonalsDeletePrompt {
-	selectedIdx := state.SelectedPersonal()
-	target, ok := state.PersonalAt(selectedIdx)
+	selectedIdx := state.Selected()
+	target, ok := state.At(selectedIdx)
 	if !ok {
 		return ObjectWizardPersonalsDeletePrompt{
 			CanDelete:  false,
@@ -112,18 +112,18 @@ func (vm *ObjectWizardPersonalsFlowViewModel) PrepareDelete(state ObjectWizardPe
 	return ObjectWizardPersonalsDeletePrompt{
 		CanDelete:   true,
 		SelectedIdx: selectedIdx,
-		ConfirmText: vm.tableVM.DeleteConfirmText(state.PersonalFullName(target)),
+		ConfirmText: vm.tableVM.DeleteConfirmText(state.FullName(target)),
 	}
 }
 
 func (vm *ObjectWizardPersonalsFlowViewModel) ApplyDelete(state ObjectWizardPersonalsState, idx int) ObjectWizardPersonalsActionResult {
-	if !state.DeletePersonal(idx) {
+	if !state.Delete(idx) {
 		return ObjectWizardPersonalsActionResult{
 			StatusText: vm.tableVM.StatusSelectionRequired(),
 		}
 	}
 	return ObjectWizardPersonalsActionResult{
-		StatusText:   vm.tableVM.StatusDeleted(state.PersonalCount()),
+		StatusText:   vm.tableVM.StatusDeleted(state.Count()),
 		RefreshTable: true,
 	}
 }

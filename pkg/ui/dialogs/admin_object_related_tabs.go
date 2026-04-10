@@ -48,54 +48,66 @@ const (
 )
 
 func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminObjectPersonalTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
-	vm := viewmodels.NewObjectPersonalsTabViewModel()
+	state := newObjectPersonalTabState(parent, provider, objn, statusLabel)
+	content := state.buildContent()
+	state.reload()
+	return content
+}
 
+type objectPersonalTabState struct {
+	parent      fyne.Window
+	provider    contracts.AdminObjectPersonalTabProvider
+	objn        int64
+	statusLabel *widget.Label
+	vm          *viewmodels.ObjectPersonalsTabViewModel
+	table       *widget.Table
+}
+
+func newObjectPersonalTabState(
+	parent fyne.Window,
+	provider contracts.AdminObjectPersonalTabProvider,
+	objn int64,
+	statusLabel *widget.Label,
+) *objectPersonalTabState {
+	state := &objectPersonalTabState{
+		parent:      parent,
+		provider:    provider,
+		objn:        objn,
+		statusLabel: statusLabel,
+		vm:          viewmodels.NewObjectPersonalsTabViewModel(),
+	}
+	state.table = state.buildTable()
+	return state
+}
+
+func (s *objectPersonalTabState) buildContent() fyne.CanvasObject {
+	tableScroll := container.NewScroll(s.table)
+	tableScroll.SetMinSize(fyne.NewSize(420, 260))
+
+	return container.NewBorder(
+		container.NewVBox(
+			container.NewHBox(
+				widget.NewButton("Додати", s.showAddDialog),
+				widget.NewButton("Змінити", s.showEditDialog),
+				widget.NewButton("Видалити", s.deleteSelected),
+				layout.NewSpacer(),
+				widget.NewButton("Оновити", s.reload),
+			),
+			widget.NewSeparator(),
+		),
+		nil,
+		nil,
+		nil,
+		tableScroll,
+	)
+}
+
+func (s *objectPersonalTabState) buildTable() *widget.Table {
 	table := widget.NewTable(
-		func() (int, int) { return vm.Count() + 1, 6 },
+		func() (int, int) { return s.vm.Count() + 1, 6 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			lbl := obj.(*widget.Label)
-			if id.Row == 0 {
-				switch id.Col {
-				case 0:
-					lbl.SetText("№")
-				case 1:
-					lbl.SetText("ПІБ")
-				case 2:
-					lbl.SetText("Телефон")
-				case 3:
-					lbl.SetText("Посада")
-				case 4:
-					lbl.SetText("Доступ")
-				default:
-					lbl.SetText("Примітка")
-				}
-				return
-			}
-			itemIdx := id.Row - 1
-			it, ok := vm.ItemAt(itemIdx)
-			if !ok {
-				lbl.SetText("")
-				return
-			}
-			switch id.Col {
-			case 0:
-				lbl.SetText(strconv.FormatInt(it.Number, 10))
-			case 1:
-				lbl.SetText(vm.FullName(it))
-			case 2:
-				lbl.SetText(strings.TrimSpace(it.Phones))
-			case 3:
-				lbl.SetText(strings.TrimSpace(it.Position))
-			case 4:
-				if it.Access1 > 0 {
-					lbl.SetText("Адмін")
-				} else {
-					lbl.SetText("Оператор")
-				}
-			case 5:
-				lbl.SetText(strings.TrimSpace(it.Notes))
-			}
+			s.updateTableCell(id, obj.(*widget.Label))
 		},
 	)
 	const (
@@ -112,353 +124,198 @@ func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminObjectPe
 	table.SetColumnWidth(3, personalColWPos)
 	table.SetColumnWidth(4, personalColWRole)
 	table.SetColumnWidth(5, personalColWNote)
-	table.OnSelected = func(id widget.TableCellID) {
-		vm.SelectByTableRow(id.Row)
+	table.OnSelected = s.handleTableSelection
+
+	return table
+}
+
+func (s *objectPersonalTabState) updateTableCell(id widget.TableCellID, label *widget.Label) {
+	if id.Row == 0 {
+		switch id.Col {
+		case 0:
+			label.SetText("№")
+		case 1:
+			label.SetText("ПІБ")
+		case 2:
+			label.SetText("Телефон")
+		case 3:
+			label.SetText("Посада")
+		case 4:
+			label.SetText("Доступ")
+		default:
+			label.SetText("Примітка")
+		}
+		return
 	}
 
-	reload := func() {
-		loaded, err := provider.ListObjectPersonals(objn)
-		if err != nil {
-			dialog.ShowError(err, parent)
-			statusLabel.SetText("Не вдалося завантажити В/О")
-			return
-		}
-		vm.SetItems(loaded)
-		table.UnselectAll()
-		table.Refresh()
-		statusLabel.SetText(vm.CountStatusText())
+	itemIndex := id.Row - 1
+	item, ok := s.vm.ItemAt(itemIndex)
+	if !ok {
+		label.SetText("")
+		return
 	}
 
-	addBtn := widget.NewButton("Додати", func() {
-		showObjectPersonalEditor(parent, provider, "Додати В/О", contracts.AdminObjectPersonal{}, func(item contracts.AdminObjectPersonal) error {
-			return provider.AddObjectPersonal(objn, item)
-		}, statusLabel, func() {
-			reload()
-			statusLabel.SetText("В/О додано")
-		})
-	})
-
-	editBtn := widget.NewButton("Змінити", func() {
-		initial, ok := vm.SelectedItem()
-		if !ok {
-			statusLabel.SetText("Виберіть В/О у таблиці")
-			return
+	switch id.Col {
+	case 0:
+		label.SetText(strconv.FormatInt(item.Number, 10))
+	case 1:
+		label.SetText(s.vm.FullName(item))
+	case 2:
+		label.SetText(strings.TrimSpace(item.Phones))
+	case 3:
+		label.SetText(strings.TrimSpace(item.Position))
+	case 4:
+		if item.Access1 > 0 {
+			label.SetText("Адмін")
+		} else {
+			label.SetText("Оператор")
 		}
-		showObjectPersonalEditor(parent, provider, "Редагування В/О", initial, func(item contracts.AdminObjectPersonal) error {
-			return provider.UpdateObjectPersonal(objn, vm.PrepareUpdatedItem(initial, item))
-		}, statusLabel, func() {
-			reload()
-			statusLabel.SetText("В/О оновлено")
-		})
-	})
+	case 5:
+		label.SetText(strings.TrimSpace(item.Notes))
+	}
+}
 
-	deleteBtn := widget.NewButton("Видалити", func() {
-		target, ok := vm.SelectedItem()
-		if !ok {
-			statusLabel.SetText("Виберіть В/О у таблиці")
-			return
-		}
-		dialog.ShowConfirm(
-			"Підтвердження",
-			fmt.Sprintf("Видалити запис \"%s\"?", vm.FullName(target)),
-			func(ok bool) {
-				if !ok {
-					return
-				}
-				if err := provider.DeleteObjectPersonal(objn, target.ID); err != nil {
-					dialog.ShowError(err, parent)
-					statusLabel.SetText("Не вдалося видалити В/О")
-					return
-				}
-				reload()
-				statusLabel.SetText("В/О видалено")
-			},
-			parent,
-		)
-	})
+func (s *objectPersonalTabState) handleTableSelection(id widget.TableCellID) {
+	s.vm.SelectByTableRow(id.Row)
+}
 
-	refreshBtn := widget.NewButton("Оновити", reload)
-	tableScroll := container.NewScroll(table)
-	tableScroll.SetMinSize(fyne.NewSize(420, 260))
+func (s *objectPersonalTabState) reload() {
+	loaded, err := s.provider.ListObjectPersonals(s.objn)
+	if err != nil {
+		dialog.ShowError(err, s.parent)
+		s.statusLabel.SetText("Не вдалося завантажити В/О")
+		return
+	}
 
-	content := container.NewBorder(
-		container.NewVBox(
-			container.NewHBox(addBtn, editBtn, deleteBtn, layout.NewSpacer(), refreshBtn),
-			widget.NewSeparator(),
-		),
-		nil,
-		nil,
-		nil,
-		tableScroll,
+	s.vm.SetItems(loaded)
+	s.table.UnselectAll()
+	s.table.Refresh()
+	s.statusLabel.SetText(s.vm.CountStatusText())
+}
+
+func (s *objectPersonalTabState) showAddDialog() {
+	showObjectPersonalEditor(
+		s.parent,
+		s.provider,
+		"Додати В/О",
+		contracts.AdminObjectPersonal{},
+		func(item contracts.AdminObjectPersonal) error {
+			return s.provider.AddObjectPersonal(s.objn, item)
+		},
+		s.statusLabel,
+		func() {
+			s.reload()
+			s.statusLabel.SetText("В/О додано")
+		},
 	)
+}
 
-	reload()
-	return content
+func (s *objectPersonalTabState) showEditDialog() {
+	initial, ok := s.vm.SelectedItem()
+	if !ok {
+		s.statusLabel.SetText("Виберіть В/О у таблиці")
+		return
+	}
+
+	showObjectPersonalEditor(
+		s.parent,
+		s.provider,
+		"Редагування В/О",
+		initial,
+		func(item contracts.AdminObjectPersonal) error {
+			return s.provider.UpdateObjectPersonal(s.objn, s.vm.PrepareUpdatedItem(initial, item))
+		},
+		s.statusLabel,
+		func() {
+			s.reload()
+			s.statusLabel.SetText("В/О оновлено")
+		},
+	)
+}
+
+func (s *objectPersonalTabState) deleteSelected() {
+	target, ok := s.vm.SelectedItem()
+	if !ok {
+		s.statusLabel.SetText("Виберіть В/О у таблиці")
+		return
+	}
+
+	dialog.ShowConfirm(
+		"Підтвердження",
+		fmt.Sprintf("Видалити запис \"%s\"?", s.vm.FullName(target)),
+		func(confirmed bool) {
+			if !confirmed {
+				return
+			}
+			if err := s.provider.DeleteObjectPersonal(s.objn, target.ID); err != nil {
+				dialog.ShowError(err, s.parent)
+				s.statusLabel.SetText("Не вдалося видалити В/О")
+				return
+			}
+			s.reload()
+			s.statusLabel.SetText("В/О видалено")
+		},
+		s.parent,
+	)
 }
 
 func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminObjectZonesTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
-	vm := viewmodels.NewObjectZonesTabViewModel()
+	state := newObjectZonesTabState(parent, provider, objn, statusLabel)
+	content := state.buildContent()
+	state.reload()
+	return content
+}
 
-	quickNameEntry := widget.NewEntry()
-	quickNameEntry.SetPlaceHolder("Назва зони (Enter -> наступна зона)")
-	selectedZoneLabel := widget.NewLabel("Зона: —")
+type objectZonesTabState struct {
+	parent            fyne.Window
+	provider          contracts.AdminObjectZonesTabProvider
+	objn              int64
+	statusLabel       *widget.Label
+	vm                *viewmodels.ObjectZonesTabViewModel
+	quickNameEntry    *widget.Entry
+	selectedZoneLabel *widget.Label
+	table             *widget.Table
+}
 
-	table := widget.NewTable(
-		func() (int, int) { return vm.Count() + 1, 3 },
-		func() fyne.CanvasObject { return widget.NewLabel("cell") },
-		func(id widget.TableCellID, obj fyne.CanvasObject) {
-			lbl := obj.(*widget.Label)
-			if id.Row == 0 {
-				switch id.Col {
-				case 0:
-					lbl.SetText("ZONEN")
-				case 1:
-					lbl.SetText("Тип")
-				default:
-					lbl.SetText("Опис")
-				}
-				return
-			}
-			itemIdx := id.Row - 1
-			it, ok := vm.ItemAt(itemIdx)
-			if !ok {
-				lbl.SetText("")
-				return
-			}
-			switch id.Col {
-			case 0:
-				zonen := vm.EffectiveZoneNumberAt(itemIdx)
-				lbl.SetText(strconv.FormatInt(zonen, 10))
-			case 1:
-				lbl.SetText("пож.")
-			default:
-				lbl.SetText(strings.TrimSpace(it.Description))
-			}
-		},
-	)
-	const (
-		zoneColWNum  = float32(120)
-		zoneColWType = float32(120)
-		zoneColWDesc = float32(520)
-	)
-	table.StickyRowCount = 1
-	table.StickyColumnCount = 1
-	applyZoneTableLayout := func() {
-		table.SetColumnWidth(0, zoneColWNum)
-		table.SetColumnWidth(1, zoneColWType)
-		table.SetColumnWidth(2, zoneColWDesc)
+func newObjectZonesTabState(
+	parent fyne.Window,
+	provider contracts.AdminObjectZonesTabProvider,
+	objn int64,
+	statusLabel *widget.Label,
+) *objectZonesTabState {
+	state := &objectZonesTabState{
+		parent:            parent,
+		provider:          provider,
+		objn:              objn,
+		statusLabel:       statusLabel,
+		vm:                viewmodels.NewObjectZonesTabViewModel(),
+		quickNameEntry:    widget.NewEntry(),
+		selectedZoneLabel: widget.NewLabel("Зона: —"),
 	}
-	applyZoneTableLayout()
-
-	updateSelectedZoneLabel := func() {
-		selectedZoneLabel.SetText(vm.SelectedZoneLabel())
+	state.quickNameEntry.SetPlaceHolder("Назва зони (Enter -> наступна зона)")
+	state.quickNameEntry.OnSubmitted = func(string) {
+		state.moveToNextZone()
 	}
+	state.table = state.buildTable()
 
-	ensureZoneExists := func(zoneNumber int64, defaultDescription string) error {
-		if vm.FindRowByZoneNumber(zoneNumber) >= 0 {
-			return nil
-		}
-		zone, err := vm.BuildZoneForCreate(zoneNumber, defaultDescription)
-		if err != nil {
-			return err
-		}
-		return provider.AddObjectZone(objn, zone)
-	}
+	return state
+}
 
-	selectByZoneNumber := func(zoneNumber int64, focusQuickName bool) {
-		if !vm.SelectZoneByNumber(zoneNumber) {
-			table.UnselectAll()
-			quickNameEntry.SetText("")
-			updateSelectedZoneLabel()
-			return
-		}
-
-		targetRow := vm.SelectedRow()
-		table.Select(widget.TableCellID{Row: targetRow + 1, Col: 0})
-		quickNameEntry.SetText(vm.SelectedZoneDescription())
-		updateSelectedZoneLabel()
-		if focusQuickName {
-			focusIfOnCanvas(parent, quickNameEntry)
-		}
-	}
-
-	reloadAndSelect := func(targetZoneNumber int64, focusQuickName bool) {
-		loaded, err := provider.ListObjectZones(objn)
-		if err != nil {
-			dialog.ShowError(err, parent)
-			statusLabel.SetText("Не вдалося завантажити зони")
-			return
-		}
-		vm.SetItems(loaded)
-		table.Refresh()
-		applyZoneTableLayout()
-		statusLabel.SetText(vm.CountStatusText())
-		selectByZoneNumber(targetZoneNumber, focusQuickName)
-	}
-
-	reload := func() {
-		reloadAndSelect(0, false)
-	}
-
-	table.OnSelected = func(id widget.TableCellID) {
-		if !vm.SelectByTableRow(id.Row) {
-			quickNameEntry.SetText("")
-			updateSelectedZoneLabel()
-			return
-		}
-		quickNameEntry.SetText(vm.SelectedZoneDescription())
-		updateSelectedZoneLabel()
-		// Даємо змогу одразу вводити назву наступної/поточної зони.
-		focusIfOnCanvas(parent, quickNameEntry)
-	}
-
-	moveToNextZone := func() {
-		if _, ok := vm.SelectedItem(); !ok {
-			if vm.Count() == 0 {
-				if err := ensureZoneExists(1, strings.TrimSpace(quickNameEntry.Text)); err != nil {
-					dialog.ShowError(err, parent)
-					statusLabel.SetText("Не вдалося додати першу зону")
-					return
-				}
-				reloadAndSelect(1, true)
-				statusLabel.SetText("Додано зону #1")
-				return
-			}
-			selectByZoneNumber(0, true)
-		}
-
-		current, currentZoneNumber, ok := vm.PrepareSelectedZoneForSave(quickNameEntry.Text)
-		if !ok {
-			statusLabel.SetText("Виберіть зону у таблиці")
-			return
-		}
-		if err := provider.UpdateObjectZone(objn, current); err != nil {
-			dialog.ShowError(err, parent)
-			statusLabel.SetText("Не вдалося зберегти назву зони")
-			return
-		}
-
-		nextZoneNumber := currentZoneNumber + 1
-		if err := ensureZoneExists(nextZoneNumber, ""); err != nil {
-			dialog.ShowError(err, parent)
-			statusLabel.SetText("Не вдалося додати наступну зону")
-			return
-		}
-
-		reloadAndSelect(nextZoneNumber, true)
-		statusLabel.SetText(fmt.Sprintf("Збережено зону #%d, перехід на #%d", currentZoneNumber, nextZoneNumber))
-	}
-	quickNameEntry.OnSubmitted = func(string) {
-		moveToNextZone()
-	}
-
-	addBtn := widget.NewButton("Додати", func() {
-		nextZoneNumber := vm.NextZoneNumberForAdd()
-		if err := ensureZoneExists(nextZoneNumber, ""); err != nil {
-			dialog.ShowError(err, parent)
-			statusLabel.SetText("Не вдалося додати зону")
-			return
-		}
-		reloadAndSelect(nextZoneNumber, true)
-		statusLabel.SetText(fmt.Sprintf("Готово до введення зони #%d", nextZoneNumber))
-	})
-
-	editBtn := widget.NewButton("Змінити", func() {
-		if vm.Count() == 0 {
-			if err := ensureZoneExists(1, ""); err != nil {
-				dialog.ShowError(err, parent)
-				statusLabel.SetText("Не вдалося створити першу зону")
-				return
-			}
-			reloadAndSelect(1, true)
-			statusLabel.SetText("Створено зону #1, можна вводити назву")
-			return
-		}
-		if _, ok := vm.SelectedItem(); !ok {
-			selectByZoneNumber(0, true)
-			statusLabel.SetText("Виберіть зону і вводьте назву")
-			return
-		}
-		zoneNumber, ok := vm.SelectedZoneNumber()
-		if !ok {
-			statusLabel.SetText("Виберіть зону і вводьте назву")
-			return
-		}
-		updateSelectedZoneLabel()
-		focusIfOnCanvas(parent, quickNameEntry)
-		statusLabel.SetText(fmt.Sprintf("Редагування зони #%d: введіть назву і натисніть Enter", zoneNumber))
-	})
-
-	deleteBtn := widget.NewButton("Видалити", func() {
-		target, ok := vm.SelectedItem()
-		if !ok {
-			statusLabel.SetText("Виберіть зону у таблиці")
-			return
-		}
-		targetZoneNumber, ok := vm.SelectedZoneNumber()
-		if !ok {
-			targetZoneNumber = target.ZoneNumber
-		}
-		dialog.ShowConfirm(
-			"Підтвердження",
-			fmt.Sprintf("Видалити зону #%d?", targetZoneNumber),
-			func(ok bool) {
-				if !ok {
-					return
-				}
-				if err := provider.DeleteObjectZone(objn, target.ID); err != nil {
-					dialog.ShowError(err, parent)
-					statusLabel.SetText("Не вдалося видалити зону")
-					return
-				}
-				reload()
-				statusLabel.SetText("Зону видалено")
-			},
-			parent,
-		)
-	})
-
-	fillBtn := widget.NewButton("Заповнити", func() {
-		defaultCount := suggestZoneFillCount(provider, objn, vm.Items())
-		showZoneFillDialog(parent, defaultCount, func(count int64) {
-			if err := provider.FillObjectZones(objn, count); err != nil {
-				dialog.ShowError(err, parent)
-				statusLabel.SetText("Не вдалося заповнити зони")
-				return
-			}
-			reload()
-			statusLabel.SetText("Зони заповнено")
-		}, statusLabel)
-	})
-
-	clearBtn := widget.NewButton("Очистити", func() {
-		dialog.ShowConfirm(
-			"Підтвердження",
-			"Видалити всі зони об'єкта?",
-			func(ok bool) {
-				if !ok {
-					return
-				}
-				if err := provider.ClearObjectZones(objn); err != nil {
-					dialog.ShowError(err, parent)
-					statusLabel.SetText("Не вдалося очистити зони")
-					return
-				}
-				reload()
-				statusLabel.SetText("Зони очищено")
-			},
-			parent,
-		)
-	})
-
-	refreshBtn := widget.NewButton("Оновити", reload)
-	nextBtn := widget.NewButton("Enter -> Наступна", moveToNextZone)
-	tableScroll := container.NewScroll(table)
+func (s *objectZonesTabState) buildContent() fyne.CanvasObject {
+	tableScroll := container.NewScroll(s.table)
 	tableScroll.SetMinSize(fyne.NewSize(420, 260))
 
-	content := container.NewBorder(
+	return container.NewBorder(
 		container.NewVBox(
-			container.NewHBox(addBtn, editBtn, deleteBtn, fillBtn, clearBtn, layout.NewSpacer(), refreshBtn),
+			container.NewHBox(
+				widget.NewButton("Додати", s.addZone),
+				widget.NewButton("Змінити", s.editZone),
+				widget.NewButton("Видалити", s.deleteZone),
+				widget.NewButton("Заповнити", s.fillZones),
+				widget.NewButton("Очистити", s.clearZones),
+				layout.NewSpacer(),
+				widget.NewButton("Оновити", s.reload),
+			),
 			widget.NewSeparator(),
 		),
 		container.NewVBox(
@@ -466,18 +323,275 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminObjectZones
 			container.NewBorder(
 				nil,
 				nil,
-				container.NewHBox(widget.NewLabel("Швидке введення:"), layout.NewSpacer(), selectedZoneLabel),
-				nextBtn,
-				quickNameEntry,
+				container.NewHBox(widget.NewLabel("Швидке введення:"), layout.NewSpacer(), s.selectedZoneLabel),
+				widget.NewButton("Enter -> Наступна", s.moveToNextZone),
+				s.quickNameEntry,
 			),
 		),
 		nil,
 		nil,
 		tableScroll,
 	)
+}
 
-	reload()
-	return content
+func (s *objectZonesTabState) buildTable() *widget.Table {
+	table := widget.NewTable(
+		func() (int, int) { return s.vm.Count() + 1, 3 },
+		func() fyne.CanvasObject { return widget.NewLabel("cell") },
+		func(id widget.TableCellID, obj fyne.CanvasObject) {
+			s.updateTableCell(id, obj.(*widget.Label))
+		},
+	)
+	table.StickyRowCount = 1
+	table.StickyColumnCount = 1
+	s.applyTableLayout(table)
+	table.OnSelected = s.handleTableSelection
+
+	return table
+}
+
+func (s *objectZonesTabState) updateTableCell(id widget.TableCellID, label *widget.Label) {
+	if id.Row == 0 {
+		switch id.Col {
+		case 0:
+			label.SetText("ZONEN")
+		case 1:
+			label.SetText("Тип")
+		default:
+			label.SetText("Опис")
+		}
+		return
+	}
+
+	itemIndex := id.Row - 1
+	item, ok := s.vm.ItemAt(itemIndex)
+	if !ok {
+		label.SetText("")
+		return
+	}
+
+	switch id.Col {
+	case 0:
+		label.SetText(strconv.FormatInt(s.vm.EffectiveZoneNumberAt(itemIndex), 10))
+	case 1:
+		label.SetText("пож.")
+	default:
+		label.SetText(strings.TrimSpace(item.Description))
+	}
+}
+
+func (s *objectZonesTabState) applyTableLayout(table *widget.Table) {
+	const (
+		zoneColWNum  = float32(120)
+		zoneColWType = float32(120)
+		zoneColWDesc = float32(520)
+	)
+
+	table.SetColumnWidth(0, zoneColWNum)
+	table.SetColumnWidth(1, zoneColWType)
+	table.SetColumnWidth(2, zoneColWDesc)
+}
+
+func (s *objectZonesTabState) updateSelectedZoneLabel() {
+	s.selectedZoneLabel.SetText(s.vm.SelectedZoneLabel())
+}
+
+func (s *objectZonesTabState) ensureZoneExists(zoneNumber int64, defaultDescription string) error {
+	if s.vm.FindRowByZoneNumber(zoneNumber) >= 0 {
+		return nil
+	}
+
+	zone, err := s.vm.BuildZoneForCreate(zoneNumber, defaultDescription)
+	if err != nil {
+		return err
+	}
+	return s.provider.AddObjectZone(s.objn, zone)
+}
+
+func (s *objectZonesTabState) selectByZoneNumber(zoneNumber int64, focusQuickName bool) {
+	if !s.vm.SelectZoneByNumber(zoneNumber) {
+		s.table.UnselectAll()
+		s.quickNameEntry.SetText("")
+		s.updateSelectedZoneLabel()
+		return
+	}
+
+	targetRow := s.vm.SelectedRow()
+	s.table.Select(widget.TableCellID{Row: targetRow + 1, Col: 0})
+	s.quickNameEntry.SetText(s.vm.SelectedZoneDescription())
+	s.updateSelectedZoneLabel()
+	if focusQuickName {
+		focusIfOnCanvas(s.parent, s.quickNameEntry)
+	}
+}
+
+func (s *objectZonesTabState) reloadAndSelect(targetZoneNumber int64, focusQuickName bool) {
+	loaded, err := s.provider.ListObjectZones(s.objn)
+	if err != nil {
+		dialog.ShowError(err, s.parent)
+		s.statusLabel.SetText("Не вдалося завантажити зони")
+		return
+	}
+
+	s.vm.SetItems(loaded)
+	s.table.Refresh()
+	s.applyTableLayout(s.table)
+	s.statusLabel.SetText(s.vm.CountStatusText())
+	s.selectByZoneNumber(targetZoneNumber, focusQuickName)
+}
+
+func (s *objectZonesTabState) reload() {
+	s.reloadAndSelect(0, false)
+}
+
+func (s *objectZonesTabState) handleTableSelection(id widget.TableCellID) {
+	if !s.vm.SelectByTableRow(id.Row) {
+		s.quickNameEntry.SetText("")
+		s.updateSelectedZoneLabel()
+		return
+	}
+
+	s.quickNameEntry.SetText(s.vm.SelectedZoneDescription())
+	s.updateSelectedZoneLabel()
+	focusIfOnCanvas(s.parent, s.quickNameEntry)
+}
+
+func (s *objectZonesTabState) moveToNextZone() {
+	if _, ok := s.vm.SelectedItem(); !ok {
+		if s.vm.Count() == 0 {
+			if err := s.ensureZoneExists(1, strings.TrimSpace(s.quickNameEntry.Text)); err != nil {
+				dialog.ShowError(err, s.parent)
+				s.statusLabel.SetText("Не вдалося додати першу зону")
+				return
+			}
+			s.reloadAndSelect(1, true)
+			s.statusLabel.SetText("Додано зону #1")
+			return
+		}
+		s.selectByZoneNumber(0, true)
+	}
+
+	current, currentZoneNumber, ok := s.vm.PrepareSelectedZoneForSave(s.quickNameEntry.Text)
+	if !ok {
+		s.statusLabel.SetText("Виберіть зону у таблиці")
+		return
+	}
+	if err := s.provider.UpdateObjectZone(s.objn, current); err != nil {
+		dialog.ShowError(err, s.parent)
+		s.statusLabel.SetText("Не вдалося зберегти назву зони")
+		return
+	}
+
+	nextZoneNumber := currentZoneNumber + 1
+	if err := s.ensureZoneExists(nextZoneNumber, ""); err != nil {
+		dialog.ShowError(err, s.parent)
+		s.statusLabel.SetText("Не вдалося додати наступну зону")
+		return
+	}
+
+	s.reloadAndSelect(nextZoneNumber, true)
+	s.statusLabel.SetText(fmt.Sprintf("Збережено зону #%d, перехід на #%d", currentZoneNumber, nextZoneNumber))
+}
+
+func (s *objectZonesTabState) addZone() {
+	nextZoneNumber := s.vm.NextZoneNumberForAdd()
+	if err := s.ensureZoneExists(nextZoneNumber, ""); err != nil {
+		dialog.ShowError(err, s.parent)
+		s.statusLabel.SetText("Не вдалося додати зону")
+		return
+	}
+	s.reloadAndSelect(nextZoneNumber, true)
+	s.statusLabel.SetText(fmt.Sprintf("Готово до введення зони #%d", nextZoneNumber))
+}
+
+func (s *objectZonesTabState) editZone() {
+	if s.vm.Count() == 0 {
+		if err := s.ensureZoneExists(1, ""); err != nil {
+			dialog.ShowError(err, s.parent)
+			s.statusLabel.SetText("Не вдалося створити першу зону")
+			return
+		}
+		s.reloadAndSelect(1, true)
+		s.statusLabel.SetText("Створено зону #1, можна вводити назву")
+		return
+	}
+	if _, ok := s.vm.SelectedItem(); !ok {
+		s.selectByZoneNumber(0, true)
+		s.statusLabel.SetText("Виберіть зону і вводьте назву")
+		return
+	}
+	zoneNumber, ok := s.vm.SelectedZoneNumber()
+	if !ok {
+		s.statusLabel.SetText("Виберіть зону і вводьте назву")
+		return
+	}
+
+	s.updateSelectedZoneLabel()
+	focusIfOnCanvas(s.parent, s.quickNameEntry)
+	s.statusLabel.SetText(fmt.Sprintf("Редагування зони #%d: введіть назву і натисніть Enter", zoneNumber))
+}
+
+func (s *objectZonesTabState) deleteZone() {
+	target, ok := s.vm.SelectedItem()
+	if !ok {
+		s.statusLabel.SetText("Виберіть зону у таблиці")
+		return
+	}
+
+	targetZoneNumber, ok := s.vm.SelectedZoneNumber()
+	if !ok {
+		targetZoneNumber = target.ZoneNumber
+	}
+	dialog.ShowConfirm(
+		"Підтвердження",
+		fmt.Sprintf("Видалити зону #%d?", targetZoneNumber),
+		func(confirmed bool) {
+			if !confirmed {
+				return
+			}
+			if err := s.provider.DeleteObjectZone(s.objn, target.ID); err != nil {
+				dialog.ShowError(err, s.parent)
+				s.statusLabel.SetText("Не вдалося видалити зону")
+				return
+			}
+			s.reload()
+			s.statusLabel.SetText("Зону видалено")
+		},
+		s.parent,
+	)
+}
+
+func (s *objectZonesTabState) fillZones() {
+	defaultCount := suggestZoneFillCount(s.provider, s.objn, s.vm.Items())
+	showZoneFillDialog(s.parent, defaultCount, func(count int64) {
+		if err := s.provider.FillObjectZones(s.objn, count); err != nil {
+			dialog.ShowError(err, s.parent)
+			s.statusLabel.SetText("Не вдалося заповнити зони")
+			return
+		}
+		s.reload()
+		s.statusLabel.SetText("Зони заповнено")
+	}, s.statusLabel)
+}
+
+func (s *objectZonesTabState) clearZones() {
+	dialog.ShowConfirm(
+		"Підтвердження",
+		"Видалити всі зони об'єкта?",
+		func(confirmed bool) {
+			if !confirmed {
+				return
+			}
+			if err := s.provider.ClearObjectZones(s.objn); err != nil {
+				dialog.ShowError(err, s.parent)
+				s.statusLabel.SetText("Не вдалося очистити зони")
+				return
+			}
+			s.reload()
+			s.statusLabel.SetText("Зони очищено")
+		},
+		s.parent,
+	)
 }
 
 func buildObjectAdditionalTab(
@@ -488,138 +602,79 @@ func buildObjectAdditionalTab(
 	getAddressFromObjectTab func() string,
 	setRegionInObjectTab func(regionID int64) bool,
 ) fyne.CanvasObject {
-	vm := viewmodels.NewObjectAdditionalTabViewModel()
+	state := newObjectAdditionalTabState(
+		parent,
+		provider,
+		objn,
+		statusLabel,
+		getAddressFromObjectTab,
+		setRegionInObjectTab,
+	)
+	content := state.buildContent()
+	state.reload()
+	return content
+}
 
-	addressEntry := widget.NewEntry()
-	addressEntry.SetPlaceHolder("Адреса для геопошуку")
+type objectAdditionalTabState struct {
+	parent               fyne.Window
+	provider             contracts.AdminObjectAdditionalTabProvider
+	objn                 int64
+	statusLabel          *widget.Label
+	getAddressFromObject func() string
+	setRegionInObjectTab func(regionID int64) bool
+	vm                   *viewmodels.ObjectAdditionalTabViewModel
+	addressEntry         *widget.Entry
+	latitudeEntry        *widget.Entry
+	longitudeEntry       *widget.Entry
+}
 
-	latitudeEntry := widget.NewEntry()
-	latitudeEntry.SetPlaceHolder("Широта (LATITUDE)")
-
-	longitudeEntry := widget.NewEntry()
-	longitudeEntry.SetPlaceHolder("Довгота (LONGITUDE)")
-
-	syncAddressFromObjectTab := func() {
-		address, ok := vm.AddressFromObjectTab(getAddressFromObjectTab)
-		if !ok {
-			return
-		}
-		addressEntry.SetText(address)
+func newObjectAdditionalTabState(
+	parent fyne.Window,
+	provider contracts.AdminObjectAdditionalTabProvider,
+	objn int64,
+	statusLabel *widget.Label,
+	getAddressFromObjectTab func() string,
+	setRegionInObjectTab func(regionID int64) bool,
+) *objectAdditionalTabState {
+	state := &objectAdditionalTabState{
+		parent:               parent,
+		provider:             provider,
+		objn:                 objn,
+		statusLabel:          statusLabel,
+		getAddressFromObject: getAddressFromObjectTab,
+		setRegionInObjectTab: setRegionInObjectTab,
+		vm:                   viewmodels.NewObjectAdditionalTabViewModel(),
+		addressEntry:         widget.NewEntry(),
+		latitudeEntry:        widget.NewEntry(),
+		longitudeEntry:       widget.NewEntry(),
 	}
+	state.addressEntry.SetPlaceHolder("Адреса для геопошуку")
+	state.latitudeEntry.SetPlaceHolder("Широта (LATITUDE)")
+	state.longitudeEntry.SetPlaceHolder("Довгота (LONGITUDE)")
+	return state
+}
 
-	geoByAddress := func(addressRaw string) (string, string, []string, error) {
-		address, err := vm.RequireLookupAddress(addressRaw)
-		if err != nil {
-			return "", "", nil, err
-		}
-		lat, lon, districtHints, err := geocodeAddress(address)
-		if err != nil {
-			return "", "", nil, err
-		}
-		vm.RememberGeocode(address, districtHints)
-		return lat, lon, districtHints, nil
-	}
-
-	reload := func() {
-		coords, err := provider.GetObjectCoordinates(objn)
-		if err != nil {
-			dialog.ShowError(err, parent)
-			statusLabel.SetText("Не вдалося завантажити координати")
-			return
-		}
-		syncAddressFromObjectTab()
-		latitudeEntry.SetText(strings.TrimSpace(coords.Latitude))
-		longitudeEntry.SetText(strings.TrimSpace(coords.Longitude))
-		statusLabel.SetText("Координати завантажено")
-	}
-
-	save := func() {
-		coords := vm.BuildCoordinates(latitudeEntry.Text, longitudeEntry.Text)
-		if err := provider.SaveObjectCoordinates(objn, coords); err != nil {
-			dialog.ShowError(err, parent)
-			statusLabel.SetText("Не вдалося зберегти координати")
-			return
-		}
-		statusLabel.SetText("Координати збережено")
-	}
-
-	saveBtn := widget.NewButton("Зберегти координати", save)
-	clearBtn := widget.NewButton("Очистити", func() {
-		latitudeEntry.SetText("")
-		longitudeEntry.SetText("")
-		save()
-	})
-	mapPickBtn := widget.NewButton("Вибрати на карті", func() {
-		showCoordinatesMapPicker(
-			parent,
-			strings.TrimSpace(latitudeEntry.Text),
-			strings.TrimSpace(longitudeEntry.Text),
-			func(lat, lon string) {
-				latitudeEntry.SetText(lat)
-				longitudeEntry.SetText(lon)
-				statusLabel.SetText("Координати вибрано на карті")
-			},
-		)
-	})
-	findByAddressBtn := widget.NewButton("Координати з адреси", func() {
-		lat, lon, districtHints, err := geoByAddress(addressEntry.Text)
-		if err != nil {
-			dialog.ShowError(err, parent)
-			statusLabel.SetText("Не вдалося знайти координати за адресою")
-			return
-		}
-		latitudeEntry.SetText(lat)
-		longitudeEntry.SetText(lon)
-		if len(districtHints) > 0 {
-			statusLabel.SetText(fmt.Sprintf("Знайдено координати за адресою. Можна також заповнити район (%s)", districtHints[0]))
-			return
-		}
-		statusLabel.SetText("Знайдено координати за адресою")
-	})
-	fillDistrictBtn := widget.NewButton("Район з адреси", func() {
-		address, err := vm.RequireLookupAddress(addressEntry.Text)
-		if err != nil {
-			statusLabel.SetText(err.Error())
-			return
-		}
-		hints, ok := vm.CachedDistrictHintsForAddress(address)
-		if !ok {
-			_, _, resolvedHints, err := geoByAddress(address)
-			if err != nil {
-				dialog.ShowError(err, parent)
-				statusLabel.SetText("Не вдалося визначити район за адресою")
-				return
-			}
-			hints = resolvedHints
-		}
-		regionID, regionName, err := resolveRegionByAddressHints(provider, hints)
-		if err != nil {
-			dialog.ShowError(err, parent)
-			statusLabel.SetText("Не вдалося підібрати район за адресою")
-			return
-		}
-		if setRegionInObjectTab != nil && setRegionInObjectTab(regionID) {
-			statusLabel.SetText(fmt.Sprintf("Район встановлено: %s (натисніть \"Зберегти\" у картці об'єкта)", regionName))
-			return
-		}
-		statusLabel.SetText(fmt.Sprintf("Знайдено район: %s, але не вдалося застосувати у вкладці \"Об'єкт\"", regionName))
-	})
-	useObjectAddressBtn := widget.NewButton("Взяти адресу з Об'єкта", func() {
-		syncAddressFromObjectTab()
-		statusLabel.SetText("Адресу синхронізовано зі вкладки \"Об'єкт\"")
-	})
-	refreshBtn := widget.NewButton("Оновити", reload)
-
+func (s *objectAdditionalTabState) buildContent() fyne.CanvasObject {
 	form := widget.NewForm(
-		widget.NewFormItem("Адреса:", addressEntry),
-		widget.NewFormItem("Широта:", latitudeEntry),
-		widget.NewFormItem("Довгота:", longitudeEntry),
+		widget.NewFormItem("Адреса:", s.addressEntry),
+		widget.NewFormItem("Широта:", s.latitudeEntry),
+		widget.NewFormItem("Довгота:", s.longitudeEntry),
 	)
 
-	content := container.NewBorder(
+	return container.NewBorder(
 		container.NewVBox(
-			container.NewHBox(saveBtn, clearBtn, mapPickBtn, findByAddressBtn, fillDistrictBtn),
-			container.NewHBox(useObjectAddressBtn, layout.NewSpacer(), refreshBtn),
+			container.NewHBox(
+				widget.NewButton("Зберегти координати", s.save),
+				widget.NewButton("Очистити", s.clearAndSave),
+				widget.NewButton("Вибрати на карті", s.pickCoordinatesOnMap),
+				widget.NewButton("Координати з адреси", s.findCoordinatesByAddress),
+				widget.NewButton("Район з адреси", s.fillDistrictFromAddress),
+			),
+			container.NewHBox(
+				widget.NewButton("Взяти адресу з Об'єкта", s.useObjectAddress),
+				layout.NewSpacer(),
+				widget.NewButton("Оновити", s.reload),
+			),
 			widget.NewSeparator(),
 		),
 		nil,
@@ -627,9 +682,121 @@ func buildObjectAdditionalTab(
 		nil,
 		container.NewPadded(form),
 	)
+}
 
-	reload()
-	return content
+func (s *objectAdditionalTabState) syncAddressFromObjectTab() {
+	address, ok := s.vm.AddressFromObjectTab(s.getAddressFromObject)
+	if !ok {
+		return
+	}
+	s.addressEntry.SetText(address)
+}
+
+func (s *objectAdditionalTabState) geoByAddress(addressRaw string) (string, string, []string, error) {
+	address, err := s.vm.RequireLookupAddress(addressRaw)
+	if err != nil {
+		return "", "", nil, err
+	}
+	lat, lon, districtHints, err := geocodeAddress(address)
+	if err != nil {
+		return "", "", nil, err
+	}
+	s.vm.RememberGeocode(address, districtHints)
+	return lat, lon, districtHints, nil
+}
+
+func (s *objectAdditionalTabState) reload() {
+	coords, err := s.provider.GetObjectCoordinates(s.objn)
+	if err != nil {
+		dialog.ShowError(err, s.parent)
+		s.statusLabel.SetText("Не вдалося завантажити координати")
+		return
+	}
+	s.syncAddressFromObjectTab()
+	s.latitudeEntry.SetText(strings.TrimSpace(coords.Latitude))
+	s.longitudeEntry.SetText(strings.TrimSpace(coords.Longitude))
+	s.statusLabel.SetText("Координати завантажено")
+}
+
+func (s *objectAdditionalTabState) save() {
+	coords := s.vm.BuildCoordinates(s.latitudeEntry.Text, s.longitudeEntry.Text)
+	if err := s.provider.SaveObjectCoordinates(s.objn, coords); err != nil {
+		dialog.ShowError(err, s.parent)
+		s.statusLabel.SetText("Не вдалося зберегти координати")
+		return
+	}
+	s.statusLabel.SetText("Координати збережено")
+}
+
+func (s *objectAdditionalTabState) clearAndSave() {
+	s.latitudeEntry.SetText("")
+	s.longitudeEntry.SetText("")
+	s.save()
+}
+
+func (s *objectAdditionalTabState) pickCoordinatesOnMap() {
+	showCoordinatesMapPicker(
+		s.parent,
+		strings.TrimSpace(s.latitudeEntry.Text),
+		strings.TrimSpace(s.longitudeEntry.Text),
+		func(lat, lon string) {
+			s.latitudeEntry.SetText(lat)
+			s.longitudeEntry.SetText(lon)
+			s.statusLabel.SetText("Координати вибрано на карті")
+		},
+	)
+}
+
+func (s *objectAdditionalTabState) findCoordinatesByAddress() {
+	lat, lon, districtHints, err := s.geoByAddress(s.addressEntry.Text)
+	if err != nil {
+		dialog.ShowError(err, s.parent)
+		s.statusLabel.SetText("Не вдалося знайти координати за адресою")
+		return
+	}
+	s.latitudeEntry.SetText(lat)
+	s.longitudeEntry.SetText(lon)
+	if len(districtHints) > 0 {
+		s.statusLabel.SetText(fmt.Sprintf("Знайдено координати за адресою. Можна також заповнити район (%s)", districtHints[0]))
+		return
+	}
+	s.statusLabel.SetText("Знайдено координати за адресою")
+}
+
+func (s *objectAdditionalTabState) fillDistrictFromAddress() {
+	address, err := s.vm.RequireLookupAddress(s.addressEntry.Text)
+	if err != nil {
+		s.statusLabel.SetText(err.Error())
+		return
+	}
+
+	hints, ok := s.vm.CachedDistrictHintsForAddress(address)
+	if !ok {
+		_, _, resolvedHints, resolveErr := s.geoByAddress(address)
+		if resolveErr != nil {
+			dialog.ShowError(resolveErr, s.parent)
+			s.statusLabel.SetText("Не вдалося визначити район за адресою")
+			return
+		}
+		hints = resolvedHints
+	}
+
+	regionID, regionName, err := resolveRegionByAddressHints(s.provider, hints)
+	if err != nil {
+		dialog.ShowError(err, s.parent)
+		s.statusLabel.SetText("Не вдалося підібрати район за адресою")
+		return
+	}
+	if s.setRegionInObjectTab != nil && s.setRegionInObjectTab(regionID) {
+		s.statusLabel.SetText(fmt.Sprintf("Район встановлено: %s (натисніть \"Зберегти\" у картці об'єкта)", regionName))
+		return
+	}
+	s.statusLabel.SetText(fmt.Sprintf("Знайдено район: %s, але не вдалося застосувати у вкладці \"Об'єкт\"", regionName))
+}
+
+func (s *objectAdditionalTabState) useObjectAddress() {
+	s.syncAddressFromObjectTab()
+	s.statusLabel.SetText("Адресу синхронізовано зі вкладки \"Об'єкт\"")
 }
 
 func geocodeAddress(address string) (string, string, []string, error) {
@@ -1923,56 +2090,6 @@ func showObjectPersonalEditor(
 	dlg.Show()
 }
 
-func showObjectZoneEditor(
-	parent fyne.Window,
-	title string,
-	initial contracts.AdminObjectZone,
-	onSave func(zone contracts.AdminObjectZone) error,
-	statusLabel *widget.Label,
-	onDone func(),
-) {
-	numberEntry := widget.NewEntry()
-	if initial.ZoneNumber > 0 {
-		numberEntry.SetText(strconv.FormatInt(initial.ZoneNumber, 10))
-	}
-	numberEntry.SetPlaceHolder("1..9999")
-
-	descriptionEntry := widget.NewEntry()
-	descriptionEntry.SetText(initial.Description)
-
-	form := widget.NewForm(
-		widget.NewFormItem("Номер:", numberEntry),
-		widget.NewFormItem("Тип:", widget.NewLabel("пож.")),
-		widget.NewFormItem("Опис:", descriptionEntry),
-	)
-
-	dlg := dialog.NewCustomConfirm(title, "Зберегти", "Відміна", form, func(ok bool) {
-		if !ok {
-			return
-		}
-
-		zoneNumber, err := strconv.ParseInt(strings.TrimSpace(numberEntry.Text), 10, 64)
-		if err != nil {
-			statusLabel.SetText("Некоректний номер зони")
-			return
-		}
-
-		zone := contracts.AdminObjectZone{
-			ZoneNumber:    zoneNumber,
-			ZoneType:      1,
-			Description:   strings.TrimSpace(descriptionEntry.Text),
-			EntryDelaySec: 0,
-		}
-		if err := onSave(zone); err != nil {
-			dialog.ShowError(err, parent)
-			statusLabel.SetText("Не вдалося зберегти зону")
-			return
-		}
-		onDone()
-	}, parent)
-	dlg.Show()
-}
-
 func showZoneFillDialog(parent fyne.Window, defaultCount int64, onApply func(count int64), statusLabel *widget.Label) {
 	entry := widget.NewEntry()
 	if defaultCount <= 0 {
@@ -2128,7 +2245,49 @@ func showCoordinatesMapPicker(parent fyne.Window, initialLatRaw string, initialL
 	showCoordinatesMapPickerWithOptions(parent, initialLatRaw, initialLonRaw, coordinatesMapPickerOptions{}, onPick)
 }
 
+type coordinatesMapPickerState struct {
+	opts   coordinatesMapPickerOptions
+	onPick func(lat, lon string)
+
+	win             fyne.Window
+	mapView         *xwidget.Map
+	previousMarker  *canvas.Circle
+	selectedMarker  *canvas.Circle
+	selectedHalo    *canvas.Circle
+	interaction     *mapInteractionSurface
+	mapStack        fyne.CanvasObject
+	searchEntry     *widget.SelectEntry
+	searchStatus    *widget.Label
+	centerLabel     *widget.Label
+	selectedLabel   *widget.Label
+	selectionLat    float64
+	selectionLon    float64
+	objectMarkerLat float64
+	objectMarkerLon float64
+	hasObjectMarker bool
+
+	suggestionOptions map[string]geocodeCandidate
+	suggestionMu      sync.Mutex
+	suggestionReqID   int
+	lastMarkerUpdate  time.Time
+	lastCenterUpdate  time.Time
+}
+
 func showCoordinatesMapPickerWithOptions(parent fyne.Window, initialLatRaw string, initialLonRaw string, opts coordinatesMapPickerOptions, onPick func(lat, lon string)) {
+	state := newCoordinatesMapPickerState(initialLatRaw, initialLonRaw, opts, onPick)
+	state.win.SetContent(state.buildContent())
+	state.bindSearchHandlers()
+	state.bindInteractionHandlers()
+	state.forceMapOverlayRefresh()
+	state.win.Show()
+}
+
+func newCoordinatesMapPickerState(
+	initialLatRaw string,
+	initialLonRaw string,
+	opts coordinatesMapPickerOptions,
+	onPick func(lat, lon string),
+) *coordinatesMapPickerState {
 	centerLat, centerLon, zoom, hasObjectMarker := resolveInitialMapCenterWithOptions(initialLatRaw, initialLonRaw, opts.ForceLvivCenter)
 
 	mapView := xwidget.NewMapWithOptions(
@@ -2139,380 +2298,107 @@ func showCoordinatesMapPickerWithOptions(parent fyne.Window, initialLatRaw strin
 		xwidget.AtLatLon(centerLat, centerLon),
 	)
 
-	previousMarker := canvas.NewCircle(color.NRGBA{R: 255, G: 40, B: 40, A: 210})
-	previousMarker.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 230}
-	previousMarker.StrokeWidth = 2
-	previousMarker.Resize(fyne.NewSize(12, 12))
-	previousMarker.Hide()
+	state := &coordinatesMapPickerState{
+		opts:              opts,
+		onPick:            onPick,
+		mapView:           mapView,
+		previousMarker:    newMapPickerMarker(color.NRGBA{R: 255, G: 40, B: 40, A: 210}, 12),
+		selectedMarker:    newMapPickerMarker(color.NRGBA{R: 25, G: 122, B: 255, A: 210}, 16),
+		selectedHalo:      newMapPickerHalo(),
+		interaction:       newMapInteractionSurface(),
+		centerLabel:       widget.NewLabel("Центр: —"),
+		selectedLabel:     widget.NewLabel(""),
+		searchEntry:       widget.NewSelectEntry(nil),
+		searchStatus:      widget.NewLabel(""),
+		suggestionOptions: map[string]geocodeCandidate{},
+		objectMarkerLat:   centerLat,
+		objectMarkerLon:   centerLon,
+		hasObjectMarker:   hasObjectMarker,
+	}
 
-	selectedMarker := canvas.NewCircle(color.NRGBA{R: 25, G: 122, B: 255, A: 210})
-	selectedMarker.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 230}
-	selectedMarker.StrokeWidth = 2
-	selectedMarker.Resize(fyne.NewSize(16, 16))
-	selectedMarker.Hide()
+	state.selectedLabel.TextStyle = fyne.TextStyle{Bold: true}
+	state.searchEntry.SetPlaceHolder("Пошук адреси")
+	state.searchEntry.SetText(strings.TrimSpace(opts.InitialAddress))
 
-	selectedHalo := canvas.NewCircle(color.NRGBA{R: 25, G: 122, B: 255, A: 70})
-	selectedHalo.Resize(fyne.NewSize(28, 28))
-	selectedHalo.Hide()
-
-	markerLayer := container.NewWithoutLayout(previousMarker, selectedHalo, selectedMarker)
-	interaction := newMapInteractionSurface()
-
-	mapStack := container.NewStack(
-		mapView,
-		markerLayer,
-		interaction,
-	)
-
-	selectionLat := centerLat
-	selectionLon := centerLon
+	state.selectionLat = centerLat
+	state.selectionLon = centerLon
 	if lat, lon, ok := parseLatLon(initialLatRaw, initialLonRaw); ok {
-		selectionLat = lat
-		selectionLon = lon
+		state.selectionLat = lat
+		state.selectionLon = lon
 	}
 
-	centerLabel := widget.NewLabel("Центр: —")
-	selectedLabel := widget.NewLabel("")
-	selectedLabel.TextStyle = fyne.TextStyle{Bold: true}
-
-	updateCenterLabel := func() {
-		lat, lon, err := mapCenterLatLon(mapView)
-		if err != nil {
-			centerLabel.SetText("Центр: невизначено")
-			return
-		}
-		zoomText := "?"
-		if state, stateErr := readMapInternalState(mapView); stateErr == nil {
-			zoomText = strconv.Itoa(state.zoom)
-		}
-		centerLabel.SetText(fmt.Sprintf("Центр: %s, %s | Z=%s", formatCoordinate(lat), formatCoordinate(lon), zoomText))
-	}
-	updateSelectedLabel := func() {
-		selectedLabel.SetText(fmt.Sprintf("Вибрана точка: %s, %s", formatCoordinate(selectionLat), formatCoordinate(selectionLon)))
-	}
-
-	var updateMarkers func()
-	lastMarkerUpdate := time.Time{}
-	lastCenterUpdate := time.Time{}
-	forceMapOverlayRefresh := func() {
-		updateCenterLabel()
-		if updateMarkers != nil {
-			updateMarkers()
-		}
-		now := time.Now()
-		lastMarkerUpdate = now
-		lastCenterUpdate = now
-	}
-	updateMapOverlayDuringDrag := func() {
-		now := time.Now()
-		if updateMarkers != nil && now.Sub(lastMarkerUpdate) >= 80*time.Millisecond {
-			updateMarkers()
-			lastMarkerUpdate = now
-		}
-		if now.Sub(lastCenterUpdate) >= 220*time.Millisecond {
-			updateCenterLabel()
-			lastCenterUpdate = now
-		}
-	}
-
-	objectMarkerLat := centerLat
-	objectMarkerLon := centerLon
-	updateMarkers = func() {
-		if !hasObjectMarker {
-			previousMarker.Hide()
-		} else {
-			x, y, ok := mapLatLonToCanvasPoint(mapView, objectMarkerLat, objectMarkerLon)
-			if !ok {
-				previousMarker.Hide()
-			} else {
-				size := mapView.Size()
-				if x < -20 || y < -20 || x > size.Width+20 || y > size.Height+20 {
-					previousMarker.Hide()
-				} else {
-					prevSize := previousMarker.Size()
-					previousMarker.Move(fyne.NewPos(x-prevSize.Width/2, y-prevSize.Height/2))
-					previousMarker.Show()
-					previousMarker.Refresh()
-				}
-			}
-		}
-
-		sx, sy, ok := mapLatLonToCanvasPoint(mapView, selectionLat, selectionLon)
-		if !ok {
-			selectedMarker.Hide()
-			selectedHalo.Hide()
-			return
-		}
-		size := mapView.Size()
-		if sx < -30 || sy < -30 || sx > size.Width+30 || sy > size.Height+30 {
-			selectedMarker.Hide()
-			selectedHalo.Hide()
-			return
-		}
-
-		haloSize := selectedHalo.Size()
-		selSize := selectedMarker.Size()
-		selectedHalo.Move(fyne.NewPos(sx-haloSize.Width/2, sy-haloSize.Height/2))
-		selectedMarker.Move(fyne.NewPos(sx-selSize.Width/2, sy-selSize.Height/2))
-		selectedHalo.Show()
-		selectedMarker.Show()
-		selectedHalo.Refresh()
-		selectedMarker.Refresh()
-	}
-
-	setSelectionAt := func(lat, lon float64) {
-		selectionLat = lat
-		selectionLon = lon
-		updateSelectedLabel()
-		updateMarkers()
-	}
-	updateSelectedLabel()
-	forceMapOverlayRefresh()
+	state.mapStack = container.NewStack(
+		state.mapView,
+		container.NewWithoutLayout(state.previousMarker, state.selectedHalo, state.selectedMarker),
+		state.interaction,
+	)
 
 	title := strings.TrimSpace(opts.Title)
 	if title == "" {
 		title = "Вибір координат на карті"
 	}
-	pickerWin := fyne.CurrentApp().NewWindow(title)
-	pickerWin.Resize(fyne.NewSize(980, 680))
+	state.win = fyne.CurrentApp().NewWindow(title)
+	state.win.Resize(fyne.NewSize(980, 680))
+	state.updateSelectedLabel()
 
-	searchEntry := widget.NewSelectEntry(nil)
-	searchEntry.SetPlaceHolder("Пошук адреси")
-	searchEntry.SetText(strings.TrimSpace(opts.InitialAddress))
-	searchStatusLabel := widget.NewLabel("")
-	suggestionOptions := map[string]geocodeCandidate{}
-	var suggestionMu sync.Mutex
-	suggestionReqID := 0
+	return state
+}
 
-	setSuggestionState := func(options []string, items map[string]geocodeCandidate) {
-		suggestionMu.Lock()
-		defer suggestionMu.Unlock()
-		suggestionOptions = items
-		searchEntry.SetOptions(options)
-	}
+func newMapPickerMarker(fill color.NRGBA, size float32) *canvas.Circle {
+	marker := canvas.NewCircle(fill)
+	marker.StrokeColor = color.NRGBA{R: 255, G: 255, B: 255, A: 230}
+	marker.StrokeWidth = 2
+	marker.Resize(fyne.NewSize(size, size))
+	marker.Hide()
+	return marker
+}
 
-	nextSuggestionRequestID := func() int {
-		suggestionMu.Lock()
-		defer suggestionMu.Unlock()
-		suggestionReqID++
-		return suggestionReqID
-	}
+func newMapPickerHalo() *canvas.Circle {
+	halo := canvas.NewCircle(color.NRGBA{R: 25, G: 122, B: 255, A: 70})
+	halo.Resize(fyne.NewSize(28, 28))
+	halo.Hide()
+	return halo
+}
 
-	isCurrentSuggestionRequest := func(id int) bool {
-		suggestionMu.Lock()
-		defer suggestionMu.Unlock()
-		return id == suggestionReqID
-	}
-
-	runAddressSearch := func() {
-		address := strings.TrimSpace(searchEntry.Text)
-		if address == "" {
-			searchStatusLabel.SetText("Вкажіть адресу для пошуку")
-			return
-		}
-
-		searchStatusLabel.SetText("Пошук адреси...")
-		go func() {
-			latRaw, lonRaw, _, err := geocodeAddress(address)
-			fyne.Do(func() {
-				if err != nil {
-					searchStatusLabel.SetText("Адресу не знайдено")
-					dialog.ShowError(err, pickerWin)
-					return
-				}
-				lat, latErr := parseCoordinate(latRaw)
-				lon, lonErr := parseCoordinate(lonRaw)
-				if latErr != nil || lonErr != nil {
-					searchStatusLabel.SetText("Сервіс повернув некоректні координати")
-					dialog.ShowError(fmt.Errorf("не вдалося розпізнати координати адреси"), pickerWin)
-					return
-				}
-				setSelectionAt(lat, lon)
-				mapView.PanToLatLon(lat, lon)
-				forceMapOverlayRefresh()
-				searchStatusLabel.SetText(fmt.Sprintf("Знайдено: %s, %s", formatCoordinate(lat), formatCoordinate(lon)))
-			})
-		}()
-	}
-
-	applySuggestion := func(candidate geocodeCandidate) {
-		lat, latErr := parseCoordinate(candidate.Lat)
-		lon, lonErr := parseCoordinate(candidate.Lon)
-		if latErr != nil || lonErr != nil {
-			searchStatusLabel.SetText("Підказка містить некоректні координати")
-			return
-		}
-		setSelectionAt(lat, lon)
-		mapView.PanToLatLon(lat, lon)
-		forceMapOverlayRefresh()
-		searchStatusLabel.SetText(fmt.Sprintf("Підказка: %s", firstNonEmpty(candidate.DisplayName, searchEntry.Text)))
-	}
-
-	searchEntry.OnSubmitted = func(string) {
-		runAddressSearch()
-	}
-	searchEntry.OnChanged = func(value string) {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			setSuggestionState(nil, map[string]geocodeCandidate{})
-			searchStatusLabel.SetText("")
-			return
-		}
-
-		suggestionMu.Lock()
-		candidate, ok := suggestionOptions[value]
-		suggestionMu.Unlock()
-		if ok {
-			applySuggestion(candidate)
-			return
-		}
-
-		if len([]rune(value)) < 3 {
-			setSuggestionState(nil, map[string]geocodeCandidate{})
-			searchStatusLabel.SetText("Введіть щонайменше 3 символи для підказок")
-			return
-		}
-
-		reqID := nextSuggestionRequestID()
-		searchStatusLabel.SetText("Пошук підказок...")
-		go func(query string, expectedReqID int) {
-			time.Sleep(350 * time.Millisecond)
-			if !isCurrentSuggestionRequest(expectedReqID) {
-				return
-			}
-
-			rows, err := geocodeAutocompleteCandidates(query)
-			fyne.Do(func() {
-				if !isCurrentSuggestionRequest(expectedReqID) {
-					return
-				}
-				if err != nil {
-					setSuggestionState(nil, map[string]geocodeCandidate{})
-					searchStatusLabel.SetText("Не вдалося завантажити підказки")
-					return
-				}
-
-				options, items := geocodeSuggestionOptions(rows)
-				setSuggestionState(options, items)
-				if len(options) == 0 {
-					searchStatusLabel.SetText("Підказки не знайдено")
-					return
-				}
-				searchStatusLabel.SetText(fmt.Sprintf("Знайдено підказок: %d", len(options)))
-			})
-		}(value, reqID)
-	}
-
-	interaction.onTapped = func(ev *fyne.PointEvent) {
-		lat, lon, err := mapCanvasPointToLatLon(mapView, ev.Position.X, ev.Position.Y)
-		if err != nil {
-			return
-		}
-		setSelectionAt(lat, lon)
-	}
-	interaction.onTappedSecondary = func(ev *fyne.PointEvent) {
-		lat, lon, err := mapCanvasPointToLatLon(mapView, ev.Position.X, ev.Position.Y)
-		if err != nil {
-			return
-		}
-		setSelectionAt(lat, lon)
-		mapView.PanToLatLon(lat, lon)
-		forceMapOverlayRefresh()
-	}
-	interaction.onDragged = func(ev *fyne.DragEvent) {
-		mapView.Dragged(ev)
-		updateMapOverlayDuringDrag()
-	}
-	interaction.onDragEnd = func() {
-		mapView.DragEnd()
-		forceMapOverlayRefresh()
-	}
-	interaction.onScrolled = func(ev *fyne.ScrollEvent) {
-		delta := ev.Scrolled.DY
-		if math.Abs(float64(ev.Scrolled.DX)) > math.Abs(float64(delta)) {
-			delta = ev.Scrolled.DX
-		}
-		steps := mapScrollStepCount(delta)
-		if steps == 0 {
-			return
-		}
-
-		centerLat, centerLon, centerErr := mapCenterLatLon(mapView)
-
-		// Для desktop/Fyne: позитивний wheel delta = прокрутка вгору.
-		// Вгору -> наближення, вниз -> віддалення.
-		if delta > 0 {
-			for i := 0; i < steps; i++ {
-				mapView.ZoomIn()
-			}
-		} else {
-			for i := 0; i < steps; i++ {
-				mapView.ZoomOut()
-			}
-		}
-		if centerErr == nil {
-			// Тримаємо центр стабільним, щоб карта не "пливла" при zoom.
-			mapView.PanToLatLon(centerLat, centerLon)
-		}
-		forceMapOverlayRefresh()
-	}
-
-	useSelectionBtn := widget.NewButton("Підтвердити вибір", func() {
-		centerLat, centerLon, err := mapCenterLatLon(mapView)
-		if err == nil {
-			saveLastMapCenter(centerLat, centerLon)
-		}
-		if onPick != nil {
-			onPick(formatCoordinate(selectionLat), formatCoordinate(selectionLon))
-		}
-		pickerWin.Close()
+func (s *coordinatesMapPickerState) buildContent() fyne.CanvasObject {
+	centerLvivBtn := widget.NewButton("Львів", func() {
+		s.mapView.PanToLatLon(mapDefaultLvivLat, mapDefaultLvivLon)
+		s.forceMapOverlayRefresh()
 	})
-	setFromCenterBtn := widget.NewButton("Точка = центр", func() {
-		lat, lon, err := mapCenterLatLon(mapView)
-		if err != nil {
-			dialog.ShowError(err, pickerWin)
-			return
-		}
-		setSelectionAt(lat, lon)
-	})
+	useSelectionBtn := widget.NewButton("Підтвердити вибір", s.confirmSelection)
+	setFromCenterBtn := widget.NewButton("Точка = центр", s.setSelectionFromCenter)
 	centerOnSelectionBtn := widget.NewButton("До вибраної точки", func() {
-		mapView.PanToLatLon(selectionLat, selectionLon)
-		forceMapOverlayRefresh()
+		s.mapView.PanToLatLon(s.selectionLat, s.selectionLon)
+		s.forceMapOverlayRefresh()
 	})
 	zoomInBtn := widget.NewButton("＋", func() {
-		mapView.ZoomIn()
-		forceMapOverlayRefresh()
+		s.mapView.ZoomIn()
+		s.forceMapOverlayRefresh()
 	})
 	zoomOutBtn := widget.NewButton("－", func() {
-		mapView.ZoomOut()
-		forceMapOverlayRefresh()
+		s.mapView.ZoomOut()
+		s.forceMapOverlayRefresh()
 	})
-	refreshBtn := widget.NewButton("Оновити", func() {
-		forceMapOverlayRefresh()
-	})
-	centerLvivBtn := widget.NewButton("Львів", func() {
-		mapView.PanToLatLon(mapDefaultLvivLat, mapDefaultLvivLon)
-		forceMapOverlayRefresh()
-	})
-	mapSettingsBtn := widget.NewButton("Налаштування карти", func() {
-		showMapCenterSettingsDialog(pickerWin, func(lat, lon float64, zoom int) {
-			mapView.Zoom(zoom)
-			mapView.PanToLatLon(lat, lon)
-			forceMapOverlayRefresh()
-		})
-	})
-	cancelBtn := widget.NewButton("Скасувати", func() { pickerWin.Close() })
+	refreshBtn := widget.NewButton("Оновити", s.forceMapOverlayRefresh)
+	mapSettingsBtn := widget.NewButton("Налаштування карти", s.openMapSettings)
+	cancelBtn := widget.NewButton("Скасувати", func() { s.win.Close() })
 
-	content := container.NewBorder(
+	return container.NewBorder(
 		container.NewVBox(
 			widget.NewLabel("ЛКМ: вибір точки | ПКМ: вибір + центрування | Колесо: зум | Перетягування: панорама."),
 			widget.NewLabel("Червоний маркер: поточна точка об'єкта. Синій маркер: точка, яку ви обрали."),
-			container.NewBorder(nil, nil, nil, container.NewHBox(widget.NewButton("Знайти адресу", runAddressSearch), centerLvivBtn), searchEntry),
-			searchStatusLabel,
+			container.NewBorder(
+				nil,
+				nil,
+				nil,
+				container.NewHBox(widget.NewButton("Знайти адресу", s.runAddressSearch), centerLvivBtn),
+				s.searchEntry,
+			),
+			s.searchStatus,
 			widget.NewSeparator(),
 		),
 		container.NewVBox(
-			container.NewHBox(centerLabel, layout.NewSpacer(), selectedLabel),
+			container.NewHBox(s.centerLabel, layout.NewSpacer(), s.selectedLabel),
 			container.NewHBox(
 				widget.NewLabel("Зум:"),
 				zoomOutBtn,
@@ -2528,12 +2414,313 @@ func showCoordinatesMapPickerWithOptions(parent fyne.Window, initialLatRaw strin
 		),
 		nil,
 		nil,
-		mapStack,
+		s.mapStack,
 	)
-	pickerWin.SetContent(content)
+}
 
-	forceMapOverlayRefresh()
-	pickerWin.Show()
+func (s *coordinatesMapPickerState) bindSearchHandlers() {
+	s.searchEntry.OnSubmitted = func(string) {
+		s.runAddressSearch()
+	}
+	s.searchEntry.OnChanged = s.handleSearchChange
+}
+
+func (s *coordinatesMapPickerState) bindInteractionHandlers() {
+	s.interaction.onTapped = func(ev *fyne.PointEvent) {
+		lat, lon, err := mapCanvasPointToLatLon(s.mapView, ev.Position.X, ev.Position.Y)
+		if err == nil {
+			s.setSelectionAt(lat, lon)
+		}
+	}
+	s.interaction.onTappedSecondary = func(ev *fyne.PointEvent) {
+		lat, lon, err := mapCanvasPointToLatLon(s.mapView, ev.Position.X, ev.Position.Y)
+		if err != nil {
+			return
+		}
+		s.setSelectionAt(lat, lon)
+		s.mapView.PanToLatLon(lat, lon)
+		s.forceMapOverlayRefresh()
+	}
+	s.interaction.onDragged = func(ev *fyne.DragEvent) {
+		s.mapView.Dragged(ev)
+		s.updateMapOverlayDuringDrag()
+	}
+	s.interaction.onDragEnd = func() {
+		s.mapView.DragEnd()
+		s.forceMapOverlayRefresh()
+	}
+	s.interaction.onScrolled = func(ev *fyne.ScrollEvent) {
+		s.handleScroll(ev)
+	}
+}
+
+func (s *coordinatesMapPickerState) updateCenterLabel() {
+	lat, lon, err := mapCenterLatLon(s.mapView)
+	if err != nil {
+		s.centerLabel.SetText("Центр: невизначено")
+		return
+	}
+
+	zoomText := "?"
+	if state, stateErr := readMapInternalState(s.mapView); stateErr == nil {
+		zoomText = strconv.Itoa(state.zoom)
+	}
+	s.centerLabel.SetText(fmt.Sprintf("Центр: %s, %s | Z=%s", formatCoordinate(lat), formatCoordinate(lon), zoomText))
+}
+
+func (s *coordinatesMapPickerState) updateSelectedLabel() {
+	s.selectedLabel.SetText(fmt.Sprintf("Вибрана точка: %s, %s", formatCoordinate(s.selectionLat), formatCoordinate(s.selectionLon)))
+}
+
+func (s *coordinatesMapPickerState) updateMarkers() {
+	s.updateObjectMarker()
+	s.updateSelectionMarker()
+}
+
+func (s *coordinatesMapPickerState) updateObjectMarker() {
+	if !s.hasObjectMarker {
+		s.previousMarker.Hide()
+		return
+	}
+
+	x, y, ok := mapLatLonToCanvasPoint(s.mapView, s.objectMarkerLat, s.objectMarkerLon)
+	if !ok || !pointWithinMapBounds(s.mapView, x, y, 20) {
+		s.previousMarker.Hide()
+		return
+	}
+
+	size := s.previousMarker.Size()
+	s.previousMarker.Move(fyne.NewPos(x-size.Width/2, y-size.Height/2))
+	s.previousMarker.Show()
+	s.previousMarker.Refresh()
+}
+
+func (s *coordinatesMapPickerState) updateSelectionMarker() {
+	x, y, ok := mapLatLonToCanvasPoint(s.mapView, s.selectionLat, s.selectionLon)
+	if !ok || !pointWithinMapBounds(s.mapView, x, y, 30) {
+		s.selectedMarker.Hide()
+		s.selectedHalo.Hide()
+		return
+	}
+
+	haloSize := s.selectedHalo.Size()
+	markerSize := s.selectedMarker.Size()
+	s.selectedHalo.Move(fyne.NewPos(x-haloSize.Width/2, y-haloSize.Height/2))
+	s.selectedMarker.Move(fyne.NewPos(x-markerSize.Width/2, y-markerSize.Height/2))
+	s.selectedHalo.Show()
+	s.selectedMarker.Show()
+	s.selectedHalo.Refresh()
+	s.selectedMarker.Refresh()
+}
+
+func pointWithinMapBounds(mapView *xwidget.Map, x float32, y float32, padding float32) bool {
+	size := mapView.Size()
+	return x >= -padding && y >= -padding && x <= size.Width+padding && y <= size.Height+padding
+}
+
+func (s *coordinatesMapPickerState) setSelectionAt(lat, lon float64) {
+	s.selectionLat = lat
+	s.selectionLon = lon
+	s.updateSelectedLabel()
+	s.updateSelectionMarker()
+}
+
+func (s *coordinatesMapPickerState) forceMapOverlayRefresh() {
+	s.updateCenterLabel()
+	s.updateMarkers()
+	now := time.Now()
+	s.lastMarkerUpdate = now
+	s.lastCenterUpdate = now
+}
+
+func (s *coordinatesMapPickerState) updateMapOverlayDuringDrag() {
+	now := time.Now()
+	if now.Sub(s.lastMarkerUpdate) >= 80*time.Millisecond {
+		s.updateMarkers()
+		s.lastMarkerUpdate = now
+	}
+	if now.Sub(s.lastCenterUpdate) >= 220*time.Millisecond {
+		s.updateCenterLabel()
+		s.lastCenterUpdate = now
+	}
+}
+
+func (s *coordinatesMapPickerState) setSuggestionState(options []string, items map[string]geocodeCandidate) {
+	s.suggestionMu.Lock()
+	defer s.suggestionMu.Unlock()
+	s.suggestionOptions = items
+	s.searchEntry.SetOptions(options)
+}
+
+func (s *coordinatesMapPickerState) nextSuggestionRequestID() int {
+	s.suggestionMu.Lock()
+	defer s.suggestionMu.Unlock()
+	s.suggestionReqID++
+	return s.suggestionReqID
+}
+
+func (s *coordinatesMapPickerState) isCurrentSuggestionRequest(id int) bool {
+	s.suggestionMu.Lock()
+	defer s.suggestionMu.Unlock()
+	return id == s.suggestionReqID
+}
+
+func (s *coordinatesMapPickerState) suggestionForValue(value string) (geocodeCandidate, bool) {
+	s.suggestionMu.Lock()
+	defer s.suggestionMu.Unlock()
+	candidate, ok := s.suggestionOptions[value]
+	return candidate, ok
+}
+
+func (s *coordinatesMapPickerState) runAddressSearch() {
+	address := strings.TrimSpace(s.searchEntry.Text)
+	if address == "" {
+		s.searchStatus.SetText("Вкажіть адресу для пошуку")
+		return
+	}
+
+	s.searchStatus.SetText("Пошук адреси...")
+	go func() {
+		latRaw, lonRaw, _, err := geocodeAddress(address)
+		fyne.Do(func() {
+			if err != nil {
+				s.searchStatus.SetText("Адресу не знайдено")
+				dialog.ShowError(err, s.win)
+				return
+			}
+
+			lat, latErr := parseCoordinate(latRaw)
+			lon, lonErr := parseCoordinate(lonRaw)
+			if latErr != nil || lonErr != nil {
+				s.searchStatus.SetText("Сервіс повернув некоректні координати")
+				dialog.ShowError(fmt.Errorf("не вдалося розпізнати координати адреси"), s.win)
+				return
+			}
+
+			s.setSelectionAt(lat, lon)
+			s.mapView.PanToLatLon(lat, lon)
+			s.forceMapOverlayRefresh()
+			s.searchStatus.SetText(fmt.Sprintf("Знайдено: %s, %s", formatCoordinate(lat), formatCoordinate(lon)))
+		})
+	}()
+}
+
+func (s *coordinatesMapPickerState) applySuggestion(candidate geocodeCandidate) {
+	lat, latErr := parseCoordinate(candidate.Lat)
+	lon, lonErr := parseCoordinate(candidate.Lon)
+	if latErr != nil || lonErr != nil {
+		s.searchStatus.SetText("Підказка містить некоректні координати")
+		return
+	}
+
+	s.setSelectionAt(lat, lon)
+	s.mapView.PanToLatLon(lat, lon)
+	s.forceMapOverlayRefresh()
+	s.searchStatus.SetText(fmt.Sprintf("Підказка: %s", firstNonEmpty(candidate.DisplayName, s.searchEntry.Text)))
+}
+
+func (s *coordinatesMapPickerState) handleSearchChange(value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		s.setSuggestionState(nil, map[string]geocodeCandidate{})
+		s.searchStatus.SetText("")
+		return
+	}
+
+	if candidate, ok := s.suggestionForValue(value); ok {
+		s.applySuggestion(candidate)
+		return
+	}
+
+	if len([]rune(value)) < 3 {
+		s.setSuggestionState(nil, map[string]geocodeCandidate{})
+		s.searchStatus.SetText("Введіть щонайменше 3 символи для підказок")
+		return
+	}
+
+	reqID := s.nextSuggestionRequestID()
+	s.searchStatus.SetText("Пошук підказок...")
+	go func(query string, expectedReqID int) {
+		time.Sleep(350 * time.Millisecond)
+		if !s.isCurrentSuggestionRequest(expectedReqID) {
+			return
+		}
+
+		rows, err := geocodeAutocompleteCandidates(query)
+		fyne.Do(func() {
+			if !s.isCurrentSuggestionRequest(expectedReqID) {
+				return
+			}
+			if err != nil {
+				s.setSuggestionState(nil, map[string]geocodeCandidate{})
+				s.searchStatus.SetText("Не вдалося завантажити підказки")
+				return
+			}
+
+			options, items := geocodeSuggestionOptions(rows)
+			s.setSuggestionState(options, items)
+			if len(options) == 0 {
+				s.searchStatus.SetText("Підказки не знайдено")
+				return
+			}
+			s.searchStatus.SetText(fmt.Sprintf("Знайдено підказок: %d", len(options)))
+		})
+	}(value, reqID)
+}
+
+func (s *coordinatesMapPickerState) handleScroll(ev *fyne.ScrollEvent) {
+	delta := ev.Scrolled.DY
+	if math.Abs(float64(ev.Scrolled.DX)) > math.Abs(float64(delta)) {
+		delta = ev.Scrolled.DX
+	}
+
+	steps := mapScrollStepCount(delta)
+	if steps == 0 {
+		return
+	}
+
+	centerLat, centerLon, centerErr := mapCenterLatLon(s.mapView)
+	if delta > 0 {
+		for range steps {
+			s.mapView.ZoomIn()
+		}
+	} else {
+		for range steps {
+			s.mapView.ZoomOut()
+		}
+	}
+	if centerErr == nil {
+		s.mapView.PanToLatLon(centerLat, centerLon)
+	}
+	s.forceMapOverlayRefresh()
+}
+
+func (s *coordinatesMapPickerState) confirmSelection() {
+	centerLat, centerLon, err := mapCenterLatLon(s.mapView)
+	if err == nil {
+		saveLastMapCenter(centerLat, centerLon)
+	}
+	if s.onPick != nil {
+		s.onPick(formatCoordinate(s.selectionLat), formatCoordinate(s.selectionLon))
+	}
+	s.win.Close()
+}
+
+func (s *coordinatesMapPickerState) setSelectionFromCenter() {
+	lat, lon, err := mapCenterLatLon(s.mapView)
+	if err != nil {
+		dialog.ShowError(err, s.win)
+		return
+	}
+	s.setSelectionAt(lat, lon)
+}
+
+func (s *coordinatesMapPickerState) openMapSettings() {
+	showMapCenterSettingsDialog(s.win, func(lat, lon float64, zoom int) {
+		s.mapView.Zoom(zoom)
+		s.mapView.PanToLatLon(lat, lon)
+		s.forceMapOverlayRefresh()
+	})
 }
 
 func parseLatLon(latRaw string, lonRaw string) (float64, float64, bool) {

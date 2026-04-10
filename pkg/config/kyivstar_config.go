@@ -43,14 +43,7 @@ func SaveKyivstarConfig(p fyne.Preferences, cfg KyivstarConfig) {
 }
 
 func (c KyivstarConfig) TokenExpiryTime() time.Time {
-	if strings.TrimSpace(c.TokenExpiry) == "" {
-		return time.Time{}
-	}
-	t, err := time.Parse(time.RFC3339, strings.TrimSpace(c.TokenExpiry))
-	if err != nil {
-		return time.Time{}
-	}
-	return t
+	return parseTokenExpiry(c.TokenExpiry)
 }
 
 func (c KyivstarConfig) HasCredentials() bool {
@@ -62,14 +55,7 @@ func (c KyivstarConfig) HasAccessToken() bool {
 }
 
 func (c KyivstarConfig) TokenUsableAt(now time.Time) bool {
-	if !c.HasAccessToken() {
-		return false
-	}
-	expiry := c.TokenExpiryTime()
-	if expiry.IsZero() {
-		return true
-	}
-	return expiry.After(now)
+	return tokenUsableAt(c.AccessToken, c.TokenExpiry, now)
 }
 
 // KyivstarConfigStore абстрагує збереження локальних Kyivstar налаштувань.

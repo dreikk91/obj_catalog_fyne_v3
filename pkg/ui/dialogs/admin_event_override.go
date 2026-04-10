@@ -15,7 +15,15 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowEventOverrideDialog(parent fyne.Window, provider contracts.AdminProvider) {
+type eventOverrideDialogProvider interface {
+	adminMessagesDialogProvider
+	admin220VConstructorProvider
+	ListMessages(protocolID *int64, filter string) ([]contracts.AdminMessage, error)
+	SetMessageAdminOnly(uin int64, adminOnly bool) error
+	SetMessageCategory(uin int64, sc1 *int64) error
+}
+
+func ShowEventOverrideDialog(parent fyne.Window, provider eventOverrideDialogProvider) {
 	win := fyne.CurrentApp().NewWindow("Глобальне перевизначення подій")
 	win.Resize(fyne.NewSize(980, 700))
 
@@ -319,7 +327,7 @@ func ShowEventOverrideDialog(parent fyne.Window, provider contracts.AdminProvide
 	tabItems := make([]*container.TabItem, 0, len(tabDefinitions))
 	for _, def := range tabDefinitions {
 		tabProtocol[def.Label] = def.ID
-		tabItems = append(tabItems, container.NewTabItem(def.Label, container.NewMax()))
+		tabItems = append(tabItems, container.NewTabItem(def.Label, container.NewStack()))
 	}
 	protocolTabs := container.NewAppTabs(tabItems...)
 	protocolTabs.SetTabLocation(container.TabLocationTop)

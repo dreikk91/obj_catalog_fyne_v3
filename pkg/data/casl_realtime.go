@@ -3,8 +3,6 @@ package data
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -264,14 +262,6 @@ func extractCASLConnIDFromAny(value any) string {
 		}
 	}
 	return ""
-}
-
-func randomCASLConnID() string {
-	buf := make([]byte, 12)
-	if _, err := rand.Read(buf); err != nil {
-		return strconv.FormatInt(time.Now().UnixNano(), 16)
-	}
-	return hex.EncodeToString(buf)
 }
 
 func extractCASLConnIDFromWSURL(raw string) string {
@@ -638,36 +628,6 @@ func (p *CASLCloudProvider) snapshotRealtimeAlarms() []models.Alarm {
 	return alarms
 }
 
-func mergeCASLAlarms(primary []models.Alarm, secondary []models.Alarm) []models.Alarm {
-	if len(secondary) == 0 {
-		return append([]models.Alarm(nil), primary...)
-	}
-
-	out := append([]models.Alarm(nil), primary...)
-	seen := make(map[string]int, len(out))
-	for i := range out {
-		seen[caslAlarmMergeKey(out[i])] = i
-	}
-
-	for _, alarm := range secondary {
-		key := caslAlarmMergeKey(alarm)
-		if idx, exists := seen[key]; exists {
-			if alarm.Time.After(out[idx].Time) {
-				out[idx] = alarm
-			}
-			continue
-		}
-		seen[key] = len(out)
-		out = append(out, alarm)
-	}
-
-	return out
-}
-
-func caslAlarmMergeKey(alarm models.Alarm) string {
-	return strconv.Itoa(alarm.ObjectID) + "|" + strconv.Itoa(alarm.ZoneNumber) + "|" + string(alarm.Type)
-}
-
 func sortCASLAlarms(alarms []models.Alarm) {
 	sort.SliceStable(alarms, func(i, j int) bool {
 		left := alarms[i].Time
@@ -732,41 +692,6 @@ func isCASLEventAlarmCandidate(eventType models.EventType) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func (p *CASLCloudProvider) updateRealtimeAlarmsFromEvents(ctx context.Context, events []models.Event) {
-	if len(events) == 0 {
-		return
-	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for _, event := range events {
-		cacheKey := canonicalCASLRealtimeAlarmKey(strconv.Itoa(event.ObjectID), event.ZoneNumber)
-		if event.Type == models.EventRestore || event.Type == models.EventPowerOK || event.Type == models.EventOnline {
-			delete(p.realtimeAlarmByObjID, cacheKey)
-			continue
-		}
-
-		alarmType, include := mapEventTypeToAlarmType(event.Type)
-		if !include {
-			continue
-		}
-
-		p.realtimeAlarmByObjID[cacheKey] = models.Alarm{
-			ID:           event.ID,
-			ObjectID:     event.ObjectID,
-			ObjectNumber: strings.TrimSpace(event.ObjectNumber),
-			ObjectName:   event.ObjectName,
-			Address:      event.Details, // Для tape подій часто адреса в деталях або треба довантажити
-			Time:         event.Time,
-			Details:      event.Details,
-			Type:         alarmType,
-			ZoneNumber:   event.ZoneNumber,
-			SC1:          event.SC1,
-		}
 	}
 }
 

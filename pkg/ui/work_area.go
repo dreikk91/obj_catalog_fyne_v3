@@ -4,6 +4,7 @@ package ui
 import (
 	"fmt"
 	"image/color"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -158,7 +159,7 @@ func NewWorkAreaPanel(provider contracts.WorkAreaProvider, window fyne.Window) *
 		}
 
 		row := panel.ExportVM.BuildExcelRowTSV(*panel.CurrentObject, panel.Contacts)
-		panel.Window.Clipboard().SetContent(row)
+		panel.setClipboardContent(row)
 		ShowToast(panel.Window, "Рядок для Excel скопійовано")
 	})
 	panel.CopyExcelBtn.Disable()
@@ -515,7 +516,7 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 				btn.Show()
 				btn.OnTapped = func() {
 					copyText := fmt.Sprintf("Зона %d: %s (%s)", zone.Number, zone.Name, w.CurrentObject.Name)
-					w.Window.Clipboard().SetContent(copyText)
+					w.setClipboardContent(copyText)
 					ShowToast(w.Window, "Скопійовано зону")
 				}
 				return
@@ -526,7 +527,7 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 			if id.Col == 1 {
 				btn.Show()
 				btn.OnTapped = func() {
-					w.Window.Clipboard().SetContent(zone.Name)
+					w.setClipboardContent(zone.Name)
 					ShowToast(w.Window, "Скопійовано назву зони")
 				}
 			} else {
@@ -551,7 +552,7 @@ func (w *WorkAreaPanel) createZonesTab() fyne.CanvasObject {
 			zones: func() []models.Zone { return w.Zones },
 		}, w.ZonesTable),
 	)
-	w.ZonesContent = container.NewMax(w.ZonesFlatContent)
+	w.ZonesContent = container.NewStack(w.ZonesFlatContent)
 	w.refreshZonesTableLayout()
 
 	return w.ZonesContent
@@ -654,7 +655,7 @@ func (w *WorkAreaPanel) buildGroupedZonesSection(
 					if objectName != "" {
 						copyText += " (" + objectName + ")"
 					}
-					w.Window.Clipboard().SetContent(copyText)
+					w.setClipboardContent(copyText)
 					ShowToast(w.Window, "Скопійовано зону")
 				}
 				return
@@ -667,7 +668,7 @@ func (w *WorkAreaPanel) buildGroupedZonesSection(
 			if id.Col == 1 {
 				btn.Show()
 				btn.OnTapped = func() {
-					w.Window.Clipboard().SetContent(zone.Name)
+					w.setClipboardContent(zone.Name)
 					ShowToast(w.Window, "Скопійовано назву зони")
 				}
 			} else {
@@ -721,7 +722,7 @@ func (w *WorkAreaPanel) createContactsTab() fyne.CanvasObject {
 			nameBtn := nameRow.Objects[1].(*widget.Button)
 			nameLabel.SetText(fmt.Sprintf("👤 %s (%s)", contact.Name, contact.Position))
 			nameBtn.OnTapped = func() {
-				w.Window.Clipboard().SetContent(contact.Name)
+				w.setClipboardContent(contact.Name)
 				ShowToast(w.Window, "Скопійовано ім'я")
 			}
 
@@ -730,13 +731,13 @@ func (w *WorkAreaPanel) createContactsTab() fyne.CanvasObject {
 			phoneBtn := phoneRow.Objects[1].(*widget.Button)
 			phoneLabel.SetText("📞 " + contact.Phone)
 			phoneBtn.OnTapped = func() {
-				w.Window.Clipboard().SetContent(contact.Phone)
+				w.setClipboardContent(contact.Phone)
 				ShowToast(w.Window, "Скопійовано телефон")
 			}
 		},
 	)
 	w.ContactsFlatContent = w.ContactsList
-	w.ContactsContent = container.NewMax(w.ContactsFlatContent)
+	w.ContactsContent = container.NewStack(w.ContactsFlatContent)
 	return w.ContactsContent
 }
 
@@ -851,11 +852,11 @@ func (w *WorkAreaPanel) SetObject(object models.Object) {
 
 	// Налаштовуємо дії копіювання
 	w.CopyNameBtn.OnTapped = func() {
-		w.Window.Clipboard().SetContent(object.Name)
+		w.setClipboardContent(object.Name)
 		ShowToast(w.Window, "Скопійовано назву об'єкта")
 	}
 	w.CopyAddressBtn.OnTapped = func() {
-		w.Window.Clipboard().SetContent(object.Address)
+		w.setClipboardContent(object.Address)
 		ShowToast(w.Window, "Скопійовано адресу")
 	}
 
@@ -881,9 +882,9 @@ func (w *WorkAreaPanel) exportSelectedObject(format string) {
 	}
 
 	obj := *w.CurrentObject
-	zones := append([]models.Zone(nil), w.Zones...)
-	contacts := append([]models.Contact(nil), w.Contacts...)
-	events := append([]models.Event(nil), w.Events...)
+	zones := slices.Clone(w.Zones)
+	contacts := slices.Clone(w.Contacts)
+	events := slices.Clone(w.Events)
 	eventsLoaded := w.eventsLoadedObjectID == obj.ID
 
 	if w.ExportPDFBtn != nil {
@@ -1043,47 +1044,6 @@ func (w *WorkAreaPanel) syncEventsDataBinding() {
 	})
 }
 
-func (w *WorkAreaPanel) refreshCaseHistoryAccordion() {
-	if w == nil || w.CaseHistoryAccordion == nil || w.CaseHistorySection == nil || w.CaseHistoryVM == nil {
-		return
-	}
-
-	groups := w.CaseHistoryVM.BuildGroups(w.CurrentObject, w.Events)
-	if len(groups) == 0 {
-		w.CaseHistoryAccordion.Items = nil
-		w.CaseHistoryAccordion.Refresh()
-		w.CaseHistorySection.Hide()
-		return
-	}
-
-	items := make([]*widget.AccordionItem, 0, len(groups))
-	for _, group := range groups {
-		rows := make([]fyne.CanvasObject, 0, len(group.Events))
-		for _, event := range group.Events {
-			line := event.GetDateTimeDisplay()
-			if event.ZoneNumber > 0 {
-				line += " | Зона " + strconv.Itoa(event.ZoneNumber)
-			}
-			line += " | " + event.GetTypeDisplay()
-			if details := strings.TrimSpace(event.Details); details != "" {
-				line += " — " + details
-			}
-
-			label := widget.NewLabel(line)
-			label.Wrapping = fyne.TextWrapWord
-			rows = append(rows, label)
-		}
-		items = append(items, widget.NewAccordionItem(
-			group.Title,
-			container.NewPadded(container.NewVBox(rows...)),
-		))
-	}
-
-	w.CaseHistoryAccordion.Items = items
-	w.CaseHistoryAccordion.Refresh()
-	w.CaseHistorySection.Show()
-}
-
 func (w *WorkAreaPanel) isJournalTabSelected() bool {
 	return w != nil && w.Tabs != nil && w.Tabs.SelectedIndex() == workAreaJournalTabIndex
 }
@@ -1190,7 +1150,7 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 	presentation := w.DeviceVM.BuildObjectPresentation(*obj)
 	w.DeviceStateVM.Apply(presentation)
 	w.CopySimBtn.OnTapped = func() {
-		w.Window.Clipboard().SetContent(presentation.SIMCopyText)
+		w.setClipboardContent(presentation.SIMCopyText)
 		ShowToast(w.Window, "Скопійовано SIM")
 	}
 	w.CopySIM1Btn.OnTapped = func() {
@@ -1198,7 +1158,7 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 			ShowToast(w.Window, "SIM1 не вказана")
 			return
 		}
-		w.Window.Clipboard().SetContent(presentation.SIM1Value)
+		w.setClipboardContent(presentation.SIM1Value)
 		ShowToast(w.Window, "Скопійовано SIM1")
 	}
 	w.CopySIM2Btn.OnTapped = func() {
@@ -1206,7 +1166,7 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 			ShowToast(w.Window, "SIM2 не вказана")
 			return
 		}
-		w.Window.Clipboard().SetContent(presentation.SIM2Value)
+		w.setClipboardContent(presentation.SIM2Value)
 		ShowToast(w.Window, "Скопійовано SIM2")
 	}
 
@@ -1219,16 +1179,21 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 		operator := simoperator.Detect(simValue)
 		btn.SetText(simoperator.Label(operator))
 		btn.OnTapped = func() {
-			admin := w.resolveAdminProvider()
-			if admin == nil {
-				dialogs.ShowInfoDialog(w.Window, simoperator.Label(operator), "Сервіс оператора недоступний.")
-				return
-			}
 			switch operator {
 			case simoperator.Vodafone:
-				dialogs.ShowVodafoneSIMDialog(w.Window, admin, simValue, objectNumber, obj.Name)
+				provider := w.resolveVodafoneSIMProvider()
+				if provider == nil {
+					dialogs.ShowInfoDialog(w.Window, simoperator.Label(operator), "Сервіс оператора недоступний.")
+					return
+				}
+				dialogs.ShowVodafoneSIMDialog(w.Window, provider, simValue, objectNumber, obj.Name)
 			case simoperator.Kyivstar:
-				dialogs.ShowKyivstarSIMDialog(w.Window, admin, simValue, objectNumber, obj.Name)
+				provider := w.resolveKyivstarSIMProvider()
+				if provider == nil {
+					dialogs.ShowInfoDialog(w.Window, simoperator.Label(operator), "Сервіс оператора недоступний.")
+					return
+				}
+				dialogs.ShowKyivstarSIMDialog(w.Window, provider, simValue, objectNumber, obj.Name)
 			default:
 				dialogs.ShowInfoDialog(w.Window, "SIM API", "Оператор номера не підтримується.")
 			}
@@ -1269,37 +1234,58 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 	}
 
 	w.CopyPhonesBtn.OnTapped = func() {
-		w.Window.Clipboard().SetContent(presentation.PhoneCopyText)
+		w.setClipboardContent(presentation.PhoneCopyText)
 		ShowToast(w.Window, "Скопійовано телефон(и)")
 	}
 
 	w.CopyNotesBtn.OnTapped = func() {
-		w.Window.Clipboard().SetContent(presentation.NotesCopyText)
+		w.setClipboardContent(presentation.NotesCopyText)
 		ShowToast(w.Window, "Скопійовано примітку")
 	}
 
 	w.CopyLocationBtn.OnTapped = func() {
-		w.Window.Clipboard().SetContent(presentation.LocationCopyText)
+		w.setClipboardContent(presentation.LocationCopyText)
 		ShowToast(w.Window, "Скопійовано розташування")
 	}
 }
 
-func (w *WorkAreaPanel) resolveAdminProvider() contracts.AdminProvider {
-	if w == nil || w.Data == nil {
-		return nil
+func (w *WorkAreaPanel) setClipboardContent(text string) {
+	app := fyne.CurrentApp()
+	if app == nil {
+		return
 	}
-	if provider, ok := any(w.Data).(contracts.AdminProvider); ok {
-		return provider
+	app.Clipboard().SetContent(text)
+}
+
+func (w *WorkAreaPanel) resolveVodafoneSIMProvider() contracts.AdminObjectVodafoneService {
+	provider, _ := resolveWorkAreaCapability[contracts.AdminObjectVodafoneService](w)
+	return provider
+}
+
+func (w *WorkAreaPanel) resolveKyivstarSIMProvider() contracts.AdminObjectKyivstarService {
+	provider, _ := resolveWorkAreaCapability[contracts.AdminObjectKyivstarService](w)
+	return provider
+}
+
+func resolveWorkAreaCapability[T any](w *WorkAreaPanel) (T, bool) {
+	var zero T
+	if w == nil || w.Data == nil {
+		return zero, false
+	}
+	if provider, ok := any(w.Data).(T); ok {
+		return provider, true
 	}
 	if resolver, ok := any(w.Data).(interface {
 		AdminProvider() contracts.AdminProvider
 	}); ok {
 		admin := resolver.AdminProvider()
 		if admin != nil {
-			return admin
+			if provider, providerOK := any(admin).(T); providerOK {
+				return provider, true
+			}
 		}
 	}
-	return nil
+	return zero, false
 }
 
 func (w *WorkAreaPanel) showTestMessages(objectID string) {

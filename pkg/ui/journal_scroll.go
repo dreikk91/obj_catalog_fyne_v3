@@ -12,7 +12,7 @@ import (
 
 const (
 	journalListMinWidth         float32 = 320
-	journalListHorizontalGutter         = 40
+	journalListHorizontalGutter float32 = 40
 )
 
 func newHorizontalJournalScroll(list *widget.List) (*container.Scroll, *canvas.Rectangle) {

@@ -21,7 +21,12 @@ import (
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 )
 
-func ShowAdminSystemControlDialog(parent fyne.Window, provider contracts.AdminProvider) {
+type adminSystemControlDialogProvider interface {
+	GetAdminAccessStatus() (contracts.AdminAccessStatus, error)
+	RunDataIntegrityChecks(limit int) ([]contracts.AdminDataCheckIssue, error)
+}
+
+func ShowAdminSystemControlDialog(parent fyne.Window, provider adminSystemControlDialogProvider) {
 	win := fyne.CurrentApp().NewWindow("Контроль системи")
 	win.Resize(fyne.NewSize(1024, 768))
 

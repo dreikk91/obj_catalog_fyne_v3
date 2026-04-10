@@ -91,12 +91,12 @@ func (a *Application) resolveSIMInventoryReportProvider() (dialogs.SIMInventoryR
 		return nil, false
 	}
 	reporter, _ := provider.(simInventoryStatisticProvider)
-	admin := a.resolveAdminProvider()
-	if admin == nil {
+	admin, ok := resolveAdminCapability[simInventoryAdminProvider](a)
+	if !ok {
 		return nil, false
 	}
-	vodafoneInventoryAPI, _ := admin.(simInventoryVodafoneListProvider)
-	kyivstarInventoryAPI, _ := admin.(simInventoryKyivstarListProvider)
+	vodafoneInventoryAPI, _ := resolveAdminCapability[simInventoryVodafoneListProvider](a)
+	kyivstarInventoryAPI, _ := resolveAdminCapability[simInventoryKyivstarListProvider](a)
 
 	return appSIMInventoryReportProvider{
 		objects:              objects,

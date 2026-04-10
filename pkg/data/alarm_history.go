@@ -2,7 +2,7 @@ package data
 
 import (
 	"obj_catalog_fyne_v3/pkg/models"
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -26,7 +26,7 @@ func buildAlarmSourceMessagesFromEvents(alarm models.Alarm, events []models.Even
 
 func filterAlarmEventsSince(events []models.Event, since time.Time) []models.Event {
 	if len(events) == 0 || since.IsZero() {
-		return append([]models.Event(nil), events...)
+		return slices.Clone(events)
 	}
 
 	filtered := make([]models.Event, 0, len(events))
@@ -44,14 +44,26 @@ func groupAlarmEvents(events []models.Event) []alarmEventGroup {
 		return nil
 	}
 
-	ordered := append([]models.Event(nil), events...)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		left := ordered[i]
-		right := ordered[j]
+	ordered := slices.Clone(events)
+	slices.SortStableFunc(ordered, func(left, right models.Event) int {
 		if left.Time.Equal(right.Time) {
-			return left.ID < right.ID
+			switch {
+			case left.ID < right.ID:
+				return -1
+			case left.ID > right.ID:
+				return 1
+			default:
+				return 0
+			}
 		}
-		return left.Time.Before(right.Time)
+		switch {
+		case left.Time.Before(right.Time):
+			return -1
+		case left.Time.After(right.Time):
+			return 1
+		default:
+			return 0
+		}
 	})
 
 	groups := make([]alarmEventGroup, 0, 4)
@@ -83,9 +95,7 @@ func groupAlarmEvents(events []models.Event) []alarmEventGroup {
 		groups = append(groups, current)
 	}
 
-	for left, right := 0, len(groups)-1; left < right; left, right = left+1, right-1 {
-		groups[left], groups[right] = groups[right], groups[left]
-	}
+	slices.Reverse(groups)
 
 	return groups
 }
@@ -134,14 +144,26 @@ func mapAlarmEventsToSourceMsgs(events []models.Event) []models.AlarmMsg {
 		return nil
 	}
 
-	ordered := append([]models.Event(nil), events...)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		left := ordered[i]
-		right := ordered[j]
+	ordered := slices.Clone(events)
+	slices.SortStableFunc(ordered, func(left, right models.Event) int {
 		if left.Time.Equal(right.Time) {
-			return left.ID > right.ID
+			switch {
+			case left.ID > right.ID:
+				return -1
+			case left.ID < right.ID:
+				return 1
+			default:
+				return 0
+			}
 		}
-		return left.Time.After(right.Time)
+		switch {
+		case left.Time.After(right.Time):
+			return -1
+		case left.Time.Before(right.Time):
+			return 1
+		default:
+			return 0
+		}
 	})
 
 	result := make([]models.AlarmMsg, 0, len(ordered))

@@ -27,19 +27,19 @@ func (a *Application) registerShortcuts(themeBtn *widget.Button) {
 	})
 
 	canvas.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyN, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		a.withAdminProvider(func(admin contracts.AdminProvider) {
+		withAdminCapability(a, func(admin contracts.AdminObjectWizardProvider) {
 			a.openNewObjectDialog(admin)
 		})()
 	})
 
 	canvas.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyE, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		a.withAdminProvider(func(admin contracts.AdminProvider) {
+		withAdminCapability(a, func(admin contracts.AdminObjectCardProvider) {
 			a.openEditCurrentObjectDialog(admin)
 		})()
 	})
 
 	canvas.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyX, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		a.withAdminProvider(func(admin contracts.AdminProvider) {
+		withAdminCapability(a, func(admin adminObjectDeleteProvider) {
 			a.confirmDeleteCurrentObject(admin)
 		})()
 	})

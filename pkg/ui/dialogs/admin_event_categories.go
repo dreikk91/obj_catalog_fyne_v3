@@ -1,34 +1,7 @@
 package dialogs
 
-type messageCategoryOption struct {
-	Label string
-	SC1   *int64
-}
-
 func i64(v int64) *int64 {
 	return &v
-}
-
-func messageCategoryOptions() []messageCategoryOption {
-	return []messageCategoryOption{
-		{Label: "Тривога", SC1: i64(1)},
-		{Label: "Технічна тривога", SC1: i64(2)},
-		{Label: "Тривожна кнопка / напад", SC1: i64(21)},
-		{Label: "Проникнення", SC1: i64(22)},
-		{Label: "Медична тривога", SC1: i64(23)},
-		{Label: "Газова тривога", SC1: i64(24)},
-		{Label: "Саботаж / Тампер", SC1: i64(25)},
-		{Label: "Відновлення", SC1: i64(5)},
-		{Label: "Інформація", SC1: i64(6)},
-		{Label: "Під охороною", SC1: i64(10)},
-		{Label: "Знято з охорони", SC1: i64(11)},
-		{Label: "Немає зв'язку", SC1: i64(12)},
-		{Label: "Тестове", SC1: i64(16)},
-		{Label: "На зв'язку / прибуття", SC1: i64(28)},
-		{Label: "Блокування / офлайн", SC1: i64(29)},
-		{Label: "Системна / сервісна", SC1: i64(30)},
-		{Label: "Інше / без категорії", SC1: nil},
-	}
 }
 
 func messageTypeLabel(sc1 *int64) string {
@@ -69,31 +42,6 @@ func messageTypeLabel(sc1 *int64) string {
 	default:
 		return "інформація"
 	}
-}
-
-func categoryLabelFromSC1(sc1 *int64) string {
-	if sc1 == nil {
-		return "Інше / без категорії"
-	}
-	for _, c := range messageCategoryOptions() {
-		if c.SC1 != nil && *c.SC1 == *sc1 {
-			return c.Label
-		}
-	}
-	return "Інше / без категорії"
-}
-
-func categorySC1FromLabel(label string) *int64 {
-	for _, c := range messageCategoryOptions() {
-		if c.Label == label {
-			if c.SC1 == nil {
-				return nil
-			}
-			v := *c.SC1
-			return &v
-		}
-	}
-	return nil
 }
 
 func sc1MatchesFamily(sc1 *int64, family string) bool {

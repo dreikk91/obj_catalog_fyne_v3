@@ -4,18 +4,18 @@ import "strings"
 
 // ObjectWizardZonesState описує мінімальний стан/операції зон, потрібні для flow-кроку майстра.
 type ObjectWizardZonesState interface {
-	SelectedZone() int
-	ZoneCount() int
-	SelectZoneByNumber(zoneNumber int64) bool
-	EnsureFirstZone(defaultDescription string) (int64, error)
-	SaveSelectedZoneAndEnsureNext(description string) (currentZone int64, nextZone int64, err error)
-	NextZoneNumberForAdd() int64
-	EnsureZoneExists(zoneNumber int64, defaultDescription string) error
-	EffectiveZoneNumberAt(idx int) int64
-	DeleteSelectedZone() (int64, bool)
-	FillZones(count int64) error
-	ResetZones()
-	MaxZoneNumber() int64
+	Selected() int
+	Count() int
+	SelectByNumber(zoneNumber int64) bool
+	EnsureFirst(defaultDescription string) (int64, error)
+	SaveSelectedAndEnsureNext(description string) (currentZone int64, nextZone int64, err error)
+	NextNumberForAdd() int64
+	EnsureExists(zoneNumber int64, defaultDescription string) error
+	EffectiveNumberAt(idx int) int64
+	DeleteSelected() (int64, bool)
+	Fill(count int64) error
+	Reset()
+	MaxNumber() int64
 }
 
 // ObjectWizardZonesActionResult описує результат команди flow для UI.
@@ -49,10 +49,10 @@ func NewObjectWizardZonesFlowViewModel(stepVM *ObjectWizardZonesStepViewModel) *
 }
 
 func (vm *ObjectWizardZonesFlowViewModel) MoveToNext(state ObjectWizardZonesState, description string) ObjectWizardZonesActionResult {
-	selectedZone := state.SelectedZone()
-	if selectedZone < 0 || selectedZone >= state.ZoneCount() {
-		if state.ZoneCount() == 0 {
-			if _, err := state.EnsureFirstZone(strings.TrimSpace(description)); err != nil {
+	selectedZone := state.Selected()
+	if selectedZone < 0 || selectedZone >= state.Count() {
+		if state.Count() == 0 {
+			if _, err := state.EnsureFirst(strings.TrimSpace(description)); err != nil {
 				return ObjectWizardZonesActionResult{
 					StatusText:      vm.stepVM.StatusAddFirstFailed(),
 					ShowErrorDialog: true,
@@ -66,17 +66,17 @@ func (vm *ObjectWizardZonesFlowViewModel) MoveToNext(state ObjectWizardZonesStat
 				FocusQuickName:   true,
 			}
 		}
-		_ = state.SelectZoneByNumber(0)
+		_ = state.SelectByNumber(0)
 	}
 
-	selectedZone = state.SelectedZone()
-	if selectedZone < 0 || selectedZone >= state.ZoneCount() {
+	selectedZone = state.Selected()
+	if selectedZone < 0 || selectedZone >= state.Count() {
 		return ObjectWizardZonesActionResult{
 			StatusText: vm.stepVM.StatusSelectionRequired(),
 		}
 	}
 
-	currentZoneNumber, nextZoneNumber, err := state.SaveSelectedZoneAndEnsureNext(description)
+	currentZoneNumber, nextZoneNumber, err := state.SaveSelectedAndEnsureNext(description)
 	if err != nil {
 		return ObjectWizardZonesActionResult{
 			StatusText:      vm.stepVM.StatusAddNextFailed(),
@@ -94,8 +94,8 @@ func (vm *ObjectWizardZonesFlowViewModel) MoveToNext(state ObjectWizardZonesStat
 }
 
 func (vm *ObjectWizardZonesFlowViewModel) AddZone(state ObjectWizardZonesState) ObjectWizardZonesActionResult {
-	nextZoneNumber := state.NextZoneNumberForAdd()
-	if err := state.EnsureZoneExists(nextZoneNumber, ""); err != nil {
+	nextZoneNumber := state.NextNumberForAdd()
+	if err := state.EnsureExists(nextZoneNumber, ""); err != nil {
 		return ObjectWizardZonesActionResult{
 			StatusText:      vm.stepVM.StatusAddFailed(),
 			ShowErrorDialog: true,
@@ -111,8 +111,8 @@ func (vm *ObjectWizardZonesFlowViewModel) AddZone(state ObjectWizardZonesState) 
 }
 
 func (vm *ObjectWizardZonesFlowViewModel) StartEdit(state ObjectWizardZonesState) ObjectWizardZonesActionResult {
-	if state.ZoneCount() == 0 {
-		if _, err := state.EnsureFirstZone(""); err != nil {
+	if state.Count() == 0 {
+		if _, err := state.EnsureFirst(""); err != nil {
 			return ObjectWizardZonesActionResult{
 				StatusText:      vm.stepVM.StatusCreateFirstFailed(),
 				ShowErrorDialog: true,
@@ -127,13 +127,13 @@ func (vm *ObjectWizardZonesFlowViewModel) StartEdit(state ObjectWizardZonesState
 		}
 	}
 
-	selectedZone := state.SelectedZone()
-	if selectedZone < 0 || selectedZone >= state.ZoneCount() {
-		targetZone := state.EffectiveZoneNumberAt(0)
+	selectedZone := state.Selected()
+	if selectedZone < 0 || selectedZone >= state.Count() {
+		targetZone := state.EffectiveNumberAt(0)
 		if targetZone <= 0 {
 			targetZone = 1
 		}
-		_ = state.SelectZoneByNumber(targetZone)
+		_ = state.SelectByNumber(targetZone)
 		return ObjectWizardZonesActionResult{
 			StatusText:       vm.stepVM.StatusSelectAndInput(),
 			RefreshTable:     true,
@@ -142,7 +142,7 @@ func (vm *ObjectWizardZonesFlowViewModel) StartEdit(state ObjectWizardZonesState
 		}
 	}
 
-	targetZone := state.EffectiveZoneNumberAt(selectedZone)
+	targetZone := state.EffectiveNumberAt(selectedZone)
 	return ObjectWizardZonesActionResult{
 		StatusText:       vm.stepVM.StatusEditingPrompt(targetZone),
 		RefreshTable:     true,
@@ -152,14 +152,14 @@ func (vm *ObjectWizardZonesFlowViewModel) StartEdit(state ObjectWizardZonesState
 }
 
 func (vm *ObjectWizardZonesFlowViewModel) PrepareDelete(state ObjectWizardZonesState) ObjectWizardZonesDeletePrompt {
-	selectedZone := state.SelectedZone()
-	if selectedZone < 0 || selectedZone >= state.ZoneCount() {
+	selectedZone := state.Selected()
+	if selectedZone < 0 || selectedZone >= state.Count() {
 		return ObjectWizardZonesDeletePrompt{
 			CanDelete:  false,
 			StatusText: vm.stepVM.StatusSelectionRequired(),
 		}
 	}
-	targetZone := state.EffectiveZoneNumberAt(selectedZone)
+	targetZone := state.EffectiveNumberAt(selectedZone)
 	return ObjectWizardZonesDeletePrompt{
 		CanDelete:        true,
 		TargetZoneNumber: targetZone,
@@ -168,7 +168,7 @@ func (vm *ObjectWizardZonesFlowViewModel) PrepareDelete(state ObjectWizardZonesS
 }
 
 func (vm *ObjectWizardZonesFlowViewModel) ApplyDelete(state ObjectWizardZonesState, targetZone int64) ObjectWizardZonesActionResult {
-	state.DeleteSelectedZone()
+	state.DeleteSelected()
 	return ObjectWizardZonesActionResult{
 		StatusText:   vm.stepVM.StatusDeleted(targetZone),
 		RefreshTable: true,
@@ -176,7 +176,7 @@ func (vm *ObjectWizardZonesFlowViewModel) ApplyDelete(state ObjectWizardZonesSta
 }
 
 func (vm *ObjectWizardZonesFlowViewModel) Fill(state ObjectWizardZonesState, count int64) ObjectWizardZonesActionResult {
-	if err := state.FillZones(count); err != nil {
+	if err := state.Fill(count); err != nil {
 		return ObjectWizardZonesActionResult{
 			StatusText:      vm.stepVM.StatusFillFailed(),
 			ShowErrorDialog: true,
@@ -191,7 +191,7 @@ func (vm *ObjectWizardZonesFlowViewModel) Fill(state ObjectWizardZonesState, cou
 }
 
 func (vm *ObjectWizardZonesFlowViewModel) Clear(state ObjectWizardZonesState) ObjectWizardZonesActionResult {
-	state.ResetZones()
+	state.Reset()
 	return ObjectWizardZonesActionResult{
 		StatusText:   vm.stepVM.StatusCleared(),
 		RefreshTable: true,
@@ -199,7 +199,7 @@ func (vm *ObjectWizardZonesFlowViewModel) Clear(state ObjectWizardZonesState) Ob
 }
 
 func (vm *ObjectWizardZonesFlowViewModel) DefaultFillCount(state ObjectWizardZonesState) int64 {
-	maxZone := state.MaxZoneNumber()
+	maxZone := state.MaxNumber()
 	if maxZone > 0 {
 		return maxZone
 	}
@@ -211,5 +211,5 @@ func (vm *ObjectWizardZonesFlowViewModel) ClearConfirmText() string {
 }
 
 func (vm *ObjectWizardZonesFlowViewModel) RefreshStatus(state ObjectWizardZonesState) string {
-	return vm.stepVM.StatusCount(state.ZoneCount())
+	return vm.stepVM.StatusCount(state.Count())
 }

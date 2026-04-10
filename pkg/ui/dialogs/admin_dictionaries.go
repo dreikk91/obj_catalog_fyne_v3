@@ -14,6 +14,28 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
+type objectTypesDictionaryProvider interface {
+	ListObjectTypes() ([]contracts.DictionaryItem, error)
+	AddObjectType(name string) error
+	UpdateObjectType(id int64, name string) error
+	DeleteObjectType(id int64) error
+}
+
+type regionsDictionaryProvider interface {
+	ListRegions() ([]contracts.DictionaryItem, error)
+	AddRegion(name string, regionCode *int64) error
+	UpdateRegion(id int64, name string, regionCode *int64) error
+	DeleteRegion(id int64) error
+}
+
+type alarmReasonsDictionaryProvider interface {
+	ListAlarmReasons() ([]contracts.DictionaryItem, error)
+	AddAlarmReason(name string) error
+	UpdateAlarmReason(id int64, name string) error
+	DeleteAlarmReason(id int64) error
+	MoveAlarmReason(id int64, direction int) error
+}
+
 type dictionaryDialogConfig struct {
 	Title       string
 	NameLabel   string
@@ -28,7 +50,7 @@ type dictionaryDialogConfig struct {
 	Move   func(id int64, direction int) error
 }
 
-func ShowObjectTypesDictionaryDialog(parent fyne.Window, provider contracts.AdminProvider) {
+func ShowObjectTypesDictionaryDialog(parent fyne.Window, provider objectTypesDictionaryProvider) {
 	showDictionaryDialog(parent, dictionaryDialogConfig{
 		Title:     "Типи об'єктів",
 		NameLabel: "Тип об'єкта:",
@@ -39,7 +61,7 @@ func ShowObjectTypesDictionaryDialog(parent fyne.Window, provider contracts.Admi
 	})
 }
 
-func ShowRegionsDictionaryDialog(parent fyne.Window, provider contracts.AdminProvider) {
+func ShowRegionsDictionaryDialog(parent fyne.Window, provider regionsDictionaryProvider) {
 	showDictionaryDialog(parent, dictionaryDialogConfig{
 		Title:     "Регіони",
 		NameLabel: "Назва регіону:",
@@ -52,7 +74,7 @@ func ShowRegionsDictionaryDialog(parent fyne.Window, provider contracts.AdminPro
 	})
 }
 
-func ShowAlarmReasonsDictionaryDialog(parent fyne.Window, provider contracts.AdminProvider) {
+func ShowAlarmReasonsDictionaryDialog(parent fyne.Window, provider alarmReasonsDictionaryProvider) {
 	showDictionaryDialog(parent, dictionaryDialogConfig{
 		Title:       "Причини тривог",
 		NameLabel:   "Причина тривоги:",
@@ -391,19 +413,6 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 	main.SetOffset(0.70)
 
 	content := container.NewBorder(
-		nil,
-		container.NewVBox(
-			widget.NewSeparator(),
-			editorCard,
-			widget.NewSeparator(),
-			makeStatusLabel(""),
-		),
-		nil, nil,
-		main,
-	)
-	// replace the plain statusLabel in the bottom with the actual statusLabel
-	_ = statusLabel // kept for backward compat; reuse via closure
-	content = container.NewBorder(
 		nil,
 		container.NewVBox(
 			widget.NewSeparator(),

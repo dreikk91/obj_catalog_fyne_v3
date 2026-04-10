@@ -18,7 +18,12 @@ import (
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
-func ShowDisplayBlockingDialog(parent fyne.Window, provider contracts.AdminProvider, onUpdated func()) {
+type adminDisplayBlockingProvider interface {
+	ListDisplayBlockObjects(filter string) ([]contracts.DisplayBlockObject, error)
+	SetDisplayBlockMode(objn int64, mode contracts.DisplayBlockMode) error
+}
+
+func ShowDisplayBlockingDialog(parent fyne.Window, provider adminDisplayBlockingProvider, onUpdated func()) {
 	win := fyne.CurrentApp().NewWindow("Блокування відображення інформації")
 	win.Resize(fyne.NewSize(1020, 620))
 

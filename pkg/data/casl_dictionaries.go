@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -439,11 +440,6 @@ func extractCASLTranslatorCatalogByType(raw any, deviceType string) (map[string]
 	return texts, flags
 }
 
-func flattenCASLTranslatorMap(value any) map[string]string {
-	texts, _ := flattenCASLTranslatorCatalog(value)
-	return texts
-}
-
 func flattenCASLTranslatorCatalog(value any) (map[string]string, map[string]bool) {
 	texts := make(map[string]string)
 	flags := make(map[string]bool)
@@ -511,14 +507,6 @@ func flattenCASLTranslatorCatalog(value any) (map[string]string, map[string]bool
 
 	walk(value)
 	return texts, flags
-}
-
-func extractCASLTranslatorCode(entry map[string]any) string {
-	codes := extractCASLTranslatorCodes(entry)
-	if len(codes) > 0 {
-		return codes[0]
-	}
-	return ""
 }
 
 func extractCASLTranslatorCodes(entry map[string]any) []string {
@@ -629,22 +617,14 @@ func cloneStringMap(source map[string]string) map[string]string {
 	if len(source) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(source))
-	for key, value := range source {
-		out[key] = value
-	}
-	return out
+	return maps.Clone(source)
 }
 
 func cloneBoolMap(source map[string]bool) map[string]bool {
 	if len(source) == 0 {
 		return nil
 	}
-	out := make(map[string]bool, len(source))
-	for key, value := range source {
-		out[key] = value
-	}
-	return out
+	return maps.Clone(source)
 }
 
 func extractCASLTranslatorText(value any) string {

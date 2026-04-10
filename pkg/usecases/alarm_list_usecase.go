@@ -1,6 +1,10 @@
 package usecases
 
-import "obj_catalog_fyne_v3/pkg/models"
+import (
+	"slices"
+
+	"obj_catalog_fyne_v3/pkg/models"
+)
 
 // AlarmListRepository описує мінімальне джерело тривог для use case.
 type AlarmListRepository interface {
@@ -22,5 +26,5 @@ func (uc *AlarmListUseCase) FetchAlarms() []models.Alarm {
 		return nil
 	}
 	alarms := uc.repository.GetAlarms()
-	return append([]models.Alarm(nil), alarms...)
+	return slices.Clone(alarms)
 }

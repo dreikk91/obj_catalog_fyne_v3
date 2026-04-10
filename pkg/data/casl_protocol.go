@@ -659,247 +659,181 @@ func decodedWithSecondByte(key string, b2 byte) (caslDecodedEventCode, bool) {
 	return decodedWithOffset(key, b2, 0)
 }
 
-func decodeCASLSystemCode(b1 byte, b2 byte) (caslDecodedEventCode, bool) {
-	switch b1 {
-	case 0x00:
-		switch b2 {
-		case 0xB3:
-			return decodedStatic("BAN_TIME")
-		case 0xBD:
-			return decodedStatic("REQUIRED_GROUP_ON")
-		case 0x60:
-			return decodedStatic("PPK_CONN_OK")
-		case 0x66:
-			return decodedStatic("SUSPICIOUS_ACTIVITY")
-		case 0x67:
-			return decodedStatic("SABOTAGE")
-		}
-	case 0x01:
-		switch b2 {
-		case 0x61:
-			return decodedStatic("OO_NO_POLL")
-		case 0x62:
-			return decodedStatic("OO_NO_PING")
-		}
+type caslOffsetRule struct {
+	MessageKey string
+	Offset     int
+}
+
+var caslSystemCodeTable = map[byte]map[byte]string{
+	0x00: {
+		0x60: "PPK_CONN_OK",
+		0x66: "SUSPICIOUS_ACTIVITY",
+		0x67: "SABOTAGE",
+		0xB3: "BAN_TIME",
+		0xBD: "REQUIRED_GROUP_ON",
+	},
+	0x01: {
+		0x61: "OO_NO_POLL",
+		0x62: "OO_NO_PING",
+	},
+}
+
+var caslRcomStaticCodeTable = map[byte]map[byte]string{
+	0x00: {
+		0x02: "CANNOT_AUTO_ARM",
+		0x03: "DEVICE_TEMPORARILY_DEACTIVATED",
+		0x04: "DEVICE_ACTIVE_AGAIN",
+		0x05: "TAMPER_ON",
+		0x06: "DEACTIVATED_AUTO_MAX_ALARMS",
+		0x07: "RESTORED_AFTER_AUTO_DEACTIVATION",
+		0x08: "SYSTEM_RESTORED_AFTER_ALARM_BY_USER",
+		0x09: "INTRUSION_VERIFIER",
+		0x0A: "PANIC_VERIFIER",
+		0x2F: "MALFUNCTION_DURING_ARMING_SYSTEM_INTEGRITY_CHECK",
+		0x57: "SERVER_CONNECTION_VIA_ETHERNET_LOST",
+		0x58: "SERVER_CONNECTION_VIA_ETHERNET_RESTORED",
+		0x59: "PHOTOVERIFICATION",
+		0x61: "PPK_NO_CONN",
+		0x62: "DIRECT_ERROR",
+		0x63: "PPK_BAD",
+		0x64: "ENABLED",
+		0x65: "DISABLED",
+		0x68: "NO_220",
+		0x69: "OK_220",
+		0x6A: "ACC_OK",
+		0x6B: "ACC_BAD",
+		0x6C: "DOOR_OP",
+		0x6D: "DOOR_CL",
+		0x6E: "SERVER_CONNECTION_VIA_CELLULAR_LOST",
+		0x6F: "SERVER_CONNECTION_VIA_CELLULAR_RESTORED",
+		0x70: "SERVER_CONNECTION_VIA_WI_FI_LOST",
+		0x71: "SERVER_CONNECTION_VIA_WI_FI_RESTORED",
+		0x72: "NOT_RESPONDING_DEVICE_IN_ROOM",
+		0x73: "PHOTO_ON_DEMAND_FEATURE_ENABLED_FOR_HUB_BY_USER",
+		0x74: "PHOTO_ON_DEMAND_FEATURE_DISABLED_FOR_HUB_BY_USER",
+		0x75: "PHOTO_BY_ALARM_SCENARIOS_FEATURE_ENABLED_FOR_HUB_BY_USER",
+		0x76: "PHOTO_BY_ALARM_SCENARIOS_FEATURE_DISABLED_FOR_HUB_BY_USER",
+		0x77: "MALFUNCTION_DETECTED_DEVICE_IN_ROOM_PULSE_EVENT",
+		0x78: "MALFUNCTION_RESOLVED_DEVICE_IN_ROOM",
+		0x79: "RING_DISCONNECTED",
+		0x80: "RING_CONNECTED",
+		0xB9: "FULL_REBOOT",
+		0xC7: "ARMING_ATTEMPT_ON_HUB",
+		0xC8: "PANIC_VERIFIER_NEW",
+		0xC9: "INTRUSION_VERIFIER_NEW",
+		0xCA: "ALARM_2_MINS_AFTER_ARMING",
+		0xCB: "HUB_IN_BATTERY_SAVING_MODE",
+		0xCC: "HUB_OUT_OF_BATTERY_SAVING_MODE",
+		0xCD: "RECEIVED_PHOTO_BY_SCHEDULE",
+		0xCE: "COMPLETED_RECEAVING_PHOTO_BY_SCHEDULE",
+	},
+	0x01: {
+		0x63: "CHANGE_IP_OK",
+		0x64: "CHANGE_IP_FAIL",
+		0x68: "OO_NO_220",
+		0x69: "OO_OK_220",
+		0x6A: "OO_ACC_OK",
+		0x6B: "OO_ACC_BAD",
+		0x6C: "OO_DOOR_OP",
+		0x6D: "OO_DOOR_CL",
+	},
+	0x3B: {
+		0x00: "REP_FIRMW_4L",
+		0x01: "END_FIRMW_4L",
+		0x02: "REQ_REP_FIRMW_4L",
+		0x03: "REC_CONFIG_4L",
+		0x04: "END_CONFIG_4L",
+		0x05: "PPK_SIM_4L",
+		0x06: "PPK_IMEIL_4L",
+		0x07: "PPK_COORD_4L",
+		0x08: "PPK_CSQ_4L",
+		0x09: "CONTROL_4L",
+	},
+}
+
+var caslRcomKeyboardStaticCodes = map[byte]string{
+	0x28: "SET_INPUT_CONTROL",
+	0x29: "KEYPAD_PROGRAMMING",
+	0x2A: "PROGRAMMING_CP_USB",
+	0x2B: "PROGRAMMING_CP_INTERNET",
+	0x2C: "MANAGEMENT_FROM_DUNAY",
+	0x2D: "REMOTE_CONTROL",
+	0x2E: "KEYFOB_KEYBOARD",
+}
+
+var caslRcomOffsetRules = map[byte]caslOffsetRule{
+	0x02: {MessageKey: "WL_ACC_OK", Offset: 1},
+	0x03: {MessageKey: "WL_ACC_BAD", Offset: 1},
+	0x04: {MessageKey: "WL_DOOR_CL", Offset: 1},
+	0x05: {MessageKey: "WL_DOOR_OP", Offset: 1},
+	0x06: {MessageKey: "WL_TROUBLE", Offset: 1},
+	0x07: {MessageKey: "WL_NORM", Offset: 1},
+	0x09: {MessageKey: "PRIMUS", Offset: -0x0f},
+	0x0A: {MessageKey: "ID_HOZ", Offset: 0x10 + 1},
+	0x0B: {MessageKey: "PRIMUS", Offset: 0x10 + 1},
+	0x0C: {MessageKey: "ID_HOZ", Offset: 0x30 + 1},
+	0x0D: {MessageKey: "PRIMUS", Offset: 0x30 + 1},
+	0x0E: {MessageKey: "ID_HOZ", Offset: 0x50 + 1},
+	0x0F: {MessageKey: "PRIMUS", Offset: 0x50 + 1},
+	0x30: {MessageKey: "AD_DOOR_OP", Offset: -0x0f},
+	0x31: {MessageKey: "OO_AD_DOOR_OP", Offset: -0x0f},
+	0x32: {MessageKey: "AD_DOOR_CL", Offset: -0x0f},
+	0x33: {MessageKey: "OO_AD_DOOR_CL", Offset: -0x0f},
+	0x34: {MessageKey: "AD_NO_CONN", Offset: -0x0f},
+	0x35: {MessageKey: "OO_AD_NO_CONN", Offset: -0x0f},
+	0x36: {MessageKey: "AD_CONN_OK", Offset: -0x0f},
+	0x37: {MessageKey: "OO_AD_CONN_OK", Offset: -0x0f},
+	0x38: {MessageKey: "AD_BAD_FOOD", Offset: -0x0f},
+	0x39: {MessageKey: "OO_ALM_AD_POWER", Offset: -0x0f},
+	0x3A: {MessageKey: "AD_FOOD_OK", Offset: -0x0f},
+	0x3B: {MessageKey: "OO_AD_POWER_OK", Offset: -0x0f},
+}
+
+func decodeCASLStaticBytePairTable(table map[byte]map[byte]string, b1 byte, b2 byte) (caslDecodedEventCode, bool) {
+	secondByteTable, ok := table[b1]
+	if !ok {
+		return caslDecodedEventCode{}, false
 	}
-	return caslDecodedEventCode{}, false
+	messageKey, ok := secondByteTable[b2]
+	if !ok {
+		return caslDecodedEventCode{}, false
+	}
+	return decodedStatic(messageKey)
+}
+
+func decodeCASLOffsetRuleTable(table map[byte]caslOffsetRule, b1 byte, b2 byte) (caslDecodedEventCode, bool) {
+	rule, ok := table[b1]
+	if !ok {
+		return caslDecodedEventCode{}, false
+	}
+	return decodedWithOffset(rule.MessageKey, b2, rule.Offset)
+}
+
+func decodeCASLRcomKeyboardCode(b2 byte) (caslDecodedEventCode, bool) {
+	if messageKey, ok := caslRcomKeyboardStaticCodes[b2]; ok {
+		return decodedStatic(messageKey)
+	}
+	return decodedWithOffset("ID_HOZ", b2, -0x0f)
+}
+
+func decodeCASLSystemCode(b1 byte, b2 byte) (caslDecodedEventCode, bool) {
+	return decodeCASLStaticBytePairTable(caslSystemCodeTable, b1, b2)
 }
 
 func decodeCASLRcomSurgardCode(b1 byte, b2 byte) (caslDecodedEventCode, bool) {
-	if b1 == 0x3B {
-		switch b2 {
-		case 0x00:
-			return decodedStatic("REP_FIRMW_4L")
-		case 0x01:
-			return decodedStatic("END_FIRMW_4L")
-		case 0x02:
-			return decodedStatic("REQ_REP_FIRMW_4L")
-		case 0x03:
-			return decodedStatic("REC_CONFIG_4L")
-		case 0x04:
-			return decodedStatic("END_CONFIG_4L")
-		case 0x05:
-			return decodedStatic("PPK_SIM_4L")
-		case 0x06:
-			return decodedStatic("PPK_IMEIL_4L")
-		case 0x07:
-			return decodedStatic("PPK_COORD_4L")
-		case 0x08:
-			return decodedStatic("PPK_CSQ_4L")
-		case 0x09:
-			return decodedStatic("CONTROL_4L")
-		}
+	if decoded, ok := decodeCASLStaticBytePairTable(caslRcomStaticCodeTable, b1, b2); ok {
+		return decoded, true
 	}
 
 	if b1 == 0x08 {
-		switch b2 {
-		case 0x27:
-			return decodedWithOffset("ID_HOZ", b2, -0x0f)
-		case 0x28:
-			return decodedStatic("SET_INPUT_CONTROL")
-		case 0x29:
-			return decodedStatic("KEYPAD_PROGRAMMING")
-		case 0x2A:
-			return decodedStatic("PROGRAMMING_CP_USB")
-		case 0x2B:
-			return decodedStatic("PROGRAMMING_CP_INTERNET")
-		case 0x2C:
-			return decodedStatic("MANAGEMENT_FROM_DUNAY")
-		case 0x2D:
-			return decodedStatic("REMOTE_CONTROL")
-		case 0x2E:
-			return decodedStatic("KEYFOB_KEYBOARD")
-		default:
-			return decodedWithOffset("ID_HOZ", b2, -0x0f)
-		}
+		return decodeCASLRcomKeyboardCode(b2)
+	}
+
+	if decoded, ok := decodeCASLOffsetRuleTable(caslRcomOffsetRules, b1, b2); ok {
+		return decoded, true
 	}
 
 	switch b1 {
-	case 0x00:
-		switch b2 {
-		case 0x02:
-			return decodedStatic("CANNOT_AUTO_ARM")
-		case 0x03:
-			return decodedStatic("DEVICE_TEMPORARILY_DEACTIVATED")
-		case 0x04:
-			return decodedStatic("DEVICE_ACTIVE_AGAIN")
-		case 0x05:
-			return decodedStatic("TAMPER_ON")
-		case 0x06:
-			return decodedStatic("DEACTIVATED_AUTO_MAX_ALARMS")
-		case 0x07:
-			return decodedStatic("RESTORED_AFTER_AUTO_DEACTIVATION")
-		case 0x08:
-			return decodedStatic("SYSTEM_RESTORED_AFTER_ALARM_BY_USER")
-		case 0x09:
-			return decodedStatic("INTRUSION_VERIFIER")
-		case 0x0A:
-			return decodedStatic("PANIC_VERIFIER")
-		case 0x2F:
-			return decodedStatic("MALFUNCTION_DURING_ARMING_SYSTEM_INTEGRITY_CHECK")
-		case 0x57:
-			return decodedStatic("SERVER_CONNECTION_VIA_ETHERNET_LOST")
-		case 0x58:
-			return decodedStatic("SERVER_CONNECTION_VIA_ETHERNET_RESTORED")
-		case 0x59:
-			return decodedStatic("PHOTOVERIFICATION")
-		case 0x61:
-			return decodedStatic("PPK_NO_CONN")
-		case 0x62:
-			return decodedStatic("DIRECT_ERROR")
-		case 0x63:
-			return decodedStatic("PPK_BAD")
-		case 0x64:
-			return decodedStatic("ENABLED")
-		case 0x65:
-			return decodedStatic("DISABLED")
-		case 0x68:
-			return decodedStatic("NO_220")
-		case 0x69:
-			return decodedStatic("OK_220")
-		case 0x6A:
-			return decodedStatic("ACC_OK")
-		case 0x6B:
-			return decodedStatic("ACC_BAD")
-		case 0x6C:
-			return decodedStatic("DOOR_OP")
-		case 0x6D:
-			return decodedStatic("DOOR_CL")
-		case 0x6E:
-			return decodedStatic("SERVER_CONNECTION_VIA_CELLULAR_LOST")
-		case 0x6F:
-			return decodedStatic("SERVER_CONNECTION_VIA_CELLULAR_RESTORED")
-		case 0x70:
-			return decodedStatic("SERVER_CONNECTION_VIA_WI_FI_LOST")
-		case 0x71:
-			return decodedStatic("SERVER_CONNECTION_VIA_WI_FI_RESTORED")
-		case 0x72:
-			return decodedStatic("NOT_RESPONDING_DEVICE_IN_ROOM")
-		case 0x73:
-			return decodedStatic("PHOTO_ON_DEMAND_FEATURE_ENABLED_FOR_HUB_BY_USER")
-		case 0x74:
-			return decodedStatic("PHOTO_ON_DEMAND_FEATURE_DISABLED_FOR_HUB_BY_USER")
-		case 0x75:
-			return decodedStatic("PHOTO_BY_ALARM_SCENARIOS_FEATURE_ENABLED_FOR_HUB_BY_USER")
-		case 0x76:
-			return decodedStatic("PHOTO_BY_ALARM_SCENARIOS_FEATURE_DISABLED_FOR_HUB_BY_USER")
-		case 0x77:
-			return decodedStatic("MALFUNCTION_DETECTED_DEVICE_IN_ROOM_PULSE_EVENT")
-		case 0x78:
-			return decodedStatic("MALFUNCTION_RESOLVED_DEVICE_IN_ROOM")
-		case 0x79:
-			return decodedStatic("RING_DISCONNECTED")
-		case 0x80:
-			return decodedStatic("RING_CONNECTED")
-		case 0xC7:
-			return decodedStatic("ARMING_ATTEMPT_ON_HUB")
-		case 0xC8:
-			return decodedStatic("PANIC_VERIFIER_NEW")
-		case 0xC9:
-			return decodedStatic("INTRUSION_VERIFIER_NEW")
-		case 0xCA:
-			return decodedStatic("ALARM_2_MINS_AFTER_ARMING")
-		case 0xCB:
-			return decodedStatic("HUB_IN_BATTERY_SAVING_MODE")
-		case 0xCC:
-			return decodedStatic("HUB_OUT_OF_BATTERY_SAVING_MODE")
-		case 0xCD:
-			return decodedStatic("RECEIVED_PHOTO_BY_SCHEDULE")
-		case 0xCE:
-			return decodedStatic("COMPLETED_RECEAVING_PHOTO_BY_SCHEDULE")
-
-		case 0xB9:
-			return decodedStatic("FULL_REBOOT")
-		}
-	case 0x01:
-		switch b2 {
-		case 0x63:
-			return decodedStatic("CHANGE_IP_OK")
-		case 0x64:
-			return decodedStatic("CHANGE_IP_FAIL")
-		case 0x68:
-			return decodedStatic("OO_NO_220")
-		case 0x69:
-			return decodedStatic("OO_OK_220")
-		case 0x6A:
-			return decodedStatic("OO_ACC_OK")
-		case 0x6B:
-			return decodedStatic("OO_ACC_BAD")
-		case 0x6C:
-			return decodedStatic("OO_DOOR_OP")
-		case 0x6D:
-			return decodedStatic("OO_DOOR_CL")
-		}
-	case 0x02:
-		return decodedWithOffset("WL_ACC_OK", b2, 1)
-	case 0x03:
-		return decodedWithOffset("WL_ACC_BAD", b2, 1)
-	case 0x04:
-		return decodedWithOffset("WL_DOOR_CL", b2, 1)
-	case 0x05:
-		return decodedWithOffset("WL_DOOR_OP", b2, 1)
-	case 0x06:
-		return decodedWithOffset("WL_TROUBLE", b2, 1)
-	case 0x07:
-		return decodedWithOffset("WL_NORM", b2, 1)
-	case 0x09:
-		return decodedWithOffset("PRIMUS", b2, -0x0f)
-	case 0x0A:
-		return decodedWithOffset("ID_HOZ", b2, 0x10+1)
-	case 0x0B:
-		return decodedWithOffset("PRIMUS", b2, 0x10+1)
-	case 0x0C:
-		return decodedWithOffset("ID_HOZ", b2, 0x30+1)
-	case 0x0D:
-		return decodedWithOffset("PRIMUS", b2, 0x30+1)
-	case 0x0E:
-		return decodedWithOffset("ID_HOZ", b2, 0x50+1)
-	case 0x0F:
-		return decodedWithOffset("PRIMUS", b2, 0x50+1)
-	case 0x30:
-		return decodedWithOffset("AD_DOOR_OP", b2, -0x0f)
-	case 0x31:
-		return decodedWithOffset("OO_AD_DOOR_OP", b2, -0x0f)
-	case 0x32:
-		return decodedWithOffset("AD_DOOR_CL", b2, -0x0f)
-	case 0x33:
-		return decodedWithOffset("OO_AD_DOOR_CL", b2, -0x0f)
-	case 0x34:
-		return decodedWithOffset("AD_NO_CONN", b2, -0x0f)
-	case 0x35:
-		return decodedWithOffset("OO_AD_NO_CONN", b2, -0x0f)
-	case 0x36:
-		return decodedWithOffset("AD_CONN_OK", b2, -0x0f)
-	case 0x37:
-		return decodedWithOffset("OO_AD_CONN_OK", b2, -0x0f)
-	case 0x38:
-		return decodedWithOffset("AD_BAD_FOOD", b2, -0x0f)
-	case 0x39:
-		return decodedWithOffset("OO_ALM_AD_POWER", b2, -0x0f)
-	case 0x3A:
-		return decodedWithOffset("AD_FOOD_OK", b2, -0x0f)
-	case 0x3B:
-		return decodedWithOffset("OO_AD_POWER_OK", b2, -0x0f)
 	case 0x3D:
 		switch b2 {
 		case 0x08:

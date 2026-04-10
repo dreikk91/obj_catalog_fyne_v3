@@ -3,6 +3,7 @@ package viewmodels
 import (
 	"fmt"
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/utils"
 	"strings"
 )
 
@@ -102,7 +103,7 @@ func (vm *KyivstarSIMViewModel) BuildStateText(status contracts.KyivstarSIMStatu
 		parts = append(parts, "Статус номера: "+strings.TrimSpace(status.NumberStatus))
 	}
 	if len(status.AvailableActions) > 0 {
-		parts = append(parts, "Дії: "+strings.Join(trimmedStringsCopy(status.AvailableActions), ", "))
+		parts = append(parts, "Дії: "+strings.Join(utils.TrimmedNonEmptyStrings(status.AvailableActions), ", "))
 	}
 	if status.IsTestPeriod {
 		parts = append(parts, "Тестовий період: так")
@@ -173,7 +174,7 @@ func (vm *KyivstarSIMViewModel) BuildServiceDetails(service contracts.KyivstarSI
 		parts = append(parts, "Статус: "+strings.TrimSpace(service.Status))
 	}
 	if len(service.AvailableActions) > 0 {
-		parts = append(parts, "Доступні дії: "+strings.Join(trimmedStringsCopy(service.AvailableActions), ", "))
+		parts = append(parts, "Доступні дії: "+strings.Join(utils.TrimmedNonEmptyStrings(service.AvailableActions), ", "))
 	}
 	return strings.Join(parts, "\n")
 }
@@ -214,16 +215,4 @@ func (vm *KyivstarSIMViewModel) BuildResetResultText(result contracts.KyivstarSI
 		return "Kyivstar: запит на reset відправлено для " + strings.TrimSpace(result.MSISDN)
 	}
 	return "Kyivstar: запит на reset відправлено для " + strings.TrimSpace(result.MSISDN) + "\nEmail: " + strings.TrimSpace(result.Email)
-}
-
-func trimmedStringsCopy(values []string) []string {
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		result = append(result, value)
-	}
-	return result
 }

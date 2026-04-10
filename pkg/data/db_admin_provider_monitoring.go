@@ -9,6 +9,8 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
+
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 func (p *DBDataProvider) ListMessageProtocols() ([]int64, error) {
@@ -58,7 +60,7 @@ func (p *DBDataProvider) ListMessages(protocolID *int64, filter string) ([]Admin
 		  AND OBJN = 0
 		  AND SC1 < 12
 	`
-	args := make([]interface{}, 0, 6)
+	args := make([]any, 0, 6)
 
 	if protocolID != nil {
 		query += ` AND PROTID = ?`
@@ -164,7 +166,7 @@ func (p *DBDataProvider) List220VMessageBuckets(protocolIDs []int64, filter stri
 		  AND OBJN = 0
 		  AND SC1 < 12
 	`
-	args := []interface{}{protocolIDs}
+	args := []any{protocolIDs}
 
 	if filter != "" {
 		baseQuery += `
@@ -264,7 +266,7 @@ func (p *DBDataProvider) ListDisplayBlockObjects(filter string) ([]DisplayBlockO
 		  AND oi.OBJN > 1000
 	`
 
-	args := make([]interface{}, 0, 3)
+	args := make([]any, 0, 3)
 	if filter != "" {
 		query += ` AND (
 			CAST(oi.OBJN AS VARCHAR(20)) CONTAINING ?
@@ -1014,16 +1016,16 @@ func (p *DBDataProvider) GetAdminAccessStatus() (AdminAccessStatus, error) {
 		surname := strings.TrimSpace(ptrToString(u.Surname1))
 		name := strings.TrimSpace(ptrToString(u.Name1))
 		secName := strings.TrimSpace(ptrToString(u.SecName1))
-		full := strings.TrimSpace(strings.Join(compactStrings(surname, name, secName), " "))
+		full := utils.JoinTrimmedNonEmpty(surname, name, secName)
 		variants := []string{
 			normalizeComparableName(surname),
 			normalizeComparableName(name),
 			normalizeComparableName(secName),
-			normalizeComparableName(strings.Join(compactStrings(surname, name), " ")),
-			normalizeComparableName(strings.Join(compactStrings(name, surname), " ")),
-			normalizeComparableName(strings.Join(compactStrings(surname, name, secName), " ")),
-			normalizeComparableName(strings.Join(compactStrings(name, secName, surname), " ")),
-			normalizeComparableName(strings.Join(compactStrings(surname, secName), " ")),
+			normalizeComparableName(utils.JoinTrimmedNonEmpty(surname, name)),
+			normalizeComparableName(utils.JoinTrimmedNonEmpty(name, surname)),
+			normalizeComparableName(utils.JoinTrimmedNonEmpty(surname, name, secName)),
+			normalizeComparableName(utils.JoinTrimmedNonEmpty(name, secName, surname)),
+			normalizeComparableName(utils.JoinTrimmedNonEmpty(surname, secName)),
 		}
 		for _, v := range variants {
 			if v == "" {
@@ -1324,7 +1326,7 @@ func (p *DBDataProvider) CollectObjectStatistics(filter AdminStatisticsFilter, l
 	`, limit)
 
 	conditions := make([]string, 0, 8)
-	args := make([]interface{}, 0, 10)
+	args := make([]any, 0, 10)
 
 	switch filter.ConnectionMode {
 	case StatsConnectionOnline:
@@ -1564,16 +1566,4 @@ func normalizeComparableName(v string) string {
 		return ""
 	}
 	return strings.Join(strings.Fields(v), " ")
-}
-
-func compactStrings(values ...string) []string {
-	out := make([]string, 0, len(values))
-	for _, v := range values {
-		v = strings.TrimSpace(v)
-		if v == "" {
-			continue
-		}
-		out = append(out, v)
-	}
-	return out
 }

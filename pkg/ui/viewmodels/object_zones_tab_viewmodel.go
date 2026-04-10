@@ -2,6 +2,7 @@ package viewmodels
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
@@ -20,12 +21,12 @@ func NewObjectZonesTabViewModel() *ObjectZonesTabViewModel {
 }
 
 func (vm *ObjectZonesTabViewModel) SetItems(items []contracts.AdminObjectZone) {
-	vm.items = append([]contracts.AdminObjectZone(nil), items...)
+	vm.items = slices.Clone(items)
 	vm.selectedRow = -1
 }
 
 func (vm *ObjectZonesTabViewModel) Items() []contracts.AdminObjectZone {
-	return append([]contracts.AdminObjectZone(nil), vm.items...)
+	return slices.Clone(vm.items)
 }
 
 func (vm *ObjectZonesTabViewModel) Count() int {

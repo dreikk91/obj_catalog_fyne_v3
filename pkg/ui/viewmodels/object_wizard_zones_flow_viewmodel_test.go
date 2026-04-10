@@ -3,7 +3,7 @@ package viewmodels
 import "testing"
 
 func TestObjectWizardZonesFlowViewModel_MoveToNext_FromEmpty(t *testing.T) {
-	state := NewObjectWizardStateViewModel()
+	state := NewObjectWizardZonesStateViewModel()
 	vm := NewObjectWizardZonesFlowViewModel(NewObjectWizardZonesStepViewModel())
 
 	out := vm.MoveToNext(state, "  Склад  ")
@@ -16,14 +16,14 @@ func TestObjectWizardZonesFlowViewModel_MoveToNext_FromEmpty(t *testing.T) {
 	if !out.RefreshTable || !out.FocusQuickName || out.TargetZoneNumber != 1 {
 		t.Fatalf("unexpected UI action: %+v", out)
 	}
-	if state.ZoneCount() != 1 {
-		t.Fatalf("expected 1 zone, got %d", state.ZoneCount())
+	if state.Count() != 1 {
+		t.Fatalf("expected 1 zone, got %d", state.Count())
 	}
 }
 
 func TestObjectWizardZonesFlowViewModel_MoveToNext_SavesAndCreatesNext(t *testing.T) {
-	state := NewObjectWizardStateViewModel()
-	if _, err := state.EnsureFirstZone(""); err != nil {
+	state := NewObjectWizardZonesStateViewModel()
+	if _, err := state.EnsureFirst(""); err != nil {
 		t.Fatalf("unexpected ensure error: %v", err)
 	}
 	vm := NewObjectWizardZonesFlowViewModel(NewObjectWizardZonesStepViewModel())
@@ -38,13 +38,13 @@ func TestObjectWizardZonesFlowViewModel_MoveToNext_SavesAndCreatesNext(t *testin
 	if !out.RefreshTable || out.TargetZoneNumber != 2 {
 		t.Fatalf("unexpected UI action: %+v", out)
 	}
-	if state.ZoneCount() != 2 {
-		t.Fatalf("expected 2 zones, got %d", state.ZoneCount())
+	if state.Count() != 2 {
+		t.Fatalf("expected 2 zones, got %d", state.Count())
 	}
 }
 
 func TestObjectWizardZonesFlowViewModel_PrepareDelete(t *testing.T) {
-	state := NewObjectWizardStateViewModel()
+	state := NewObjectWizardZonesStateViewModel()
 	vm := NewObjectWizardZonesFlowViewModel(NewObjectWizardZonesStepViewModel())
 
 	prompt := vm.PrepareDelete(state)
@@ -55,7 +55,7 @@ func TestObjectWizardZonesFlowViewModel_PrepareDelete(t *testing.T) {
 		t.Fatalf("unexpected status: %q", prompt.StatusText)
 	}
 
-	if _, err := state.EnsureFirstZone(""); err != nil {
+	if _, err := state.EnsureFirst(""); err != nil {
 		t.Fatalf("unexpected ensure error: %v", err)
 	}
 	prompt = vm.PrepareDelete(state)
@@ -71,7 +71,7 @@ func TestObjectWizardZonesFlowViewModel_PrepareDelete(t *testing.T) {
 }
 
 func TestObjectWizardZonesFlowViewModel_FillAndClear(t *testing.T) {
-	state := NewObjectWizardStateViewModel()
+	state := NewObjectWizardZonesStateViewModel()
 	vm := NewObjectWizardZonesFlowViewModel(NewObjectWizardZonesStepViewModel())
 
 	fill := vm.Fill(state, 3)
@@ -81,8 +81,8 @@ func TestObjectWizardZonesFlowViewModel_FillAndClear(t *testing.T) {
 	if fill.StatusText != "Зони заповнено до #3" {
 		t.Fatalf("unexpected fill status: %q", fill.StatusText)
 	}
-	if state.ZoneCount() != 3 {
-		t.Fatalf("expected 3 zones after fill, got %d", state.ZoneCount())
+	if state.Count() != 3 {
+		t.Fatalf("expected 3 zones after fill, got %d", state.Count())
 	}
 
 	clear := vm.Clear(state)
@@ -92,20 +92,20 @@ func TestObjectWizardZonesFlowViewModel_FillAndClear(t *testing.T) {
 	if !clear.RefreshTable {
 		t.Fatalf("clear must request table refresh")
 	}
-	if state.ZoneCount() != 0 {
-		t.Fatalf("expected empty zones after clear, got %d", state.ZoneCount())
+	if state.Count() != 0 {
+		t.Fatalf("expected empty zones after clear, got %d", state.Count())
 	}
 }
 
 func TestObjectWizardZonesFlowViewModel_DefaultFillCount(t *testing.T) {
-	state := NewObjectWizardStateViewModel()
+	state := NewObjectWizardZonesStateViewModel()
 	vm := NewObjectWizardZonesFlowViewModel(NewObjectWizardZonesStepViewModel())
 
 	if got := vm.DefaultFillCount(state); got != 24 {
 		t.Fatalf("unexpected default fill count: %d", got)
 	}
 
-	if err := state.EnsureZoneExists(30, ""); err != nil {
+	if err := state.EnsureExists(30, ""); err != nil {
 		t.Fatalf("unexpected ensure error: %v", err)
 	}
 	if got := vm.DefaultFillCount(state); got != 30 {

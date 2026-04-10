@@ -158,13 +158,13 @@ func newConsoleWriter(out io.Writer, noColor bool) zerolog.ConsoleWriter {
 		Out:        out,
 		TimeFormat: "15:04:05",
 		NoColor:    noColor,
-		FormatLevel: func(i interface{}) string {
+		FormatLevel: func(i any) string {
 			return fmt.Sprintf("| %-6s|", i)
 		},
-		FormatMessage: func(i interface{}) string {
+		FormatMessage: func(i any) string {
 			return fmt.Sprintf("%-50s", i)
 		},
-		FormatFieldName: func(i interface{}) string {
+		FormatFieldName: func(i any) string {
 			return fmt.Sprintf("%s=", i)
 		},
 	}
@@ -213,15 +213,6 @@ func (w *LevelFilterWriter) WriteLevel(level zerolog.Level, p []byte) (n int, er
 // GetLogger повертає логер з додатковим контекстом
 func GetLogger(component string) zerolog.Logger {
 	return log.With().Str("component", component).Logger()
-}
-
-// GetLoggerWithFields повертає логер з кастомними полями
-func GetLoggerWithFields(fields map[string]interface{}) zerolog.Logger {
-	ctx := log.With()
-	for key, value := range fields {
-		ctx = ctx.Interface(key, value)
-	}
-	return ctx.Logger()
 }
 
 // WithRequestID додає request ID до логера (для трейсінгу запитів)

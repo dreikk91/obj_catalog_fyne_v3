@@ -1,9 +1,10 @@
 package viewmodels
 
 import (
-	"strings"
+	"slices"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 // ObjectWizardPersonalsStateViewModel керує чернетками відповідальних осіб у майстрі.
@@ -28,7 +29,7 @@ func (vm *ObjectWizardPersonalsStateViewModel) Count() int {
 }
 
 func (vm *ObjectWizardPersonalsStateViewModel) Items() []contracts.AdminObjectPersonal {
-	return append([]contracts.AdminObjectPersonal(nil), vm.pending...)
+	return slices.Clone(vm.pending)
 }
 
 func (vm *ObjectWizardPersonalsStateViewModel) At(idx int) (contracts.AdminObjectPersonal, bool) {
@@ -92,19 +93,9 @@ func (vm *ObjectWizardPersonalsStateViewModel) Delete(idx int) bool {
 }
 
 func (vm *ObjectWizardPersonalsStateViewModel) FullName(item contracts.AdminObjectPersonal) string {
-	parts := []string{
-		strings.TrimSpace(item.Surname),
-		strings.TrimSpace(item.Name),
-		strings.TrimSpace(item.SecName),
-	}
-	filtered := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part != "" {
-			filtered = append(filtered, part)
-		}
-	}
-	if len(filtered) == 0 {
+	fullName := utils.JoinTrimmedNonEmpty(item.Surname, item.Name, item.SecName)
+	if fullName == "" {
 		return "(без ПІБ)"
 	}
-	return strings.Join(filtered, " ")
+	return fullName
 }

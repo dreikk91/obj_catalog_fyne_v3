@@ -1,6 +1,10 @@
 package usecases
 
-import "obj_catalog_fyne_v3/pkg/models"
+import (
+	"slices"
+
+	"obj_catalog_fyne_v3/pkg/models"
+)
 
 // EventLogRepository описує мінімальне джерело подій для use case журналу.
 type EventLogRepository interface {
@@ -22,5 +26,5 @@ func (uc *EventLogUseCase) FetchEvents() []models.Event {
 		return nil
 	}
 	events := uc.repository.GetEvents()
-	return append([]models.Event(nil), events...)
+	return slices.Clone(events)
 }

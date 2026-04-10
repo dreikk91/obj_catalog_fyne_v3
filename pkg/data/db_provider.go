@@ -81,7 +81,7 @@ func (p *DBDataProvider) GetObjects() []models.Object {
 		return nil
 	}
 
-	var objects []models.Object
+	objects := make([]models.Object, 0, len(rows))
 	for _, row := range rows {
 		objects = append(objects, mapObjectRowToModel(row))
 	}
@@ -151,16 +151,24 @@ func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 
 // GetZones отримує зони об'єкта
 func (p *DBDataProvider) GetZones(idStr string) []models.Zone {
-	id, _ := strconv.ParseInt(idStr, 10, 64)
+	if p.db == nil {
+		log.Warn().Str("id", idStr).Msg("Спроба отримати зони без активного з'єднання БД")
+		return nil
+	}
+	id, ok := parseDBProviderObjectID("GetZones", idStr)
+	if !ok {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	dbZones, err := database.GetObjectZones(ctx, p.db, id)
 	if err != nil {
+		log.Error().Err(err).Int64("objectID", id).Msg("Помилка отримання зон об'єкта")
 		return nil
 	}
 
-	var zones []models.Zone
+	zones := make([]models.Zone, 0, len(dbZones))
 	for _, dz := range dbZones {
 		zones = append(zones, models.Zone{
 			Number:     int(ptrToInt64(dz.Zonen)),
@@ -174,22 +182,31 @@ func (p *DBDataProvider) GetZones(idStr string) []models.Zone {
 
 // GetEmployees отримує персонал об'єкта
 func (p *DBDataProvider) GetEmployees(idStr string) []models.Contact {
-	id, _ := strconv.ParseInt(idStr, 10, 64)
+	if p.db == nil {
+		log.Warn().Str("id", idStr).Msg("Спроба отримати персонал без активного з'єднання БД")
+		return nil
+	}
+	id, ok := parseDBProviderObjectID("GetEmployees", idStr)
+	if !ok {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	// Нам потрібен ObjUin для GetObjectEmployees. Отримуємо його через деталі.
 	row, err := database.GetObjectDetail(ctx, p.db, id)
 	if err != nil {
+		log.Error().Err(err).Int64("objectID", id).Msg("Помилка отримання деталей об'єкта для персоналу")
 		return nil
 	}
 
 	dbPers, err := database.GetObjectEmployees(ctx, p.db, row.ObjUin)
 	if err != nil {
+		log.Error().Err(err).Int64("objectID", id).Int64("objectUIN", row.ObjUin).Msg("Помилка отримання персоналу об'єкта")
 		return nil
 	}
 
-	var contacts []models.Contact
+	contacts := make([]models.Contact, 0, len(dbPers))
 	for _, dp := range dbPers {
 		contacts = append(contacts, models.Contact{
 			Name:     ptrToString(dp.Surname1) + " " + ptrToString(dp.Name1),
@@ -300,9 +317,7 @@ func (p *DBDataProvider) GetObjectEvents(objectID string) []models.Event {
 		return nil
 	}
 
-	var events []models.Event
-	events = mapDBEventRows(rows, int(id))
-	return events
+	return mapDBEventRows(rows, int(id))
 }
 
 func (p *DBDataProvider) GetAlarmSourceMessages(alarm models.Alarm) []models.AlarmMsg {
@@ -327,9 +342,7 @@ func reverseDBEvents(events []models.Event) {
 func maxDBEventRowID(rows []database.EventRow, current int64) int64 {
 	maxID := current
 	for _, row := range rows {
-		if row.ID > maxID {
-			maxID = row.ID
-		}
+		maxID = max(maxID, row.ID)
 	}
 	return maxID
 }
@@ -487,21 +500,27 @@ func selectDBAlarmMessage(messages []dbAlarmMessage) (dbAlarmMessage, bool) {
 		return dbAlarmMessage{}, false
 	}
 
+	latest := messages[0]
+	var latestAlarm dbAlarmMessage
+	hasLatestAlarm := false
+
 	// Пріоритет 1: "справжня" тривога (пожежа/проникнення/паніка/...), навіть якщо після неї
 	// у хронології з'явилася несправність або відновлення.
 	for _, msg := range messages {
 		if isPrimaryAlarmEventType(msg.EventType) {
 			return msg, true
 		}
-	}
-	// Пріоритет 2: будь-яка інша тривожна подія (fault/offline/...).
-	for _, msg := range messages {
-		if msg.IsAlarm {
-			return msg, true
+		if msg.IsAlarm && !hasLatestAlarm {
+			latestAlarm = msg
+			hasLatestAlarm = true
 		}
 	}
+	// Пріоритет 2: будь-яка інша тривожна подія (fault/offline/...).
+	if hasLatestAlarm {
+		return latestAlarm, true
+	}
 	// Якщо тривог немає, беремо найновішу подію.
-	return messages[0], true
+	return latest, true
 }
 
 func resolveDBGroupedAlarmSC1(messages []dbAlarmMessage, fallback int) int {
@@ -613,11 +632,15 @@ func isDBAlarmEventType(eventType models.EventType) bool {
 }
 
 func (p *DBDataProvider) ProcessAlarm(id string, user string, note string) {
-	log.Info().Str("alarmID", id).Str("user", user).Str("note", note).Msg("Обробка тривоги")
-	// Not implemented
+	log.Warn().Str("alarmID", id).Str("user", user).Str("note", note).Msg("Обробка тривоги для DBDataProvider ще не реалізована")
 }
 
 func (p *DBDataProvider) GetExternalData(objectID string) (signal string, lastTestMsg string, lastTest time.Time, lastMsg time.Time) {
+	if p.db == nil {
+		log.Warn().Str("objectID", objectID).Msg("Спроба отримати зовнішні дані без активного з'єднання БД")
+		return "", "", time.Time{}, time.Time{}
+	}
+
 	messages := p.GetTestMessages(objectID)
 	if len(messages) > 0 {
 		last := messages[0]
@@ -643,7 +666,10 @@ func (p *DBDataProvider) GetExternalData(objectID string) (signal string, lastTe
 	}
 
 	// Отримуємо часи з TBL_TESTCONTROL (AVD_MAIN або GPRS_TC)
-	id, _ := strconv.ParseInt(objectID, 10, 64)
+	id, ok := parseDBProviderObjectID("GetExternalData", objectID)
+	if !ok {
+		return signal, lastTestMsg, lastTest, lastMsg
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -703,7 +729,15 @@ func (p *DBDataProvider) buildExtDSN(fullPath string) string {
 }
 
 func (p *DBDataProvider) GetTestMessages(objectID string) []models.TestMessage {
-	id, _ := strconv.ParseInt(objectID, 10, 64)
+	if p.db == nil {
+		log.Warn().Str("objectID", objectID).Msg("Спроба отримати тестові повідомлення без активного з'єднання БД")
+		return nil
+	}
+
+	id, ok := parseDBProviderObjectID("GetTestMessages", objectID)
+	if !ok {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -743,7 +777,7 @@ func (p *DBDataProvider) GetTestMessages(objectID string) []models.TestMessage {
 		return nil
 	}
 
-	var results []models.TestMessage
+	results := make([]models.TestMessage, 0, len(rows))
 	for _, row := range rows {
 		results = append(results, models.TestMessage{
 			Time:    ptrToTime(row.MsgDTime1),
@@ -752,6 +786,19 @@ func (p *DBDataProvider) GetTestMessages(objectID string) []models.TestMessage {
 		})
 	}
 	return results
+}
+
+func parseDBProviderObjectID(op string, raw string) (int64, bool) {
+	id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil {
+		log.Warn().Err(err).Str("operation", op).Str("objectID", raw).Msg("Невірний формат ID об'єкта")
+		return 0, false
+	}
+	if id <= 0 {
+		log.Warn().Str("operation", op).Str("objectID", raw).Msg("ID об'єкта має бути додатним")
+		return 0, false
+	}
+	return id, true
 }
 
 // Допоміжні функції для мапінгу

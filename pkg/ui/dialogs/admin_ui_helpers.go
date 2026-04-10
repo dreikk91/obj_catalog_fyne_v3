@@ -45,15 +45,8 @@ func makeLowButton(label string, fn func()) *widget.Button {
 }
 
 // makeIconButton повертає кнопку з іконкою та заданим пріоритетом.
-func makeIconButton(label string, icon fyne.Resource, importance widget.ButtonImportance, fn func()) *widget.Button {
+func makeIconButton(label string, icon fyne.Resource, importance widget.Importance, fn func()) *widget.Button {
 	btn := widget.NewButtonWithIcon(label, icon, fn)
-	btn.Importance = importance
-	return btn
-}
-
-// makeIconOnlyButton повертає кнопку-іконку без підпису.
-func makeIconOnlyButton(icon fyne.Resource, importance widget.ButtonImportance, fn func()) *widget.Button {
-	btn := widget.NewButtonWithIcon("", icon, fn)
 	btn.Importance = importance
 	return btn
 }
@@ -76,12 +69,10 @@ func makeStatusLabel(initial string) *widget.Label {
 
 func iconAdd() fyne.Resource     { return fyneTheme.ContentAddIcon() }
 func iconEdit() fyne.Resource    { return fyneTheme.DocumentCreateIcon() }
-func iconDelete() fyne.Resource  { return fyneTheme.DeleteIcon() }
 func iconUp() fyne.Resource      { return fyneTheme.MoveUpIcon() }
 func iconDown() fyne.Resource    { return fyneTheme.MoveDownIcon() }
 func iconRefresh() fyne.Resource { return fyneTheme.ViewRefreshIcon() }
 func iconExport() fyne.Resource  { return fyneTheme.DocumentSaveIcon() }
-func iconCopy() fyne.Resource    { return fyneTheme.ContentCopyIcon() }
 func iconClose() fyne.Resource   { return fyneTheme.CancelIcon() }
 func iconFolder() fyne.Resource  { return fyneTheme.FolderOpenIcon() }
 func iconClear() fyne.Resource   { return fyneTheme.ContentClearIcon() }

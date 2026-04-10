@@ -7,7 +7,7 @@ import (
 )
 
 func TestObjectWizardPersonalsFlowViewModel_SelectAndPrepareEdit(t *testing.T) {
-	state := NewObjectWizardStateViewModel()
+	state := NewObjectWizardPersonalsStateViewModel()
 	vm := NewObjectWizardPersonalsFlowViewModel(NewObjectWizardPersonalsTableViewModel())
 
 	vm.SelectTableRow(state, 0)
@@ -31,7 +31,7 @@ func TestObjectWizardPersonalsFlowViewModel_SelectAndPrepareEdit(t *testing.T) {
 }
 
 func TestObjectWizardPersonalsFlowViewModel_AddUpdateDelete(t *testing.T) {
-	state := NewObjectWizardStateViewModel()
+	state := NewObjectWizardPersonalsStateViewModel()
 	vm := NewObjectWizardPersonalsFlowViewModel(NewObjectWizardPersonalsTableViewModel())
 
 	add := vm.ApplyAdd(state, contracts.AdminObjectPersonal{Number: 1, Name: "Іван"})
@@ -73,7 +73,7 @@ func TestObjectWizardPersonalsFlowViewModel_AddUpdateDelete(t *testing.T) {
 }
 
 func TestObjectWizardPersonalsFlowViewModel_NextNumber(t *testing.T) {
-	state := NewObjectWizardStateViewModel()
+	state := NewObjectWizardPersonalsStateViewModel()
 	vm := NewObjectWizardPersonalsFlowViewModel(NewObjectWizardPersonalsTableViewModel())
 
 	if got := vm.NextNumber(state); got != 1 {

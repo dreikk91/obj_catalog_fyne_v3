@@ -2,7 +2,7 @@ package viewmodels
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,14 +42,28 @@ func (vm *WorkAreaCaseHistoryViewModel) BuildGroups(currentObject *models.Object
 		return nil
 	}
 
-	ordered := append([]models.Event(nil), events...)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		left := ordered[i].Time
-		right := ordered[j].Time
-		if left.Equal(right) {
-			return ordered[i].ID < ordered[j].ID
+	ordered := slices.Clone(events)
+	slices.SortStableFunc(ordered, func(left, right models.Event) int {
+		leftTime := left.Time
+		rightTime := right.Time
+		if leftTime.Equal(rightTime) {
+			switch {
+			case left.ID < right.ID:
+				return -1
+			case left.ID > right.ID:
+				return 1
+			default:
+				return 0
+			}
 		}
-		return left.Before(right)
+		switch {
+		case leftTime.Before(rightTime):
+			return -1
+		case leftTime.After(rightTime):
+			return 1
+		default:
+			return 0
+		}
 	})
 
 	groups := make([]WorkAreaCaseHistoryGroup, 0, 4)
@@ -79,9 +93,7 @@ func (vm *WorkAreaCaseHistoryViewModel) BuildGroups(currentObject *models.Object
 		groups = append(groups, current)
 	}
 
-	for left, right := 0, len(groups)-1; left < right; left, right = left+1, right-1 {
-		groups[left], groups[right] = groups[right], groups[left]
-	}
+	slices.Reverse(groups)
 
 	return groups
 }

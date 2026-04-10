@@ -314,29 +314,6 @@ WHERE
 ORDER BY TC.Priority, T.Event_Parent_id, T.Event_id
 `
 
-const phoenixInitialEventsQuery = `
-SELECT TOP (500)
-	A.Event_id AS event_id,
-	A.Panel_id AS panel_id,
-	A.Group_ AS group_no,
-	A.Zone AS zone_no,
-	A.TimeEvent AS time_event,
-	A.Code AS event_code,
-	C.Message AS code_message,
-	TC.idTCode AS type_code_id,
-	G.Message AS group_name,
-	Z.Message AS zone_name,
-	Co.CompanyName AS company_name,
-	Co.Address AS company_address
-FROM vwArchives A WITH (NOLOCK)
-LEFT JOIN Groups G WITH (NOLOCK) ON G.Panel_id = A.Panel_id AND G.Group_ = A.Group_
-LEFT JOIN Code C WITH (NOLOCK) ON C.Code = A.Code AND C.CodeGroup = A.CodeGroup
-LEFT JOIN TypeCode TC WITH (NOLOCK) ON TC.idTCode = C.idTCode
-LEFT JOIN Zones Z WITH (NOLOCK) ON Z.Panel_id = A.Panel_id AND Z.Group_ = A.Group_ AND Z.Zone = A.Zone
-LEFT JOIN Company Co WITH (NOLOCK) ON Co.ID = G.CompanyID
-ORDER BY A.Event_id DESC
-`
-
 const phoenixIncrementalEventsQuery = `
 SELECT
 	A.Event_id AS event_id,

@@ -1,7 +1,7 @@
 package viewmodels
 
 import (
-	"sort"
+	"slices"
 	"time"
 
 	"obj_catalog_fyne_v3/pkg/models"
@@ -119,14 +119,28 @@ eventLoop:
 }
 
 func sortEventsByTimeDesc(events []models.Event) []models.Event {
-	ordered := append([]models.Event(nil), events...)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		left := ordered[i].Time
-		right := ordered[j].Time
-		if left.Equal(right) {
-			return ordered[i].ID > ordered[j].ID
+	ordered := slices.Clone(events)
+	slices.SortStableFunc(ordered, func(left, right models.Event) int {
+		leftTime := left.Time
+		rightTime := right.Time
+		if leftTime.Equal(rightTime) {
+			switch {
+			case left.ID > right.ID:
+				return -1
+			case left.ID < right.ID:
+				return 1
+			default:
+				return 0
+			}
 		}
-		return left.After(right)
+		switch {
+		case leftTime.After(rightTime):
+			return -1
+		case leftTime.Before(rightTime):
+			return 1
+		default:
+			return 0
+		}
 	})
 	return ordered
 }

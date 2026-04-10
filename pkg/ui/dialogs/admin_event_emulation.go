@@ -14,7 +14,14 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowEventEmulationDialog(parent fyne.Window, provider contracts.AdminProvider, onEmulated func()) {
+type adminEventEmulationProvider interface {
+	ListDisplayBlockObjects(filter string) ([]contracts.DisplayBlockObject, error)
+	ListMessages(protocolID *int64, filter string) ([]contracts.AdminMessage, error)
+	ListMessageProtocols() ([]int64, error)
+	EmulateEvent(objn int64, zone int64, messageUIN int64) error
+}
+
+func ShowEventEmulationDialog(parent fyne.Window, provider adminEventEmulationProvider, onEmulated func()) {
 	win := fyne.CurrentApp().NewWindow("Емуляція подій")
 	win.Resize(fyne.NewSize(1120, 680))
 

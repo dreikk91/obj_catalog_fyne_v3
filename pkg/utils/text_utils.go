@@ -36,7 +36,7 @@ func IsDigitsOnlyTerm(value string) bool {
 // HasCyrillicChars перевіряє наявність кириличних символів у рядку.
 func HasCyrillicChars(text string) bool {
 	for _, r := range text {
-		if (r >= 'А' && r <= 'я') || r == 'Ї' || r == 'ї' || r == 'Є' || r == 'є' || r == 'І' || r == 'і' || r == 'Ґ' || r == 'ґ' {
+		if unicode.Is(unicode.Cyrillic, r) {
 			return true
 		}
 	}
@@ -63,4 +63,31 @@ func LeadingDigits(value string) string {
 		}
 	}
 	return b.String()
+}
+
+// StripCountSuffix обрізає службовий суфікс виду " (N)" у UI-фільтрах.
+func StripCountSuffix(value string) string {
+	value = strings.TrimSpace(value)
+	if idx := strings.Index(value, " ("); idx >= 0 {
+		return strings.TrimSpace(value[:idx])
+	}
+	return value
+}
+
+// TrimmedNonEmptyStrings повертає копію зрізу без порожніх після TrimSpace значень.
+func TrimmedNonEmptyStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
+}
+
+// JoinTrimmedNonEmpty об'єднує непорожні після TrimSpace частини через пробіл.
+func JoinTrimmedNonEmpty(values ...string) string {
+	return strings.Join(TrimmedNonEmptyStrings(values), " ")
 }

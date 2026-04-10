@@ -1,6 +1,10 @@
 package viewmodels
 
-import "obj_catalog_fyne_v3/pkg/models"
+import (
+	"slices"
+
+	"obj_catalog_fyne_v3/pkg/models"
+)
 
 // AlarmListUseCase описує мінімальний use case для завантаження тривог.
 type AlarmListUseCase interface {
@@ -41,12 +45,12 @@ func (vm *AlarmListViewModel) LoadAlarms(useCase AlarmListUseCase) []models.Alar
 		return nil
 	}
 	alarms := useCase.FetchAlarms()
-	return append([]models.Alarm(nil), alarms...)
+	return slices.Clone(alarms)
 }
 
 func (vm *AlarmListViewModel) BuildRefreshOutput(input AlarmRefreshInput) AlarmRefreshOutput {
 	out := AlarmRefreshOutput{
-		CurrentAlarms:  append([]models.Alarm(nil), input.Alarms...),
+		CurrentAlarms:  slices.Clone(input.Alarms),
 		FilteredAlarms: make([]models.Alarm, 0, len(input.Alarms)),
 		KnownIDs:       make(map[int]struct{}, len(input.Alarms)),
 		Total:          len(input.Alarms),

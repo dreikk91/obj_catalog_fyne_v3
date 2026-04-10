@@ -243,7 +243,37 @@ func (a *Application) setTheme(dark bool) {
 func (a *Application) buildUI() {
 	log.Debug().Msg("Початок побудови UI компонентів...")
 
-	// Створюємо UI компоненти
+	a.buildUIPanels()
+	a.registerEventBusHandlers()
+	a.configurePanelCallbacks()
+
+	// Головне меню (в т.ч. адмінський функціонал з документації)
+	a.mainWindow.SetMainMenu(a.buildMainMenu())
+
+	themeBtn := a.buildThemeButton()
+	settingsBtn := a.buildSettingsButton()
+	toolbar := a.buildToolbar(themeBtn, settingsBtn)
+	rightTabs := a.buildRightTabs()
+	a.bindTabBadgeHandlers()
+
+	log.Debug().Msg("Компонування макета...")
+
+	rootSplit := a.buildRootSplit(rightTabs)
+	statusBar := a.buildStatusBar()
+
+	finalLayout := container.NewBorder(
+		container.NewVBox(toolbar, widget.NewSeparator()),
+		statusBar, nil, nil,
+		rootSplit,
+	)
+	a.mainWindow.SetContent(finalLayout)
+	log.Debug().Msg("UI побудований та встановлений на вікно")
+
+	a.installCloseIntercept(rootSplit)
+	a.registerShortcuts(themeBtn)
+}
+
+func (a *Application) buildUIPanels() {
 	log.Debug().Msg("Створення AlarmPanel...")
 	provider := a.getDataProvider()
 	a.alarmPanel = ui.NewAlarmPanelWidget(provider)
@@ -260,26 +290,23 @@ func (a *Application) buildUI() {
 	log.Debug().Msg("Створення EventLogPanel...")
 	a.eventLog = ui.NewEventLogPanel(provider)
 	log.Debug().Msg("EventLogPanel створена")
-	a.registerEventBusHandlers()
+}
 
+func (a *Application) configurePanelCallbacks() {
 	log.Debug().Msg("Налаштування callbacks...")
 
-	// Налаштовуємо callbacks
 	a.objectList.OnObjectSelected = func(object models.Object) {
 		log.Debug().Int("objectID", object.ID).Str("objectName", object.Name).Msg("Об'єкт вибраний з списку")
-		// Для адміністратора при виборі об'єкта відкриваємо картку одразу.
 		a.applyObjectContext(&object, true)
 	}
 
 	a.alarmPanel.OnAlarmSelected = func(alarm models.Alarm) {
 		log.Debug().Int("alarmID", alarm.ID).Int("objectID", alarm.ObjectID).Msg("Тривога вибрана (одинарний клік)")
-		// Оновлюємо контекст, але залишаємо відкритою вкладку "Тривоги".
 		a.applyObjectContextByID(int64(alarm.ObjectID), false)
 	}
 
 	a.alarmPanel.OnAlarmActivated = func(alarm models.Alarm) {
 		log.Debug().Int("alarmID", alarm.ID).Int("objectID", alarm.ObjectID).Msg("Тривога активована (подвійний клік)")
-		// Подвійний клік: відкриваємо вкладку деталей для вже вибраного об'єкта.
 		a.selectDetailsTab()
 	}
 
@@ -304,50 +331,60 @@ func (a *Application) buildUI() {
 	}
 
 	log.Debug().Msg("Callbacks налаштовані")
+}
 
-	// Головне меню (в т.ч. адмінський функціонал з документації)
-	a.mainWindow.SetMainMenu(a.buildMainMenu())
-
-	// Кнопка перемикання теми
+func (a *Application) buildThemeButton() *widget.Button {
 	themeBtn := widget.NewButtonWithIcon("", fyneTheme.ColorPaletteIcon(), nil)
-	updateThemeButton := func() {
-		if a.isDarkTheme {
-			themeBtn.SetText("Світла")
-		} else {
-			themeBtn.SetText("Темна")
-		}
-	}
+	a.updateThemeButtonLabel(themeBtn)
 	themeBtn.OnTapped = func() {
-		newDark := !a.isDarkTheme
-		log.Debug().Bool("darkTheme", newDark).Msg("Перемикання теми...")
-		a.setTheme(newDark)
-		updateThemeButton()
-
-		uiCfg := config.LoadUIConfig(a.fyneApp.Preferences())
-		if a.alarmPanel != nil {
-			a.alarmPanel.OnThemeChanged(uiCfg.FontSizeAlarms)
-		}
-		if a.objectList != nil {
-			a.objectList.OnThemeChanged(uiCfg.FontSizeObjects)
-		}
-		if a.workArea != nil {
-			a.workArea.OnThemeChanged(uiCfg.FontSize)
-		}
-		if a.eventLog != nil {
-			a.eventLog.OnThemeChanged(uiCfg.FontSizeEvents)
-		}
-
-		// Оновлюємо панелі, щоб застосувати нові кольори та палітри рядків.
-		a.publishDataRefresh(eventbus.DataRefreshEvent{
-			RefreshObjects: true,
-			RefreshAlarms:  true,
-			RefreshEvents:  true,
-		})
+		a.toggleTheme(themeBtn)
 	}
-	updateThemeButton()
+	return themeBtn
+}
 
-	// Кнопка налаштувань
-	settingsBtn := widget.NewButtonWithIcon("Налаштування", fyneTheme.SettingsIcon(), func() {
+func (a *Application) updateThemeButtonLabel(themeBtn *widget.Button) {
+	if themeBtn == nil {
+		return
+	}
+	if a.isDarkTheme {
+		themeBtn.SetText("Світла")
+		return
+	}
+	themeBtn.SetText("Темна")
+}
+
+func (a *Application) toggleTheme(themeBtn *widget.Button) {
+	newDark := !a.isDarkTheme
+	log.Debug().Bool("darkTheme", newDark).Msg("Перемикання теми...")
+	a.setTheme(newDark)
+	a.updateThemeButtonLabel(themeBtn)
+
+	uiCfg := config.LoadUIConfig(a.fyneApp.Preferences())
+	a.applyThemeToPanels(uiCfg)
+	a.publishDataRefresh(eventbus.DataRefreshEvent{
+		RefreshObjects: true,
+		RefreshAlarms:  true,
+		RefreshEvents:  true,
+	})
+}
+
+func (a *Application) applyThemeToPanels(uiCfg config.UIConfig) {
+	if a.alarmPanel != nil {
+		a.alarmPanel.OnThemeChanged(uiCfg.FontSizeAlarms)
+	}
+	if a.objectList != nil {
+		a.objectList.OnThemeChanged(uiCfg.FontSizeObjects)
+	}
+	if a.workArea != nil {
+		a.workArea.OnThemeChanged(uiCfg.FontSize)
+	}
+	if a.eventLog != nil {
+		a.eventLog.OnThemeChanged(uiCfg.FontSizeEvents)
+	}
+}
+
+func (a *Application) buildSettingsButton() *widget.Button {
+	return widget.NewButtonWithIcon("Налаштування", fyneTheme.SettingsIcon(), func() {
 		log.Debug().Msg("Відкриття діалогу налаштувань...")
 		dialogs.ShowSettingsDialog(
 			a.mainWindow,
@@ -360,7 +397,6 @@ func (a *Application) buildUI() {
 				a.RefreshUI(uiCfg)
 			},
 			func() {
-				// Після зміни кольорів оновлюємо всі панелі, які їх використовують
 				a.publishDataRefresh(eventbus.DataRefreshEvent{
 					RefreshObjects: true,
 					RefreshAlarms:  true,
@@ -372,26 +408,28 @@ func (a *Application) buildUI() {
 			},
 		)
 	})
+}
 
-	title := widget.NewLabel(fmt.Sprintf("Каталог об'єктів"))
-	toolbar := container.NewHBox(title, layout.NewSpacer(), themeBtn, settingsBtn)
+func (a *Application) buildToolbar(themeBtn *widget.Button, settingsBtn *widget.Button) fyne.CanvasObject {
+	title := widget.NewLabel("Каталог об'єктів")
+	return container.NewHBox(title, layout.NewSpacer(), themeBtn, settingsBtn)
+}
 
-	// Таби: показуємо найважливіше першим (тривоги), додаємо лічильники.
+func (a *Application) buildRightTabs() *container.AppTabs {
 	detailsTab := container.NewTabItem("КАРТКА ОБ'ЄКТА", a.workArea.Container)
 	eventsTab := container.NewTabItem("ЖУРНАЛ ПОДІЙ", a.eventLog.Container)
 	alarmsTab := container.NewTabItem("ТРИВОГИ", a.alarmPanel.Container)
 	rightTabs := container.NewAppTabs(detailsTab, eventsTab, alarmsTab)
 	a.configureTabsState(detailsTab, eventsTab, alarmsTab, rightTabs)
+	return rightTabs
+}
 
-	// Синхронізуємо лічильники з панелями (викличеться після їх Refresh()).
+func (a *Application) bindTabBadgeHandlers() {
 	if a.alarmPanel != nil {
 		a.alarmPanel.OnCountsChanged = func(total int, critical int) {
-			// eventsCount тут не знаємо — не чіпаємо.
 			a.updateTabBadges(total, critical, -1)
 		}
 		a.alarmPanel.OnNewCriticalAlarm = func(alarm models.Alarm) {
-			// Для адміністратора не перемикаємо вкладку автоматично,
-			// а лише м'яко сповіщаємо про нову тривогу.
 			ui.ShowToast(a.mainWindow, fmt.Sprintf("Нова тривога: №%s %s", alarm.GetObjectNumberDisplay(), alarm.GetTypeDisplay()))
 		}
 	}
@@ -400,35 +438,32 @@ func (a *Application) buildUI() {
 			a.updateTabBadges(-1, 0, count)
 		}
 	}
+}
 
-	log.Debug().Msg("Компонування макета...")
-
-	// Layout: universal HSplit with right-side tabs (better for 1024x768 and 1920x1080)
+func (a *Application) buildRootSplit(rightTabs *container.AppTabs) *container.Split {
 	rootSplit := container.NewHSplit(a.objectList.Container, rightTabs)
-	savedOffset := a.fyneApp.Preferences().FloatWithFallback(prefKeyObjectListSplitOffset, 0.32)
-	// Захист від некоректних значень (щоб не "зламати" макет)
-	if savedOffset < 0.10 || savedOffset > 0.90 {
-		savedOffset = 0.32
-	}
-	rootSplit.SetOffset(savedOffset)
+	rootSplit.SetOffset(a.savedObjectListSplitOffset())
+	return rootSplit
+}
 
+func (a *Application) savedObjectListSplitOffset() float64 {
+	savedOffset := a.fyneApp.Preferences().FloatWithFallback(prefKeyObjectListSplitOffset, 0.32)
+	if savedOffset < 0.10 || savedOffset > 0.90 {
+		return 0.32
+	}
+	return savedOffset
+}
+
+func (a *Application) buildStatusBar() fyne.CanvasObject {
 	a.statusLabel = widget.NewLabel(a.backendStatusConnectedText())
 	shortcutsLabel := widget.NewLabel("Ctrl+1..3: вкладки | Ctrl+T: тема | Ctrl+F: пошук")
-	statusBar := container.NewVBox(
+	return container.NewVBox(
 		widget.NewSeparator(),
 		container.NewHBox(a.statusLabel, layout.NewSpacer(), shortcutsLabel),
 	)
+}
 
-	finalLayout := container.NewBorder(
-		container.NewVBox(toolbar, widget.NewSeparator()),
-		statusBar, nil, nil,
-		rootSplit,
-	)
-	a.mainWindow.SetContent(finalLayout)
-	log.Debug().Msg("UI побудований та встановлений на вікно")
-
-	// Запам'ятовуємо ширину (offset) списку об'єктів між запусками.
-	// Split не має callback на drag, тому зберігаємо при закритті вікна.
+func (a *Application) installCloseIntercept(rootSplit *container.Split) {
 	a.mainWindow.SetCloseIntercept(func() {
 		if a.isShuttingDown {
 			return
@@ -441,7 +476,6 @@ func (a *Application) buildUI() {
 
 		a.fyneApp.Preferences().SetFloat(prefKeyObjectListSplitOffset, rootSplit.Offset)
 
-		// Закриваємо всі додаткові вікна (адмінські/службові) перед завершенням додатку.
 		otherWindows := append([]fyne.Window(nil), a.fyneApp.Driver().AllWindows()...)
 		for _, w := range otherWindows {
 			if w == nil || w == a.mainWindow {
@@ -452,18 +486,16 @@ func (a *Application) buildUI() {
 
 		a.fyneApp.Quit()
 	})
-
-	a.registerShortcuts(themeBtn)
 }
 
 func (a *Application) buildMainMenu() *fyne.MainMenu {
 	adminMenu := fyne.NewMenu("Адмін",
-		fyne.NewMenuItem("Блокування відображення інформації", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Блокування відображення інформації", withAdminCapability(a, func(admin adminDisplayBlockingProvider) {
 			dialogs.ShowDisplayBlockingDialog(a.mainWindow, admin, func() {
 				a.publishDataRefresh(eventbus.DataRefreshEvent{RefreshObjects: true})
 			})
 		})),
-		fyne.NewMenuItem("Емуляція подій", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Емуляція подій", withAdminCapability(a, func(admin adminEventEmulationProvider) {
 			dialogs.ShowEventEmulationDialog(a.mainWindow, admin, func() {
 				a.publishDataRefresh(eventbus.DataRefreshEvent{
 					RefreshObjects: true,
@@ -479,31 +511,31 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	)
 
 	adminObjects := fyne.NewMenu("Об'єкти",
-		fyne.NewMenuItem("Новий об'єкт", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Новий об'єкт", withAdminCapability(a, func(admin contracts.AdminObjectWizardProvider) {
 			a.openNewObjectDialog(admin)
 		})),
-		fyne.NewMenuItem("Змінити поточний", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Змінити поточний", withAdminCapability(a, func(admin contracts.AdminObjectCardProvider) {
 			a.openEditCurrentObjectDialog(admin)
 		})),
-		fyne.NewMenuItem("Видалити поточний", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Видалити поточний", withAdminCapability(a, func(admin adminObjectDeleteProvider) {
 			a.confirmDeleteCurrentObject(admin)
 		})),
 	)
 
 	adminSettings := fyne.NewMenu("Налаштування",
-		fyne.NewMenuItem("Перевизначення подій", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Перевизначення подій", withAdminCapability(a, func(admin adminEventOverrideProvider) {
 			dialogs.ShowEventOverrideDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Управління повідомленнями адміністратора", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Управління повідомленнями адміністратора", withAdminCapability(a, func(admin adminMessagesProvider) {
 			dialogs.ShowAdminMessagesDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Контроль системи (БД/логи)", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Контроль системи (БД/логи)", withAdminCapability(a, func(admin adminSystemControlProvider) {
 			dialogs.ShowAdminSystemControlDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Налаштування пожежного моніторингу", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Налаштування пожежного моніторингу", withAdminCapability(a, func(admin adminFireMonitoringProvider) {
 			dialogs.ShowFireMonitoringSettingsDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Керування об'єктами підсерверів", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Керування об'єктами підсерверів", withAdminCapability(a, func(admin adminSubServerObjectsProvider) {
 			dialogs.ShowSubServerObjectsDialog(a.mainWindow, admin, func() {
 				a.publishDataRefresh(eventbus.DataRefreshEvent{
 					RefreshObjects: true,
@@ -514,7 +546,7 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	)
 
 	adminMonitoringItems := []*fyne.MenuItem{
-		fyne.NewMenuItem("Збір статистики", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Збір статистики", withAdminCapability(a, func(admin adminStatisticsProvider) {
 			dialogs.ShowStatisticsDialog(a.mainWindow, admin)
 		})),
 	}
@@ -526,16 +558,16 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	adminMonitoring := fyne.NewMenu("Моніторинг", adminMonitoringItems...)
 
 	adminDirectories := fyne.NewMenu("Довідники",
-		fyne.NewMenuItem("Конструктор ППК", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Конструктор ППК", withAdminCapability(a, func(admin adminPPKConstructorProvider) {
 			dialogs.ShowPPKConstructorDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Типи об'єктів", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Типи об'єктів", withAdminCapability(a, func(admin adminObjectTypesProvider) {
 			dialogs.ShowObjectTypesDictionaryDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Регіони", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Регіони", withAdminCapability(a, func(admin adminRegionsProvider) {
 			dialogs.ShowRegionsDictionaryDialog(a.mainWindow, admin)
 		})),
-		fyne.NewMenuItem("Причини тривог", a.withAdminProvider(func(admin contracts.AdminProvider) {
+		fyne.NewMenuItem("Причини тривог", withAdminCapability(a, func(admin adminAlarmReasonsProvider) {
 			dialogs.ShowAlarmReasonsDictionaryDialog(a.mainWindow, admin)
 		})),
 	)

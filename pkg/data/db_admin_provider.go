@@ -1823,14 +1823,14 @@ func resolveDefaultRegionIDTx(ctx context.Context, tx *sqlx.Tx, db *sqlx.DB, req
 	return defaultRegionID, nil
 }
 
-func nullableInt64(v int64) interface{} {
+func nullableInt64(v int64) any {
 	if v <= 0 {
 		return nil
 	}
 	return v
 }
 
-func nullableTrimmedString(v string) interface{} {
+func nullableTrimmedString(v string) any {
 	v = strings.TrimSpace(v)
 	if v == "" {
 		return nil

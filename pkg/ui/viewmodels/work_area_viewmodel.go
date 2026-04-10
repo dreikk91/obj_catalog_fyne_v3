@@ -1,6 +1,7 @@
 package viewmodels
 
 import (
+	"slices"
 	"strconv"
 	"time"
 
@@ -55,8 +56,8 @@ func (vm *WorkAreaViewModel) LoadObjectBaseDetails(provider WorkAreaDataProvider
 	contacts := provider.GetEmployees(idStr)
 
 	details := WorkAreaDetails{
-		Zones:    append([]models.Zone(nil), zones...),
-		Contacts: append([]models.Contact(nil), contacts...),
+		Zones:    slices.Clone(zones),
+		Contacts: slices.Clone(contacts),
 	}
 	if fullObj != nil {
 		clone := *fullObj
@@ -74,7 +75,7 @@ func (vm *WorkAreaViewModel) LoadObjectEvents(provider WorkAreaDataProvider, obj
 		events = events[:eventLimit]
 	}
 
-	return append([]models.Event(nil), events...)
+	return slices.Clone(events)
 }
 
 func (vm *WorkAreaViewModel) LoadExternalData(provider WorkAreaExternalDataProvider, objectID int) WorkAreaExternalData {

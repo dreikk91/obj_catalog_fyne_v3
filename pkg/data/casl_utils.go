@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -191,11 +192,6 @@ func firstCASLTimeValue(values ...any) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
-}
-
-func mapCASLObjectStatus(statusRaw string, blocked bool) (models.ObjectStatus, string, bool) {
-	state := mapCASLObjectStatusState(statusRaw, blocked)
-	return state.Status, state.StatusText, state.IsUnderGuard
 }
 
 func mapCASLObjectStatusState(statusRaw string, blocked bool) caslObjectStatusState {
@@ -422,7 +418,7 @@ func alignCASLGroupsWithDeviceLines(
 	for _, group := range groups {
 		roomID := roomIDFromCASLObjectGroup(group)
 		roomNumbers := lineGroupsByRoom[roomID]
-		if roomID != "" && len(roomNumbers) > 0 && !containsCASLInt(roomNumbers, group.Number) {
+		if roomID != "" && len(roomNumbers) > 0 && !slices.Contains(roomNumbers, group.Number) {
 			if _, exists := placeholdersByRoom[roomID]; !exists {
 				placeholdersByRoom[roomID] = normalizeCASLObjectGroup(group, roomNames)
 			}
@@ -451,7 +447,7 @@ func alignCASLGroupsWithDeviceLines(
 		}
 
 		for roomID, roomNumbers := range lineGroupsByRoom {
-			if !containsCASLInt(roomNumbers, number) {
+			if !slices.Contains(roomNumbers, number) {
 				continue
 			}
 			if placeholder, ok := placeholdersByRoom[roomID]; ok {
@@ -579,10 +575,6 @@ func appendCASLUniqueInt(dst []int, value int) []int {
 		return dst
 	}
 	return append(dst, value)
-}
-
-func containsCASLInt(values []int, target int) bool {
-	return slices.Contains(values, target)
 }
 
 func collectCASLGroupCandidatesRecursive(keyHint string, raw any, depth int, out *[]caslGroupCandidate) {
@@ -1088,11 +1080,7 @@ func copyStringAnyMap(source map[string]any) map[string]any {
 	if source == nil {
 		return map[string]any{}
 	}
-	target := make(map[string]any, len(source))
-	for key, value := range source {
-		target[key] = value
-	}
-	return target
+	return maps.Clone(source)
 }
 
 func caslBodyForDebugLog(raw []byte) string {

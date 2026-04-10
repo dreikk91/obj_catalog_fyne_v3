@@ -13,19 +13,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func getStatusIcon(status models.ObjectStatus) string {
-	switch status {
-	case models.StatusFire:
-		return "🔴"
-	case models.StatusFault, models.StatusOffline:
-		return "🟡"
-	case models.StatusNormal:
-		return "🟢"
-	default:
-		return "🔵"
-	}
-}
-
 // GetStatusColor повертає колір для статусу
 func GetStatusColor(status models.ObjectStatus) color.Color {
 	switch status {

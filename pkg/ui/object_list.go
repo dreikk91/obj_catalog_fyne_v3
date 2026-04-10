@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"strings"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -54,10 +55,16 @@ type ObjectListPanel struct {
 	// але не викликати завантаження повторно без зміни вибору.
 	lastNotifiedSelectedID int
 	hasNotifiedSelection   bool
+	searchDebounceTimer    *time.Timer
+	searchDebounceDelay    time.Duration
+	filterRequestVersion   uint64
+	runFilterRequestFn     func(version uint64)
 
 	// Callback при виборі об'єкта
 	OnObjectSelected func(object models.Object)
 }
+
+const defaultObjectListSearchDebounceDelay = 250 * time.Millisecond
 
 type objectListTable struct {
 	widget.Table
@@ -103,15 +110,16 @@ func (t *objectListTable) TypedKey(event *fyne.KeyEvent) {
 // NewObjectListPanel створює панель списку об'єктів
 func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 	panel := &ObjectListPanel{
-		Data:          provider,
-		ViewModel:     viewmodels.NewObjectListViewModel(),
-		FilteredData:  binding.NewUntypedList(),
-		CurrentFilter: viewmodels.FilterAll,
-		CurrentSource: viewmodels.ObjectSourceAll,
-		SelectedRow:   -1,
-		SelectedCol:   0,
-		colNameWidth:  200,
-		colAddrWidth:  250,
+		Data:                provider,
+		ViewModel:           viewmodels.NewObjectListViewModel(),
+		FilteredData:        binding.NewUntypedList(),
+		CurrentFilter:       viewmodels.FilterAll,
+		CurrentSource:       viewmodels.ObjectSourceAll,
+		SelectedRow:         -1,
+		SelectedCol:         0,
+		colNameWidth:        200,
+		colAddrWidth:        250,
+		searchDebounceDelay: defaultObjectListSearchDebounceDelay,
 	}
 
 	// Заголовок
@@ -141,8 +149,11 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 				panel.SearchClear.Enable()
 			}
 		}
-		// Дебоунсинг або просто асинхронний виклик
-		go panel.applyFilters()
+		delay := panel.searchDebounceDelay
+		if strings.TrimSpace(text) == "" {
+			delay = 0
+		}
+		panel.scheduleFilterApply(delay)
 	}
 
 	// Вибір фільтру
@@ -151,7 +162,7 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 			return
 		}
 		panel.CurrentFilter = viewmodels.NormalizeObjectListFilter(selected)
-		go panel.applyFilters()
+		panel.scheduleFilterApply(0)
 	})
 	panel.FilterSelect.PlaceHolder = "Фільтр"
 
@@ -162,7 +173,7 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 				return
 			}
 			panel.CurrentSource = viewmodels.NormalizeObjectSourceFilter(selected)
-			go panel.applyFilters()
+			panel.scheduleFilterApply(0)
 		},
 	)
 	panel.SourceSelect.PlaceHolder = "Джерело"
@@ -318,11 +329,53 @@ func (p *ObjectListPanel) RefreshData() {
 	p.AllObjects = objects
 	p.mutex.Unlock()
 
-	// Оновлюємо фільтри асинхронно
-	p.applyFilters()
+	p.scheduleFilterApply(0)
 }
 
 func (p *ObjectListPanel) applyFilters() {
+	p.scheduleFilterApply(0)
+}
+
+func (p *ObjectListPanel) scheduleFilterApply(delay time.Duration) {
+	if p == nil {
+		return
+	}
+
+	p.mutex.Lock()
+	p.filterRequestVersion++
+	version := p.filterRequestVersion
+	if p.searchDebounceTimer != nil {
+		p.searchDebounceTimer.Stop()
+		p.searchDebounceTimer = nil
+	}
+	p.mutex.Unlock()
+
+	dispatch := func() {
+		p.dispatchFilterRequest(version)
+	}
+
+	if delay > 0 {
+		p.mutex.Lock()
+		p.searchDebounceTimer = time.AfterFunc(delay, dispatch)
+		p.mutex.Unlock()
+		return
+	}
+
+	go dispatch()
+}
+
+func (p *ObjectListPanel) dispatchFilterRequest(version uint64) {
+	if p == nil {
+		return
+	}
+	if p.runFilterRequestFn != nil {
+		p.runFilterRequestFn(version)
+		return
+	}
+	p.runFilterRequest(version)
+}
+
+func (p *ObjectListPanel) runFilterRequest(version uint64) {
 	if p.Table == nil {
 		return
 	}
@@ -330,10 +383,38 @@ func (p *ObjectListPanel) applyFilters() {
 		p.ViewModel = viewmodels.NewObjectListViewModel()
 	}
 
-	// Виконуємо фільтрацію в фоні
-	query := strings.ToLower(strings.TrimSpace(p.SearchEntry.Text))
-	currentFilter := p.CurrentFilter
-	currentSource := p.CurrentSource
+	if !p.isCurrentFilterRequest(version) {
+		return
+	}
+
+	type filterState struct {
+		query         string
+		currentFilter string
+		currentSource string
+	}
+
+	var (
+		state filterState
+		ok    bool
+	)
+	fyne.DoAndWait(func() {
+		if !p.isCurrentFilterRequest(version) {
+			return
+		}
+		if p.SearchEntry != nil {
+			state.query = p.SearchEntry.Text
+		}
+		state.currentFilter = p.CurrentFilter
+		state.currentSource = p.CurrentSource
+		ok = true
+	})
+	if !ok || !p.isCurrentFilterRequest(version) {
+		return
+	}
+
+	query := strings.ToLower(strings.TrimSpace(state.query))
+	currentFilter := state.currentFilter
+	currentSource := state.currentSource
 
 	p.mutex.RLock()
 	all := p.AllObjects
@@ -357,6 +438,9 @@ func (p *ObjectListPanel) applyFilters() {
 		LastNotifiedID:       lastNotifiedID,
 		HasNotifiedSelection: hasNotifiedSelection,
 	})
+	if !p.isCurrentFilterRequest(version) {
+		return
+	}
 
 	// Оновлюємо список і UI
 	p.mutex.Lock()
@@ -370,6 +454,9 @@ func (p *ObjectListPanel) applyFilters() {
 	p.mutex.Unlock()
 
 	fyne.Do(func() {
+		if !p.isCurrentFilterRequest(version) {
+			return
+		}
 		p.isUpdating = true
 		defer func() { p.isUpdating = false }()
 
@@ -415,6 +502,15 @@ func (p *ObjectListPanel) applyFilters() {
 			p.mutex.Unlock()
 		}
 	})
+}
+
+func (p *ObjectListPanel) isCurrentFilterRequest(version uint64) bool {
+	if p == nil {
+		return false
+	}
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+	return version == p.filterRequestVersion
 }
 
 func (p *ObjectListPanel) objectByRow(row int) (models.Object, bool) {

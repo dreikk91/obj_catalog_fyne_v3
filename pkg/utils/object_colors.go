@@ -74,7 +74,7 @@ func ChangeItemColorNRGBA(
 
 	// 9. Є зв'язок, тривога, guardstate=2, немає тех.тривоги
 	case isConstate == 1 && alarmstate == 1 && guardstate == 2 && techAlarmState == 0:
-		textColor, rowColor = selectObjectColor(10) // ArmedOn
+		_, rowColor = selectObjectColor(10) // ArmedOn
 		// Перевизначаємо колір тексту
 		if isDark {
 			textColor = color.NRGBA{R: 150, G: 130, B: 170, A: 255} // rgb(150,130,170)

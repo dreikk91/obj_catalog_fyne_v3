@@ -35,14 +35,7 @@ func SaveVodafoneConfig(p fyne.Preferences, cfg VodafoneConfig) {
 }
 
 func (c VodafoneConfig) TokenExpiryTime() time.Time {
-	if strings.TrimSpace(c.TokenExpiry) == "" {
-		return time.Time{}
-	}
-	t, err := time.Parse(time.RFC3339, strings.TrimSpace(c.TokenExpiry))
-	if err != nil {
-		return time.Time{}
-	}
-	return t
+	return parseTokenExpiry(c.TokenExpiry)
 }
 
 func (c VodafoneConfig) HasAccessToken() bool {
@@ -50,14 +43,7 @@ func (c VodafoneConfig) HasAccessToken() bool {
 }
 
 func (c VodafoneConfig) TokenUsableAt(now time.Time) bool {
-	if !c.HasAccessToken() {
-		return false
-	}
-	expiry := c.TokenExpiryTime()
-	if expiry.IsZero() {
-		return true
-	}
-	return expiry.After(now)
+	return tokenUsableAt(c.AccessToken, c.TokenExpiry, now)
 }
 
 // VodafoneConfigStore абстрагує збереження локальних Vodafone налаштувань.

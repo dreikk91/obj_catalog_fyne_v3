@@ -2,6 +2,7 @@ package viewmodels
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -30,7 +31,7 @@ func (vm *ObjectWizardZonesStateViewModel) Count() int {
 }
 
 func (vm *ObjectWizardZonesStateViewModel) Items() []contracts.AdminObjectZone {
-	return append([]contracts.AdminObjectZone(nil), vm.pending...)
+	return slices.Clone(vm.pending)
 }
 
 func (vm *ObjectWizardZonesStateViewModel) At(idx int) (contracts.AdminObjectZone, bool) {

@@ -14,7 +14,12 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func Show220VConstructorDialog(parent fyne.Window, provider contracts.AdminProvider) {
+type admin220VConstructorProvider interface {
+	List220VMessageBuckets(protocolIDs []int64, filter string) (contracts.Admin220VMessageBuckets, error)
+	SetMessage220VMode(uin int64, mode contracts.Admin220VMode) error
+}
+
+func Show220VConstructorDialog(parent fyne.Window, provider admin220VConstructorProvider) {
 	win := fyne.CurrentApp().NewWindow("Пропажа / відновлення 220В")
 	win.Resize(fyne.NewSize(980, 700))
 

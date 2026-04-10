@@ -16,24 +16,25 @@ import (
 )
 
 type objectWizardDialogState struct {
-	provider      contracts.AdminObjectWizardProvider
-	wizardStateVM *viewmodels.ObjectWizardStateViewModel
-	objectCardVM  *viewmodels.ObjectCardViewModel
-	formVM        *viewmodels.ObjectCardFormViewModel
-	defaultsVM    *viewmodels.ObjectCardDefaultsViewModel
-	refsVM        *viewmodels.ObjectCardReferencesViewModel
-	wizardVM      *viewmodels.ObjectWizardViewModel
-	initVM        *viewmodels.ObjectWizardInitViewModel
-	reviewVM      *viewmodels.ObjectWizardReviewViewModel
-	personalsVM   *viewmodels.ObjectWizardPersonalsTableViewModel
-	personalsFlow *viewmodels.ObjectWizardPersonalsFlowViewModel
-	zonesStepVM   *viewmodels.ObjectWizardZonesStepViewModel
-	zonesFlowVM   *viewmodels.ObjectWizardZonesFlowViewModel
-	coordsFlowVM  *viewmodels.ObjectWizardCoordinatesFlowViewModel
-	channelFlowVM *viewmodels.ObjectChannelFlowViewModel
-	simUsageVM    *viewmodels.SIMPhoneUsageViewModel
-	simStateVM    *viewmodels.ObjectWizardSIMUsageStateViewModel
-	dateVM        *viewmodels.ObjectDateFieldViewModel
+	provider         contracts.AdminObjectWizardProvider
+	personalsStateVM *viewmodels.ObjectWizardPersonalsStateViewModel
+	zonesStateVM     *viewmodels.ObjectWizardZonesStateViewModel
+	objectCardVM     *viewmodels.ObjectCardViewModel
+	formVM           *viewmodels.ObjectCardFormViewModel
+	defaultsVM       *viewmodels.ObjectCardDefaultsViewModel
+	refsVM           *viewmodels.ObjectCardReferencesViewModel
+	wizardVM         *viewmodels.ObjectWizardViewModel
+	initVM           *viewmodels.ObjectWizardInitViewModel
+	reviewVM         *viewmodels.ObjectWizardReviewViewModel
+	personalsVM      *viewmodels.ObjectWizardPersonalsTableViewModel
+	personalsFlow    *viewmodels.ObjectWizardPersonalsFlowViewModel
+	zonesStepVM      *viewmodels.ObjectWizardZonesStepViewModel
+	zonesFlowVM      *viewmodels.ObjectWizardZonesFlowViewModel
+	coordsFlowVM     *viewmodels.ObjectWizardCoordinatesFlowViewModel
+	channelFlowVM    *viewmodels.ObjectChannelFlowViewModel
+	simUsageVM       *viewmodels.SIMPhoneUsageViewModel
+	simStateVM       *viewmodels.ObjectWizardSIMUsageStateViewModel
+	dateVM           *viewmodels.ObjectDateFieldViewModel
 
 	shortNameBinding binding.String
 	fullNameBinding  binding.String
@@ -195,8 +196,8 @@ func (s *objectWizardDialogState) fillDefaults() {
 	s.subServerBSelect.SetSelected(presentation.SubServerBLabel)
 	s.latitudeEntry.SetText("")
 	s.longitudeEntry.SetText("")
-	s.wizardStateVM.ResetPersonals()
-	s.wizardStateVM.ResetZones()
+	s.personalsStateVM.Reset()
+	s.zonesStateVM.Reset()
 }
 
 func (s *objectWizardDialogState) buildCardFromUI() (contracts.AdminObjectCard, error) {
@@ -242,22 +243,22 @@ func (s *objectWizardDialogState) validateStep(step int) error {
 func (s *objectWizardDialogState) buildReviewText() string {
 	_, cardBuildErr := s.buildCardFromUI()
 
-	personals := s.wizardStateVM.Personals()
+	personals := s.personalsStateVM.Items()
 	reviewPersonals := make([]viewmodels.ObjectWizardReviewPersonalItem, 0, len(personals))
 	for _, it := range personals {
 		reviewPersonals = append(reviewPersonals, viewmodels.ObjectWizardReviewPersonalItem{
 			Number:   it.Number,
-			FullName: s.wizardStateVM.PersonalFullName(it),
+			FullName: s.personalsStateVM.FullName(it),
 			Phones:   it.Phones,
 			IsAdmin:  it.Access1 > 0,
 		})
 	}
 
-	zones := s.wizardStateVM.Zones()
+	zones := s.zonesStateVM.Items()
 	reviewZones := make([]viewmodels.ObjectWizardReviewZoneItem, 0, len(zones))
 	for i, it := range zones {
 		reviewZones = append(reviewZones, viewmodels.ObjectWizardReviewZoneItem{
-			Number:      s.wizardStateVM.EffectiveZoneNumberAt(i),
+			Number:      s.zonesStateVM.EffectiveNumberAt(i),
 			Description: it.Description,
 		})
 	}
@@ -336,10 +337,10 @@ func (s *objectWizardDialogState) buildAdditionalInfoStep(mapPickBtn *widget.But
 }
 
 func (s *objectWizardDialogState) buildPersonalsStep(win fyne.Window, statusLabel *widget.Label) (fyne.CanvasObject, *widget.Table) {
-	personalFullName := s.wizardStateVM.PersonalFullName
+	personalFullName := s.personalsStateVM.FullName
 
 	personalTable := widget.NewTable(
-		func() (int, int) { return s.wizardStateVM.PersonalCount() + 1, 6 },
+		func() (int, int) { return s.personalsStateVM.Count() + 1, 6 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			lbl := obj.(*widget.Label)
@@ -348,7 +349,7 @@ func (s *objectWizardDialogState) buildPersonalsStep(win fyne.Window, statusLabe
 				return
 			}
 			idx := id.Row - 1
-			item, ok := s.wizardStateVM.PersonalAt(idx)
+			item, ok := s.personalsStateVM.At(idx)
 			if !ok {
 				lbl.SetText("")
 				return
@@ -363,7 +364,7 @@ func (s *objectWizardDialogState) buildPersonalsStep(win fyne.Window, statusLabe
 	personalTable.SetColumnWidth(4, 100)
 	personalTable.SetColumnWidth(5, 230)
 	personalTable.OnSelected = func(id widget.TableCellID) {
-		s.personalsFlow.SelectTableRow(s.wizardStateVM, id.Row)
+		s.personalsFlow.SelectTableRow(s.personalsStateVM, id.Row)
 	}
 
 	applyPersonalAction := func(out viewmodels.ObjectWizardPersonalsActionResult) {
@@ -377,28 +378,28 @@ func (s *objectWizardDialogState) buildPersonalsStep(win fyne.Window, statusLabe
 
 	addPersonalBtn := widget.NewButton("Додати", func() {
 		showObjectPersonalEditor(win, s.provider, "Додати В/О", contracts.AdminObjectPersonal{
-			Number: s.personalsFlow.NextNumber(s.wizardStateVM),
+			Number: s.personalsFlow.NextNumber(s.personalsStateVM),
 			IsRang: true,
 		}, func(item contracts.AdminObjectPersonal) error {
-			out := s.personalsFlow.ApplyAdd(s.wizardStateVM, item)
+			out := s.personalsFlow.ApplyAdd(s.personalsStateVM, item)
 			applyPersonalAction(out)
 			return nil
 		}, statusLabel, nil)
 	})
 	editPersonalBtn := widget.NewButton("Змінити", func() {
-		prompt := s.personalsFlow.PrepareEdit(s.wizardStateVM)
+		prompt := s.personalsFlow.PrepareEdit(s.personalsStateVM)
 		if !prompt.CanEdit {
 			statusLabel.SetText(prompt.StatusText)
 			return
 		}
 		showObjectPersonalEditor(win, s.provider, "Редагування В/О", prompt.Initial, func(item contracts.AdminObjectPersonal) error {
-			out := s.personalsFlow.ApplyUpdate(s.wizardStateVM, prompt.SelectedIdx, item)
+			out := s.personalsFlow.ApplyUpdate(s.personalsStateVM, prompt.SelectedIdx, item)
 			applyPersonalAction(out)
 			return nil
 		}, statusLabel, nil)
 	})
 	deletePersonalBtn := widget.NewButton("Видалити", func() {
-		prompt := s.personalsFlow.PrepareDelete(s.wizardStateVM)
+		prompt := s.personalsFlow.PrepareDelete(s.personalsStateVM)
 		if !prompt.CanDelete {
 			statusLabel.SetText(prompt.StatusText)
 			return
@@ -410,7 +411,7 @@ func (s *objectWizardDialogState) buildPersonalsStep(win fyne.Window, statusLabe
 				if !ok {
 					return
 				}
-				out := s.personalsFlow.ApplyDelete(s.wizardStateVM, prompt.SelectedIdx)
+				out := s.personalsFlow.ApplyDelete(s.personalsStateVM, prompt.SelectedIdx)
 				applyPersonalAction(out)
 			},
 			win,
@@ -435,14 +436,14 @@ func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *w
 	quickZoneNameEntry.SetPlaceHolder("Назва зони (Enter -> наступна зона)")
 	selectedZoneLabel := widget.NewLabel("Зона: —")
 
-	effectiveZoneNumberAt := s.wizardStateVM.EffectiveZoneNumberAt
+	effectiveZoneNumberAt := s.zonesStateVM.EffectiveNumberAt
 
 	updateSelectedZoneLabel := func() {
-		selectedZoneLabel.SetText(s.wizardStateVM.SelectedZoneLabel())
+		selectedZoneLabel.SetText(s.zonesStateVM.SelectedLabel())
 	}
 
 	zoneTable := widget.NewTable(
-		func() (int, int) { return s.wizardStateVM.ZoneCount() + 1, 3 },
+		func() (int, int) { return s.zonesStateVM.Count() + 1, 3 },
 		func() fyne.CanvasObject { return widget.NewLabel("cell") },
 		func(id widget.TableCellID, obj fyne.CanvasObject) {
 			lbl := obj.(*widget.Label)
@@ -451,7 +452,7 @@ func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *w
 				return
 			}
 			idx := id.Row - 1
-			it, ok := s.wizardStateVM.ZoneAt(idx)
+			it, ok := s.zonesStateVM.At(idx)
 			if !ok {
 				lbl.SetText("")
 				return
@@ -490,15 +491,15 @@ func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *w
 		}
 	}
 	selectZoneByNumber = func(zoneNumber int64, focusQuickName bool) {
-		if !s.wizardStateVM.SelectZoneByNumber(zoneNumber) {
+		if !s.zonesStateVM.SelectByNumber(zoneNumber) {
 			zoneTable.UnselectAll()
 			quickZoneNameEntry.SetText("")
 			updateSelectedZoneLabel()
 			return
 		}
-		targetRow := s.wizardStateVM.SelectedZone()
+		targetRow := s.zonesStateVM.Selected()
 		zoneTable.Select(widget.TableCellID{Row: targetRow + 1, Col: 0})
-		quickZoneNameEntry.SetText(s.wizardStateVM.SelectedZoneDescription())
+		quickZoneNameEntry.SetText(s.zonesStateVM.SelectedDescription())
 		updateSelectedZoneLabel()
 		if focusQuickName {
 			focusIfOnCanvas(win, quickZoneNameEntry)
@@ -507,25 +508,25 @@ func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *w
 
 	zoneTable.OnSelected = func(id widget.TableCellID) {
 		if id.Row <= 0 {
-			s.wizardStateVM.SetSelectedZone(-1)
+			s.zonesStateVM.SetSelected(-1)
 			quickZoneNameEntry.SetText("")
 			updateSelectedZoneLabel()
 			return
 		}
 		idx := id.Row - 1
-		if !s.wizardStateVM.SetSelectedZone(idx) {
-			s.wizardStateVM.SetSelectedZone(-1)
+		if !s.zonesStateVM.SetSelected(idx) {
+			s.zonesStateVM.SetSelected(-1)
 			quickZoneNameEntry.SetText("")
 			updateSelectedZoneLabel()
 			return
 		}
-		quickZoneNameEntry.SetText(s.wizardStateVM.SelectedZoneDescription())
+		quickZoneNameEntry.SetText(s.zonesStateVM.SelectedDescription())
 		updateSelectedZoneLabel()
 		focusIfOnCanvas(win, quickZoneNameEntry)
 	}
 
 	moveToNextZone := func() {
-		out := s.zonesFlowVM.MoveToNext(s.wizardStateVM, quickZoneNameEntry.Text)
+		out := s.zonesFlowVM.MoveToNext(s.zonesStateVM, quickZoneNameEntry.Text)
 		applyZoneAction(out)
 	}
 	quickZoneNameEntry.OnSubmitted = func(string) {
@@ -533,17 +534,17 @@ func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *w
 	}
 
 	addZoneBtn := widget.NewButton("Додати", func() {
-		out := s.zonesFlowVM.AddZone(s.wizardStateVM)
+		out := s.zonesFlowVM.AddZone(s.zonesStateVM)
 		applyZoneAction(out)
 	})
 
 	editZoneBtn := widget.NewButton("Змінити", func() {
-		out := s.zonesFlowVM.StartEdit(s.wizardStateVM)
+		out := s.zonesFlowVM.StartEdit(s.zonesStateVM)
 		applyZoneAction(out)
 	})
 
 	deleteZoneBtn := widget.NewButton("Видалити", func() {
-		prompt := s.zonesFlowVM.PrepareDelete(s.wizardStateVM)
+		prompt := s.zonesFlowVM.PrepareDelete(s.zonesStateVM)
 		if !prompt.CanDelete {
 			statusLabel.SetText(prompt.StatusText)
 			return
@@ -555,7 +556,7 @@ func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *w
 				if !ok {
 					return
 				}
-				out := s.zonesFlowVM.ApplyDelete(s.wizardStateVM, prompt.TargetZoneNumber)
+				out := s.zonesFlowVM.ApplyDelete(s.zonesStateVM, prompt.TargetZoneNumber)
 				applyZoneAction(out)
 			},
 			win,
@@ -563,12 +564,12 @@ func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *w
 	})
 
 	defaultZoneFillCount := func() int64 {
-		return s.zonesFlowVM.DefaultFillCount(s.wizardStateVM)
+		return s.zonesFlowVM.DefaultFillCount(s.zonesStateVM)
 	}
 
 	fillZonesBtn := widget.NewButton("Заповнити", func() {
 		showZoneFillDialog(win, defaultZoneFillCount(), func(count int64) {
-			out := s.zonesFlowVM.Fill(s.wizardStateVM, count)
+			out := s.zonesFlowVM.Fill(s.zonesStateVM, count)
 			applyZoneAction(out)
 		}, statusLabel)
 	})
@@ -581,7 +582,7 @@ func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *w
 				if !ok {
 					return
 				}
-				out := s.zonesFlowVM.Clear(s.wizardStateVM)
+				out := s.zonesFlowVM.Clear(s.zonesStateVM)
 				applyZoneAction(out)
 			},
 			win,
@@ -590,7 +591,7 @@ func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *w
 
 	refreshZonesBtn := widget.NewButton("Оновити", func() {
 		refreshZoneTable(0, false)
-		statusLabel.SetText(s.zonesFlowVM.RefreshStatus(s.wizardStateVM))
+		statusLabel.SetText(s.zonesFlowVM.RefreshStatus(s.zonesStateVM))
 	})
 	nextZoneBtn := widget.NewButton("Enter -> Наступна", moveToNextZone)
 
@@ -621,7 +622,8 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminObjec
 	win.Resize(fyne.NewSize(1024, 768))
 
 	statusLabel := widget.NewLabel("Крок 1/6: дані об'єкта")
-	wizardStateVM := viewmodels.NewObjectWizardStateViewModel()
+	personalsStateVM := viewmodels.NewObjectWizardPersonalsStateViewModel()
+	zonesStateVM := viewmodels.NewObjectWizardZonesStateViewModel()
 
 	objnEntry := widget.NewEntry()
 	shortNameBinding := binding.NewString()
@@ -687,24 +689,25 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminObjec
 	dateVM := viewmodels.NewObjectDateFieldViewModel()
 
 	state := &objectWizardDialogState{
-		provider:      provider,
-		wizardStateVM: wizardStateVM,
-		objectCardVM:  objectCardVM,
-		formVM:        formVM,
-		defaultsVM:    defaultsVM,
-		refsVM:        refsVM,
-		wizardVM:      wizardVM,
-		initVM:        initVM,
-		reviewVM:      reviewVM,
-		personalsVM:   personalsVM,
-		personalsFlow: personalsFlow,
-		zonesStepVM:   zonesStepVM,
-		zonesFlowVM:   zonesFlowVM,
-		coordsFlowVM:  coordsFlowVM,
-		channelFlowVM: channelFlowVM,
-		simUsageVM:    simUsageVM,
-		simStateVM:    simStateVM,
-		dateVM:        dateVM,
+		provider:         provider,
+		personalsStateVM: personalsStateVM,
+		zonesStateVM:     zonesStateVM,
+		objectCardVM:     objectCardVM,
+		formVM:           formVM,
+		defaultsVM:       defaultsVM,
+		refsVM:           refsVM,
+		wizardVM:         wizardVM,
+		initVM:           initVM,
+		reviewVM:         reviewVM,
+		personalsVM:      personalsVM,
+		personalsFlow:    personalsFlow,
+		zonesStepVM:      zonesStepVM,
+		zonesFlowVM:      zonesFlowVM,
+		coordsFlowVM:     coordsFlowVM,
+		channelFlowVM:    channelFlowVM,
+		simUsageVM:       simUsageVM,
+		simStateVM:       simStateVM,
+		dateVM:           dateVM,
 
 		shortNameBinding: shortNameBinding,
 		fullNameBinding:  fullNameBinding,
@@ -898,8 +901,8 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminObjec
 			ValidateStep: validateStep,
 			BuildCard:    buildCardFromUI,
 			Persistence:  provider,
-			Personals:    wizardStateVM.Personals(),
-			Zones:        wizardStateVM.Zones(),
+			Personals:    personalsStateVM.Items(),
+			Zones:        zonesStateVM.Items(),
 			Coordinates: contracts.AdminObjectCoordinates{
 				Latitude:  latitudeEntry.Text,
 				Longitude: longitudeEntry.Text,

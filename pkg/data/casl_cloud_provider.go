@@ -81,8 +81,6 @@ type CASLCloudProvider struct {
 	cachedGroupStatsAt time.Time
 
 	cachedEvents    []models.Event
-	lastBasketCount int
-	hasBasketCount  bool
 	eventsStartAtMs int64
 	eventsCursorMs  int64
 	eventsRevision  int64
@@ -383,32 +381,6 @@ func (p *CASLCloudProvider) hasAuthData() bool {
 	token := strings.TrimSpace(p.token)
 	p.mu.RUnlock()
 	return token != "" || p.canRelogin()
-}
-
-func (p *CASLCloudProvider) primaryObjectContext(ctx context.Context) (int, string) {
-	records, err := p.loadObjects(ctx)
-	if err == nil && len(records) > 0 {
-		if p.pultID > 0 {
-			for _, item := range records {
-				if parseCASLID(item.ReactingPultID) == int(p.pultID) {
-					obj := mapCASLGrdObjectToObject(item, nil)
-					objectNum := preferredCASLObjectNumber(item.ObjID, item.Name, item.DeviceNumber.Int64())
-					return obj.ID, formatCASLJournalObjectName(objectNum, obj.Name)
-				}
-			}
-		}
-		obj := mapCASLGrdObjectToObject(records[0], nil)
-		objectNum := preferredCASLObjectNumber(records[0].ObjID, records[0].Name, records[0].DeviceNumber.Int64())
-		return obj.ID, formatCASLJournalObjectName(objectNum, obj.Name)
-	}
-
-	pults, pErr := p.readPultsPublic(ctx)
-	if pErr == nil && len(pults) > 0 {
-		obj := mapCASLPultToObject(pults[0])
-		return obj.ID, obj.Name
-	}
-
-	return 0, "CASL Cloud"
 }
 
 // Після завантаження словника одразу попередньо завантажуємо транслятори

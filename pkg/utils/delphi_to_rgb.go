@@ -2,6 +2,7 @@ package utils
 
 import (
 	"image/color"
+	"maps"
 )
 
 // ColorPair описує пару кольорів (текст + фон рядка)
@@ -11,11 +12,7 @@ type ColorPair struct {
 }
 
 func cloneColorMapping(src map[int]ColorPair) map[int]ColorPair {
-	dst := make(map[int]ColorPair, len(src))
-	for code, pair := range src {
-		dst[code] = pair
-	}
-	return dst
+	return maps.Clone(src)
 }
 
 // Базові (стандартні) карти кольорів для світлої теми

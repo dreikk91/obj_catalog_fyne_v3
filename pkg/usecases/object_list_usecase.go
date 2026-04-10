@@ -1,6 +1,10 @@
 package usecases
 
-import "obj_catalog_fyne_v3/pkg/models"
+import (
+	"slices"
+
+	"obj_catalog_fyne_v3/pkg/models"
+)
 
 // ObjectListRepository описує мінімальне джерело об'єктів для use case списку.
 type ObjectListRepository interface {
@@ -22,5 +26,5 @@ func (uc *ObjectListUseCase) FetchObjects() []models.Object {
 		return nil
 	}
 	objects := uc.repository.GetObjects()
-	return append([]models.Object(nil), objects...)
+	return slices.Clone(objects)
 }

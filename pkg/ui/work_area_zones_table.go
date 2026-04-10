@@ -63,7 +63,7 @@ func updateGroupedZoneTableRowHeights(table *widget.Table, zones []models.Zone) 
 func zoneTableRowHeight(zone models.Zone, nameWidth float32, typeWidth float32, textSize float32) float32 {
 	style := fyne.TextStyle{}
 	lineHeight := fyne.MeasureText("Ag", textSize, style).Height
-	lines := maxWrappedTextLineCount(
+	lines := max(
 		wrappedTextLineCount(zone.Name, nameWidth, textSize, style),
 		wrappedTextLineCount(zone.SensorType, typeWidth, textSize, style),
 	)
@@ -92,11 +92,6 @@ func wrappedTextLineCount(text string, width float32, textSize float32, style fy
 		}
 
 		words := strings.Fields(block)
-		if len(words) == 0 {
-			totalLines++
-			continue
-		}
-
 		lines := 1
 		currentWidth := float32(0)
 		for _, word := range words {
@@ -132,18 +127,5 @@ func wrappedTextLineCount(text string, width float32, textSize float32, style fy
 		totalLines += lines
 	}
 
-	if totalLines < 1 {
-		return 1
-	}
 	return totalLines
-}
-
-func maxWrappedTextLineCount(values ...int) int {
-	max := 1
-	for _, value := range values {
-		if value > max {
-			max = value
-		}
-	}
-	return max
 }

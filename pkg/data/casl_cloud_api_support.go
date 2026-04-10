@@ -859,10 +859,6 @@ func (p *CASLCloudProvider) readCommandDataAsAny(ctx context.Context, payload ma
 	return p.readCommandDataAsAnyWithRelogin(ctx, payload, requireAuth, true)
 }
 
-func (p *CASLCloudProvider) readCommandDataAsAnyNoRelogin(ctx context.Context, payload map[string]any, requireAuth bool) (any, error) {
-	return p.readCommandDataAsAnyWithRelogin(ctx, payload, requireAuth, false)
-}
-
 func (p *CASLCloudProvider) readCommandDataAsAnyWithRelogin(ctx context.Context, payload map[string]any, requireAuth bool, allowRelogin bool) (any, error) {
 	raw, err := p.readCommandDataRawWithRelogin(ctx, payload, requireAuth, allowRelogin)
 	if err != nil {

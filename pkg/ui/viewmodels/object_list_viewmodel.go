@@ -3,6 +3,7 @@ package viewmodels
 import (
 	"fmt"
 	"image/color"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -65,14 +66,11 @@ func (vm *ObjectListViewModel) LoadObjects(useCase ObjectListUseCase) []models.O
 		return nil
 	}
 	objects := useCase.FetchObjects()
-	return append([]models.Object(nil), objects...)
+	return slices.Clone(objects)
 }
 
 func NormalizeObjectListFilter(selected string) string {
-	clean := strings.TrimSpace(selected)
-	if idx := strings.Index(clean, " ("); idx != -1 {
-		clean = strings.TrimSpace(clean[:idx])
-	}
+	clean := utils.StripCountSuffix(selected)
 	switch clean {
 	case FilterAlarm, FilterOffline, FilterMonitoringOff, FilterDebug:
 		return clean

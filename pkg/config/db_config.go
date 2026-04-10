@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"github.com/rs/zerolog/log"
+	applogger "obj_catalog_fyne_v3/pkg/logger"
 )
 
 const (
@@ -102,7 +103,7 @@ func LoadDBConfig(p fyne.Preferences) DBConfig {
 		CASLEmail:   p.StringWithFallback(PrefCASLEmail, ""),
 		CASLPass:    p.StringWithFallback(PrefCASLPass, ""),
 		CASLPultID:  int64(p.IntWithFallback(PrefCASLPultID, 0)),
-		LogLevel:    normalizeLogLevel(p.StringWithFallback(PrefLogLevel, "info")),
+		LogLevel:    applogger.NormalizeLogLevel(p.StringWithFallback(PrefLogLevel, "info")),
 	}
 
 	log.Debug().
@@ -154,12 +155,8 @@ func SaveDBConfig(p fyne.Preferences, cfg DBConfig) {
 	p.SetString(PrefCASLEmail, cfg.CASLEmail)
 	p.SetString(PrefCASLPass, cfg.CASLPass)
 	p.SetInt(PrefCASLPultID, int(cfg.CASLPultID))
-	p.SetString(PrefLogLevel, normalizeLogLevel(cfg.LogLevel))
+	p.SetString(PrefLogLevel, applogger.NormalizeLogLevel(cfg.LogLevel))
 	log.Debug().Str("host", cfg.Host).Str("port", cfg.Port).Msg("Налаштування БД збережено")
-}
-
-func (c DBConfig) ToDSN() string {
-	return c.FirebirdDSN()
 }
 
 func (c DBConfig) FirebirdDSN() string {
@@ -171,7 +168,7 @@ func (c DBConfig) FirebirdDSN() string {
 		}
 		dsn += c.Params
 	}
-	log.Debug().Str("dsn", dsn).Msg("DSN сформовано")
+	log.Debug().Str("host", c.Host).Str("port", c.Port).Str("path", c.Path).Msg("Firebird DSN сформовано")
 	return dsn
 }
 
@@ -209,7 +206,11 @@ func (c DBConfig) PhoenixDSN() string {
 	u.RawQuery = q.Encode()
 
 	dsn := u.String()
-	log.Debug().Str("phoenixDSN", dsn).Msg("DSN Phoenix сформовано")
+	log.Debug().
+		Str("phoenixHost", host).
+		Str("phoenixInstance", strings.TrimSpace(c.PhoenixInstance)).
+		Str("phoenixDatabase", strings.TrimSpace(c.PhoenixDatabase)).
+		Msg("Phoenix DSN сформовано")
 	return dsn
 }
 
@@ -225,21 +226,6 @@ func normalizeBackendMode(mode string) string {
 		return BackendModeCASLCloud
 	default:
 		return BackendModeFirebird
-	}
-}
-
-func normalizeLogLevel(level string) string {
-	switch strings.ToLower(strings.TrimSpace(level)) {
-	case "trace":
-		return "trace"
-	case "debug":
-		return "debug"
-	case "warn":
-		return "warn"
-	case "error":
-		return "error"
-	default:
-		return "info"
 	}
 }
 

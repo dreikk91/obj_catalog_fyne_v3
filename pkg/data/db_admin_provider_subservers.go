@@ -47,7 +47,7 @@ func (p *DBDataProvider) ListSubServerObjects(filter string) ([]AdminSubServerOb
 	defer cancel()
 
 	filter = strings.TrimSpace(filter)
-	args := make([]interface{}, 0, 4)
+	args := make([]any, 0, 4)
 	query := `
 		SELECT
 			OBJN,

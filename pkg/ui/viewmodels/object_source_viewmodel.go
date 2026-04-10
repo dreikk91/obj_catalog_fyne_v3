@@ -27,10 +27,7 @@ func ObjectSourceByID(id int) string {
 }
 
 func NormalizeObjectSourceFilter(selected string) string {
-	clean := strings.TrimSpace(selected)
-	if idx := strings.Index(clean, " ("); idx != -1 {
-		clean = strings.TrimSpace(clean[:idx])
-	}
+	clean := utils.StripCountSuffix(selected)
 	switch strings.ToLower(clean) {
 	case strings.ToLower(ObjectSourcePhoenix), "phoenix":
 		return ObjectSourcePhoenix

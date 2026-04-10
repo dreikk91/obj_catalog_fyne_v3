@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/utils"
 	"strconv"
 	"strings"
 	"sync"
@@ -136,7 +137,7 @@ func (s *KyivstarService) GetSIMStatus(msisdn string) (contracts.KyivstarSIMStat
 	}
 
 	status.NumberStatus = strings.TrimSpace(numberStatus.Status)
-	status.AvailableActions = trimmedStrings(numberStatus.AvailableActions)
+	status.AvailableActions = utils.TrimmedNonEmptyStrings(numberStatus.AvailableActions)
 	status.Services = services
 	return status, nil
 }
@@ -481,7 +482,7 @@ func (s *KyivstarService) fetchNumberServices(msisdn string) ([]contracts.Kyivst
 			ServiceID:        strings.TrimSpace(item.ServiceID),
 			Name:             strings.TrimSpace(item.Name),
 			Status:           strings.TrimSpace(item.Status),
-			AvailableActions: trimmedStrings(item.AvailableActions),
+			AvailableActions: utils.TrimmedNonEmptyStrings(item.AvailableActions),
 		})
 	}
 	return services, nil
@@ -687,18 +688,6 @@ func isKyivstarLocalCode(code string) bool {
 	default:
 		return false
 	}
-}
-
-func trimmedStrings(values []string) []string {
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		result = append(result, value)
-	}
-	return result
 }
 
 func parseKyivstarExpiresIn(raw json.RawMessage) (int64, bool) {

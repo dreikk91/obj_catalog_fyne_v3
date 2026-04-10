@@ -2,9 +2,11 @@ package viewmodels
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 // ObjectPersonalsTabViewModel керує станом вкладки відповідальних осіб (В/О).
@@ -20,7 +22,7 @@ func NewObjectPersonalsTabViewModel() *ObjectPersonalsTabViewModel {
 }
 
 func (vm *ObjectPersonalsTabViewModel) SetItems(items []contracts.AdminObjectPersonal) {
-	vm.items = append([]contracts.AdminObjectPersonal(nil), items...)
+	vm.items = slices.Clone(items)
 	vm.selectedRow = -1
 }
 
@@ -58,21 +60,11 @@ func (vm *ObjectPersonalsTabViewModel) SelectedItem() (contracts.AdminObjectPers
 }
 
 func (vm *ObjectPersonalsTabViewModel) FullName(item contracts.AdminObjectPersonal) string {
-	parts := []string{
-		strings.TrimSpace(item.Surname),
-		strings.TrimSpace(item.Name),
-		strings.TrimSpace(item.SecName),
-	}
-	filtered := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p != "" {
-			filtered = append(filtered, p)
-		}
-	}
-	if len(filtered) == 0 {
+	fullName := utils.JoinTrimmedNonEmpty(item.Surname, item.Name, item.SecName)
+	if fullName == "" {
 		return "(без ПІБ)"
 	}
-	return strings.Join(filtered, " ")
+	return fullName
 }
 
 func (vm *ObjectPersonalsTabViewModel) PrepareUpdatedItem(

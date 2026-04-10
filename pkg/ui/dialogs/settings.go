@@ -16,561 +16,738 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+type settingsDialogAdminProvider interface {
+	GetVodafoneAuthState() (contracts.VodafoneAuthState, error)
+	RequestVodafoneLoginSMS(phone string) error
+	VerifyVodafoneLogin(phone string, code string) (contracts.VodafoneAuthState, error)
+	ClearVodafoneLogin() error
+	GetKyivstarAuthState() (contracts.KyivstarAuthState, error)
+	RefreshKyivstarToken() (contracts.KyivstarAuthState, error)
+	ClearKyivstarToken() error
+}
+
+type settingsDialogState struct {
+	win             fyne.Window
+	pref            fyne.Preferences
+	adminProvider   settingsDialogAdminProvider
+	isDarkTheme     bool
+	onSave          func(config.DBConfig, config.UIConfig)
+	onColorsChanged func()
+
+	dbCfg config.DBConfig
+	uiCfg config.UIConfig
+	vfCfg config.VodafoneConfig
+	ksCfg config.KyivstarConfig
+
+	vfAuthVM *viewmodels.VodafoneAuthViewModel
+	ksAuthVM *viewmodels.KyivstarAuthViewModel
+
+	userEntry                 *widget.Entry
+	passEntry                 *widget.Entry
+	hostEntry                 *widget.Entry
+	portEntry                 *widget.Entry
+	pathEntry                 *widget.Entry
+	paramsEntry               *widget.Entry
+	firebirdEnabledCheck      *widget.Check
+	phoenixEnabledCheck       *widget.Check
+	phoenixUserEntry          *widget.Entry
+	phoenixPassEntry          *widget.Entry
+	phoenixHostEntry          *widget.Entry
+	phoenixPortEntry          *widget.Entry
+	phoenixInstanceEntry      *widget.Entry
+	phoenixDatabaseEntry      *widget.Entry
+	phoenixParamsEntry        *widget.Entry
+	caslBaseURLEntry          *widget.Entry
+	caslTokenEntry            *widget.Entry
+	caslEmailEntry            *widget.Entry
+	caslPassEntry             *widget.Entry
+	caslPultIDEntry           *widget.Entry
+	caslEnabledCheck          *widget.Check
+	vodafonePhoneEntry        *widget.Entry
+	vodafoneCodeEntry         *widget.Entry
+	vodafoneStatusLabel       *widget.Label
+	kyivstarClientIDEntry     *widget.Entry
+	kyivstarClientSecretEntry *widget.Entry
+	kyivstarEmailEntry        *widget.Entry
+	kyivstarStatusLabel       *widget.Label
+	fontEntry                 *widget.Entry
+	fontObjEntry              *widget.Entry
+	fontEvEntry               *widget.Entry
+	fontAlmEntry              *widget.Entry
+	eventLimitEntry           *widget.Entry
+	objectLimitEntry          *widget.Entry
+	bridgeHistoryModeSelect   *widget.Select
+	eventProbeIntervalEntry   *widget.Entry
+	eventsReconcileEntry      *widget.Entry
+	alarmsReconcileEntry      *widget.Entry
+	objectsReconcileEntry     *widget.Entry
+	fallbackRefreshEntry      *widget.Entry
+	maxProbeBackoffEntry      *widget.Entry
+	schedulerHelpLabel        *widget.Label
+	exportDirEntry            *widget.Entry
+	logLevelSelect            *widget.Select
+}
+
 func ShowSettingsDialog(
 	win fyne.Window,
-	adminProvider contracts.AdminProvider,
+	adminProvider settingsDialogAdminProvider,
 	pref fyne.Preferences,
 	isDarkTheme bool,
 	onSave func(config.DBConfig, config.UIConfig),
 	onColorsChanged func(),
 ) {
-	dbCfg := config.LoadDBConfig(pref)
-	uiCfg := config.LoadUIConfig(pref)
-	vfCfg := config.LoadVodafoneConfig(pref)
-	ksCfg := config.LoadKyivstarConfig(pref)
-	vfAuthVM := viewmodels.NewVodafoneAuthViewModel()
-	ksAuthVM := viewmodels.NewKyivstarAuthViewModel()
+	state := newSettingsDialogState(win, pref, adminProvider, isDarkTheme, onSave, onColorsChanged)
+	dialog := state.buildDialog()
+	state.refreshVodafoneStatus()
+	state.refreshKyivstarStatus()
+	dialog.Show()
+}
 
-	// Database fields
-	userEntry := widget.NewEntry()
-	userEntry.SetText(dbCfg.User)
-	passEntry := widget.NewPasswordEntry()
-	passEntry.SetText(dbCfg.Password)
-	hostEntry := widget.NewEntry()
-	hostEntry.SetText(dbCfg.Host)
-	portEntry := widget.NewEntry()
-	portEntry.SetText(dbCfg.Port)
-	pathEntry := widget.NewEntry()
-	pathEntry.SetText(dbCfg.Path)
-	paramsEntry := widget.NewEntry()
-	paramsEntry.SetText(dbCfg.Params)
-	firebirdEnabledCheck := widget.NewCheck("Увімкнути БД/МІСТ (Firebird)", nil)
-	firebirdEnabledCheck.SetChecked(dbCfg.FirebirdEnabled || (!dbCfg.FirebirdEnabled && !dbCfg.PhoenixEnabled && dbCfg.NormalizedMode() != config.BackendModePhoenix))
-
-	// Phoenix MSSQL fields
-	phoenixEnabledCheck := widget.NewCheck("Увімкнути Phoenix паралельно з іншими джерелами", nil)
-	phoenixEnabledCheck.SetChecked(dbCfg.PhoenixEnabled || dbCfg.NormalizedMode() == config.BackendModePhoenix)
-	phoenixUserEntry := widget.NewEntry()
-	phoenixUserEntry.SetText(dbCfg.PhoenixUser)
-	phoenixPassEntry := widget.NewPasswordEntry()
-	phoenixPassEntry.SetText(dbCfg.PhoenixPassword)
-	phoenixHostEntry := widget.NewEntry()
-	phoenixHostEntry.SetText(dbCfg.PhoenixHost)
-	phoenixPortEntry := widget.NewEntry()
-	phoenixPortEntry.SetText(dbCfg.PhoenixPort)
-	phoenixInstanceEntry := widget.NewEntry()
-	phoenixInstanceEntry.SetText(dbCfg.PhoenixInstance)
-	phoenixDatabaseEntry := widget.NewEntry()
-	phoenixDatabaseEntry.SetText(dbCfg.PhoenixDatabase)
-	phoenixParamsEntry := widget.NewEntry()
-	phoenixParamsEntry.SetText(dbCfg.PhoenixParams)
-
-	// CASL Cloud fields
-	caslBaseURLEntry := widget.NewEntry()
-	caslBaseURLEntry.SetText(strings.TrimSpace(dbCfg.CASLBaseURL))
-	caslBaseURLEntry.SetPlaceHolder("http://10.32.1.221:50003")
-
-	caslTokenEntry := widget.NewEntry()
-	caslTokenEntry.SetText(strings.TrimSpace(dbCfg.CASLToken))
-	caslTokenEntry.SetPlaceHolder("JWT токен (необов'язково)")
-
-	caslEmailEntry := widget.NewEntry()
-	caslEmailEntry.SetText(strings.TrimSpace(dbCfg.CASLEmail))
-	caslEmailEntry.SetPlaceHolder("test@lot.lviv.ua")
-
-	caslPassEntry := widget.NewPasswordEntry()
-	caslPassEntry.SetText(strings.TrimSpace(dbCfg.CASLPass))
-	caslPassEntry.SetPlaceHolder("Пароль CASL")
-
-	caslPultIDEntry := widget.NewEntry()
-	if dbCfg.CASLPultID > 0 {
-		caslPultIDEntry.SetText(strconv.FormatInt(dbCfg.CASLPultID, 10))
-	}
-	caslPultIDEntry.SetPlaceHolder("0 = авто")
-	caslEnabledCheck := widget.NewCheck("Увімкнути CASL Cloud паралельно з БД/мостом", nil)
-	caslEnabledCheck.SetChecked(dbCfg.CASLEnabled || dbCfg.NormalizedMode() == config.BackendModeCASLCloud)
-
-	vodafonePhoneEntry := widget.NewEntry()
-	vodafonePhoneEntry.SetText(strings.TrimSpace(vfCfg.Phone))
-	vodafonePhoneEntry.SetPlaceHolder("380501234567")
-
-	vodafoneCodeEntry := widget.NewPasswordEntry()
-	vodafoneCodeEntry.SetPlaceHolder("SMS-код")
-
-	vodafoneStatusLabel := widget.NewLabel(vfAuthVM.BuildStatusText(contracts.VodafoneAuthState{
-		Phone:          vfCfg.Phone,
-		Authorized:     vfCfg.TokenUsableAt(timeNow()),
-		TokenExpiresAt: vfCfg.TokenExpiryTime(),
-	}))
-	vodafoneStatusLabel.Wrapping = fyne.TextWrapWord
-
-	kyivstarClientIDEntry := widget.NewEntry()
-	kyivstarClientIDEntry.SetText(strings.TrimSpace(ksCfg.ClientID))
-	kyivstarClientIDEntry.SetPlaceHolder("client_id")
-
-	kyivstarClientSecretEntry := widget.NewPasswordEntry()
-	kyivstarClientSecretEntry.SetText(strings.TrimSpace(ksCfg.ClientSecret))
-	kyivstarClientSecretEntry.SetPlaceHolder("client_secret")
-
-	kyivstarEmailEntry := widget.NewEntry()
-	kyivstarEmailEntry.SetText(strings.TrimSpace(ksCfg.UserEmail))
-	kyivstarEmailEntry.SetPlaceHolder("company.user@domain.ua")
-
-	kyivstarStatusLabel := widget.NewLabel(ksAuthVM.BuildStatusText(contracts.KyivstarAuthState{
-		ClientID:       ksCfg.ClientID,
-		UserEmail:      ksCfg.UserEmail,
-		Configured:     ksCfg.HasCredentials(),
-		Authorized:     ksCfg.TokenUsableAt(timeNow()),
-		TokenExpiresAt: ksCfg.TokenExpiryTime(),
-	}))
-	kyivstarStatusLabel.Wrapping = fyne.TextWrapWord
-
-	setVodafoneBusy := func(busy bool) {
-		if busy {
-			vodafonePhoneEntry.Disable()
-			vodafoneCodeEntry.Disable()
-			return
-		}
-		vodafonePhoneEntry.Enable()
-		vodafoneCodeEntry.Enable()
+func newSettingsDialogState(
+	win fyne.Window,
+	pref fyne.Preferences,
+	adminProvider settingsDialogAdminProvider,
+	isDarkTheme bool,
+	onSave func(config.DBConfig, config.UIConfig),
+	onColorsChanged func(),
+) *settingsDialogState {
+	s := &settingsDialogState{
+		win:             win,
+		pref:            pref,
+		adminProvider:   adminProvider,
+		isDarkTheme:     isDarkTheme,
+		onSave:          onSave,
+		onColorsChanged: onColorsChanged,
+		dbCfg:           config.LoadDBConfig(pref),
+		uiCfg:           config.LoadUIConfig(pref),
+		vfCfg:           config.LoadVodafoneConfig(pref),
+		ksCfg:           config.LoadKyivstarConfig(pref),
+		vfAuthVM:        viewmodels.NewVodafoneAuthViewModel(),
+		ksAuthVM:        viewmodels.NewKyivstarAuthViewModel(),
 	}
 
-	setKyivstarBusy := func(busy bool) {
-		if busy {
-			kyivstarClientIDEntry.Disable()
-			kyivstarClientSecretEntry.Disable()
-			kyivstarEmailEntry.Disable()
-			return
-		}
-		kyivstarClientIDEntry.Enable()
-		kyivstarClientSecretEntry.Enable()
-		kyivstarEmailEntry.Enable()
-	}
+	s.initDatabaseFields()
+	s.initCarrierFields()
+	s.initUIFields()
 
-	refreshVodafoneStatus := func() {
-		state := contracts.VodafoneAuthState{
-			Phone:          strings.TrimSpace(vodafonePhoneEntry.Text),
-			Authorized:     vfCfg.TokenUsableAt(timeNow()),
-			TokenExpiresAt: vfCfg.TokenExpiryTime(),
-		}
-		if adminProvider != nil {
-			if liveState, err := adminProvider.GetVodafoneAuthState(); err == nil {
-				state = liveState
-				if strings.TrimSpace(liveState.Phone) != "" {
-					vodafonePhoneEntry.SetText(strings.TrimSpace(liveState.Phone))
-				}
-				vfCfg.Phone = liveState.Phone
+	return s
+}
+
+func (s *settingsDialogState) initDatabaseFields() {
+	s.userEntry = widget.NewEntry()
+	s.userEntry.SetText(s.dbCfg.User)
+	s.passEntry = widget.NewPasswordEntry()
+	s.passEntry.SetText(s.dbCfg.Password)
+	s.hostEntry = widget.NewEntry()
+	s.hostEntry.SetText(s.dbCfg.Host)
+	s.portEntry = widget.NewEntry()
+	s.portEntry.SetText(s.dbCfg.Port)
+	s.pathEntry = widget.NewEntry()
+	s.pathEntry.SetText(s.dbCfg.Path)
+	s.paramsEntry = widget.NewEntry()
+	s.paramsEntry.SetText(s.dbCfg.Params)
+
+	s.firebirdEnabledCheck = widget.NewCheck("Увімкнути БД/МІСТ (Firebird)", nil)
+	s.firebirdEnabledCheck.SetChecked(
+		s.dbCfg.FirebirdEnabled ||
+			(!s.dbCfg.FirebirdEnabled && !s.dbCfg.PhoenixEnabled && s.dbCfg.NormalizedMode() != config.BackendModePhoenix),
+	)
+
+	s.phoenixEnabledCheck = widget.NewCheck("Увімкнути Phoenix паралельно з іншими джерелами", nil)
+	s.phoenixEnabledCheck.SetChecked(s.dbCfg.PhoenixEnabled || s.dbCfg.NormalizedMode() == config.BackendModePhoenix)
+	s.phoenixUserEntry = widget.NewEntry()
+	s.phoenixUserEntry.SetText(s.dbCfg.PhoenixUser)
+	s.phoenixPassEntry = widget.NewPasswordEntry()
+	s.phoenixPassEntry.SetText(s.dbCfg.PhoenixPassword)
+	s.phoenixHostEntry = widget.NewEntry()
+	s.phoenixHostEntry.SetText(s.dbCfg.PhoenixHost)
+	s.phoenixPortEntry = widget.NewEntry()
+	s.phoenixPortEntry.SetText(s.dbCfg.PhoenixPort)
+	s.phoenixInstanceEntry = widget.NewEntry()
+	s.phoenixInstanceEntry.SetText(s.dbCfg.PhoenixInstance)
+	s.phoenixDatabaseEntry = widget.NewEntry()
+	s.phoenixDatabaseEntry.SetText(s.dbCfg.PhoenixDatabase)
+	s.phoenixParamsEntry = widget.NewEntry()
+	s.phoenixParamsEntry.SetText(s.dbCfg.PhoenixParams)
+
+	s.caslBaseURLEntry = widget.NewEntry()
+	s.caslBaseURLEntry.SetText(strings.TrimSpace(s.dbCfg.CASLBaseURL))
+	s.caslBaseURLEntry.SetPlaceHolder("http://10.32.1.221:50003")
+
+	s.caslTokenEntry = widget.NewEntry()
+	s.caslTokenEntry.SetText(strings.TrimSpace(s.dbCfg.CASLToken))
+	s.caslTokenEntry.SetPlaceHolder("JWT токен (необов'язково)")
+
+	s.caslEmailEntry = widget.NewEntry()
+	s.caslEmailEntry.SetText(strings.TrimSpace(s.dbCfg.CASLEmail))
+	s.caslEmailEntry.SetPlaceHolder("test@lot.lviv.ua")
+
+	s.caslPassEntry = widget.NewPasswordEntry()
+	s.caslPassEntry.SetText(strings.TrimSpace(s.dbCfg.CASLPass))
+	s.caslPassEntry.SetPlaceHolder("Пароль CASL")
+
+	s.caslPultIDEntry = widget.NewEntry()
+	if s.dbCfg.CASLPultID > 0 {
+		s.caslPultIDEntry.SetText(strconv.FormatInt(s.dbCfg.CASLPultID, 10))
+	}
+	s.caslPultIDEntry.SetPlaceHolder("0 = авто")
+
+	s.caslEnabledCheck = widget.NewCheck("Увімкнути CASL Cloud паралельно з БД/мостом", nil)
+	s.caslEnabledCheck.SetChecked(s.dbCfg.CASLEnabled || s.dbCfg.NormalizedMode() == config.BackendModeCASLCloud)
+}
+
+func (s *settingsDialogState) initCarrierFields() {
+	s.vodafonePhoneEntry = widget.NewEntry()
+	s.vodafonePhoneEntry.SetText(strings.TrimSpace(s.vfCfg.Phone))
+	s.vodafonePhoneEntry.SetPlaceHolder("380501234567")
+
+	s.vodafoneCodeEntry = widget.NewPasswordEntry()
+	s.vodafoneCodeEntry.SetPlaceHolder("SMS-код")
+
+	s.vodafoneStatusLabel = widget.NewLabel(s.vfAuthVM.BuildStatusText(s.currentVodafoneAuthState()))
+	s.vodafoneStatusLabel.Wrapping = fyne.TextWrapWord
+
+	s.kyivstarClientIDEntry = widget.NewEntry()
+	s.kyivstarClientIDEntry.SetText(strings.TrimSpace(s.ksCfg.ClientID))
+	s.kyivstarClientIDEntry.SetPlaceHolder("client_id")
+
+	s.kyivstarClientSecretEntry = widget.NewPasswordEntry()
+	s.kyivstarClientSecretEntry.SetText(strings.TrimSpace(s.ksCfg.ClientSecret))
+	s.kyivstarClientSecretEntry.SetPlaceHolder("client_secret")
+
+	s.kyivstarEmailEntry = widget.NewEntry()
+	s.kyivstarEmailEntry.SetText(strings.TrimSpace(s.ksCfg.UserEmail))
+	s.kyivstarEmailEntry.SetPlaceHolder("company.user@domain.ua")
+
+	s.kyivstarStatusLabel = widget.NewLabel(s.ksAuthVM.BuildStatusText(s.currentKyivstarAuthState()))
+	s.kyivstarStatusLabel.Wrapping = fyne.TextWrapWord
+}
+
+func (s *settingsDialogState) initUIFields() {
+	s.fontEntry = widget.NewEntry()
+	s.fontEntry.SetText(fmt.Sprintf("%.1f", s.uiCfg.FontSize))
+	s.fontObjEntry = widget.NewEntry()
+	s.fontObjEntry.SetText(fmt.Sprintf("%.1f", s.uiCfg.FontSizeObjects))
+	s.fontEvEntry = widget.NewEntry()
+	s.fontEvEntry.SetText(fmt.Sprintf("%.1f", s.uiCfg.FontSizeEvents))
+	s.fontAlmEntry = widget.NewEntry()
+	s.fontAlmEntry.SetText(fmt.Sprintf("%.1f", s.uiCfg.FontSizeAlarms))
+
+	s.eventLimitEntry = widget.NewEntry()
+	s.eventLimitEntry.SetText(strconv.Itoa(s.uiCfg.EventLogLimit))
+	s.eventLimitEntry.SetPlaceHolder("2000")
+
+	s.objectLimitEntry = widget.NewEntry()
+	s.objectLimitEntry.SetText(strconv.Itoa(s.uiCfg.ObjectLogLimit))
+	s.objectLimitEntry.SetPlaceHolder("0 = без обмеження")
+
+	s.bridgeHistoryModeSelect = widget.NewSelect(bridgeAlarmHistoryModeOptions(), nil)
+	s.bridgeHistoryModeSelect.SetSelected(bridgeAlarmHistoryModeLabel(s.uiCfg.BridgeAlarmHistoryMode))
+
+	s.eventProbeIntervalEntry = widget.NewEntry()
+	s.eventProbeIntervalEntry.SetText(strconv.Itoa(s.uiCfg.EventProbeIntervalSec))
+	s.eventProbeIntervalEntry.SetPlaceHolder(strconv.Itoa(config.DefaultEventProbeIntervalSec))
+
+	s.eventsReconcileEntry = widget.NewEntry()
+	s.eventsReconcileEntry.SetText(strconv.Itoa(s.uiCfg.EventsReconcileSec))
+	s.eventsReconcileEntry.SetPlaceHolder(strconv.Itoa(config.DefaultEventsReconcileSec))
+
+	s.alarmsReconcileEntry = widget.NewEntry()
+	s.alarmsReconcileEntry.SetText(strconv.Itoa(s.uiCfg.AlarmsReconcileSec))
+	s.alarmsReconcileEntry.SetPlaceHolder(strconv.Itoa(config.DefaultAlarmsReconcileSec))
+
+	s.objectsReconcileEntry = widget.NewEntry()
+	s.objectsReconcileEntry.SetText(strconv.Itoa(s.uiCfg.ObjectsReconcileSec))
+	s.objectsReconcileEntry.SetPlaceHolder(strconv.Itoa(config.DefaultObjectsReconcileSec))
+
+	s.fallbackRefreshEntry = widget.NewEntry()
+	s.fallbackRefreshEntry.SetText(strconv.Itoa(s.uiCfg.FallbackRefreshSec))
+	s.fallbackRefreshEntry.SetPlaceHolder(strconv.Itoa(config.DefaultFallbackRefreshSec))
+
+	s.maxProbeBackoffEntry = widget.NewEntry()
+	s.maxProbeBackoffEntry.SetText(strconv.Itoa(s.uiCfg.MaxProbeBackoffSec))
+	s.maxProbeBackoffEntry.SetPlaceHolder(strconv.Itoa(config.DefaultMaxProbeBackoffSec))
+
+	s.schedulerHelpLabel = widget.NewLabel("Оновлення Firebird, сек. Менші значення роблять інтерфейс актуальнішим, але сильніше навантажують сервер.")
+	s.schedulerHelpLabel.Wrapping = fyne.TextWrapWord
+
+	s.exportDirEntry = widget.NewEntry()
+	s.exportDirEntry.SetText(s.uiCfg.ExportDir)
+	s.exportDirEntry.SetPlaceHolder("Папка запуску програми")
+
+	s.logLevelSelect = widget.NewSelect([]string{"debug", "info", "warn", "error"}, nil)
+	s.logLevelSelect.SetSelected(strings.ToLower(strings.TrimSpace(s.dbCfg.LogLevel)))
+	if s.logLevelSelect.Selected == "" {
+		s.logLevelSelect.SetSelected("info")
+	}
+}
+
+func (s *settingsDialogState) buildDialog() dialog.Dialog {
+	d := dialog.NewCustomConfirm(
+		"Налаштування системи",
+		"Зберегти",
+		"Скасувати",
+		s.buildTabs(),
+		func(save bool) {
+			if !save {
+				return
 			}
-		}
-		vodafoneStatusLabel.SetText(vfAuthVM.BuildStatusText(state))
-	}
+			s.applySave()
+		},
+		s.win,
+	)
+	d.Resize(fyne.NewSize(560, 520))
+	return d
+}
 
-	refreshKyivstarStatus := func() {
-		state := contracts.KyivstarAuthState{
-			ClientID:       strings.TrimSpace(kyivstarClientIDEntry.Text),
-			UserEmail:      strings.TrimSpace(kyivstarEmailEntry.Text),
-			Configured:     strings.TrimSpace(kyivstarClientIDEntry.Text) != "" && strings.TrimSpace(kyivstarClientSecretEntry.Text) != "",
-			Authorized:     ksCfg.TokenUsableAt(timeNow()),
-			TokenExpiresAt: ksCfg.TokenExpiryTime(),
-		}
-		if adminProvider != nil {
-			if liveState, err := adminProvider.GetKyivstarAuthState(); err == nil {
-				state = liveState
-				if strings.TrimSpace(liveState.ClientID) != "" {
-					kyivstarClientIDEntry.SetText(strings.TrimSpace(liveState.ClientID))
-				}
-				ksCfg.ClientID = liveState.ClientID
-				ksCfg.UserEmail = liveState.UserEmail
-			}
-		}
-		kyivstarStatusLabel.SetText(ksAuthVM.BuildStatusText(state))
-	}
+func (s *settingsDialogState) buildTabs() *container.AppTabs {
+	return container.NewAppTabs(
+		container.NewTabItem("База даних", s.buildDatabaseTab()),
+		container.NewTabItem("Phoenix", s.buildPhoenixTab()),
+		container.NewTabItem("CASL Cloud", s.buildCASLTab()),
+		container.NewTabItem("Vodafone", s.buildVodafoneTab()),
+		container.NewTabItem("Kyivstar", s.buildKyivstarTab()),
+		container.NewTabItem("Інтерфейс", s.buildInterfaceTab()),
+		container.NewTabItem("Оновлення", s.buildRefreshTab()),
+	)
+}
 
-	requestVodafoneSMSBtn := widget.NewButton("Надіслати SMS", func() {
-		if adminProvider == nil {
-			vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
-			return
-		}
-		phone := strings.TrimSpace(vodafonePhoneEntry.Text)
-		setVodafoneBusy(true)
-		vodafoneStatusLabel.SetText("Vodafone: надсилання SMS-коду...")
-		go func() {
-			err := adminProvider.RequestVodafoneLoginSMS(phone)
-			fyne.Do(func() {
-				setVodafoneBusy(false)
-				if err != nil {
-					vodafoneStatusLabel.SetText(err.Error())
-					return
-				}
-				vodafoneStatusLabel.SetText("Vodafone: SMS-код надіслано")
-			})
-		}()
-	})
+func (s *settingsDialogState) buildDatabaseTab() fyne.CanvasObject {
+	return widget.NewForm(
+		widget.NewFormItem("Увімкнення", s.firebirdEnabledCheck),
+		widget.NewFormItem("Користувач", s.userEntry),
+		widget.NewFormItem("Пароль", s.passEntry),
+		widget.NewFormItem("Хост", s.hostEntry),
+		widget.NewFormItem("Порт", s.portEntry),
+		widget.NewFormItem("Шлях до БД", s.pathEntry),
+		widget.NewFormItem("Параметри", s.paramsEntry),
+	)
+}
 
-	verifyVodafoneCodeBtn := widget.NewButton("Підтвердити код", func() {
-		if adminProvider == nil {
-			vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
-			return
-		}
-		phone := strings.TrimSpace(vodafonePhoneEntry.Text)
-		code := strings.TrimSpace(vodafoneCodeEntry.Text)
-		setVodafoneBusy(true)
-		vodafoneStatusLabel.SetText("Vodafone: перевірка коду...")
-		go func() {
-			state, err := adminProvider.VerifyVodafoneLogin(phone, code)
-			fyne.Do(func() {
-				setVodafoneBusy(false)
-				if err != nil {
-					vodafoneStatusLabel.SetText(err.Error())
-					return
-				}
-				vfCfg.Phone = state.Phone
-				vfCfg.AccessToken = config.LoadVodafoneConfig(pref).AccessToken
-				vfCfg.TokenExpiry = config.LoadVodafoneConfig(pref).TokenExpiry
-				vodafoneCodeEntry.SetText("")
-				vodafoneStatusLabel.SetText(vfAuthVM.BuildStatusText(state))
-			})
-		}()
-	})
+func (s *settingsDialogState) buildPhoenixTab() fyne.CanvasObject {
+	return widget.NewForm(
+		widget.NewFormItem("Увімкнення", s.phoenixEnabledCheck),
+		widget.NewFormItem("Користувач", s.phoenixUserEntry),
+		widget.NewFormItem("Пароль", s.phoenixPassEntry),
+		widget.NewFormItem("Хост", s.phoenixHostEntry),
+		widget.NewFormItem("Порт", s.phoenixPortEntry),
+		widget.NewFormItem("Інстанс", s.phoenixInstanceEntry),
+		widget.NewFormItem("База", s.phoenixDatabaseEntry),
+		widget.NewFormItem("Параметри", s.phoenixParamsEntry),
+	)
+}
 
-	clearVodafoneTokenBtn := widget.NewButton("Очистити токен", func() {
-		if adminProvider == nil {
-			vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
-			return
-		}
-		setVodafoneBusy(true)
-		go func() {
-			err := adminProvider.ClearVodafoneLogin()
-			fyne.Do(func() {
-				setVodafoneBusy(false)
-				if err != nil {
-					vodafoneStatusLabel.SetText(err.Error())
-					return
-				}
-				latestCfg := config.LoadVodafoneConfig(pref)
-				vfCfg = latestCfg
-				refreshVodafoneStatus()
-			})
-		}()
-	})
+func (s *settingsDialogState) buildCASLTab() fyne.CanvasObject {
+	return widget.NewForm(
+		widget.NewFormItem("Паралельний режим", s.caslEnabledCheck),
+		widget.NewFormItem("Base URL", s.caslBaseURLEntry),
+		widget.NewFormItem("Token", s.caslTokenEntry),
+		widget.NewFormItem("Email", s.caslEmailEntry),
+		widget.NewFormItem("Password", s.caslPassEntry),
+		widget.NewFormItem("Pult ID", s.caslPultIDEntry),
+	)
+}
 
-	refreshKyivstarTokenBtn := widget.NewButton("Отримати токен", func() {
-		if adminProvider == nil {
-			kyivstarStatusLabel.SetText("Kyivstar: сервіс недоступний")
-			return
-		}
-		currentCfg := config.LoadKyivstarConfig(pref)
-		currentCfg.ClientID = strings.TrimSpace(kyivstarClientIDEntry.Text)
-		currentCfg.ClientSecret = strings.TrimSpace(kyivstarClientSecretEntry.Text)
-		currentCfg.UserEmail = strings.TrimSpace(kyivstarEmailEntry.Text)
-		currentCfg.AccessToken = ""
-		currentCfg.TokenExpiry = ""
-		config.SaveKyivstarConfig(pref, currentCfg)
-		ksCfg = currentCfg
-		setKyivstarBusy(true)
-		kyivstarStatusLabel.SetText("Kyivstar: отримання access token...")
-		go func() {
-			state, err := adminProvider.RefreshKyivstarToken()
-			fyne.Do(func() {
-				setKyivstarBusy(false)
-				if err != nil {
-					kyivstarStatusLabel.SetText(err.Error())
-					return
-				}
-				ksCfg = config.LoadKyivstarConfig(pref)
-				kyivstarStatusLabel.SetText(ksAuthVM.BuildStatusText(state))
-			})
-		}()
-	})
+func (s *settingsDialogState) buildVodafoneTab() fyne.CanvasObject {
+	return container.NewVBox(
+		widget.NewLabel("Авторизація тільки через SMS-код для батьківського номера Vodafone."),
+		widget.NewForm(
+			widget.NewFormItem("Номер входу", s.vodafonePhoneEntry),
+			widget.NewFormItem("SMS-код", s.vodafoneCodeEntry),
+		),
+		container.NewHBox(
+			widget.NewButton("Надіслати SMS", s.handleVodafoneSMSRequest),
+			widget.NewButton("Підтвердити код", s.handleVodafoneCodeVerify),
+			widget.NewButton("Очистити токен", s.handleVodafoneTokenClear),
+		),
+		s.vodafoneStatusLabel,
+	)
+}
 
-	clearKyivstarTokenBtn := widget.NewButton("Очистити токен", func() {
-		if adminProvider == nil {
-			kyivstarStatusLabel.SetText("Kyivstar: сервіс недоступний")
-			return
-		}
-		setKyivstarBusy(true)
-		go func() {
-			err := adminProvider.ClearKyivstarToken()
-			fyne.Do(func() {
-				setKyivstarBusy(false)
-				if err != nil {
-					kyivstarStatusLabel.SetText(err.Error())
-					return
-				}
-				ksCfg = config.LoadKyivstarConfig(pref)
-				refreshKyivstarStatus()
-			})
-		}()
-	})
+func (s *settingsDialogState) buildKyivstarTab() fyne.CanvasObject {
+	return container.NewVBox(
+		widget.NewLabel("Kyivstar IoT API використовує client_id/client_secret і email компанії для reset запитів."),
+		widget.NewForm(
+			widget.NewFormItem("Client ID", s.kyivstarClientIDEntry),
+			widget.NewFormItem("Client Secret", s.kyivstarClientSecretEntry),
+			widget.NewFormItem("Email компанії", s.kyivstarEmailEntry),
+		),
+		container.NewHBox(
+			widget.NewButton("Отримати токен", s.handleKyivstarTokenRefresh),
+			widget.NewButton("Очистити токен", s.handleKyivstarTokenClear),
+		),
+		s.kyivstarStatusLabel,
+	)
+}
 
-	// UI fields
-	fontEntry := widget.NewEntry()
-	fontEntry.SetText(fmt.Sprintf("%.1f", uiCfg.FontSize))
-	fontObjEntry := widget.NewEntry()
-	fontObjEntry.SetText(fmt.Sprintf("%.1f", uiCfg.FontSizeObjects))
-	fontEvEntry := widget.NewEntry()
-	fontEvEntry.SetText(fmt.Sprintf("%.1f", uiCfg.FontSizeEvents))
-	fontAlmEntry := widget.NewEntry()
-	fontAlmEntry.SetText(fmt.Sprintf("%.1f", uiCfg.FontSizeAlarms))
+func (s *settingsDialogState) buildInterfaceTab() fyne.CanvasObject {
+	return widget.NewForm(
+		widget.NewFormItem("Загальний шрифт", s.fontEntry),
+		widget.NewFormItem("Шрифт об'єктів", s.fontObjEntry),
+		widget.NewFormItem("Шрифт подій", s.fontEvEntry),
+		widget.NewFormItem("Шрифт тривог", s.fontAlmEntry),
+		widget.NewFormItem("Режим логування", s.logLevelSelect),
+		widget.NewFormItem("Ліміт загального журналу", s.eventLimitEntry),
+		widget.NewFormItem("Ліміт журналу об'єкта", s.objectLimitEntry),
+		widget.NewFormItem("Хронологія МІСТ", s.bridgeHistoryModeSelect),
+		widget.NewFormItem("Папка експорту", s.buildExportDirRow()),
+		widget.NewFormItem("Кольори подій", s.buildColorsButton()),
+	)
+}
 
-	eventLimitEntry := widget.NewEntry()
-	eventLimitEntry.SetText(strconv.Itoa(uiCfg.EventLogLimit))
-	eventLimitEntry.SetPlaceHolder("2000")
+func (s *settingsDialogState) buildRefreshTab() fyne.CanvasObject {
+	return widget.NewForm(
+		widget.NewFormItem("Пояснення", s.schedulerHelpLabel),
+		widget.NewFormItem("Probe нових подій", s.eventProbeIntervalEntry),
+		widget.NewFormItem("Reconcile журналу", s.eventsReconcileEntry),
+		widget.NewFormItem("Reconcile тривог", s.alarmsReconcileEntry),
+		widget.NewFormItem("Reconcile об'єктів", s.objectsReconcileEntry),
+		widget.NewFormItem("Fallback без probe", s.fallbackRefreshEntry),
+		widget.NewFormItem("Макс. backoff probe", s.maxProbeBackoffEntry),
+	)
+}
 
-	objectLimitEntry := widget.NewEntry()
-	objectLimitEntry.SetText(strconv.Itoa(uiCfg.ObjectLogLimit))
-	objectLimitEntry.SetPlaceHolder("0 = без обмеження")
-
-	bridgeHistoryModeSelect := widget.NewSelect(bridgeAlarmHistoryModeOptions(), nil)
-	bridgeHistoryModeSelect.SetSelected(bridgeAlarmHistoryModeLabel(uiCfg.BridgeAlarmHistoryMode))
-
-	eventProbeIntervalEntry := widget.NewEntry()
-	eventProbeIntervalEntry.SetText(strconv.Itoa(uiCfg.EventProbeIntervalSec))
-	eventProbeIntervalEntry.SetPlaceHolder(strconv.Itoa(config.DefaultEventProbeIntervalSec))
-
-	eventsReconcileEntry := widget.NewEntry()
-	eventsReconcileEntry.SetText(strconv.Itoa(uiCfg.EventsReconcileSec))
-	eventsReconcileEntry.SetPlaceHolder(strconv.Itoa(config.DefaultEventsReconcileSec))
-
-	alarmsReconcileEntry := widget.NewEntry()
-	alarmsReconcileEntry.SetText(strconv.Itoa(uiCfg.AlarmsReconcileSec))
-	alarmsReconcileEntry.SetPlaceHolder(strconv.Itoa(config.DefaultAlarmsReconcileSec))
-
-	objectsReconcileEntry := widget.NewEntry()
-	objectsReconcileEntry.SetText(strconv.Itoa(uiCfg.ObjectsReconcileSec))
-	objectsReconcileEntry.SetPlaceHolder(strconv.Itoa(config.DefaultObjectsReconcileSec))
-
-	fallbackRefreshEntry := widget.NewEntry()
-	fallbackRefreshEntry.SetText(strconv.Itoa(uiCfg.FallbackRefreshSec))
-	fallbackRefreshEntry.SetPlaceHolder(strconv.Itoa(config.DefaultFallbackRefreshSec))
-
-	maxProbeBackoffEntry := widget.NewEntry()
-	maxProbeBackoffEntry.SetText(strconv.Itoa(uiCfg.MaxProbeBackoffSec))
-	maxProbeBackoffEntry.SetPlaceHolder(strconv.Itoa(config.DefaultMaxProbeBackoffSec))
-
-	schedulerHelpLabel := widget.NewLabel("Оновлення Firebird, сек. Менші значення роблять інтерфейс актуальнішим, але сильніше навантажують сервер.")
-	schedulerHelpLabel.Wrapping = fyne.TextWrapWord
-
-	exportDirEntry := widget.NewEntry()
-	exportDirEntry.SetText(uiCfg.ExportDir)
-	exportDirEntry.SetPlaceHolder("Папка запуску програми")
-
+func (s *settingsDialogState) buildExportDirRow() fyne.CanvasObject {
 	browseExportDirBtn := makeIconButton("Обрати...", iconFolder(), widget.MediumImportance, func() {
 		dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil {
-				dialog.ShowError(err, win)
+				dialog.ShowError(err, s.win)
 				return
 			}
 			if uri == nil {
 				return
 			}
-			exportDirEntry.SetText(uriPathToLocalPath(uri.Path()))
-		}, win).Show()
+			s.exportDirEntry.SetText(uriPathToLocalPath(uri.Path()))
+		}, s.win).Show()
 	})
 
 	clearExportDirBtn := makeIconButton("Очистити", iconClear(), widget.LowImportance, func() {
-		exportDirEntry.SetText("")
+		s.exportDirEntry.SetText("")
 	})
 
-	exportDirRow := container.NewBorder(
+	return container.NewBorder(
 		nil,
 		nil,
 		nil,
 		container.NewHBox(browseExportDirBtn, clearExportDirBtn),
-		exportDirEntry,
+		s.exportDirEntry,
 	)
+}
 
-	colorsBtn := makeIconButton("Налаштувати кольори подій...", iconSearch(), widget.LowImportance, func() {
-		ShowColorPaletteDialog(win, isDarkTheme, onColorsChanged)
+func (s *settingsDialogState) buildColorsButton() fyne.CanvasObject {
+	return makeIconButton("Налаштувати кольори подій...", iconSearch(), widget.LowImportance, func() {
+		ShowColorPaletteDialog(s.win, s.isDarkTheme, s.onColorsChanged)
 	})
+}
 
-	logLevelOptions := []string{"debug", "info", "warn", "error"}
-	logLevelSelect := widget.NewSelect(logLevelOptions, nil)
-	logLevelSelect.SetSelected(strings.ToLower(strings.TrimSpace(dbCfg.LogLevel)))
-	if logLevelSelect.Selected == "" {
-		logLevelSelect.SetSelected("info")
+func (s *settingsDialogState) currentVodafoneAuthState() contracts.VodafoneAuthState {
+	return contracts.VodafoneAuthState{
+		Phone:          strings.TrimSpace(s.vodafonePhoneEntry.Text),
+		Authorized:     s.vfCfg.TokenUsableAt(timeNow()),
+		TokenExpiresAt: s.vfCfg.TokenExpiryTime(),
+	}
+}
+
+func (s *settingsDialogState) currentKyivstarAuthState() contracts.KyivstarAuthState {
+	return contracts.KyivstarAuthState{
+		ClientID:       strings.TrimSpace(s.kyivstarClientIDEntry.Text),
+		UserEmail:      strings.TrimSpace(s.kyivstarEmailEntry.Text),
+		Configured:     strings.TrimSpace(s.kyivstarClientIDEntry.Text) != "" && strings.TrimSpace(s.kyivstarClientSecretEntry.Text) != "",
+		Authorized:     s.ksCfg.TokenUsableAt(timeNow()),
+		TokenExpiresAt: s.ksCfg.TokenExpiryTime(),
+	}
+}
+
+func (s *settingsDialogState) setVodafoneBusy(busy bool) {
+	if busy {
+		s.vodafonePhoneEntry.Disable()
+		s.vodafoneCodeEntry.Disable()
+		return
+	}
+	s.vodafonePhoneEntry.Enable()
+	s.vodafoneCodeEntry.Enable()
+}
+
+func (s *settingsDialogState) setKyivstarBusy(busy bool) {
+	if busy {
+		s.kyivstarClientIDEntry.Disable()
+		s.kyivstarClientSecretEntry.Disable()
+		s.kyivstarEmailEntry.Disable()
+		return
+	}
+	s.kyivstarClientIDEntry.Enable()
+	s.kyivstarClientSecretEntry.Enable()
+	s.kyivstarEmailEntry.Enable()
+}
+
+func (s *settingsDialogState) refreshVodafoneStatus() {
+	state := s.currentVodafoneAuthState()
+	if s.adminProvider != nil {
+		if liveState, err := s.adminProvider.GetVodafoneAuthState(); err == nil {
+			state = liveState
+			if strings.TrimSpace(liveState.Phone) != "" {
+				s.vodafonePhoneEntry.SetText(strings.TrimSpace(liveState.Phone))
+			}
+			s.vfCfg.Phone = liveState.Phone
+		}
+	}
+	s.vodafoneStatusLabel.SetText(s.vfAuthVM.BuildStatusText(state))
+}
+
+func (s *settingsDialogState) refreshKyivstarStatus() {
+	state := s.currentKyivstarAuthState()
+	if s.adminProvider != nil {
+		if liveState, err := s.adminProvider.GetKyivstarAuthState(); err == nil {
+			state = liveState
+			if strings.TrimSpace(liveState.ClientID) != "" {
+				s.kyivstarClientIDEntry.SetText(strings.TrimSpace(liveState.ClientID))
+			}
+			s.ksCfg.ClientID = liveState.ClientID
+			s.ksCfg.UserEmail = liveState.UserEmail
+		}
+	}
+	s.kyivstarStatusLabel.SetText(s.ksAuthVM.BuildStatusText(state))
+}
+
+func (s *settingsDialogState) handleVodafoneSMSRequest() {
+	if s.adminProvider == nil {
+		s.vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
+		return
 	}
 
-	tabs := container.NewAppTabs(
-		container.NewTabItem("База даних", widget.NewForm(
-			widget.NewFormItem("Увімкнення", firebirdEnabledCheck),
-			widget.NewFormItem("Користувач", userEntry),
-			widget.NewFormItem("Пароль", passEntry),
-			widget.NewFormItem("Хост", hostEntry),
-			widget.NewFormItem("Порт", portEntry),
-			widget.NewFormItem("Шлях до БД", pathEntry),
-			widget.NewFormItem("Параметри", paramsEntry),
-		)),
-		container.NewTabItem("Phoenix", widget.NewForm(
-			widget.NewFormItem("Увімкнення", phoenixEnabledCheck),
-			widget.NewFormItem("Користувач", phoenixUserEntry),
-			widget.NewFormItem("Пароль", phoenixPassEntry),
-			widget.NewFormItem("Хост", phoenixHostEntry),
-			widget.NewFormItem("Порт", phoenixPortEntry),
-			widget.NewFormItem("Інстанс", phoenixInstanceEntry),
-			widget.NewFormItem("База", phoenixDatabaseEntry),
-			widget.NewFormItem("Параметри", phoenixParamsEntry),
-		)),
-		container.NewTabItem("CASL Cloud", widget.NewForm(
-			widget.NewFormItem("Паралельний режим", caslEnabledCheck),
-			widget.NewFormItem("Base URL", caslBaseURLEntry),
-			widget.NewFormItem("Token", caslTokenEntry),
-			widget.NewFormItem("Email", caslEmailEntry),
-			widget.NewFormItem("Password", caslPassEntry),
-			widget.NewFormItem("Pult ID", caslPultIDEntry),
-		)),
-		container.NewTabItem("Vodafone", container.NewVBox(
-			widget.NewLabel("Авторизація тільки через SMS-код для батьківського номера Vodafone."),
-			widget.NewForm(
-				widget.NewFormItem("Номер входу", vodafonePhoneEntry),
-				widget.NewFormItem("SMS-код", vodafoneCodeEntry),
-			),
-			container.NewHBox(requestVodafoneSMSBtn, verifyVodafoneCodeBtn, clearVodafoneTokenBtn),
-			vodafoneStatusLabel,
-		)),
-		container.NewTabItem("Kyivstar", container.NewVBox(
-			widget.NewLabel("Kyivstar IoT API використовує client_id/client_secret і email компанії для reset запитів."),
-			widget.NewForm(
-				widget.NewFormItem("Client ID", kyivstarClientIDEntry),
-				widget.NewFormItem("Client Secret", kyivstarClientSecretEntry),
-				widget.NewFormItem("Email компанії", kyivstarEmailEntry),
-			),
-			container.NewHBox(refreshKyivstarTokenBtn, clearKyivstarTokenBtn),
-			kyivstarStatusLabel,
-		)),
-		container.NewTabItem("Інтерфейс", widget.NewForm(
-			widget.NewFormItem("Загальний шрифт", fontEntry),
-			widget.NewFormItem("Шрифт об'єктів", fontObjEntry),
-			widget.NewFormItem("Шрифт подій", fontEvEntry),
-			widget.NewFormItem("Шрифт тривог", fontAlmEntry),
-			widget.NewFormItem("Режим логування", logLevelSelect),
-			widget.NewFormItem("Ліміт загального журналу", eventLimitEntry),
-			widget.NewFormItem("Ліміт журналу об'єкта", objectLimitEntry),
-			widget.NewFormItem("Хронологія МІСТ", bridgeHistoryModeSelect),
-			widget.NewFormItem("Папка експорту", exportDirRow),
-			widget.NewFormItem("Кольори подій", colorsBtn),
-		)),
-		container.NewTabItem("Оновлення", widget.NewForm(
-			widget.NewFormItem("Пояснення", schedulerHelpLabel),
-			widget.NewFormItem("Probe нових подій", eventProbeIntervalEntry),
-			widget.NewFormItem("Reconcile журналу", eventsReconcileEntry),
-			widget.NewFormItem("Reconcile тривог", alarmsReconcileEntry),
-			widget.NewFormItem("Reconcile об'єктів", objectsReconcileEntry),
-			widget.NewFormItem("Fallback без probe", fallbackRefreshEntry),
-			widget.NewFormItem("Макс. backoff probe", maxProbeBackoffEntry),
-		)),
-	)
-
-	d := dialog.NewCustomConfirm(
-		"Налаштування системи",
-		"Зберегти",
-		"Скасувати",
-		tabs,
-		func(save bool) {
-			if save {
-				caslEnabled := caslEnabledCheck.Checked
-				firebirdEnabled := firebirdEnabledCheck.Checked
-				phoenixEnabled := phoenixEnabledCheck.Checked
-				mode := config.BackendModeFirebird
-				switch {
-				case phoenixEnabled && !firebirdEnabled:
-					mode = config.BackendModePhoenix
-				case caslEnabled && !firebirdEnabled && !phoenixEnabled:
-					mode = config.BackendModeCASLCloud
-				}
-
-				caslPultID := int64(0)
-				if parsed, err := strconv.ParseInt(strings.TrimSpace(caslPultIDEntry.Text), 10, 64); err == nil && parsed > 0 {
-					caslPultID = parsed
-				}
-
-				newDbCfg := config.DBConfig{
-					User:            userEntry.Text,
-					Password:        passEntry.Text,
-					Host:            hostEntry.Text,
-					Port:            portEntry.Text,
-					Path:            pathEntry.Text,
-					Params:          paramsEntry.Text,
-					FirebirdEnabled: firebirdEnabled,
-					PhoenixEnabled:  phoenixEnabled,
-					PhoenixUser:     strings.TrimSpace(phoenixUserEntry.Text),
-					PhoenixPassword: phoenixPassEntry.Text,
-					PhoenixHost:     strings.TrimSpace(phoenixHostEntry.Text),
-					PhoenixPort:     strings.TrimSpace(phoenixPortEntry.Text),
-					PhoenixInstance: strings.TrimSpace(phoenixInstanceEntry.Text),
-					PhoenixDatabase: strings.TrimSpace(phoenixDatabaseEntry.Text),
-					PhoenixParams:   strings.TrimSpace(phoenixParamsEntry.Text),
-					CASLEnabled:     caslEnabled,
-					Mode:            mode,
-					CASLBaseURL:     strings.TrimSpace(caslBaseURLEntry.Text),
-					CASLToken:       strings.TrimSpace(caslTokenEntry.Text),
-					CASLEmail:       strings.TrimSpace(caslEmailEntry.Text),
-					CASLPass:        strings.TrimSpace(caslPassEntry.Text),
-					CASLPultID:      caslPultID,
-					LogLevel:        strings.ToLower(strings.TrimSpace(logLevelSelect.Selected)),
-				}
-
-				fSize, _ := strconv.ParseFloat(fontEntry.Text, 32)
-				fObjSize, _ := strconv.ParseFloat(fontObjEntry.Text, 32)
-				fEvSize, _ := strconv.ParseFloat(fontEvEntry.Text, 32)
-				fAlmSize, _ := strconv.ParseFloat(fontAlmEntry.Text, 32)
-				evLimit, _ := strconv.Atoi(strings.TrimSpace(eventLimitEntry.Text))
-				objLimit, _ := strconv.Atoi(strings.TrimSpace(objectLimitEntry.Text))
-				eventProbeIntervalSec, _ := strconv.Atoi(strings.TrimSpace(eventProbeIntervalEntry.Text))
-				eventsReconcileSec, _ := strconv.Atoi(strings.TrimSpace(eventsReconcileEntry.Text))
-				alarmsReconcileSec, _ := strconv.Atoi(strings.TrimSpace(alarmsReconcileEntry.Text))
-				objectsReconcileSec, _ := strconv.Atoi(strings.TrimSpace(objectsReconcileEntry.Text))
-				fallbackRefreshSec, _ := strconv.Atoi(strings.TrimSpace(fallbackRefreshEntry.Text))
-				maxProbeBackoffSec, _ := strconv.Atoi(strings.TrimSpace(maxProbeBackoffEntry.Text))
-
-				newUiCfg := config.UIConfig{
-					FontSize:               float32(fSize),
-					FontSizeObjects:        float32(fObjSize),
-					FontSizeEvents:         float32(fEvSize),
-					FontSizeAlarms:         float32(fAlmSize),
-					ExportDir:              strings.TrimSpace(exportDirEntry.Text),
-					EventLogLimit:          evLimit,
-					ObjectLogLimit:         objLimit,
-					BridgeAlarmHistoryMode: bridgeAlarmHistoryModeValue(bridgeHistoryModeSelect.Selected),
-					EventProbeIntervalSec:  eventProbeIntervalSec,
-					EventsReconcileSec:     eventsReconcileSec,
-					AlarmsReconcileSec:     alarmsReconcileSec,
-					ObjectsReconcileSec:    objectsReconcileSec,
-					FallbackRefreshSec:     fallbackRefreshSec,
-					MaxProbeBackoffSec:     maxProbeBackoffSec,
-				}
-
-				newVodafoneCfg := config.LoadVodafoneConfig(pref)
-				newVodafoneCfg.Phone = strings.TrimSpace(vodafonePhoneEntry.Text)
-
-				newKyivstarCfg := config.LoadKyivstarConfig(pref)
-				clientIDChanged := strings.TrimSpace(newKyivstarCfg.ClientID) != strings.TrimSpace(kyivstarClientIDEntry.Text)
-				clientSecretChanged := strings.TrimSpace(newKyivstarCfg.ClientSecret) != strings.TrimSpace(kyivstarClientSecretEntry.Text)
-				newKyivstarCfg.ClientID = strings.TrimSpace(kyivstarClientIDEntry.Text)
-				newKyivstarCfg.ClientSecret = strings.TrimSpace(kyivstarClientSecretEntry.Text)
-				newKyivstarCfg.UserEmail = strings.TrimSpace(kyivstarEmailEntry.Text)
-				if clientIDChanged || clientSecretChanged {
-					newKyivstarCfg.AccessToken = ""
-					newKyivstarCfg.TokenExpiry = ""
-				}
-
-				config.SaveDBConfig(pref, newDbCfg)
-				config.SaveUIConfig(pref, newUiCfg)
-				config.SaveVodafoneConfig(pref, newVodafoneCfg)
-				config.SaveKyivstarConfig(pref, newKyivstarCfg)
-
-				if onSave != nil {
-					onSave(newDbCfg, newUiCfg)
-				}
+	phone := strings.TrimSpace(s.vodafonePhoneEntry.Text)
+	s.setVodafoneBusy(true)
+	s.vodafoneStatusLabel.SetText("Vodafone: надсилання SMS-коду...")
+	go func() {
+		err := s.adminProvider.RequestVodafoneLoginSMS(phone)
+		fyne.Do(func() {
+			s.setVodafoneBusy(false)
+			if err != nil {
+				s.vodafoneStatusLabel.SetText(err.Error())
+				return
 			}
-		},
-		win,
-	)
+			s.vodafoneStatusLabel.SetText("Vodafone: SMS-код надіслано")
+		})
+	}()
+}
 
-	d.Resize(fyne.NewSize(560, 520))
-	refreshVodafoneStatus()
-	refreshKyivstarStatus()
-	d.Show()
+func (s *settingsDialogState) handleVodafoneCodeVerify() {
+	if s.adminProvider == nil {
+		s.vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
+		return
+	}
+
+	phone := strings.TrimSpace(s.vodafonePhoneEntry.Text)
+	code := strings.TrimSpace(s.vodafoneCodeEntry.Text)
+	s.setVodafoneBusy(true)
+	s.vodafoneStatusLabel.SetText("Vodafone: перевірка коду...")
+	go func() {
+		state, err := s.adminProvider.VerifyVodafoneLogin(phone, code)
+		fyne.Do(func() {
+			s.setVodafoneBusy(false)
+			if err != nil {
+				s.vodafoneStatusLabel.SetText(err.Error())
+				return
+			}
+			s.vfCfg.Phone = state.Phone
+			latestCfg := config.LoadVodafoneConfig(s.pref)
+			s.vfCfg.AccessToken = latestCfg.AccessToken
+			s.vfCfg.TokenExpiry = latestCfg.TokenExpiry
+			s.vodafoneCodeEntry.SetText("")
+			s.vodafoneStatusLabel.SetText(s.vfAuthVM.BuildStatusText(state))
+		})
+	}()
+}
+
+func (s *settingsDialogState) handleVodafoneTokenClear() {
+	if s.adminProvider == nil {
+		s.vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
+		return
+	}
+
+	s.setVodafoneBusy(true)
+	go func() {
+		err := s.adminProvider.ClearVodafoneLogin()
+		fyne.Do(func() {
+			s.setVodafoneBusy(false)
+			if err != nil {
+				s.vodafoneStatusLabel.SetText(err.Error())
+				return
+			}
+			s.vfCfg = config.LoadVodafoneConfig(s.pref)
+			s.refreshVodafoneStatus()
+		})
+	}()
+}
+
+func (s *settingsDialogState) handleKyivstarTokenRefresh() {
+	if s.adminProvider == nil {
+		s.kyivstarStatusLabel.SetText("Kyivstar: сервіс недоступний")
+		return
+	}
+
+	currentCfg := config.LoadKyivstarConfig(s.pref)
+	currentCfg.ClientID = strings.TrimSpace(s.kyivstarClientIDEntry.Text)
+	currentCfg.ClientSecret = strings.TrimSpace(s.kyivstarClientSecretEntry.Text)
+	currentCfg.UserEmail = strings.TrimSpace(s.kyivstarEmailEntry.Text)
+	currentCfg.AccessToken = ""
+	currentCfg.TokenExpiry = ""
+	config.SaveKyivstarConfig(s.pref, currentCfg)
+	s.ksCfg = currentCfg
+
+	s.setKyivstarBusy(true)
+	s.kyivstarStatusLabel.SetText("Kyivstar: отримання access token...")
+	go func() {
+		state, err := s.adminProvider.RefreshKyivstarToken()
+		fyne.Do(func() {
+			s.setKyivstarBusy(false)
+			if err != nil {
+				s.kyivstarStatusLabel.SetText(err.Error())
+				return
+			}
+			s.ksCfg = config.LoadKyivstarConfig(s.pref)
+			s.kyivstarStatusLabel.SetText(s.ksAuthVM.BuildStatusText(state))
+		})
+	}()
+}
+
+func (s *settingsDialogState) handleKyivstarTokenClear() {
+	if s.adminProvider == nil {
+		s.kyivstarStatusLabel.SetText("Kyivstar: сервіс недоступний")
+		return
+	}
+
+	s.setKyivstarBusy(true)
+	go func() {
+		err := s.adminProvider.ClearKyivstarToken()
+		fyne.Do(func() {
+			s.setKyivstarBusy(false)
+			if err != nil {
+				s.kyivstarStatusLabel.SetText(err.Error())
+				return
+			}
+			s.ksCfg = config.LoadKyivstarConfig(s.pref)
+			s.refreshKyivstarStatus()
+		})
+	}()
+}
+
+func (s *settingsDialogState) applySave() {
+	newDbCfg := s.buildDBConfigFromForm()
+	newUiCfg := s.buildUIConfigFromForm()
+	newVodafoneCfg := s.buildVodafoneConfigFromForm()
+	newKyivstarCfg := s.buildKyivstarConfigFromForm()
+
+	config.SaveDBConfig(s.pref, newDbCfg)
+	config.SaveUIConfig(s.pref, newUiCfg)
+	config.SaveVodafoneConfig(s.pref, newVodafoneCfg)
+	config.SaveKyivstarConfig(s.pref, newKyivstarCfg)
+
+	if s.onSave != nil {
+		s.onSave(newDbCfg, newUiCfg)
+	}
+}
+
+func (s *settingsDialogState) buildDBConfigFromForm() config.DBConfig {
+	caslEnabled := s.caslEnabledCheck.Checked
+	firebirdEnabled := s.firebirdEnabledCheck.Checked
+	phoenixEnabled := s.phoenixEnabledCheck.Checked
+
+	mode := config.BackendModeFirebird
+	switch {
+	case phoenixEnabled && !firebirdEnabled:
+		mode = config.BackendModePhoenix
+	case caslEnabled && !firebirdEnabled && !phoenixEnabled:
+		mode = config.BackendModeCASLCloud
+	}
+
+	caslPultID := int64(0)
+	if parsed, err := strconv.ParseInt(strings.TrimSpace(s.caslPultIDEntry.Text), 10, 64); err == nil && parsed > 0 {
+		caslPultID = parsed
+	}
+
+	return config.DBConfig{
+		User:            s.userEntry.Text,
+		Password:        s.passEntry.Text,
+		Host:            s.hostEntry.Text,
+		Port:            s.portEntry.Text,
+		Path:            s.pathEntry.Text,
+		Params:          s.paramsEntry.Text,
+		FirebirdEnabled: firebirdEnabled,
+		PhoenixEnabled:  phoenixEnabled,
+		PhoenixUser:     strings.TrimSpace(s.phoenixUserEntry.Text),
+		PhoenixPassword: s.phoenixPassEntry.Text,
+		PhoenixHost:     strings.TrimSpace(s.phoenixHostEntry.Text),
+		PhoenixPort:     strings.TrimSpace(s.phoenixPortEntry.Text),
+		PhoenixInstance: strings.TrimSpace(s.phoenixInstanceEntry.Text),
+		PhoenixDatabase: strings.TrimSpace(s.phoenixDatabaseEntry.Text),
+		PhoenixParams:   strings.TrimSpace(s.phoenixParamsEntry.Text),
+		CASLEnabled:     caslEnabled,
+		Mode:            mode,
+		CASLBaseURL:     strings.TrimSpace(s.caslBaseURLEntry.Text),
+		CASLToken:       strings.TrimSpace(s.caslTokenEntry.Text),
+		CASLEmail:       strings.TrimSpace(s.caslEmailEntry.Text),
+		CASLPass:        strings.TrimSpace(s.caslPassEntry.Text),
+		CASLPultID:      caslPultID,
+		LogLevel:        strings.ToLower(strings.TrimSpace(s.logLevelSelect.Selected)),
+	}
+}
+
+func (s *settingsDialogState) buildUIConfigFromForm() config.UIConfig {
+	return config.UIConfig{
+		FontSize:               parseFloat32(s.fontEntry.Text),
+		FontSizeObjects:        parseFloat32(s.fontObjEntry.Text),
+		FontSizeEvents:         parseFloat32(s.fontEvEntry.Text),
+		FontSizeAlarms:         parseFloat32(s.fontAlmEntry.Text),
+		ExportDir:              strings.TrimSpace(s.exportDirEntry.Text),
+		EventLogLimit:          parseInt(s.eventLimitEntry.Text),
+		ObjectLogLimit:         parseInt(s.objectLimitEntry.Text),
+		BridgeAlarmHistoryMode: bridgeAlarmHistoryModeValue(s.bridgeHistoryModeSelect.Selected),
+		EventProbeIntervalSec:  parseInt(s.eventProbeIntervalEntry.Text),
+		EventsReconcileSec:     parseInt(s.eventsReconcileEntry.Text),
+		AlarmsReconcileSec:     parseInt(s.alarmsReconcileEntry.Text),
+		ObjectsReconcileSec:    parseInt(s.objectsReconcileEntry.Text),
+		FallbackRefreshSec:     parseInt(s.fallbackRefreshEntry.Text),
+		MaxProbeBackoffSec:     parseInt(s.maxProbeBackoffEntry.Text),
+	}
+}
+
+func (s *settingsDialogState) buildVodafoneConfigFromForm() config.VodafoneConfig {
+	newCfg := config.LoadVodafoneConfig(s.pref)
+	newCfg.Phone = strings.TrimSpace(s.vodafonePhoneEntry.Text)
+	return newCfg
+}
+
+func (s *settingsDialogState) buildKyivstarConfigFromForm() config.KyivstarConfig {
+	newCfg := config.LoadKyivstarConfig(s.pref)
+	clientIDChanged := strings.TrimSpace(newCfg.ClientID) != strings.TrimSpace(s.kyivstarClientIDEntry.Text)
+	clientSecretChanged := strings.TrimSpace(newCfg.ClientSecret) != strings.TrimSpace(s.kyivstarClientSecretEntry.Text)
+
+	newCfg.ClientID = strings.TrimSpace(s.kyivstarClientIDEntry.Text)
+	newCfg.ClientSecret = strings.TrimSpace(s.kyivstarClientSecretEntry.Text)
+	newCfg.UserEmail = strings.TrimSpace(s.kyivstarEmailEntry.Text)
+	if clientIDChanged || clientSecretChanged {
+		newCfg.AccessToken = ""
+		newCfg.TokenExpiry = ""
+	}
+
+	return newCfg
+}
+
+func parseFloat32(raw string) float32 {
+	parsed, err := strconv.ParseFloat(strings.TrimSpace(raw), 32)
+	if err != nil {
+		return 0
+	}
+	return float32(parsed)
+}
+
+func parseInt(raw string) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return 0
+	}
+	return parsed
 }
 
 func timeNow() time.Time {

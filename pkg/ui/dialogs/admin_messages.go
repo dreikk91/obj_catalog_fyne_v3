@@ -14,7 +14,13 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
-func ShowAdminMessagesDialog(parent fyne.Window, provider contracts.AdminProvider) {
+type adminMessagesDialogProvider interface {
+	ListMessageProtocols() ([]int64, error)
+	ListMessages(protocolID *int64, filter string) ([]contracts.AdminMessage, error)
+	SetMessageAdminOnly(uin int64, adminOnly bool) error
+}
+
+func ShowAdminMessagesDialog(parent fyne.Window, provider adminMessagesDialogProvider) {
 	win := fyne.CurrentApp().NewWindow("Управління повідомленнями адміністратора")
 	win.Resize(fyne.NewSize(1024, 768))
 

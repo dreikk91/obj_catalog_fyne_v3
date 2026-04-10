@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -767,5 +768,182 @@ func TestCASLProvider_FetchCASLImagePreview(t *testing.T) {
 	}
 	if string(body) != "fake-image" {
 		t.Fatalf("unexpected image body: %q", string(body))
+	}
+}
+
+func TestCASLProvider_DeleteCASLObjectMovesToBasket(t *testing.T) {
+	t.Parallel()
+
+	payloads := make(map[string]map[string]any)
+	var commands []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-delete","user_id":"1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmd := strings.TrimSpace(asString(payload["type"]))
+			commands = append(commands, cmd)
+			payloads[cmd] = payload
+			w.Header().Set("Content-Type", "application/json")
+			switch cmd {
+			case "read_user":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"user_id":"3","last_name":"Менеджер","first_name":"Марія","role":"MANAGER"}]}`))
+			case "read_pult":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"pult_id":"7","name":"Пульт 7"}]}`))
+			case "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{}}`))
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"29","name":"1007 Офіс","address":"Львів, Зелена 69","device_id":"28","device_number":1007}]}`))
+			case "get_grd_object_full":
+				_, _ = w.Write([]byte(`{"status":"ok","name":"1007 Офіс","address":"Львів, Зелена 69","description":"Опис","pult_id":"7","reacting_pult_id":"7","contract":"C-29","user_id":"3","note":"","start_date":0,"object_type":"Офіс","id_request":"","geo_zone_id":0,"rooms":[{"room_id":"36","name":"Торгова зала","description":"Основна","lines":{"1":{"adapter_type":"SYS","group_number":1,"adapter_number":0}}}],"device":{"id":"28","device_id":"28","obj_id":"29","number":1007,"name":"MAKS PRO","type":"TYPE_DEVICE_Ajax"},"obj_status":"Включено","images":[]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"28","obj_id":"29","number":1007,"name":"MAKS PRO","type":"TYPE_DEVICE_Ajax","lines":[{"id":1,"number":1,"name":"Вхід"}]}]}`))
+			case "save_in_basket":
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			case "remove_line_from_room":
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			case "delete_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 7, "test@lot.lviv.ua", "test123")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	internalID := int64(mapCASLObjectID("29", "1007 Офіс", "1007"))
+	if err := provider.DeleteCASLObject(ctx, internalID); err != nil {
+		t.Fatalf("DeleteCASLObject failed: %v", err)
+	}
+
+	if got := strings.TrimSpace(asString(payloads["delete_grd_object"]["obj_id"])); got != "29" {
+		t.Fatalf("unexpected obj_id in delete_grd_object: %q", got)
+	}
+	if got := strings.TrimSpace(asString(payloads["save_in_basket"]["type_data"])); got != "guardedObject" {
+		t.Fatalf("unexpected type_data in save_in_basket: %q", got)
+	}
+	if got := parseCASLAnyInt(payloads["save_in_basket"]["pult_id"]); got != 7 {
+		t.Fatalf("unexpected pult_id in save_in_basket: %d", got)
+	}
+	if jsonPayload := strings.TrimSpace(asString(payloads["save_in_basket"]["json"])); !strings.Contains(jsonPayload, "1007 Офіс") {
+		t.Fatalf("unexpected basket json payload: %q", jsonPayload)
+	}
+	if got := strings.TrimSpace(asString(payloads["remove_line_from_room"]["obj_id"])); got != "29" {
+		t.Fatalf("unexpected obj_id in remove_line_from_room: %q", got)
+	}
+	if got := strings.TrimSpace(asString(payloads["remove_line_from_room"]["room_id"])); got != "36" {
+		t.Fatalf("unexpected room_id in remove_line_from_room: %q", got)
+	}
+	if got := parseCASLAnyInt(payloads["remove_line_from_room"]["line_number"]); got != 1 {
+		t.Fatalf("unexpected line_number in remove_line_from_room: %d", got)
+	}
+	saveIdx := slices.Index(commands, "save_in_basket")
+	breakIdx := slices.Index(commands, "remove_line_from_room")
+	deleteIdx := slices.Index(commands, "delete_grd_object")
+	if saveIdx < 0 || breakIdx < 0 || deleteIdx < 0 || !(saveIdx < breakIdx && breakIdx < deleteIdx) {
+		t.Fatalf("unexpected delete command order: %v", commands)
+	}
+}
+
+func TestCASLProvider_BlockAndUnblockCASLDevice(t *testing.T) {
+	t.Parallel()
+
+	var userActions []map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-block","user_id":"1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if strings.TrimSpace(asString(payload["type"])) != "user_action" {
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+			userActions = append(userActions, payload)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 7, "test@lot.lviv.ua", "test123")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := provider.BlockCASLDevice(ctx, contracts.CASLDeviceBlockRequest{
+		DeviceID:     "28",
+		DeviceNumber: 1007,
+		TimeUnblock:  2554790050,
+		Message:      "Тимчасове блокування",
+	}); err != nil {
+		t.Fatalf("BlockCASLDevice failed: %v", err)
+	}
+	if err := provider.UnblockCASLDevice(ctx, "28"); err != nil {
+		t.Fatalf("UnblockCASLDevice failed: %v", err)
+	}
+
+	if len(userActions) != 2 {
+		t.Fatalf("expected 2 user_action calls, got %d", len(userActions))
+	}
+	if got := strings.TrimSpace(asString(userActions[0]["action"])); got != "DEVICE_BLOCK" {
+		t.Fatalf("unexpected block action: %q", got)
+	}
+	if got := strings.TrimSpace(asString(userActions[0]["block_message"])); got != "Тимчасове блокування" {
+		t.Fatalf("unexpected block message: %q", got)
+	}
+	if got := strings.TrimSpace(asString(userActions[1]["action"])); got != "DEVICE_UNBLOCK" {
+		t.Fatalf("unexpected unblock action: %q", got)
+	}
+}
+
+func TestCASLProvider_ReadCASLObjectBasket(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-basket","user_id":"1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if strings.TrimSpace(asString(payload["type"])) != "read_from_basket" {
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","guardedObjects":[{"basket_id":14,"obj_id":"29","name":"1007 Офіс","address":"Львів, Зелена 69","deleted_at":"2026-04-10 10:00:00"}],"devices":[],"connections":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 7, "test@lot.lviv.ua", "test123")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	items, err := provider.ReadCASLObjectBasket(ctx)
+	if err != nil {
+		t.Fatalf("ReadCASLObjectBasket failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 basket item, got %d", len(items))
+	}
+	if items[0].BasketID != 14 || items[0].ObjID != "29" || items[0].Name != "1007 Офіс" {
+		t.Fatalf("unexpected basket item: %+v", items[0])
 	}
 }

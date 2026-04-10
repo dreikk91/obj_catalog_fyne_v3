@@ -110,6 +110,9 @@ type CASLGuardObjectDetails struct {
 	Rooms          []CASLRoomDetails
 	Device         CASLDeviceDetails
 	ObjectStatus   string
+	DeviceBlocked  bool
+	BlockMessage   string
+	TimeUnblock    int64
 	Images         []string
 }
 
@@ -293,17 +296,38 @@ type CASLImageDeleteRequest struct {
 	ImageID string
 }
 
+// CASLDeviceBlockRequest описує блокування приладу об'єкта.
+type CASLDeviceBlockRequest struct {
+	DeviceID     string
+	DeviceNumber int64
+	TimeUnblock  int64
+	Message      string
+}
+
+// CASLObjectBasketItem описує один об'єкт у корзині CASL.
+type CASLObjectBasketItem struct {
+	BasketID   int64
+	ObjID      string
+	Name       string
+	Address    string
+	TypeData   string
+	DeletedRaw string
+}
+
 // CASLObjectEditorProvider описує редагування CASL-об'єктів через CASL Cloud.
 type CASLObjectEditorProvider interface {
 	GetCASLObjectEditorSnapshot(ctx context.Context, objectID int64) (CASLObjectEditorSnapshot, error)
 	CreateCASLObject(ctx context.Context, create CASLGuardObjectCreate) (string, error)
 	UpdateCASLObject(ctx context.Context, update CASLGuardObjectUpdate) error
+	DeleteCASLObject(ctx context.Context, objectID int64) error
 	UpdateCASLRoom(ctx context.Context, update CASLRoomUpdate) error
 	CreateCASLRoom(ctx context.Context, create CASLRoomCreate) error
 	ReadCASLDeviceNumbers(ctx context.Context) ([]int64, error)
 	IsCASLDeviceNumberInUse(ctx context.Context, deviceNumber int64) (bool, error)
 	CreateCASLDevice(ctx context.Context, create CASLDeviceCreate) (string, error)
 	UpdateCASLDevice(ctx context.Context, update CASLDeviceUpdate) error
+	BlockCASLDevice(ctx context.Context, request CASLDeviceBlockRequest) error
+	UnblockCASLDevice(ctx context.Context, deviceID string) error
 	UpdateCASLDeviceLine(ctx context.Context, update CASLDeviceLineMutation) error
 	CreateCASLDeviceLine(ctx context.Context, create CASLDeviceLineMutation) error
 	AddCASLLineToRoom(ctx context.Context, binding CASLLineToRoomBinding) error
@@ -311,6 +335,7 @@ type CASLObjectEditorProvider interface {
 	RemoveCASLUserFromRoom(ctx context.Context, request CASLRemoveUserFromRoomRequest) error
 	UpdateCASLRoomUserPriorities(ctx context.Context, objectID int64, items []CASLRoomUserPriority) error
 	CreateCASLUser(ctx context.Context, request CASLUserCreateRequest) (CASLUserProfile, error)
+	ReadCASLObjectBasket(ctx context.Context) ([]CASLObjectBasketItem, error)
 	CreateCASLImage(ctx context.Context, request CASLImageCreateRequest) error
 	DeleteCASLImage(ctx context.Context, request CASLImageDeleteRequest) error
 	FetchCASLImagePreview(ctx context.Context, imageID string) ([]byte, error)

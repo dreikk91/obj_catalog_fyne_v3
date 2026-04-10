@@ -224,6 +224,15 @@ func mapCASLRealtimeRow(source map[string]any, fallbackType string) (CASLObjectE
 		Number:    number,
 		ContactID: contactID,
 		HozUserID: firstCASLTextValue(source["hoz_user_id"]),
+		Cause:     firstCASLTextValue(source["cause"]),
+		Note:      firstCASLTextValue(source["note"]),
+		BlockMessage: firstCASLTextValue(
+			source["block_message"],
+			source["blockMessage"],
+		),
+	}
+	if timeUnblock, ok := firstCASLIntValue(source["time_unblock"], source["timeUnblock"]); ok {
+		row.TimeUnblock = int64(timeUnblock)
 	}
 	if row.HozUserID == "" {
 		row.HozUserID = firstCASLTextValue(source["user_id"])
@@ -832,7 +841,7 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			_, isCustomDeviceType = customDeviceTypes[strings.ToUpper(deviceType)]
 		}
 
-		details := buildCASLUserActionDetails(row)
+		details := buildCASLUserActionDetails(row, dictMap)
 		if details == "" {
 			details = decodeCASLEventDescription(nil, dictMap, row.Code, row.ContactID, int(row.Number), deviceType)
 		}

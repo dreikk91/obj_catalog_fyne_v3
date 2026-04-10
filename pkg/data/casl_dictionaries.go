@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -799,7 +800,7 @@ func decodeCASLEventDescription(translator map[string]string, dictionary map[str
 	return applyCASLNumberTemplate(template, resolvedNumber)
 }
 
-func buildCASLUserActionDetails(row CASLObjectEvent) string {
+func buildCASLUserActionDetails(row CASLObjectEvent, dictionary map[string]string) string {
 	action := strings.ToUpper(strings.TrimSpace(row.Action))
 	if action == "" {
 		action = strings.ToUpper(strings.TrimSpace(row.Code))
@@ -821,6 +822,10 @@ func buildCASLUserActionDetails(row CASLObjectEvent) string {
 			return base + ": " + who
 		}
 		return base
+	case "GRD_OBJ_HIJACK":
+		return "Перехоплення тривоги"
+	case "GRD_OBJ_HIJACKED":
+		return "Тривогу перехоплено"
 	case "GRD_OBJ_ASS_MGR":
 		base := "Призначення МГР"
 		mgrID := strings.TrimSpace(row.MgrID)
@@ -849,13 +854,59 @@ func buildCASLUserActionDetails(row CASLObjectEvent) string {
 			who = strings.TrimSpace(row.UserID)
 		}
 		if who != "" {
-			return base + ": " + who
+			base += ": " + who
+		}
+		if cause := formatCASLActionCause(dictionary, row.Cause); cause != "" {
+			base += ", Причина: " + cause
+		}
+		if note := strings.TrimSpace(row.Note); note != "" {
+			base += ", Примітка: " + note
+		}
+		return base
+	case "NORM_MSG_NOTIF":
+		return "Заявочне повідомлення потрапило в стрічку"
+	case "NORM_MSG_PICK":
+		return "Взяття в роботу заявочного повідомлення"
+	case "NORM_MSG_HIJACK":
+		return "Перехоплення заявочного повідомлення"
+	case "NORM_MSG_FINISH":
+		base := "Завершення відпрацювання заявочного повідомлення"
+		if cause := formatCASLActionCause(dictionary, row.Cause); cause != "" {
+			base += ", Причина: " + cause
+		}
+		if note := strings.TrimSpace(row.Note); note != "" {
+			base += ", Примітка: " + note
+		}
+		return base
+	case "LINE_BLOCK":
+		base := "Блокування шлейфа"
+		if row.Number > 0 {
+			base += " № " + strconv.FormatInt(row.Number, 10)
+		}
+		if msg := strings.TrimSpace(row.BlockMessage); msg != "" {
+			base += ", Причина: " + msg
+		}
+		if until := formatCASLActionUnblockTime(row.TimeUnblock); until != "" {
+			base += ", До: " + until
+		}
+		return base
+	case "LINE_UNBLOCK":
+		base := "Розблокування шлейфа"
+		if row.Number > 0 {
+			base += " № " + strconv.FormatInt(row.Number, 10)
 		}
 		return base
 	case "DEVICE_BLOCK":
-		return "Пристрій заблоковано"
+		base := "Блокування ППК"
+		if msg := strings.TrimSpace(row.BlockMessage); msg != "" {
+			base += ", Причина: " + msg
+		}
+		if until := formatCASLActionUnblockTime(row.TimeUnblock); until != "" {
+			base += ", До: " + until
+		}
+		return base
 	case "DEVICE_UNBLOCK":
-		return "Пристрій розблоковано"
+		return "Розблокування ППК"
 	default:
 		return ""
 	}

@@ -587,16 +587,27 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 
 	menus := []*fyne.Menu{adminMenu}
 	if _, reportsOK := a.resolveCASLReportsProvider(); reportsOK {
-		caslMenuItems := make([]*fyne.MenuItem, 0, 3)
+		caslMenuItems := make([]*fyne.MenuItem, 0, 8)
 		caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Звіти", func() {
 			a.openCASLReportsDialog()
 		}))
 		if _, ok := a.resolveCASLObjectEditorProvider(); ok {
+			caslMenuItems = append(caslMenuItems, fyne.NewMenuItemSeparator())
 			caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Створити новий об'єкт", func() {
 				a.openCASLObjectCreator()
 			}))
 			caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Редагувати поточний об'єкт", func() {
 				a.openCASLObjectEditor()
+			}))
+			caslMenuItems = append(caslMenuItems, fyne.NewMenuItemSeparator())
+			caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Блокування поточного об'єкта", func() {
+				a.openCASLObjectBlockDialog()
+			}))
+			caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Видалити поточний об'єкт", func() {
+				a.openCASLObjectDeleteDialog()
+			}))
+			caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Корзина об'єктів", func() {
+				a.openCASLObjectBasketDialog()
 			}))
 		}
 		caslMenu := fyne.NewMenu("CASL", caslMenuItems...)
@@ -608,6 +619,16 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 			}),
 			fyne.NewMenuItem("Редагувати поточний об'єкт", func() {
 				a.openCASLObjectEditor()
+			}),
+			fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem("Блокування поточного об'єкта", func() {
+				a.openCASLObjectBlockDialog()
+			}),
+			fyne.NewMenuItem("Видалити поточний об'єкт", func() {
+				a.openCASLObjectDeleteDialog()
+			}),
+			fyne.NewMenuItem("Корзина об'єктів", func() {
+				a.openCASLObjectBasketDialog()
 			}),
 		)
 		menus = append(menus, caslMenu)

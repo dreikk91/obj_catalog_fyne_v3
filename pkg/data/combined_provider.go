@@ -125,6 +125,14 @@ func (p *CombinedDataProvider) UpdateCASLObject(ctx context.Context, update cont
 	return provider.UpdateCASLObject(ctx, update)
 }
 
+func (p *CombinedDataProvider) DeleteCASLObject(ctx context.Context, objectID int64) error {
+	provider, err := p.resolveCASLObjectEditorProvider(objectID)
+	if err != nil {
+		return err
+	}
+	return provider.DeleteCASLObject(ctx, objectID)
+}
+
 func (p *CombinedDataProvider) UpdateCASLRoom(ctx context.Context, update contracts.CASLRoomUpdate) error {
 	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(update.ObjID))
 	if err != nil {
@@ -171,6 +179,22 @@ func (p *CombinedDataProvider) UpdateCASLDevice(ctx context.Context, update cont
 		return err
 	}
 	return provider.UpdateCASLDevice(ctx, update)
+}
+
+func (p *CombinedDataProvider) BlockCASLDevice(ctx context.Context, request contracts.CASLDeviceBlockRequest) error {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return err
+	}
+	return provider.BlockCASLDevice(ctx, request)
+}
+
+func (p *CombinedDataProvider) UnblockCASLDevice(ctx context.Context, deviceID string) error {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return err
+	}
+	return provider.UnblockCASLDevice(ctx, deviceID)
 }
 
 func (p *CombinedDataProvider) UpdateCASLDeviceLine(ctx context.Context, update contracts.CASLDeviceLineMutation) error {
@@ -227,6 +251,14 @@ func (p *CombinedDataProvider) CreateCASLUser(ctx context.Context, request contr
 		return contracts.CASLUserProfile{}, err
 	}
 	return provider.CreateCASLUser(ctx, request)
+}
+
+func (p *CombinedDataProvider) ReadCASLObjectBasket(ctx context.Context) ([]contracts.CASLObjectBasketItem, error) {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return nil, err
+	}
+	return provider.ReadCASLObjectBasket(ctx)
 }
 
 func (p *CombinedDataProvider) CreateCASLImage(ctx context.Context, request contracts.CASLImageCreateRequest) error {

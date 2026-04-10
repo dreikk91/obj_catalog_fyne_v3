@@ -487,6 +487,14 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 	}
 	contextByObject := p.loadEventContextsByObjectNum(ctx, objFilter, contextByPPK)
 	dictMap := p.loadDictionaryMap(ctx)
+	users := map[string]caslUser(nil)
+	if shouldLoadCASLEventUsers(filteredRows) {
+		if loadedUsers, err := p.loadUsers(ctx); err == nil {
+			users = loadedUsers
+		} else {
+			log.Debug().Err(err).Msg("CASL: не вдалося завантажити користувачів для підписів подій")
+		}
+	}
 
 	events := make([]models.Event, 0, len(filteredRows))
 	for _, row := range filteredRows {
@@ -524,17 +532,20 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 		objectName = formatCASLJournalObjectName(objectNum, objectName)
 
 		translator := map[string]string(nil)
-		lineNames := map[int]string(nil)
+		lineInfos := map[int]caslEventLineInfo(nil)
 		translatorAlarms := map[string]bool(nil)
 		deviceType := ""
 		if hasCtx {
 			translator = ctxItem.Translator
-			lineNames = ctxItem.LineNames
+			lineInfos = ctxItem.LineInfos
 			translatorAlarms = ctxItem.TranslatorAlarms
 			deviceType = strings.TrimSpace(ctxItem.DeviceType)
 		}
 
-		details := buildCASLUserActionDetails(row)
+		details := buildCASLUserActionDetails(row, dictMap)
+		if details == "" && isCASLPPKMessageSource(sourceType) {
+			details = buildCASLPPKEventDetails(row, translator, dictMap, deviceType, lineInfos, users)
+		}
 		if details == "" {
 			details = decodeCASLEventDescription(translator, dictMap, code, contactID, number, deviceType)
 		}
@@ -550,13 +561,7 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 				details = "CASL подія"
 			}
 		}
-		if shouldAppendCASLLineDescription(code, contactID, details) {
-			if lineName := strings.TrimSpace(lineNames[number]); lineName != "" {
-				details += " | Опис: " + lineName
-			}
-		}
-
-		classifierCode := code
+		classifierCode := resolveCASLEventClassificationKey(translator, code, contactID, deviceType, number, lineInfos)
 		if classifierCode == "" {
 			classifierCode = strings.TrimSpace(row.Action)
 		}
@@ -648,6 +653,7 @@ func (p *CASLCloudProvider) loadEventContextsByObjectNum(ctx context.Context, ob
 		if hasDevice {
 			ctxItem.DeviceType = strings.TrimSpace(device.Type.String())
 			ctxItem.LineNames = buildCASLLineNameIndex(device.Lines)
+			ctxItem.LineInfos = p.buildCASLLineInfoIndex(ctx, device.Lines)
 			ctxItem.Translator = p.loadTranslatorMap(ctx, ctxItem.DeviceType)
 			ctxItem.TranslatorAlarms = p.loadTranslatorAlarmFlags(ctx, ctxItem.DeviceType)
 		}
@@ -728,6 +734,7 @@ func (p *CASLCloudProvider) loadEventContextsByPPK(ctx context.Context, ppkFilte
 		ctxItem.ObjectName = formatCASLJournalObjectName(ctxItem.ObjectNum, ctxItem.ObjectName)
 
 		ctxItem.LineNames = buildCASLLineNameIndex(device.Lines)
+		ctxItem.LineInfos = p.buildCASLLineInfoIndex(ctx, device.Lines)
 		ctxItem.Translator = p.loadTranslatorMap(ctx, ctxItem.DeviceType)
 		ctxItem.TranslatorAlarms = p.loadTranslatorAlarmFlags(ctx, ctxItem.DeviceType)
 
@@ -1764,7 +1771,7 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 	var (
 		translator map[string]string
 		dictMap    map[string]string
-		lineNames  map[int]string
+		lineInfos  map[int]caslEventLineInfo
 		deviceType string
 	)
 
@@ -1772,13 +1779,24 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 	if hasDevice {
 		deviceType = strings.TrimSpace(device.Type.String())
 		translator = p.loadTranslatorMap(ctx, deviceType)
-		lineNames = buildCASLLineNameIndex(device.Lines)
+		lineInfos = p.buildCASLLineInfoIndex(ctx, device.Lines)
 	}
 	dictMap = p.loadDictionaryMap(ctx)
+	users := map[string]caslUser(nil)
+	normalizedRows := make([]CASLObjectEvent, 0, len(raw))
+	for _, item := range raw {
+		normalizedRows = append(normalizedRows, normalizeCASLObjectEvent(item))
+	}
+	if shouldLoadCASLEventUsers(normalizedRows) {
+		if loadedUsers, err := p.loadUsers(ctx); err == nil {
+			users = loadedUsers
+		} else {
+			log.Debug().Err(err).Msg("CASL: не вдалося завантажити користувачів для подій об'єкта")
+		}
+	}
 
-	for idx, item := range raw {
-		row := normalizeCASLObjectEvent(item)
-		ts := item.Time.Int64()
+	for idx, row := range normalizedRows {
+		ts := row.Time
 		if ts <= 0 {
 			continue
 		}
@@ -1796,7 +1814,10 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 			sourceType = strings.TrimSpace(row.UserActionType)
 		}
 
-		details := buildCASLUserActionDetails(row)
+		details := buildCASLUserActionDetails(row, dictMap)
+		if details == "" && isCASLPPKMessageSource(sourceType) {
+			details = buildCASLPPKEventDetails(row, translator, dictMap, deviceType, lineInfos, users)
+		}
 		if details == "" {
 			details = decodeCASLEventDescription(translator, dictMap, code, contactID, zoneNumber, deviceType)
 		}
@@ -1818,13 +1839,11 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 				details = fallback
 			}
 		}
-		eventType := classifyCASLEventTypeWithContext(code, contactID, sourceType, details)
-
-		if shouldAppendCASLLineDescription(code, contactID, details) {
-			if lineName := strings.TrimSpace(lineNames[zoneNumber]); lineName != "" {
-				details += " | Опис: " + lineName
-			}
+		classifierCode := resolveCASLEventClassificationKey(translator, code, contactID, deviceType, zoneNumber, lineInfos)
+		if classifierCode == "" {
+			classifierCode = code
 		}
+		eventType := classifyCASLEventTypeWithContext(classifierCode, contactID, sourceType, details)
 		if sourceType != "" &&
 			!strings.EqualFold(sourceType, "ppk_event") &&
 			!isCASLActionSource(sourceType) {

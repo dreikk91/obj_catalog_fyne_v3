@@ -115,9 +115,19 @@ func (p *CASLCloudProvider) GetCASLObjectEditorSnapshot(ctx context.Context, obj
 		return contracts.CASLObjectEditorSnapshot{}, err
 	}
 
+	record, found, recordErr := p.findCASLObjectRecordByRawID(ctx, objID)
+	if recordErr == nil && found {
+		fullObject.DeviceBlocked = record.DeviceBlocked
+		fullObject.BlockMessage = strings.TrimSpace(record.BlockMessage.String())
+		fullObject.TimeUnblock = parseCASLAnyTime(record.TimeUnblock.String()).Unix()
+	}
+
 	deviceRaw, _ := p.findCASLDeviceRaw(ctx, fullObject.Device.DeviceID, fullObject.ObjID, fullObject.Device.Number)
 	if len(deviceRaw) > 0 {
 		fullObject.Device = overlayCASLDeviceDetails(fullObject.Device, mapCASLDeviceDetails(deviceRaw))
+		if blocked, ok := boolFromAny(deviceRaw["blocked"]); !fullObject.DeviceBlocked && ok && blocked {
+			fullObject.DeviceBlocked = true
+		}
 	}
 	assignRoomIDsToLines(&fullObject)
 
@@ -180,6 +190,68 @@ func (p *CASLCloudProvider) UpdateCASLObject(ctx context.Context, update contrac
 		return err
 	}
 	p.invalidateCASLEditorCaches()
+	return nil
+}
+
+func (p *CASLCloudProvider) DeleteCASLObject(ctx context.Context, objectID int64) error {
+	snapshot, err := p.GetCASLObjectEditorSnapshot(ctx, objectID)
+	if err != nil {
+		return err
+	}
+	objID, err := p.resolveCASLEditorObjectID(ctx, objectID)
+	if err != nil {
+		return err
+	}
+	basketJSON, err := exportCASLObjectBasketJSON(snapshot.Object)
+	if err != nil {
+		return err
+	}
+	if err := p.saveCASLObjectToBasket(ctx, basketJSON); err != nil {
+		return err
+	}
+	if err := p.breakCASLObjectConnections(ctx, snapshot.Object); err != nil {
+		return err
+	}
+	if _, err := p.ExecuteCASLCommand(ctx, map[string]any{
+		"type":   "delete_grd_object",
+		"obj_id": strings.TrimSpace(objID),
+	}, true); err != nil {
+		return err
+	}
+	p.invalidateCASLEditorCaches()
+	return nil
+}
+
+func (p *CASLCloudProvider) breakCASLObjectConnections(ctx context.Context, object contracts.CASLGuardObjectDetails) error {
+	deviceID := strings.TrimSpace(object.Device.DeviceID)
+	objID := strings.TrimSpace(object.ObjID)
+	if deviceID == "" || objID == "" {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(object.Device.Lines))
+	for _, line := range object.Device.Lines {
+		roomID := strings.TrimSpace(line.RoomID)
+		if roomID == "" || line.LineNumber <= 0 {
+			continue
+		}
+		key := roomID + "#" + strconv.Itoa(line.LineNumber)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+
+		if _, err := p.ExecuteCASLCommand(ctx, map[string]any{
+			"type":        "remove_line_from_room",
+			"obj_id":      objID,
+			"room_id":     roomID,
+			"device_id":   deviceID,
+			"line_number": line.LineNumber,
+		}, true); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -308,6 +380,49 @@ func (p *CASLCloudProvider) UpdateCASLDevice(ctx context.Context, update contrac
 		"passw_remote":      strings.TrimSpace(update.PasswRemote),
 	}
 	if _, err := p.ExecuteCASLCommand(ctx, payload, true); err != nil {
+		return err
+	}
+	p.invalidateCASLEditorCaches()
+	return nil
+}
+
+func (p *CASLCloudProvider) BlockCASLDevice(ctx context.Context, request contracts.CASLDeviceBlockRequest) error {
+	deviceID := strings.TrimSpace(request.DeviceID)
+	if deviceID == "" {
+		return fmt.Errorf("casl block device: empty device_id")
+	}
+	if strings.TrimSpace(request.Message) == "" {
+		return fmt.Errorf("casl block device: empty message")
+	}
+	if request.TimeUnblock <= 0 {
+		return fmt.Errorf("casl block device: invalid time_unblock")
+	}
+	_, err := p.ExecuteCASLCommand(ctx, map[string]any{
+		"type":          "user_action",
+		"action":        "DEVICE_BLOCK",
+		"device_id":     deviceID,
+		"device_number": request.DeviceNumber,
+		"time_unblock":  request.TimeUnblock,
+		"block_message": strings.TrimSpace(request.Message),
+	}, true)
+	if err != nil {
+		return err
+	}
+	p.invalidateCASLEditorCaches()
+	return nil
+}
+
+func (p *CASLCloudProvider) UnblockCASLDevice(ctx context.Context, deviceID string) error {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return fmt.Errorf("casl unblock device: empty device_id")
+	}
+	_, err := p.ExecuteCASLCommand(ctx, map[string]any{
+		"type":      "user_action",
+		"action":    "DEVICE_UNBLOCK",
+		"device_id": deviceID,
+	}, true)
+	if err != nil {
 		return err
 	}
 	p.invalidateCASLEditorCaches()
@@ -458,6 +573,14 @@ func (p *CASLCloudProvider) CreateCASLUser(ctx context.Context, request contract
 	return contracts.CASLUserProfile{}, nil
 }
 
+func (p *CASLCloudProvider) ReadCASLObjectBasket(ctx context.Context) ([]contracts.CASLObjectBasketItem, error) {
+	response, err := p.ExecuteCASLCommand(ctx, map[string]any{"type": "read_from_basket"}, true)
+	if err != nil {
+		return nil, err
+	}
+	return parseCASLObjectBasketItems(response), nil
+}
+
 func (p *CASLCloudProvider) CreateCASLImage(ctx context.Context, request contracts.CASLImageCreateRequest) error {
 	payload := map[string]any{
 		"type":       "create_image",
@@ -531,6 +654,34 @@ func zeroToEmpty(value int64) any {
 	return value
 }
 
+func exportCASLObjectBasketJSON(object contracts.CASLGuardObjectDetails) (string, error) {
+	payload, err := json.Marshal([]contracts.CASLGuardObjectDetails{object})
+	if err != nil {
+		return "", fmt.Errorf("casl basket export: %w", err)
+	}
+	return string(payload), nil
+}
+
+func (p *CASLCloudProvider) saveCASLObjectToBasket(ctx context.Context, jsonPayload string) error {
+	if strings.TrimSpace(jsonPayload) == "" {
+		return fmt.Errorf("casl basket export: empty payload")
+	}
+	if _, err := p.ensureToken(ctx); err != nil {
+		return err
+	}
+	session := p.SessionInfo()
+	if session.PultID <= 0 {
+		return fmt.Errorf("casl basket export: empty pult_id")
+	}
+	_, err := p.ExecuteCASLCommand(ctx, map[string]any{
+		"type":      "save_in_basket",
+		"pult_id":   session.PultID,
+		"type_data": "guardedObject",
+		"json":      jsonPayload,
+	}, true)
+	return err
+}
+
 func caslDeviceLinePayload(command string, update contracts.CASLDeviceLineMutation) map[string]any {
 	payload := map[string]any{
 		"type":           command,
@@ -566,6 +717,23 @@ func (p *CASLCloudProvider) resolveCASLEditorObjectID(ctx context.Context, objec
 		return "", fmt.Errorf("casl object editor: raw obj_id not found for internal id %d", objectID)
 	}
 	return strings.TrimSpace(record.ObjID), nil
+}
+
+func (p *CASLCloudProvider) findCASLObjectRecordByRawID(ctx context.Context, objID string) (caslGrdObject, bool, error) {
+	objID = strings.TrimSpace(objID)
+	if objID == "" {
+		return caslGrdObject{}, false, nil
+	}
+	records, err := p.loadObjects(ctx)
+	if err != nil {
+		return caslGrdObject{}, false, err
+	}
+	for _, record := range records {
+		if strings.TrimSpace(record.ObjID) == objID {
+			return record, true, nil
+		}
+	}
+	return caslGrdObject{}, false, nil
 }
 
 func (p *CASLCloudProvider) loadCASLObjectEditorReferences(ctx context.Context) ([]contracts.CASLUserProfile, []contracts.CASLPultRef, map[string]any, error) {
@@ -765,6 +933,50 @@ func mapCASLDeviceDetails(raw map[string]any) contracts.CASLDeviceDetails {
 		LastPingDate:      int64(parseCASLAnyInt(raw["lastPingDate"])),
 		Lines:             lines,
 	}
+}
+
+func parseCASLObjectBasketItems(response map[string]any) []contracts.CASLObjectBasketItem {
+	if len(response) == 0 {
+		return nil
+	}
+
+	var items []contracts.CASLObjectBasketItem
+	appendItems := func(typeData string, rawRows any) {
+		rows, ok := rawRows.([]any)
+		if !ok {
+			return
+		}
+		for _, raw := range rows {
+			row, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			item := contracts.CASLObjectBasketItem{
+				BasketID:   int64(parseCASLAnyInt(firstCASLString(row["basket_id"], row["id"]))),
+				ObjID:      strings.TrimSpace(firstCASLString(row["obj_id"], row["id_object"])),
+				Name:       strings.TrimSpace(firstCASLString(row["name"], row["title"])),
+				Address:    strings.TrimSpace(asString(row["address"])),
+				TypeData:   typeData,
+				DeletedRaw: strings.TrimSpace(firstCASLString(row["deleted_at"], row["date"], row["created_at"])),
+			}
+			if item.BasketID <= 0 && item.ObjID == "" && item.Name == "" {
+				continue
+			}
+			items = append(items, item)
+		}
+	}
+
+	appendItems("guardedObject", response["guardedObjects"])
+	appendItems("guardedObject", response["data"])
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].BasketID != items[j].BasketID {
+			return items[i].BasketID > items[j].BasketID
+		}
+		return items[i].Name < items[j].Name
+	})
+
+	return items
 }
 
 func findCASLDeviceMapInAny(raw any, deviceID string, objID string, number int64) (map[string]any, bool) {

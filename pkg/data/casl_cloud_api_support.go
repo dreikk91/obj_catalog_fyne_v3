@@ -64,6 +64,10 @@ type CASLObjectEvent struct {
 	Number         int64
 	ContactID      string
 	HozUserID      string
+	Cause          string
+	Note           string
+	BlockMessage   string
+	TimeUnblock    int64
 }
 
 // CASLDeviceStateInfo is an exported shape of read_device_state.state.
@@ -626,6 +630,10 @@ func normalizeCASLObjectEvent(item caslObjectEvent) CASLObjectEvent {
 		Number:         item.Number.Int64(),
 		ContactID:      strings.TrimSpace(item.ContactID.String()),
 		HozUserID:      strings.TrimSpace(item.HozUserID.String()),
+		Cause:          strings.TrimSpace(item.Cause.String()),
+		Note:           strings.TrimSpace(item.Note.String()),
+		BlockMessage:   strings.TrimSpace(item.BlockMsg.String()),
+		TimeUnblock:    item.TimeUnlock.Int64(),
 	}
 }
 

@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -69,6 +71,9 @@ type caslObjectEditorState struct {
 	objectBusinessEntry    *widget.Entry
 	objectImagesBox        *fyne.Container
 	objectSaveBtn          *widget.Button
+	objectDeleteBtn        *widget.Button
+	objectBasketBtn        *widget.Button
+	objectHintLabel        *widget.Label
 
 	roomList            *widget.List
 	roomNameEntry       *widget.Entry
@@ -81,6 +86,9 @@ type caslObjectEditorState struct {
 	roomUserSelected    int
 	roomUsersLocal      []contracts.CASLRoomUserLink
 	roomImagesBox       *fyne.Container
+	roomUserInfoLabel   *widget.Label
+	roomUserHozNumEntry *widget.Entry
+	roomUserHintLabel   *widget.Label
 
 	deviceNumberEntry        *widget.Entry
 	deviceNameEntry          *widget.Entry
@@ -96,6 +104,9 @@ type caslObjectEditorState struct {
 	deviceLicenceEntry       *widget.Entry
 	deviceRemotePassEntry    *widget.Entry
 	deviceSaveBtn            *widget.Button
+	deviceBlockBtn           *widget.Button
+	deviceHintLabel          *widget.Label
+	deviceNumbers            []int64
 
 	lineList               *widget.List
 	lineDescriptionEntry   *widget.Entry
@@ -167,12 +178,16 @@ func newCASLObjectEditorState(parent fyne.Window, provider contracts.CASLObjectE
 		objectGeoZoneEntry:       widget.NewEntry(),
 		objectBusinessEntry:      widget.NewEntry(),
 		objectImagesBox:          container.NewGridWrap(fyne.NewSize(220, 190)),
+		objectHintLabel:          widget.NewLabel(""),
 		roomNameEntry:            widget.NewEntry(),
 		roomDescEntry:            widget.NewMultiLineEntry(),
 		roomRTSPEntry:            widget.NewEntry(),
 		roomUserSearchEntry:      widget.NewEntry(),
 		roomUserSelect:           widget.NewSelect(nil, nil),
 		roomImagesBox:            container.NewGridWrap(fyne.NewSize(220, 190)),
+		roomUserInfoLabel:        widget.NewLabel("Оберіть користувача в списку."),
+		roomUserHozNumEntry:      widget.NewEntry(),
+		roomUserHintLabel:        widget.NewLabel("Гос. номер не задано."),
 		deviceNumberEntry:        widget.NewEntry(),
 		deviceNameEntry:          widget.NewEntry(),
 		deviceTypeSelect:         widget.NewSelect(nil, nil),
@@ -186,6 +201,7 @@ func newCASLObjectEditorState(parent fyne.Window, provider contracts.CASLObjectE
 		deviceReglamentDateEntry: widget.NewDateEntry(),
 		deviceLicenceEntry:       widget.NewEntry(),
 		deviceRemotePassEntry:    widget.NewEntry(),
+		deviceHintLabel:          widget.NewLabel(""),
 		lineDescriptionEntry:     widget.NewEntry(),
 		lineNumberEntry:          widget.NewEntry(),
 		lineTypeEntry:            widget.NewSelectEntry(nil),
@@ -206,14 +222,34 @@ func newCASLObjectEditorState(parent fyne.Window, provider contracts.CASLObjectE
 	s.deviceChangeDateEntry.SetPlaceHolder("Оберіть дату")
 	s.deviceReglamentDateEntry.SetPlaceHolder("Оберіть дату")
 	s.roomUserSearchEntry.SetPlaceHolder("Пошук користувача: ПІБ, ID, телефон")
+	s.roomUserHozNumEntry.SetPlaceHolder("1..128 або порожньо")
+	s.deviceSIM1Entry.SetPlaceHolder("+38 (050) 123-45-67")
+	s.deviceSIM2Entry.SetPlaceHolder("+38 (050) 123-45-67")
+	s.deviceLicenceEntry.SetPlaceHolder("123-123-123-123-123-123")
 	s.quickLineNameEntry.SetPlaceHolder("Введіть назву нової зони та натисніть Enter")
 	s.quickLineTypeEntry.SetText("NORMAL")
+	s.initEntryValidation()
 	s.quickLineNameEntry.OnSubmitted = func(string) {
 		s.createQuickLine()
 	}
 	s.roomUserSearchEntry.OnChanged = func(value string) {
 		s.refreshRoomUserOptions(value)
 	}
+	s.roomUserHozNumEntry.OnChanged = func(value string) {
+		s.updateSelectedRoomUserHozNum(value)
+	}
+	s.objectNameEntry.OnChanged = func(string) { s.refreshValidationState() }
+	s.objectAddressEntry.OnChanged = func(string) { s.refreshValidationState() }
+	s.objectDescriptionEntry.OnChanged = func(string) { s.refreshValidationState() }
+	s.roomNameEntry.OnChanged = func(string) { s.refreshValidationState() }
+	s.roomDescEntry.OnChanged = func(string) { s.refreshValidationState() }
+	s.deviceNumberEntry.OnChanged = func(string) { s.refreshValidationState() }
+	s.deviceNameEntry.OnChanged = func(string) { s.refreshValidationState() }
+	s.deviceTypeSelect.OnChanged = func(string) { s.refreshValidationState() }
+	s.deviceTimeoutEntry.OnChanged = func(string) { s.refreshValidationState() }
+	s.deviceSIM1Entry.OnChanged = func(string) { s.refreshValidationState() }
+	s.deviceSIM2Entry.OnChanged = func(string) { s.refreshValidationState() }
+	s.deviceLicenceEntry.OnChanged = func(string) { s.refreshValidationState() }
 
 	s.initLists()
 
@@ -280,7 +316,7 @@ func (s *caslObjectEditorState) initLists() {
 		},
 	)
 	s.roomUsersList.OnSelected = func(id widget.ListItemID) {
-		s.roomUserSelected = id
+		s.selectRoomUser(id)
 	}
 	s.applyRoomUsersListHeights()
 
@@ -347,6 +383,8 @@ func (s *caslObjectEditorState) buildObjectTab() fyne.CanvasObject {
 		widget.NewCard("Основне", "Базова інформація про об'єкт", mainForm),
 		widget.NewCard("Керування", "Відповідальні та службові параметри", controlForm),
 		widget.NewCard("Локація та нотатки", "Координати, опис та робочі примітки", locationForm),
+		widget.NewCard("Валідація", "Обов'язкові поля як в оригінальному CASL", s.objectHintLabel),
+		widget.NewCard("Системні дії", "Видалення об'єкта і перегляд корзини винесені в меню CASL", widget.NewLabel("Використовуйте CASL -> Видалити поточний об'єкт та CASL -> Корзина об'єктів.")),
 	)
 	imagesCard := widget.NewCard("Фото об'єкта", "Поточні фото та швидке додавання нових", container.NewBorder(
 		nil,
@@ -371,6 +409,13 @@ func (s *caslObjectEditorState) buildRoomsTab() fyne.CanvasObject {
 	downBtn := widget.NewButton("Вниз", s.moveRoomUserDown)
 	saveOrderBtn := widget.NewButton("Зберегти порядок", s.saveRoomUserPriorities)
 	createUserBtn := widget.NewButton("Створити користувача", s.createUserAndAddToRoom)
+	selectedUserCard := widget.NewCard("Вибраний користувач", "Пріоритет і гос. номер відповідального", container.NewVBox(
+		s.roomUserInfoLabel,
+		widget.NewForm(
+			widget.NewFormItem("Гос. номер", s.roomUserHozNumEntry),
+		),
+		s.roomUserHintLabel,
+	))
 
 	detailsCard := widget.NewCard("Дані приміщення", "Редагування назви, опису та RTSP", container.NewVBox(
 		widget.NewForm(
@@ -378,6 +423,7 @@ func (s *caslObjectEditorState) buildRoomsTab() fyne.CanvasObject {
 			widget.NewFormItem("Опис", s.roomDescEntry),
 			widget.NewFormItem("RTSP", s.roomRTSPEntry),
 		),
+		widget.NewLabel("Обов'язкові поля: назва і опис приміщення."),
 		container.NewHBox(saveRoomBtn, createRoomBtn),
 	))
 
@@ -386,6 +432,7 @@ func (s *caslObjectEditorState) buildRoomsTab() fyne.CanvasObject {
 			s.roomUserSearchEntry,
 			s.roomUserSelect,
 			container.NewHBox(addUserBtn, createUserBtn),
+			selectedUserCard,
 		),
 		container.NewHBox(upBtn, downBtn, saveOrderBtn, layout.NewSpacer(), removeUserBtn),
 		nil, nil,
@@ -440,6 +487,8 @@ func (s *caslObjectEditorState) buildDeviceTab() fyne.CanvasObject {
 		widget.NewCard("Зв'язок та обслуговування", "SIM-карти, сервіс і службові реквізити", serviceForm),
 		widget.NewCard("Сервісні дати", "Окремо винесені дати, щоб поля не з'їжджали по висоті", dateGrid),
 		widget.NewCard("Доступ", "Ліцензія та пароль віддаленого доступу", accessForm),
+		widget.NewCard("Валідація", "Правила оригінального CASL для номера, SIM і licence key", s.deviceHintLabel),
+		widget.NewCard("Блокування", "Блокування і розблокування винесені в меню CASL", widget.NewLabel("Використовуйте CASL -> Блокування поточного об'єкта.")),
 	)
 	return container.NewBorder(nil, container.NewHBox(layout.NewSpacer(), s.deviceSaveBtn), nil, nil, container.NewScroll(content))
 }
@@ -487,6 +536,7 @@ func (s *caslObjectEditorState) reload() {
 		defer cancel()
 
 		snapshot, err := s.provider.GetCASLObjectEditorSnapshot(ctx, s.objectID)
+		deviceNumbers, numbersErr := s.provider.ReadCASLDeviceNumbers(ctx)
 		fyne.Do(func() {
 			if err != nil {
 				s.setStatus("Помилка завантаження")
@@ -495,6 +545,11 @@ func (s *caslObjectEditorState) reload() {
 			}
 
 			s.snapshot = snapshot
+			if numbersErr == nil {
+				s.deviceNumbers = append([]int64(nil), deviceNumbers...)
+			} else {
+				s.deviceNumbers = nil
+			}
 			s.rebuildOptions()
 			s.fillObjectForm()
 			s.fillDeviceForm()
@@ -533,6 +588,7 @@ func (s *caslObjectEditorState) reload() {
 				s.win.Canvas().Focus(s.quickLineNameEntry)
 			}
 
+			s.refreshValidationState()
 			s.setStatus("Готово")
 		})
 	}()
@@ -672,6 +728,7 @@ func (s *caslObjectEditorState) fillObjectForm() {
 		}
 	}
 	s.refreshObjectImages()
+	s.refreshValidationState()
 }
 
 func (s *caslObjectEditorState) fillDeviceForm() {
@@ -680,18 +737,19 @@ func (s *caslObjectEditorState) fillDeviceForm() {
 	s.deviceNameEntry.SetText(device.Name)
 	s.deviceTypeSelect.SetSelected(optionLabelByValue(device.Type, s.deviceTypeOptionToID))
 	s.deviceTimeoutEntry.SetText(int64ToString(device.Timeout))
-	s.deviceSIM1Entry.SetText(device.SIM1)
-	s.deviceSIM2Entry.SetText(device.SIM2)
+	s.deviceSIM1Entry.SetText(formatCASLEditorSIMForDisplay(device.SIM1))
+	s.deviceSIM2Entry.SetText(formatCASLEditorSIMForDisplay(device.SIM2))
 	s.deviceTechnicianSelect.SetSelected(s.userOptionByID(device.TechnicianID, s.techOptionToID))
 	s.deviceUnitsEntry.SetText(device.Units)
 	s.deviceRequisitesEntry.SetText(device.Requisites)
 	s.deviceChangeDateEntry.SetDate(caslDatePtr(device.ChangeDate))
 	s.deviceReglamentDateEntry.SetDate(caslDatePtr(device.ReglamentDate))
-	s.deviceLicenceEntry.SetText(device.LicenceKey)
+	s.deviceLicenceEntry.SetText(formatCASLEditorLicenceForDisplay(device.LicenceKey))
 	s.deviceRemotePassEntry.SetText(device.PasswRemote)
 	if !s.hasDevice() && s.deviceTimeoutEntry.Text == "" {
 		s.deviceTimeoutEntry.SetText("3600")
 	}
+	s.refreshValidationState()
 }
 
 func (s *caslObjectEditorState) selectRoom(index int) {
@@ -708,11 +766,12 @@ func (s *caslObjectEditorState) selectRoom(index int) {
 	s.refreshRoomUserOptions(s.roomUserSearchEntry.Text)
 	s.refreshRoomImages(room.Images)
 	if len(s.roomUsersLocal) > 0 {
-		s.roomUserSelected = 0
+		s.selectRoomUser(0)
 		s.roomUsersList.Select(0)
 	} else {
-		s.roomUserSelected = -1
+		s.selectRoomUser(-1)
 	}
+	s.refreshValidationState()
 }
 
 func (s *caslObjectEditorState) selectLine(index int) {
@@ -778,7 +837,25 @@ func (s *caslObjectEditorState) createObject() {
 	})
 }
 
+func (s *caslObjectEditorState) confirmDeleteObject() {
+	ShowCASLObjectDeleteDialog(s.win, s.provider, s.objectID, func() {
+		s.setStatus("Об'єкт видалено")
+		if s.onChanged != nil {
+			s.onChanged()
+		}
+		s.win.Close()
+	})
+}
+
+func (s *caslObjectEditorState) showObjectBasket() {
+	ShowCASLObjectBasketDialog(s.win, s.provider)
+}
+
 func (s *caslObjectEditorState) saveRoom() {
+	if err := s.validateRoomForm(); err != nil {
+		dialog.ShowError(err, s.win)
+		return
+	}
 	update, err := s.currentRoomUpdate()
 	if err != nil {
 		dialog.ShowError(err, s.win)
@@ -791,6 +868,10 @@ func (s *caslObjectEditorState) saveRoom() {
 
 func (s *caslObjectEditorState) createRoom() {
 	if !s.ensureObjectCreated("Спочатку створіть об'єкт, а потім додавайте приміщення.") {
+		return
+	}
+	if err := s.validateRoomForm(); err != nil {
+		dialog.ShowError(err, s.win)
 		return
 	}
 	create := contracts.CASLRoomCreate{
@@ -806,6 +887,24 @@ func (s *caslObjectEditorState) createRoom() {
 	}
 	s.runMutation("Створення приміщення...", func(ctx context.Context) error {
 		return s.provider.CreateCASLRoom(ctx, create)
+	})
+}
+
+func (s *caslObjectEditorState) toggleDeviceBlock() {
+	ShowCASLObjectBlockDialog(s.win, s.provider, s.objectID, func() {
+		if s.onChanged != nil {
+			s.onChanged()
+		}
+		s.reload()
+	})
+}
+
+func (s *caslObjectEditorState) showBlockDeviceDialog() {
+	ShowCASLObjectBlockDialog(s.win, s.provider, s.objectID, func() {
+		if s.onChanged != nil {
+			s.onChanged()
+		}
+		s.reload()
 	})
 }
 
@@ -825,6 +924,9 @@ func (s *caslObjectEditorState) currentObjectCreate() (contracts.CASLGuardObject
 	name := strings.TrimSpace(s.objectNameEntry.Text)
 	if name == "" {
 		return contracts.CASLGuardObjectCreate{}, fmt.Errorf("вкажіть назву об'єкта")
+	}
+	if err := s.validateObjectForm(); err != nil {
+		return contracts.CASLGuardObjectCreate{}, err
 	}
 	return contracts.CASLGuardObjectCreate{
 		Name:           name,
@@ -857,6 +959,9 @@ func (s *caslObjectEditorState) currentObjectUpdate() (contracts.CASLGuardObject
 	businessCoeff, err := parseCASLEditorFloatPtr(s.objectBusinessEntry.Text)
 	if err != nil {
 		return contracts.CASLGuardObjectUpdate{}, fmt.Errorf("business coeff: %w", err)
+	}
+	if err := s.validateObjectForm(); err != nil {
+		return contracts.CASLGuardObjectUpdate{}, err
 	}
 	return contracts.CASLGuardObjectUpdate{
 		ObjID:          s.snapshot.Object.ObjID,
@@ -1068,44 +1173,10 @@ func (s *caslObjectEditorState) createDevice() {
 }
 
 func (s *caslObjectEditorState) saveDevice() {
-	number, err := parseCASLEditorInt64(s.deviceNumberEntry.Text)
+	update, err := s.currentDeviceUpdate()
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("номер обладнання: %w", err), s.win)
+		dialog.ShowError(err, s.win)
 		return
-	}
-	timeout, err := parseCASLEditorInt64(s.deviceTimeoutEntry.Text)
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("timeout: %w", err), s.win)
-		return
-	}
-	changeDate, err := dateEntryUnixMilli(s.deviceChangeDateEntry)
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("change date: %w", err), s.win)
-		return
-	}
-	reglamentDate, err := dateEntryUnixMilli(s.deviceReglamentDateEntry)
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("reglament date: %w", err), s.win)
-		return
-	}
-
-	update := contracts.CASLDeviceUpdate{
-		DeviceID:          s.snapshot.Object.Device.DeviceID,
-		Number:            number,
-		Name:              strings.TrimSpace(s.deviceNameEntry.Text),
-		DeviceType:        mappedOptionValue(s.deviceTypeSelect.Selected, s.deviceTypeOptionToID),
-		Timeout:           timeout,
-		SIM1:              strings.TrimSpace(s.deviceSIM1Entry.Text),
-		SIM2:              strings.TrimSpace(s.deviceSIM2Entry.Text),
-		TechnicianID:      s.techOptionToID[s.deviceTechnicianSelect.Selected],
-		Units:             strings.TrimSpace(s.deviceUnitsEntry.Text),
-		Requisites:        strings.TrimSpace(s.deviceRequisitesEntry.Text),
-		ChangeDate:        changeDate,
-		ReglamentDate:     reglamentDate,
-		LicenceKey:        strings.TrimSpace(s.deviceLicenceEntry.Text),
-		PasswRemote:       strings.TrimSpace(s.deviceRemotePassEntry.Text),
-		MoreAlarmTime:     s.snapshot.Object.Device.MoreAlarmTime,
-		IgnoringAlarmTime: s.snapshot.Object.Device.IgnoringAlarmTime,
 	}
 	s.runMutation("Збереження обладнання...", func(ctx context.Context) error {
 		return s.provider.UpdateCASLDevice(ctx, update)
@@ -1113,16 +1184,9 @@ func (s *caslObjectEditorState) saveDevice() {
 }
 
 func (s *caslObjectEditorState) currentDeviceCreate() (contracts.CASLDeviceCreate, error) {
-	number, err := parseCASLEditorInt64(s.deviceNumberEntry.Text)
+	number, timeout, sim1, sim2, licenceKey, err := s.validateAndCollectDeviceForm(true)
 	if err != nil {
-		return contracts.CASLDeviceCreate{}, fmt.Errorf("номер обладнання: %w", err)
-	}
-	if number <= 0 {
-		return contracts.CASLDeviceCreate{}, fmt.Errorf("вкажіть номер обладнання")
-	}
-	timeout, err := parseCASLEditorInt64(s.deviceTimeoutEntry.Text)
-	if err != nil {
-		return contracts.CASLDeviceCreate{}, fmt.Errorf("timeout: %w", err)
+		return contracts.CASLDeviceCreate{}, err
 	}
 	changeDate, err := dateEntryUnixMilli(s.deviceChangeDateEntry)
 	if err != nil {
@@ -1137,14 +1201,14 @@ func (s *caslObjectEditorState) currentDeviceCreate() (contracts.CASLDeviceCreat
 		Name:              strings.TrimSpace(s.deviceNameEntry.Text),
 		DeviceType:        mappedOptionValue(s.deviceTypeSelect.Selected, s.deviceTypeOptionToID),
 		Timeout:           timeout,
-		SIM1:              strings.TrimSpace(s.deviceSIM1Entry.Text),
-		SIM2:              strings.TrimSpace(s.deviceSIM2Entry.Text),
+		SIM1:              sim1,
+		SIM2:              sim2,
 		TechnicianID:      s.techOptionToID[s.deviceTechnicianSelect.Selected],
 		Units:             strings.TrimSpace(s.deviceUnitsEntry.Text),
 		Requisites:        strings.TrimSpace(s.deviceRequisitesEntry.Text),
 		ChangeDate:        changeDate,
 		ReglamentDate:     reglamentDate,
-		LicenceKey:        strings.TrimSpace(s.deviceLicenceEntry.Text),
+		LicenceKey:        licenceKey,
 		PasswRemote:       strings.TrimSpace(s.deviceRemotePassEntry.Text),
 		MoreAlarmTime:     s.snapshot.Object.Device.MoreAlarmTime,
 		IgnoringAlarmTime: s.snapshot.Object.Device.IgnoringAlarmTime,
@@ -1347,6 +1411,10 @@ func (s *caslObjectEditorState) saveRoomUserPriorities() {
 	if !s.ensureObjectCreated("Спочатку створіть об'єкт і приміщення.") {
 		return
 	}
+	if err := s.validateAllRoomUsersHozNums(); err != nil {
+		dialog.ShowError(err, s.win)
+		return
+	}
 	room, ok := s.selectedRoom()
 	if !ok {
 		ShowInfoDialog(s.win, "Не вибрано", "Оберіть приміщення.")
@@ -1529,6 +1597,27 @@ func (s *caslObjectEditorState) selectedRoom() (contracts.CASLRoomDetails, bool)
 	return s.snapshot.Object.Rooms[s.roomSelected], true
 }
 
+func (s *caslObjectEditorState) selectRoomUser(index int) {
+	if index < 0 || index >= len(s.roomUsersLocal) {
+		s.roomUserSelected = -1
+		s.roomUserInfoLabel.SetText("Оберіть користувача в списку.")
+		s.roomUserHozNumEntry.SetText("")
+		s.roomUserHintLabel.SetText("Гос. номер не задано.")
+		return
+	}
+	s.roomUserSelected = index
+	user := s.roomUsersLocal[index]
+	s.roomUserInfoLabel.SetText(fmt.Sprintf("%d. %s", index+1, s.userLabelByID(user.UserID)))
+	s.roomUserHozNumEntry.SetText(strings.TrimSpace(user.HozNum))
+	if err := s.validateRoomUserHozNum(index, user.HozNum); err != nil {
+		s.roomUserHintLabel.SetText(err.Error())
+	} else if strings.TrimSpace(user.HozNum) == "" {
+		s.roomUserHintLabel.SetText("Гос. номер не задано.")
+	} else {
+		s.roomUserHintLabel.SetText("Гос. номер коректний.")
+	}
+}
+
 func (s *caslObjectEditorState) selectedLine() (contracts.CASLDeviceLineDetails, bool) {
 	if s.lineSelected < 0 || s.lineSelected >= len(s.snapshot.Object.Device.Lines) {
 		return contracts.CASLDeviceLineDetails{}, false
@@ -1542,6 +1631,13 @@ func (s *caslObjectEditorState) hasObject() bool {
 
 func (s *caslObjectEditorState) hasDevice() bool {
 	return strings.TrimSpace(s.snapshot.Object.Device.DeviceID) != ""
+}
+
+func (s *caslObjectEditorState) formatDeviceBlockedUntil() string {
+	if s.snapshot.Object.TimeUnblock <= 0 {
+		return ""
+	}
+	return time.Unix(s.snapshot.Object.TimeUnblock, 0).Local().Format("02.01.2006 15:04")
 }
 
 func (s *caslObjectEditorState) ensureObjectCreated(message string) bool {
@@ -1580,11 +1676,40 @@ func (s *caslObjectEditorState) refreshWindowPresentation() {
 			s.objectSaveBtn.SetText("Створити об'єкт")
 		}
 	}
+	if s.objectDeleteBtn != nil {
+		if s.hasObject() {
+			s.objectDeleteBtn.Enable()
+		} else {
+			s.objectDeleteBtn.Disable()
+		}
+	}
+	if s.objectBasketBtn != nil {
+		s.objectBasketBtn.Enable()
+	}
 	if s.deviceSaveBtn != nil {
 		if s.hasDevice() {
 			s.deviceSaveBtn.SetText("Зберегти обладнання")
+			s.deviceNumberEntry.Disable()
 		} else {
 			s.deviceSaveBtn.SetText("Створити обладнання")
+			if strings.TrimSpace(mappedOptionValue(s.deviceTypeSelect.Selected, s.deviceTypeOptionToID)) == "" {
+				s.deviceNumberEntry.Disable()
+			} else {
+				s.deviceNumberEntry.Enable()
+			}
+		}
+	}
+	if s.deviceBlockBtn != nil {
+		if s.hasDevice() {
+			if s.snapshot.Object.DeviceBlocked {
+				s.deviceBlockBtn.SetText("Розблокувати прилад")
+			} else {
+				s.deviceBlockBtn.SetText("Заблокувати прилад")
+			}
+			s.deviceBlockBtn.Enable()
+		} else {
+			s.deviceBlockBtn.SetText("Заблокувати прилад")
+			s.deviceBlockBtn.Disable()
 		}
 	}
 }
@@ -1707,13 +1832,37 @@ func (s *caslObjectEditorState) refreshRoomUsersUI(selected int) {
 	s.refreshRoomUserOptions(s.roomUserSearchEntry.Text)
 	s.applyRoomUsersListHeights()
 	if len(s.roomUsersLocal) == 0 {
-		s.roomUserSelected = -1
+		s.selectRoomUser(-1)
 		s.roomUsersList.UnselectAll()
 		return
 	}
 	selected = minListIndex(selected, len(s.roomUsersLocal)-1)
-	s.roomUserSelected = selected
+	s.selectRoomUser(selected)
 	s.roomUsersList.Select(selected)
+}
+
+func (s *caslObjectEditorState) updateSelectedRoomUserHozNum(raw string) {
+	if s.roomUserSelected < 0 || s.roomUserSelected >= len(s.roomUsersLocal) {
+		return
+	}
+	cleaned := strings.TrimSpace(raw)
+	if cleaned != "" {
+		cleaned = digitsOnly(cleaned)
+	}
+	if s.roomUsersLocal[s.roomUserSelected].HozNum != cleaned {
+		s.roomUsersLocal[s.roomUserSelected].HozNum = cleaned
+		s.syncCurrentRoomUsers()
+		s.roomUsersList.Refresh()
+	}
+	if err := s.validateRoomUserHozNum(s.roomUserSelected, cleaned); err != nil {
+		s.roomUserHintLabel.SetText(err.Error())
+		return
+	}
+	if cleaned == "" {
+		s.roomUserHintLabel.SetText("Гос. номер не задано.")
+		return
+	}
+	s.roomUserHintLabel.SetText("Гос. номер коректний.")
 }
 
 func (s *caslObjectEditorState) refreshObjectImages() {
@@ -1942,6 +2091,109 @@ func (s *caslObjectEditorState) refreshQuickLineHint() {
 	s.quickLineHintLabel.SetText(fmt.Sprintf("Наступний вільний номер зони: #%d", nextNumber))
 }
 
+func (s *caslObjectEditorState) refreshValidationState() {
+	s.applyValidationErrors()
+	if s.objectHintLabel != nil {
+		if err := s.validateObjectForm(); err != nil {
+			s.objectHintLabel.SetText(err.Error())
+		} else {
+			s.objectHintLabel.SetText("Обов'язкові поля: назва, адреса, опис. Для нового об'єкта також бажано вибрати реагуючий пульт.")
+		}
+	}
+	if s.objectSaveBtn != nil {
+		if err := s.validateObjectForm(); err != nil {
+			s.objectSaveBtn.Disable()
+		} else {
+			s.objectSaveBtn.Enable()
+		}
+	}
+	if s.deviceHintLabel != nil {
+		if err := s.validateDeviceForm(); err != nil {
+			s.deviceHintLabel.SetText(err.Error())
+		} else {
+			hint := "Обов'язкові поля: номер, назва, тип. SIM має бути у форматі +38 (050) 123-45-67."
+			if extra := s.nextFreeDeviceNumbersHint(); extra != "" && !s.hasDevice() {
+				hint += " " + extra
+			}
+			if s.snapshot.Object.DeviceBlocked {
+				hint += " Прилад зараз заблокований."
+				if msg := strings.TrimSpace(s.snapshot.Object.BlockMessage); msg != "" {
+					hint += " Причина: " + msg + "."
+				}
+				if until := s.formatDeviceBlockedUntil(); until != "" {
+					hint += " До: " + until + "."
+				}
+			}
+			s.deviceHintLabel.SetText(hint)
+		}
+	}
+	if s.deviceSaveBtn != nil {
+		if err := s.validateDeviceForm(); err != nil {
+			s.deviceSaveBtn.Disable()
+		} else {
+			s.deviceSaveBtn.Enable()
+		}
+	}
+	s.refreshWindowPresentation()
+}
+
+func (s *caslObjectEditorState) applyValidationErrors() {
+	s.applyObjectValidationErrors()
+	s.applyRoomValidationErrors()
+	s.applyDeviceValidationErrors()
+	s.applyRoomUserValidationErrors()
+}
+
+func (s *caslObjectEditorState) applyObjectValidationErrors() {
+	validateCASLEditorEntry(s.objectNameEntry)
+	validateCASLEditorEntry(s.objectAddressEntry)
+	validateCASLEditorEntry(s.objectDescriptionEntry)
+}
+
+func (s *caslObjectEditorState) applyRoomValidationErrors() {
+	validateCASLEditorEntry(s.roomNameEntry)
+	validateCASLEditorEntry(s.roomDescEntry)
+}
+
+func (s *caslObjectEditorState) applyRoomUserValidationErrors() {
+	validateCASLEditorEntry(s.roomUserHozNumEntry)
+}
+
+func (s *caslObjectEditorState) applyDeviceValidationErrors() {
+	validateCASLEditorEntry(s.deviceNameEntry)
+	validateCASLEditorEntry(s.deviceNumberEntry)
+	validateCASLEditorEntry(s.deviceTimeoutEntry)
+	validateCASLEditorEntry(s.deviceSIM1Entry)
+	validateCASLEditorEntry(s.deviceSIM2Entry)
+	validateCASLEditorEntry(s.deviceLicenceEntry)
+}
+
+func (s *caslObjectEditorState) validateDeviceNumberField() error {
+	return s.validateDeviceNumberFieldValue(s.deviceNumberEntry.Text)
+}
+
+func (s *caslObjectEditorState) validateDeviceNumberFieldValue(raw string) error {
+	numberText := strings.TrimSpace(raw)
+	if numberText == "" {
+		return fmt.Errorf("Номер приладу обов'язковий")
+	}
+	number, err := parseCASLEditorInt64(numberText)
+	if err != nil || number <= 0 {
+		return fmt.Errorf("Номер приладу має бути цілим числом більше 0")
+	}
+	if number > 999999 {
+		return fmt.Errorf("Номер приладу має бути не більше 999999")
+	}
+	deviceType := mappedOptionValue(s.deviceTypeSelect.Selected, s.deviceTypeOptionToID)
+	if (deviceType == "TYPE_DEVICE_Dunay_4L" || deviceType == "TYPE_DEVICE_CASL") && number > 65535 {
+		return fmt.Errorf("Для цього типу номер має бути не більше 65535")
+	}
+	if !s.hasDevice() && s.deviceNumberAppearsUsed(number) {
+		return fmt.Errorf("Номер приладу вже зайнятий")
+	}
+	return nil
+}
+
 func (s *caslObjectEditorState) findLineIndexByNumber(lineNumber int) int {
 	for idx, line := range s.snapshot.Object.Device.Lines {
 		if line.LineNumber == lineNumber {
@@ -2063,6 +2315,344 @@ func parseCASLEditorFloatPtr(raw string) (*float64, error) {
 		return nil, err
 	}
 	return &parsed, nil
+}
+
+func (s *caslObjectEditorState) validateObjectForm() error {
+	if !isCASLEditorRequiredTextValid(s.objectNameEntry.Text) {
+		return fmt.Errorf("Об'єкт: поле \"Назва\" обов'язкове")
+	}
+	if !isCASLEditorRequiredTextValid(s.objectAddressEntry.Text) {
+		return fmt.Errorf("Об'єкт: поле \"Адреса\" обов'язкове")
+	}
+	if !isCASLEditorRequiredTextValid(s.objectDescriptionEntry.Text) {
+		return fmt.Errorf("Об'єкт: поле \"Опис\" обов'язкове")
+	}
+	return nil
+}
+
+func (s *caslObjectEditorState) validateRoomForm() error {
+	if !isCASLEditorRequiredTextValid(s.roomNameEntry.Text) {
+		return fmt.Errorf("Приміщення: поле \"Назва\" обов'язкове")
+	}
+	if !isCASLEditorRequiredTextValid(s.roomDescEntry.Text) {
+		return fmt.Errorf("Приміщення: поле \"Опис\" обов'язкове")
+	}
+	return nil
+}
+
+func (s *caslObjectEditorState) validateDeviceForm() error {
+	_, _, _, _, _, err := s.validateAndCollectDeviceForm(!s.hasDevice())
+	return err
+}
+
+func (s *caslObjectEditorState) currentDeviceUpdate() (contracts.CASLDeviceUpdate, error) {
+	number, timeout, sim1, sim2, licenceKey, err := s.validateAndCollectDeviceForm(false)
+	if err != nil {
+		return contracts.CASLDeviceUpdate{}, err
+	}
+	changeDate, err := dateEntryUnixMilli(s.deviceChangeDateEntry)
+	if err != nil {
+		return contracts.CASLDeviceUpdate{}, fmt.Errorf("change date: %w", err)
+	}
+	reglamentDate, err := dateEntryUnixMilli(s.deviceReglamentDateEntry)
+	if err != nil {
+		return contracts.CASLDeviceUpdate{}, fmt.Errorf("reglament date: %w", err)
+	}
+	return contracts.CASLDeviceUpdate{
+		DeviceID:          s.snapshot.Object.Device.DeviceID,
+		Number:            number,
+		Name:              strings.TrimSpace(s.deviceNameEntry.Text),
+		DeviceType:        mappedOptionValue(s.deviceTypeSelect.Selected, s.deviceTypeOptionToID),
+		Timeout:           timeout,
+		SIM1:              sim1,
+		SIM2:              sim2,
+		TechnicianID:      s.techOptionToID[s.deviceTechnicianSelect.Selected],
+		Units:             strings.TrimSpace(s.deviceUnitsEntry.Text),
+		Requisites:        strings.TrimSpace(s.deviceRequisitesEntry.Text),
+		ChangeDate:        changeDate,
+		ReglamentDate:     reglamentDate,
+		LicenceKey:        licenceKey,
+		PasswRemote:       strings.TrimSpace(s.deviceRemotePassEntry.Text),
+		MoreAlarmTime:     s.snapshot.Object.Device.MoreAlarmTime,
+		IgnoringAlarmTime: s.snapshot.Object.Device.IgnoringAlarmTime,
+	}, nil
+}
+
+func (s *caslObjectEditorState) validateAndCollectDeviceForm(checkUnique bool) (int64, int64, string, string, string, error) {
+	deviceType := mappedOptionValue(s.deviceTypeSelect.Selected, s.deviceTypeOptionToID)
+	if strings.TrimSpace(deviceType) == "" {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: спочатку виберіть тип пристрою")
+	}
+	number, err := parseCASLEditorInt64(s.deviceNumberEntry.Text)
+	if err != nil || number <= 0 {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: номер приладу має бути цілим числом більше 0")
+	}
+	if number > 999999 {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: номер приладу має бути не більше 999999")
+	}
+	if (deviceType == "TYPE_DEVICE_Dunay_4L" || deviceType == "TYPE_DEVICE_CASL") && number > 65535 {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: для %s номер приладу має бути не більше 65535", deviceType)
+	}
+	if checkUnique && s.deviceNumberAppearsUsed(number) {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: номер приладу %d вже зайнятий", number)
+	}
+	if !isCASLEditorRequiredTextValid(s.deviceNameEntry.Text) {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: поле \"Назва\" обов'язкове")
+	}
+	timeout, err := parseCASLEditorInt64(s.deviceTimeoutEntry.Text)
+	if err != nil {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: timeout має бути цілим числом")
+	}
+	if strings.TrimSpace(s.deviceTimeoutEntry.Text) == "" {
+		timeout = 240
+	}
+	if timeout != 0 && (timeout < 15 || timeout > 3600) {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: timeout має бути в межах 15..3600 секунд")
+	}
+	sim1, err := normalizeCASLEditorSIM(s.deviceSIM1Entry.Text)
+	if err != nil {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: SIM1 %w", err)
+	}
+	sim2, err := normalizeCASLEditorSIM(s.deviceSIM2Entry.Text)
+	if err != nil {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: SIM2 %w", err)
+	}
+	licenceKey, err := normalizeCASLEditorLicenceForSave(s.deviceLicenceEntry.Text)
+	if err != nil {
+		return 0, 0, "", "", "", fmt.Errorf("Обладнання: licence key %w", err)
+	}
+	return number, timeout, sim1, sim2, licenceKey, nil
+}
+
+func (s *caslObjectEditorState) validateRoomUserHozNum(index int, raw string) error {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil
+	}
+	number, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("Гос. номер має містити лише цифри")
+	}
+	if number < 1 || number > 128 {
+		return fmt.Errorf("Гос. номер має бути в межах 1..128")
+	}
+	for roomIdx, room := range s.snapshot.Object.Rooms {
+		users := room.Users
+		if roomIdx == s.roomSelected {
+			users = s.roomUsersLocal
+		}
+		for userIdx, user := range users {
+			if roomIdx == s.roomSelected && userIdx == index {
+				continue
+			}
+			if strings.TrimSpace(user.HozNum) == value {
+				return fmt.Errorf("Гос. номер %s вже використовується в іншого користувача", value)
+			}
+		}
+	}
+	return nil
+}
+
+func (s *caslObjectEditorState) validateAllRoomUsersHozNums() error {
+	for roomIdx, room := range s.snapshot.Object.Rooms {
+		users := room.Users
+		if roomIdx == s.roomSelected {
+			users = s.roomUsersLocal
+		}
+		for userIdx, user := range users {
+			if err := s.validateRoomUserHozNum(userIdx, user.HozNum); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *caslObjectEditorState) deviceNumberAppearsUsed(number int64) bool {
+	for _, item := range s.deviceNumbers {
+		if item == number && (!s.hasDevice() || s.snapshot.Object.Device.Number != number) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *caslObjectEditorState) nextFreeDeviceNumbersHint() string {
+	if len(s.deviceNumbers) == 0 {
+		return ""
+	}
+	used := make(map[int64]struct{}, len(s.deviceNumbers))
+	for _, number := range s.deviceNumbers {
+		if number > 0 {
+			used[number] = struct{}{}
+		}
+	}
+	next := make([]string, 0, 5)
+	for candidate := int64(1); len(next) < 5 && candidate <= 999999; candidate++ {
+		if _, exists := used[candidate]; exists {
+			continue
+		}
+		next = append(next, strconv.FormatInt(candidate, 10))
+	}
+	if len(next) == 0 {
+		return ""
+	}
+	return "Наступні вільні номери: " + strings.Join(next, ", ")
+}
+
+func isCASLEditorRequiredTextValid(raw string) bool {
+	value := strings.TrimSpace(raw)
+	return value != "" && utf8.RuneCountInString(value) >= 1
+}
+
+func (s *caslObjectEditorState) initEntryValidation() {
+	configureCASLEditorValidator(s.objectNameEntry, func(raw string) error {
+		return requiredCASLEditorFieldError(raw, "Назва")
+	})
+	configureCASLEditorValidator(s.objectAddressEntry, func(raw string) error {
+		return requiredCASLEditorFieldError(raw, "Адреса")
+	})
+	configureCASLEditorValidator(s.objectDescriptionEntry, func(raw string) error {
+		return requiredCASLEditorFieldError(raw, "Опис")
+	})
+	configureCASLEditorValidator(s.roomNameEntry, func(raw string) error {
+		return requiredCASLEditorFieldError(raw, "Назва приміщення")
+	})
+	configureCASLEditorValidator(s.roomDescEntry, func(raw string) error {
+		return requiredCASLEditorFieldError(raw, "Опис приміщення")
+	})
+	configureCASLEditorValidator(s.roomUserHozNumEntry, func(raw string) error {
+		if s.roomUserSelected < 0 || s.roomUserSelected >= len(s.roomUsersLocal) {
+			return nil
+		}
+		return s.validateRoomUserHozNum(s.roomUserSelected, raw)
+	})
+	configureCASLEditorValidator(s.deviceNumberEntry, func(raw string) error {
+		return s.validateDeviceNumberFieldValue(raw)
+	})
+	configureCASLEditorValidator(s.deviceNameEntry, func(raw string) error {
+		return requiredCASLEditorFieldError(raw, "Назва пристрою")
+	})
+	configureCASLEditorValidator(s.deviceTimeoutEntry, validateCASLEditorTimeoutField)
+	configureCASLEditorValidator(s.deviceSIM1Entry, func(raw string) error {
+		return validateCASLEditorSIMField("SIM1", raw)
+	})
+	configureCASLEditorValidator(s.deviceSIM2Entry, func(raw string) error {
+		return validateCASLEditorSIMField("SIM2", raw)
+	})
+	configureCASLEditorValidator(s.deviceLicenceEntry, validateCASLEditorLicenceField)
+}
+
+func configureCASLEditorValidator(entry *widget.Entry, validator fyne.StringValidator) {
+	if entry == nil {
+		return
+	}
+	entry.AlwaysShowValidationError = true
+	entry.Validator = validator
+}
+
+func validateCASLEditorEntry(entry *widget.Entry) {
+	if entry == nil {
+		return
+	}
+	_ = entry.Validate()
+}
+
+func requiredCASLEditorFieldError(raw string, fieldName string) error {
+	if isCASLEditorRequiredTextValid(raw) {
+		return nil
+	}
+	return fmt.Errorf("Поле \"%s\" обов'язкове", fieldName)
+}
+
+func validateCASLEditorTimeoutField(raw string) error {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil
+	}
+	timeout, err := parseCASLEditorInt64(value)
+	if err != nil {
+		return fmt.Errorf("Timeout має бути цілим числом")
+	}
+	if timeout != 0 && (timeout < 15 || timeout > 3600) {
+		return fmt.Errorf("Timeout має бути в межах 15..3600 секунд")
+	}
+	return nil
+}
+
+func validateCASLEditorSIMField(fieldName string, raw string) error {
+	if _, err := normalizeCASLEditorSIM(raw); err != nil {
+		return fmt.Errorf("%s: %w", fieldName, err)
+	}
+	return nil
+}
+
+func validateCASLEditorLicenceField(raw string) error {
+	if _, err := normalizeCASLEditorLicenceForSave(raw); err != nil {
+		return err
+	}
+	return nil
+}
+
+func normalizeCASLEditorSIM(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", nil
+	}
+	if strings.Contains(value, "_") {
+		return "", fmt.Errorf("має бути введена повністю у форматі +38 (050) 123-45-67")
+	}
+	digits := digitsOnly(value)
+	switch {
+	case len(digits) == 12 && strings.HasPrefix(digits, "380"):
+	case len(digits) == 11 && strings.HasPrefix(digits, "80"):
+		digits = "3" + digits
+	case len(digits) == 10 && strings.HasPrefix(digits, "0"):
+		digits = "38" + digits
+	case len(digits) == 9:
+		digits = "380" + digits
+	default:
+		return "", fmt.Errorf("має бути у форматі +38 (050) 123-45-67")
+	}
+	if len(digits) != 12 || !strings.HasPrefix(digits, "380") {
+		return "", fmt.Errorf("має бути українським номером у міжнародному форматі")
+	}
+	return fmt.Sprintf("+%s (%s) %s-%s-%s", digits[:2], digits[2:5], digits[5:8], digits[8:10], digits[10:12]), nil
+}
+
+func formatCASLEditorSIMForDisplay(raw string) string {
+	formatted, err := normalizeCASLEditorSIM(raw)
+	if err != nil {
+		return strings.TrimSpace(raw)
+	}
+	return formatted
+}
+
+var caslEditorLicencePattern = regexp.MustCompile(`^\d{3}-\d{3}-\d{3}-\d{3}-\d{3}-\d{3}$`)
+
+func formatCASLEditorLicenceForDisplay(raw string) string {
+	return strings.ReplaceAll(strings.TrimSpace(raw), ";", "-")
+}
+
+func normalizeCASLEditorLicenceForSave(raw string) (string, error) {
+	value := formatCASLEditorLicenceForDisplay(raw)
+	if value == "" {
+		return "", nil
+	}
+	if !caslEditorLicencePattern.MatchString(value) {
+		return "", fmt.Errorf("має бути порожнім або у форматі 123-123-123-123-123-123")
+	}
+	return strings.ReplaceAll(value, "-", ";"), nil
+}
+
+func digitsOnly(raw string) string {
+	var builder strings.Builder
+	for _, r := range raw {
+		if r >= '0' && r <= '9' {
+			builder.WriteRune(r)
+		}
+	}
+	return builder.String()
 }
 
 func int64ToString(value int64) string {

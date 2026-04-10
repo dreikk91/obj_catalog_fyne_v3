@@ -579,6 +579,8 @@ var caslMessageKeyFallbackTemplates = map[string]string{
 	"OO_LINE_KZ":      "Коротке замикання шлейфа № {number}",
 	"LINE_BAD":        "Несправність шлейфа № {number}",
 	"OO_LINE_BAD":     "Несправність шлейфа № {number}",
+	"ATTACK":          "Напад № {number}",
+	"OO_ATTACK":       "Прихований напад № {number}",
 	"ZONE_ALM":        "Тривога в зоні № {number}",
 	"ZONE_NORM":       "Норма в зоні № {number}",
 	"ALM_INNER_ZONE":  "Тривога внутрішньої зони № {number}",
@@ -710,6 +712,10 @@ type caslObjectEvent struct {
 	Number     caslInt64 `json:"number"`
 	ContactID  caslText  `json:"contact_id"`
 	HozUserID  caslText  `json:"hoz_user_id"`
+	Cause      caslText  `json:"cause"`
+	Note       caslText  `json:"note"`
+	BlockMsg   caslText  `json:"block_message"`
+	TimeUnlock caslInt64 `json:"time_unblock"`
 	PPKAction  caslText  `json:"ppk_action_type"`
 	UserAction caslText  `json:"user_action_type"`
 	MgrAction  caslText  `json:"mgr_action_type"`

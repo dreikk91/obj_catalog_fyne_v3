@@ -17,6 +17,14 @@ type caslDecodedEventCode struct {
 	HasNumber  bool
 }
 
+type caslEventLineInfo struct {
+	Description   string
+	LineType      string
+	LineTypeLabel string
+	AdapterType   string
+	AdapterNumber int
+}
+
 type caslEventContext struct {
 	ObjectID         int
 	ObjectNum        string
@@ -25,6 +33,7 @@ type caslEventContext struct {
 	Translator       map[string]string
 	TranslatorAlarms map[string]bool
 	LineNames        map[int]string
+	LineInfos        map[int]caslEventLineInfo
 }
 
 // caslTapeMessage is a native CASL tape ppk_msg row (general_tape_item/general_tape_objects).

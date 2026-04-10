@@ -36,12 +36,16 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 	if _, devicesErr := p.loadDevices(ctx); devicesErr != nil {
 		log.Debug().Err(devicesErr).Msg("CASL: не вдалося завантажити read_device (продовжую без enrich)")
 	}
+	disconnected := p.loadDisconnectedDevicesIndex(ctx)
 
 	objects := make([]models.Object, 0, len(records))
 	for _, record := range records {
 		device, hasDevice := p.resolveDeviceForObject(record)
 		obj := mapCASLGrdObjectToObject(record, selectCASLDevice(hasDevice, device))
 		p.enrichCASLObjectWithDeviceMeta(ctx, &obj, hasDevice, device)
+		if disconnected.match(record, selectCASLDevice(hasDevice, device)) {
+			applyCASLObjectDisconnectedState(&obj, disconnected.lastSeen(record, selectCASLDevice(hasDevice, device)))
+		}
 		objects = append(objects, obj)
 	}
 	// sortCASLObjectsByNumber(objects)
@@ -112,6 +116,8 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 		if state.Online.Int64() > 0 {
 			obj.IsConnState = 1
 			obj.IsConnOK = true
+		} else {
+			applyCASLObjectDisconnectedState(&obj, time.UnixMilli(state.LastPingDate.Int64()).Local())
 		}
 		if state.LastPingDate.Int64() > 0 {
 			msgTime := time.UnixMilli(state.LastPingDate.Int64()).Local()
@@ -120,8 +126,104 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 		}
 		obj.Groups = p.buildCASLObjectGroups(ctx, record, state.Groups)
 	}
+	if obj.IsConnState > 0 {
+		disconnected := p.loadDisconnectedDevicesIndex(ctx)
+		if disconnected.match(record, selectCASLDevice(hasDevice, device)) {
+			applyCASLObjectDisconnectedState(&obj, disconnected.lastSeen(record, selectCASLDevice(hasDevice, device)))
+		}
+	}
 
 	return &obj
+}
+
+type caslDisconnectedDevicesIndex struct {
+	byDeviceID map[string]time.Time
+	byObjID    map[string]time.Time
+	byNumber   map[int64]time.Time
+}
+
+func (p *CASLCloudProvider) loadDisconnectedDevicesIndex(ctx context.Context) caslDisconnectedDevicesIndex {
+	rows, err := p.GetDisconnectedDevices(ctx)
+	if err != nil {
+		log.Debug().Err(err).Msg("CASL: не вдалося завантажити get_disconnected_devices")
+		return caslDisconnectedDevicesIndex{}
+	}
+	index := caslDisconnectedDevicesIndex{
+		byDeviceID: make(map[string]time.Time, len(rows)),
+		byObjID:    make(map[string]time.Time, len(rows)),
+		byNumber:   make(map[int64]time.Time, len(rows)),
+	}
+	for _, row := range rows {
+		seenAt, _ := firstCASLTimeValue(row["offline"], row["last"], row["lastPingDate"], row["date"])
+		if deviceID := strings.TrimSpace(firstCASLString(row["device_id"], row["id"])); deviceID != "" {
+			index.byDeviceID[deviceID] = seenAt
+		}
+		if objID := strings.TrimSpace(asString(row["obj_id"])); objID != "" {
+			index.byObjID[objID] = seenAt
+		}
+		if number, ok := firstCASLIntValue(row["number"], row["device_number"], row["ppk_num"]); ok && number > 0 {
+			index.byNumber[int64(number)] = seenAt
+		}
+	}
+	return index
+}
+
+func (i caslDisconnectedDevicesIndex) match(record caslGrdObject, device *caslDevice) bool {
+	_, ok := i.lastSeenWithState(record, device)
+	return ok
+}
+
+func (i caslDisconnectedDevicesIndex) lastSeen(record caslGrdObject, device *caslDevice) time.Time {
+	lastSeen, _ := i.lastSeenWithState(record, device)
+	return lastSeen
+}
+
+func (i caslDisconnectedDevicesIndex) lastSeenWithState(record caslGrdObject, device *caslDevice) (time.Time, bool) {
+	if device != nil {
+		if deviceID := strings.TrimSpace(device.DeviceID.String()); deviceID != "" {
+			if value, ok := i.byDeviceID[deviceID]; ok {
+				return value, true
+			}
+		}
+		if objID := strings.TrimSpace(device.ObjID.String()); objID != "" {
+			if value, ok := i.byObjID[objID]; ok {
+				return value, true
+			}
+		}
+		if number := device.Number.Int64(); number > 0 {
+			if value, ok := i.byNumber[number]; ok {
+				return value, true
+			}
+		}
+	}
+	if objID := strings.TrimSpace(record.ObjID); objID != "" {
+		if value, ok := i.byObjID[objID]; ok {
+			return value, true
+		}
+	}
+	if number := record.DeviceNumber.Int64(); number > 0 {
+		if value, ok := i.byNumber[number]; ok {
+			return value, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func applyCASLObjectDisconnectedState(obj *models.Object, lastSeen time.Time) {
+	if obj == nil {
+		return
+	}
+	obj.Status = models.StatusOffline
+	obj.StatusText = "НЕМАЄ ЗВ'ЯЗКУ"
+	obj.IsConnState = 0
+	obj.IsConnOK = false
+	obj.BlockedArmedOnOff = 0
+	if !lastSeen.IsZero() {
+		obj.LastMessageTime = lastSeen
+		if obj.LastTestTime.IsZero() {
+			obj.LastTestTime = lastSeen
+		}
+	}
 }
 
 func (p *CASLCloudProvider) loadObjects(ctx context.Context) ([]caslGrdObject, error) {

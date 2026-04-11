@@ -392,28 +392,6 @@ func normalizeCASLObjectRecord(record *caslGrdObject, device caslDevice) {
 	}
 	record.ManagerID = managerID
 
-	seen := make(map[string]struct{}, len(record.InCharge)+len(record.Rooms)*2)
-	inCharge := make([]string, 0, len(record.InCharge)+len(record.Rooms)*2)
-	for _, userID := range record.InCharge {
-		inCharge = appendCASLUniqueID(inCharge, seen, userID)
-	}
-	for _, room := range record.Rooms {
-		for _, roomUser := range room.Users {
-			inCharge = appendCASLUniqueID(inCharge, seen, roomUser.UserID)
-		}
-	}
-	if managerID != "" {
-		filtered := inCharge[:0]
-		for _, userID := range inCharge {
-			if strings.TrimSpace(userID) == managerID {
-				continue
-			}
-			filtered = append(filtered, userID)
-		}
-		inCharge = filtered
-	}
-	record.InCharge = inCharge
-
 	if strings.TrimSpace(record.ObjID) == "" {
 		record.ObjID = strings.TrimSpace(device.ObjID.String())
 	}

@@ -154,7 +154,7 @@ func TestCASLProvider_ReadUsersRejectsUserWithoutID(t *testing.T) {
 	}
 }
 
-func TestCASLProvider_ReadUsers_IgnoresBrokenActivePhoneWithoutNumber(t *testing.T) {
+func TestCASLProvider_ReadUsers_PreservesEmptyActivePhoneNumber(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -174,16 +174,19 @@ func TestCASLProvider_ReadUsers_IgnoresBrokenActivePhoneWithoutNumber(t *testing
 	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
 	users, err := provider.readUsers(context.Background())
 	if err != nil {
-		t.Fatalf("expected broken empty phone to be ignored, got err=%v", err)
+		t.Fatalf("expected user payload to be accepted, got err=%v", err)
 	}
 	if len(users) != 1 {
 		t.Fatalf("expected 1 user, got %d", len(users))
 	}
-	if len(users[0].PhoneNumbers) != 1 {
-		t.Fatalf("expected 1 sanitized phone, got %d", len(users[0].PhoneNumbers))
+	if len(users[0].PhoneNumbers) != 2 {
+		t.Fatalf("expected 2 phone entries, got %d", len(users[0].PhoneNumbers))
 	}
-	if users[0].PhoneNumbers[0].Number != "+380671112233" {
-		t.Fatalf("unexpected sanitized phone: %q", users[0].PhoneNumbers[0].Number)
+	if users[0].PhoneNumbers[0].Number != "   " {
+		t.Fatalf("expected raw empty placeholder phone to be preserved, got %q", users[0].PhoneNumbers[0].Number)
+	}
+	if users[0].PhoneNumbers[1].Number != "+380671112233" {
+		t.Fatalf("unexpected second phone: %q", users[0].PhoneNumbers[1].Number)
 	}
 }
 
@@ -232,6 +235,59 @@ func TestCASLProvider_ReadGrdObjectsRejectsObjectWithoutObjID(t *testing.T) {
 	_, err := provider.readGrdObjects(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "obj_id is required") {
 		t.Fatalf("expected validation error for missing obj_id, got %v", err)
+	}
+}
+
+func TestCASLProvider_ReadGrdObjects_AllowsObjectWithoutDeviceLink(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-objects-no-device","user_id":"1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object without device"}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objects, err := provider.readGrdObjects(context.Background())
+	if err != nil {
+		t.Fatalf("expected object without device link to be accepted, got %v", err)
+	}
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].ObjID != "24" || objects[0].DeviceID.Int64() != 0 || objects[0].DeviceNumber.Int64() != 0 {
+		t.Fatalf("unexpected object payload: %+v", objects[0])
+	}
+}
+
+func TestNormalizeCASLObjectRecord_PreservesOriginalInCharge(t *testing.T) {
+	t.Parallel()
+
+	record := caslGrdObject{
+		ObjID:        "24",
+		ManagerID:    "3",
+		InCharge:     []string{"41", "42", "3"},
+		Manager:      caslUser{UserID: "3"},
+		Rooms:        []caslRoom{{RoomID: "1", Users: []caslUser{{UserID: "41"}, {UserID: "44"}}}},
+		DeviceID:     0,
+		DeviceNumber: 0,
+	}
+
+	normalizeCASLObjectRecord(&record, caslDevice{})
+
+	if len(record.InCharge) != 3 {
+		t.Fatalf("expected original in_charge length to be preserved, got %d", len(record.InCharge))
+	}
+	if record.InCharge[0] != "41" || record.InCharge[1] != "42" || record.InCharge[2] != "3" {
+		t.Fatalf("unexpected normalized in_charge: %#v", record.InCharge)
 	}
 }
 
@@ -1249,6 +1305,107 @@ func TestExtractCASLTranslatorAlarmFlagsByType_CodeAndTypeEventPayload(t *testin
 	}
 	if got["R152"] {
 		t.Fatalf("expected R152 to be non-alarm, got %+v", got)
+	}
+}
+
+func TestExtractCASLTranslatorByType_DoesNotMixDifferentDeviceTypes(t *testing.T) {
+	t.Parallel()
+
+	raw := map[string]any{
+		"MAKS_PRO": []any{
+			map[string]any{
+				"code":      130,
+				"typeEvent": "E",
+				"name":      "ZONE_ALM",
+				"isAlarm":   1,
+			},
+		},
+		"SATEL": []any{
+			map[string]any{
+				"code":      130,
+				"typeEvent": "E",
+				"name":      "FIRE_ALARM",
+				"isAlarm":   1,
+			},
+		},
+	}
+
+	got := extractCASLTranslatorByType(raw, "SATEL")
+	if got == nil {
+		t.Fatal("expected non-nil translator map")
+	}
+	if got["E130"] != "FIRE_ALARM" {
+		t.Fatalf("unexpected E130 mapping for SATEL: %q", got["E130"])
+	}
+
+	missing := extractCASLTranslatorByType(raw, "AJAX_PRO")
+	if missing != nil {
+		t.Fatalf("expected nil translator for unknown type, got %+v", missing)
+	}
+}
+
+func TestExtractCASLDictionaryLanguageMap_UsesOnlyRequestedLanguage(t *testing.T) {
+	t.Parallel()
+
+	dict := map[string]any{
+		"translate": map[string]any{
+			"uk": map[string]any{
+				"ZONE_ALM": "Тривога в зоні",
+			},
+			"en": map[string]any{
+				"ZONE_ALM": "Zone alarm",
+			},
+		},
+		"ZONE_ALM": "wrong fallback",
+	}
+
+	uk := extractCASLDictionaryLanguageMap(dict, "uk")
+	if uk["ZONE_ALM"] != "Тривога в зоні" {
+		t.Fatalf("unexpected uk translation: %+v", uk)
+	}
+
+	en := extractCASLDictionaryLanguageMap(dict, "en")
+	if en["ZONE_ALM"] != "Zone alarm" {
+		t.Fatalf("unexpected en translation: %+v", en)
+	}
+
+	flat := flattenLocalizedDictionaryMap(dict, "uk")
+	if flat["ZONE_ALM"] != "Тривога в зоні" {
+		t.Fatalf("unexpected flattened translation: %+v", flat)
+	}
+	if len(flat) != 1 {
+		t.Fatalf("expected only translate[uk] entries, got %+v", flat)
+	}
+}
+
+func TestCASLProvider_LoadTranslatorCatalog_StrictByDeviceType(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != caslCommandPath {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","data":{"MAKS_PRO":[{"code":130,"typeEvent":"E","name":"ZONE_ALM","isAlarm":1}],"SATEL":[{"code":130,"typeEvent":"E","name":"FIRE_ALARM","isAlarm":1}]}}`))
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "token", 1)
+	texts, flags := provider.loadTranslatorCatalog(context.Background(), "SATEL")
+
+	if texts["E130"] != "FIRE_ALARM" {
+		t.Fatalf("unexpected E130 mapping for SATEL: %+v", texts)
+	}
+	if texts["130"] != "FIRE_ALARM" {
+		t.Fatalf("expected numeric code alias for SATEL E130, got %+v", texts)
+	}
+	if texts["E130"] == "ZONE_ALM" || texts["130"] == "ZONE_ALM" {
+		t.Fatalf("expected translator without MAKS_PRO entries, got %+v", texts)
+	}
+	if !flags["E130"] {
+		t.Fatalf("expected alarm flag for SATEL E130, got %+v", flags)
 	}
 }
 
@@ -2532,8 +2689,8 @@ func TestCASLProvider_GetAlarms_FromGeneralTapeObjects_GenericAlarmTypeDoesNotBe
 	if alarms[0].SC1 != mapCASLEventSC1(models.EventAlarmNotification) {
 		t.Fatalf("alarm SC1 = %d, want %d", alarms[0].SC1, mapCASLEventSC1(models.EventAlarmNotification))
 	}
-	if got := alarms[0].Details; got != "Пожежа" {
-		t.Fatalf("alarm details = %q, want Пожежа", got)
+	if got := alarms[0].Details; got != "CASL тривога" {
+		t.Fatalf("alarm details = %q, want CASL тривога", got)
 	}
 }
 

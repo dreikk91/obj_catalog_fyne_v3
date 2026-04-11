@@ -44,6 +44,7 @@ type Event struct {
 	ObjectNumber string    // Номер об'єкта (людський формат)
 	ObjectName   string    // Назва об'єкта
 	Type         EventType // Тип події
+	TypeLabel    string    // Оригінальний текст типу події від джерела
 	ZoneNumber   int       // Номер зони (якщо застосовно)
 	Details      string    // Додаткові деталі
 	UserName     string    // Користувач (для постановки/зняття)
@@ -52,6 +53,10 @@ type Event struct {
 
 // GetTypeDisplay повертає текстовий опис типу події українською
 func (e *Event) GetTypeDisplay() string {
+	if label := e.TypeLabel; label != "" {
+		return label
+	}
+
 	switch e.Type {
 	case EventFire:
 		return "ПОЖЕЖА"

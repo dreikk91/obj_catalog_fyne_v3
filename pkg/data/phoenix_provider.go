@@ -589,7 +589,7 @@ type phoenixActiveAlarmMessage struct {
 func buildPhoenixActiveAlarmMessage(row phoenixActiveAlarmRow) phoenixActiveAlarmMessage {
 	details := strings.TrimSpace(phoenixActiveAlarmDetails(row))
 	eventType := phoenixActiveAlarmEventType(row, details)
-	_, isAlarm := mapEventTypeToAlarmType(eventType)
+	isAlarm := phoenixRowIsAlarm(row.GroupSent, row.AutoReset)
 
 	eventTime := time.Now()
 	if ts := nullTime(row.TimeEvent); !ts.IsZero() {
@@ -620,7 +620,7 @@ func selectPhoenixActiveAlarmMessage(messages []phoenixActiveAlarmMessage) (phoe
 
 	// Пріоритет 1: тривожні події типу "пожежа/проникнення/паніка/...".
 	for _, msg := range messages {
-		if isPrimaryAlarmEventType(msg.EventType) {
+		if msg.IsAlarm && isPrimaryAlarmEventType(msg.EventType) {
 			return msg, true
 		}
 	}
@@ -660,7 +660,7 @@ func resolvePhoenixGroupedAlarmSC1(messages []phoenixActiveAlarmMessage, fallbac
 
 func hasPrimaryPhoenixAlarmMessage(messages []phoenixActiveAlarmMessage) bool {
 	for _, msg := range messages {
-		if isPrimaryAlarmEventType(msg.EventType) {
+		if msg.IsAlarm && isPrimaryAlarmEventType(msg.EventType) {
 			return true
 		}
 	}
@@ -668,7 +668,15 @@ func hasPrimaryPhoenixAlarmMessage(messages []phoenixActiveAlarmMessage) bool {
 }
 
 func phoenixActiveAlarmMessageSC1(msg phoenixActiveAlarmMessage) int {
-	return phoenixEventSC1(msg.Row.TypeCodeID, msg.Row.EventCode, msg.Details)
+	return phoenixEventSC1(
+		msg.Row.TypeCodeID,
+		msg.Row.EventCode,
+		msg.Row.ContactIDCode,
+		msg.Row.TypeMessage,
+		msg.Row.AccessCode,
+		msg.Row.SystemFlag,
+		msg.Details,
+	)
 }
 
 func mapPhoenixActiveAlarmMessagesToAlarmMsgs(messages []phoenixActiveAlarmMessage) []models.AlarmMsg {
@@ -858,6 +866,7 @@ func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {
 	objectID := p.registerPanelID(panelID)
 
 	details := phoenixAlarmDetails(row.CodeMessage, row.ZoneName, int(nullInt64(row.GroupNo)), row.GroupName)
+	typeLabel := strings.TrimSpace(nullString(row.TypeMessage))
 
 	return models.Event{
 		ID:           stablePhoenixEventID(panelID, row.EventID),
@@ -865,10 +874,27 @@ func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {
 		ObjectID:     objectID,
 		ObjectNumber: panelID,
 		ObjectName:   phoenixObjectName(panelID, row.CompanyName, row.GroupName),
-		Type:         phoenixEventType(row.EventCode, row.TypeCodeID, details),
-		ZoneNumber:   int(nullInt64(row.ZoneNo)),
-		Details:      details,
-		SC1:          phoenixEventSC1(row.TypeCodeID, row.EventCode, details),
+		Type: phoenixEventType(
+			row.EventCode,
+			row.ContactIDCode,
+			row.TypeCodeID,
+			row.TypeMessage,
+			row.AccessCode,
+			row.SystemFlag,
+			details,
+		),
+		TypeLabel:  typeLabel,
+		ZoneNumber: int(nullInt64(row.ZoneNo)),
+		Details:    details,
+		SC1: phoenixEventSC1(
+			row.TypeCodeID,
+			row.EventCode,
+			row.ContactIDCode,
+			row.TypeMessage,
+			row.AccessCode,
+			row.SystemFlag,
+			details,
+		),
 	}
 }
 
@@ -925,7 +951,15 @@ func phoenixActiveAlarmEventType(row phoenixActiveAlarmRow, details string) mode
 	if nullBool(row.IsAlarmButton) {
 		return models.EventPanic
 	}
-	return phoenixEventType(row.EventCode, row.TypeCodeID, details)
+	return phoenixEventType(
+		row.EventCode,
+		row.ContactIDCode,
+		row.TypeCodeID,
+		row.TypeMessage,
+		row.AccessCode,
+		row.SystemFlag,
+		details,
+	)
 }
 
 func mapPhoenixEventRows(rows []phoenixEventRow, mapRow func(phoenixEventRow) models.Event) []models.Event {
@@ -1077,8 +1111,30 @@ func phoenixSignalText(level sql.NullInt64) string {
 	return fmt.Sprintf("%d", level.Int64)
 }
 
-func phoenixEventType(code sql.NullString, typeCodeID sql.NullInt64, details string) models.EventType {
+func phoenixEventType(
+	code sql.NullString,
+	contactIDCode sql.NullString,
+	typeCodeID sql.NullInt64,
+	typeMessage sql.NullString,
+	accessCode sql.NullString,
+	systemFlag sql.NullBool,
+	details string,
+) models.EventType {
+	if nullBool(systemFlag) {
+		return models.SystemEvent
+	}
+	if strings.TrimSpace(nullString(accessCode)) == "1" {
+		return models.EventArm
+	}
+
 	codeValue := strings.ToUpper(strings.TrimSpace(nullString(code)))
+	contactCodeValue := strings.ToUpper(strings.TrimSpace(nullString(contactIDCode)))
+	typeMessageValue := strings.TrimSpace(nullString(typeMessage))
+
+	if eventType, ok := phoenixEventTypeByTypeMessage(typeMessageValue); ok {
+		return eventType
+	}
+
 	baseType := models.EventType("")
 	if typeCodeID.Valid {
 		if eventType, ok := phoenixEventTypeByTypeCode(typeCodeID.Int64); ok {
@@ -1086,7 +1142,21 @@ func phoenixEventType(code sql.NullString, typeCodeID sql.NullInt64, details str
 		}
 	}
 
-	derivedType, hasDerivedType := phoenixEventTypeByCodeAndDetails(codeValue, details)
+	codeAndDetails := strings.TrimSpace(typeMessageValue + " " + details)
+	if contactCodeValue != "" {
+		derivedType, hasDerivedType := phoenixEventTypeByCodeAndDetails(contactCodeValue, codeAndDetails)
+		if baseType != "" {
+			if hasDerivedType && shouldOverridePhoenixBaseEventType(baseType, derivedType) {
+				return derivedType
+			}
+			return baseType
+		}
+		if hasDerivedType {
+			return derivedType
+		}
+	}
+
+	derivedType, hasDerivedType := phoenixEventTypeByCodeAndDetails(codeValue, codeAndDetails)
 	if baseType != "" {
 		if hasDerivedType && shouldOverridePhoenixBaseEventType(baseType, derivedType) {
 			return derivedType
@@ -1097,6 +1167,146 @@ func phoenixEventType(code sql.NullString, typeCodeID sql.NullInt64, details str
 		return derivedType
 	}
 	return models.SystemEvent
+}
+
+func phoenixEventTypeByTypeMessage(typeMessage string) (models.EventType, bool) {
+	value := strings.ToLower(strings.TrimSpace(typeMessage))
+	if value == "" {
+		return "", false
+	}
+
+	switch value {
+	case "пожежа", "ймовірна пожежа", "пожежна тривога з клавіатури":
+		return models.EventFire, true
+	case "тривога":
+		return models.EventBurglary, true
+	case "тривожна кнопка", "мобільна тривожна кнопка", "напад":
+		return models.EventPanic, true
+	case "медична тривога":
+		return models.EventMedical, true
+	case "витік газу":
+		return models.EventGas, true
+	case "тривога тампера":
+		return models.EventTamper, true
+
+	case "норма", "норма несправності", "норма контролю патруля", "норма сирени",
+		"норма системної помилки", "норма лінії", "норма тесту", "норма акб",
+		"норма тампера", "норма зв'язку", "норма зв'язку з лінд",
+		"норма зв'язку з пристроєм", "норма зв'язку з пцс", "скасування тривоги":
+		return models.EventRestore, true
+
+	case "постановка", "безумовна постановка", "постановка ключем", "постановка кодом",
+		"дистанційна постановка", "постановка з радіобрелока", "лишаюся вдома",
+		"постановка з мобільного", "початок постановки", "постановка забороненим ключем":
+		return models.EventArm, true
+	case "зняття", "дистанційне зняття", "зняття кодом", "зняття з радіобрелока",
+		"зняття з мобільного", "зняття ключем", "початок зняття", "зняття забороненим ключем":
+		return models.EventDisarm, true
+
+	case "тест", "режим тестування радіодатчиків":
+		return models.EventTest, true
+
+	case "втрата основного живлення":
+		return models.EventPowerFail, true
+	case "норма основного живлення":
+		return models.EventPowerOK, true
+	case "проблема акб", "відключення заряду акб":
+		return models.EventBatteryLow, true
+
+	case "втрата зв'язку з лінд", "втрата зв'язку з пцс", "втрата зв'язку з пристроєм":
+		return models.EventOffline, true
+	case "увімкнення зв'язку з пцс":
+		return models.EventOnline, true
+
+	case "звіт", "звіт. із тривогами", "система відправки email", "viber розсилка",
+		"перевір дзвінок із об'єкта", "покази електролічильника", "зображення",
+		"gps координати правильні":
+		return models.EventNotification, true
+
+	case "планшетник", "дозвіл камери", "заборона камери", "вхід на рівень доступу",
+		"віддалене керування":
+		return models.EventOperatorAction, true
+
+	case "система", "системна подія від sur-gard", "системний запис":
+		return models.SystemEvent, true
+
+	case "несправність", "проблема тесту", "несправність шлейфу", "помилка під час звіту",
+		"системна несправність", "помилка", "проблема з сиреною", "кз лінії",
+		"проблема опитування", "проблема орлан-gprs", "системна помилка",
+		"gps координати не правильні", "порушення контролю патруля", "втрата подій",
+		"переповнення буфера подій", "об'єкт не знято з охорони", "об'єкт не закрито",
+		"помилковий код не підтверджено", "заборона постановки":
+		return models.EventFault, true
+
+	case "контроль патруля", "увімкнення контролю сирени", "прив'язка пристрою",
+		"віддалене конфігурування", "виведення зі стендів", "увімкнення контролю 220в",
+		"початок посилки gps координат", "увімкнення режиму очікування",
+		"увімкнення запалювання", "вихід замкнено", "вимкнення контролю сирени",
+		"вимкнення контролю акб", "увімкнення виходу", "скидання", "вимкнення контролю 220в",
+		"скидання з пцс", "вихід розімкнено", "увімкнення шлейфу", "сирену вимкнено",
+		"зміна sim карти", "вимкнення виходу", "запит стану", "повернення на gps сервіс",
+		"переведення до стендів", "патруль", "увімкнення живлення датчиків",
+		"вимкнення режиму очікування", "оновлення прошивки", "зняття заборони",
+		"увімкнення контролю акб", "датчик руху", "функцію реле ввімкнено",
+		"реле вимкнено", "очищення буфера", "вимкнення живлення gps приймача",
+		"сирену ввімкнено", "датчик удару", "вимкнення запалювання", "увімкнення ппк",
+		"вимкнення зв'язку з пцс", "відключення живлення датчиків",
+		"функцію реле вимкнено", "реле ввімкнено", "вимкнення шлейфу",
+		"увімкнення живлення gps приймача", "увімкнення заряду акб":
+		return models.EventService, true
+	}
+
+	switch {
+	case strings.Contains(value, "пожеж"):
+		return models.EventFire, true
+	case strings.Contains(value, "тривожн"), strings.Contains(value, "напад"):
+		return models.EventPanic, true
+	case strings.Contains(value, "медич"):
+		return models.EventMedical, true
+	case strings.Contains(value, "газ"):
+		return models.EventGas, true
+	case strings.Contains(value, "тампер"):
+		if strings.Contains(value, "норма") {
+			return models.EventRestore, true
+		}
+		return models.EventTamper, true
+	case strings.Contains(value, "втрата основного живлення"):
+		return models.EventPowerFail, true
+	case strings.Contains(value, "основного живлення"), strings.Contains(value, "220в"):
+		if strings.Contains(value, "норма") {
+			return models.EventPowerOK, true
+		}
+		return models.EventPowerFail, true
+	case strings.Contains(value, "акб"):
+		if strings.Contains(value, "норма") || strings.Contains(value, "увімкнення заряду") {
+			return models.EventRestore, true
+		}
+		return models.EventBatteryLow, true
+	case strings.Contains(value, "зв'язку"):
+		if strings.Contains(value, "норма") || strings.Contains(value, "увімкнення") {
+			return models.EventOnline, true
+		}
+		return models.EventOffline, true
+	case strings.Contains(value, "норма"), strings.Contains(value, "скасування"):
+		return models.EventRestore, true
+	case strings.Contains(value, "знят"):
+		return models.EventDisarm, true
+	case strings.Contains(value, "постан"), strings.Contains(value, "взят"):
+		return models.EventArm, true
+	case strings.Contains(value, "тест"):
+		return models.EventTest, true
+	case strings.Contains(value, "несправ"), strings.Contains(value, "помилка"),
+		strings.Contains(value, "проблема"), strings.Contains(value, "кз"),
+		strings.Contains(value, "втрата подій"):
+		return models.EventFault, true
+	case strings.Contains(value, "звіт"), strings.Contains(value, "розсилка"),
+		strings.Contains(value, "дзвінок"), strings.Contains(value, "зображення"):
+		return models.EventNotification, true
+	case strings.Contains(value, "система"), strings.Contains(value, "sur-gard"):
+		return models.SystemEvent, true
+	default:
+		return "", false
+	}
 }
 
 func phoenixEventTypeByCodeAndDetails(code string, details string) (models.EventType, bool) {
@@ -1300,8 +1510,16 @@ func phoenixEventTypeByTypeCode(typeCodeID int64) (models.EventType, bool) {
 	}
 }
 
-func phoenixEventSC1(typeCodeID sql.NullInt64, code sql.NullString, details string) int {
-	switch phoenixEventType(code, typeCodeID, details) {
+func phoenixEventSC1(
+	typeCodeID sql.NullInt64,
+	code sql.NullString,
+	contactIDCode sql.NullString,
+	typeMessage sql.NullString,
+	accessCode sql.NullString,
+	systemFlag sql.NullBool,
+	details string,
+) int {
+	switch phoenixEventType(code, contactIDCode, typeCodeID, typeMessage, accessCode, systemFlag, details) {
 	case models.EventFire, models.EventBurglary, models.EventPanic, models.EventMedical, models.EventGas, models.EventTamper:
 		return 1
 	case models.EventFault, models.EventBatteryLow, models.EventPowerFail:
@@ -1317,6 +1535,16 @@ func phoenixEventSC1(typeCodeID sql.NullInt64, code sql.NullString, details stri
 	default:
 		return 0
 	}
+}
+
+func phoenixRowIsAlarm(groupSent sql.NullBool, autoReset sql.NullBool) bool {
+	if nullBool(groupSent) {
+		return true
+	}
+	if nullBool(autoReset) {
+		return false
+	}
+	return false
 }
 
 func phoenixDateText(value sql.NullTime) string {

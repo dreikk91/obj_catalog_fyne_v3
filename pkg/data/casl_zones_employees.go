@@ -700,28 +700,9 @@ func (p *CASLCloudProvider) readUsers(ctx context.Context) ([]caslUser, error) {
 	if err := p.postCommand(ctx, payload, &resp, true); err != nil {
 		return nil, err
 	}
-	for idx := range resp.Data {
-		resp.Data[idx].PhoneNumbers = sanitizeCASLPhoneNumbers(resp.Data[idx].PhoneNumbers)
-	}
 	if err := validateCASLUsers(resp.Data); err != nil {
 		return nil, err
 	}
 
 	return append([]caslUser(nil), resp.Data...), nil
-}
-
-func sanitizeCASLPhoneNumbers(items []caslPhoneNumber) []caslPhoneNumber {
-	if len(items) == 0 {
-		return nil
-	}
-
-	result := make([]caslPhoneNumber, 0, len(items))
-	for _, item := range items {
-		item.Number = strings.TrimSpace(item.Number)
-		if item.Number == "" {
-			continue
-		}
-		result = append(result, item)
-	}
-	return result
 }

@@ -35,7 +35,11 @@ func TestPhoenixEventType(t *testing.T) {
 	tests := []struct {
 		name    string
 		code    sql.NullString
+		contact sql.NullString
 		typeID  sql.NullInt64
+		message sql.NullString
+		access  sql.NullString
+		system  sql.NullBool
 		details string
 		want    models.EventType
 	}{
@@ -160,6 +164,58 @@ func TestPhoenixEventType(t *testing.T) {
 			want:   models.EventNotification,
 		},
 		{
+			name:    "restore by type message",
+			code:    sql.NullString{String: "R110", Valid: true},
+			typeID:  sql.NullInt64{Int64: 20, Valid: true},
+			message: sql.NullString{String: "Норма", Valid: true},
+			want:    models.EventRestore,
+		},
+		{
+			name:    "fire by type message",
+			code:    sql.NullString{String: "E110", Valid: true},
+			typeID:  sql.NullInt64{Int64: 20, Valid: true},
+			message: sql.NullString{String: "Пожежа", Valid: true},
+			want:    models.EventFire,
+		},
+		{
+			name:    "panic by type message",
+			code:    sql.NullString{String: "X001", Valid: true},
+			typeID:  sql.NullInt64{Int64: 20, Valid: true},
+			message: sql.NullString{String: "Тривожна кнопка", Valid: true},
+			want:    models.EventPanic,
+		},
+		{
+			name:    "power fail by type message",
+			code:    sql.NullString{String: "X002", Valid: true},
+			typeID:  sql.NullInt64{Int64: 20, Valid: true},
+			message: sql.NullString{String: "Втрата основного живлення", Valid: true},
+			want:    models.EventPowerFail,
+		},
+		{
+			name:    "offline by type message",
+			code:    sql.NullString{String: "X003", Valid: true},
+			typeID:  sql.NullInt64{Int64: 20, Valid: true},
+			message: sql.NullString{String: "Втрата зв'язку з ПЦС", Valid: true},
+			want:    models.EventOffline,
+		},
+		{
+			name:    "arm by access code",
+			code:    sql.NullString{String: "34", Valid: true},
+			contact: sql.NullString{String: "R401", Valid: true},
+			typeID:  sql.NullInt64{Int64: 3, Valid: true},
+			message: sql.NullString{String: "Постановка", Valid: true},
+			access:  sql.NullString{String: "1", Valid: true},
+			want:    models.EventArm,
+		},
+		{
+			name:    "system flag overrides event type",
+			code:    sql.NullString{String: "LIN", Valid: true},
+			typeID:  sql.NullInt64{Int64: 20, Valid: true},
+			message: sql.NullString{String: "Система", Valid: true},
+			system:  sql.NullBool{Bool: true, Valid: true},
+			want:    models.SystemEvent,
+		},
+		{
 			name:    "restore by text fallback",
 			code:    sql.NullString{String: "R110", Valid: true},
 			details: "Відновлення",
@@ -174,8 +230,44 @@ func TestPhoenixEventType(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := phoenixEventType(tt.code, tt.typeID, tt.details); got != tt.want {
+		if got := phoenixEventType(tt.code, tt.contact, tt.typeID, tt.message, tt.access, tt.system, tt.details); got != tt.want {
 			t.Fatalf("%s: phoenixEventType() = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestPhoenixRowIsAlarm(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		groupSent sql.NullBool
+		autoReset sql.NullBool
+		want      bool
+	}{
+		{
+			name:      "group sent is alarm",
+			groupSent: sql.NullBool{Bool: true, Valid: true},
+			autoReset: sql.NullBool{Bool: true, Valid: true},
+			want:      true,
+		},
+		{
+			name:      "autoreset only is not alarm",
+			groupSent: sql.NullBool{Bool: false, Valid: true},
+			autoReset: sql.NullBool{Bool: true, Valid: true},
+			want:      false,
+		},
+		{
+			name:      "both zero is not alarm",
+			groupSent: sql.NullBool{Bool: false, Valid: true},
+			autoReset: sql.NullBool{Bool: false, Valid: true},
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		if got := phoenixRowIsAlarm(tt.groupSent, tt.autoReset); got != tt.want {
+			t.Fatalf("%s: phoenixRowIsAlarm() = %v, want %v", tt.name, got, tt.want)
 		}
 	}
 }
@@ -370,6 +462,7 @@ func TestPhoenixBuildActiveAlarms_UsesTempRowsAndMapsAlarmType(t *testing.T) {
 			EventCode:    sql.NullString{String: "E130", Valid: true},
 			CodeMessage:  sql.NullString{String: "Проникнення", Valid: true},
 			TypeCodeID:   sql.NullInt64{Int64: 1, Valid: true},
+			GroupSent:    sql.NullBool{Bool: true, Valid: true},
 			GroupMessage: sql.NullString{String: "Склад", Valid: true},
 			GroupName:    sql.NullString{String: "Склад", Valid: true},
 			ZoneName:     sql.NullString{String: "Двері", Valid: true},
@@ -384,6 +477,7 @@ func TestPhoenixBuildActiveAlarms_UsesTempRowsAndMapsAlarmType(t *testing.T) {
 			EventCode:    sql.NullString{String: "E110", Valid: true},
 			CodeMessage:  sql.NullString{String: "Пожежа", Valid: true},
 			TypeCodeID:   sql.NullInt64{Int64: 14, Valid: true},
+			GroupSent:    sql.NullBool{Bool: true, Valid: true},
 			GroupMessage: sql.NullString{String: "Тест", Valid: true},
 			GroupName:    sql.NullString{String: "Тест", Valid: true},
 			CompanyName:  sql.NullString{String: "Компанія 41", Valid: true},
@@ -436,6 +530,7 @@ func TestPhoenixBuildActiveAlarms_GroupKeepsLatestAlarmEvenAfterRestore(t *testi
 			EventCode:     sql.NullString{String: "E130", Valid: true},
 			CodeMessage:   sql.NullString{String: "Проникнення", Valid: true},
 			TypeCodeID:    sql.NullInt64{Int64: 1, Valid: true},
+			GroupSent:     sql.NullBool{Bool: true, Valid: true},
 			GroupMessage:  sql.NullString{String: "Офіс", Valid: true},
 			GroupName:     sql.NullString{String: "Офіс", Valid: true},
 			ZoneName:      sql.NullString{String: "Двері", Valid: true},
@@ -451,6 +546,7 @@ func TestPhoenixBuildActiveAlarms_GroupKeepsLatestAlarmEvenAfterRestore(t *testi
 			EventCode:     sql.NullString{String: "R130", Valid: true},
 			CodeMessage:   sql.NullString{String: "Відновлення", Valid: true},
 			TypeCodeID:    sql.NullInt64{Int64: 2, Valid: true},
+			AutoReset:     sql.NullBool{Bool: true, Valid: true},
 			GroupMessage:  sql.NullString{String: "Офіс", Valid: true},
 			GroupName:     sql.NullString{String: "Офіс", Valid: true},
 			ZoneName:      sql.NullString{String: "Двері", Valid: true},
@@ -507,6 +603,7 @@ func TestPhoenixBuildActiveAlarms_GroupUsesNewestAlarmWhenSeveralAlarmsExist(t *
 			EventCode:     sql.NullString{String: "E130", Valid: true},
 			CodeMessage:   sql.NullString{String: "Перша тривога", Valid: true},
 			TypeCodeID:    sql.NullInt64{Int64: 1, Valid: true},
+			GroupSent:     sql.NullBool{Bool: true, Valid: true},
 			GroupMessage:  sql.NullString{String: "Склад", Valid: true},
 			GroupName:     sql.NullString{String: "Склад", Valid: true},
 			CompanyName:   sql.NullString{String: "Компанія 51", Valid: true},
@@ -520,6 +617,7 @@ func TestPhoenixBuildActiveAlarms_GroupUsesNewestAlarmWhenSeveralAlarmsExist(t *
 			EventCode:     sql.NullString{String: "R130", Valid: true},
 			CodeMessage:   sql.NullString{String: "Відновлення", Valid: true},
 			TypeCodeID:    sql.NullInt64{Int64: 2, Valid: true},
+			AutoReset:     sql.NullBool{Bool: true, Valid: true},
 			GroupMessage:  sql.NullString{String: "Склад", Valid: true},
 			GroupName:     sql.NullString{String: "Склад", Valid: true},
 			CompanyName:   sql.NullString{String: "Компанія 51", Valid: true},
@@ -533,6 +631,7 @@ func TestPhoenixBuildActiveAlarms_GroupUsesNewestAlarmWhenSeveralAlarmsExist(t *
 			EventCode:     sql.NullString{String: "E110", Valid: true},
 			CodeMessage:   sql.NullString{String: "Пожежа", Valid: true},
 			TypeCodeID:    sql.NullInt64{Int64: 14, Valid: true},
+			GroupSent:     sql.NullBool{Bool: true, Valid: true},
 			GroupMessage:  sql.NullString{String: "Склад", Valid: true},
 			GroupName:     sql.NullString{String: "Склад", Valid: true},
 			CompanyName:   sql.NullString{String: "Компанія 51", Valid: true},
@@ -578,6 +677,7 @@ func TestPhoenixBuildActiveAlarms_GroupKeepsFireColorWhenLatestIsFault(t *testin
 			EventCode:     sql.NullString{String: "E110", Valid: true},
 			CodeMessage:   sql.NullString{String: "Пожежа", Valid: true},
 			TypeCodeID:    sql.NullInt64{Int64: 14, Valid: true},
+			GroupSent:     sql.NullBool{Bool: true, Valid: true},
 			GroupMessage:  sql.NullString{String: "Офіс", Valid: true},
 			GroupName:     sql.NullString{String: "Офіс", Valid: true},
 			CompanyName:   sql.NullString{String: "Компанія 52", Valid: true},
@@ -591,6 +691,7 @@ func TestPhoenixBuildActiveAlarms_GroupKeepsFireColorWhenLatestIsFault(t *testin
 			EventCode:     sql.NullString{String: "E300", Valid: true},
 			CodeMessage:   sql.NullString{String: "Несправність лінії", Valid: true},
 			TypeCodeID:    sql.NullInt64{Int64: 15, Valid: true},
+			AutoReset:     sql.NullBool{Bool: true, Valid: true},
 			GroupMessage:  sql.NullString{String: "Офіс", Valid: true},
 			GroupName:     sql.NullString{String: "Офіс", Valid: true},
 			CompanyName:   sql.NullString{String: "Компанія 52", Valid: true},
@@ -792,5 +893,49 @@ func TestPhoenixMapEventRow_NormalizesEventTimeToLocalWallClock(t *testing.T) {
 	}
 	if event.Time.Hour() != 12 || event.Time.Minute() != 34 || event.Time.Second() != 56 {
 		t.Fatalf("wall clock time must be preserved, got %v", event.Time)
+	}
+}
+
+func TestPhoenixMapEventRow_UsesTypeCodeMessageAsDisplayType(t *testing.T) {
+	t.Parallel()
+
+	provider := NewPhoenixDataProvider(nil, "")
+
+	restoreEvent := provider.mapEventRow(phoenixEventRow{
+		EventID:     726754,
+		PanelID:     "L00028",
+		TimeEvent:   time.Date(2026, time.March, 27, 11, 41, 51, 0, time.UTC),
+		EventCode:   sql.NullString{String: "R110", Valid: true},
+		CodeMessage: sql.NullString{String: "Пожежна тривога", Valid: true},
+		TypeCodeID:  sql.NullInt64{Int64: 2, Valid: true},
+		TypeMessage: sql.NullString{String: "Норма", Valid: true},
+		GroupName:   sql.NullString{String: "Приміщення ТОВ Альфа-Віта", Valid: true},
+		ZoneName:    sql.NullString{String: "Шлейф 1", Valid: true},
+	})
+
+	if restoreEvent.Type != models.EventRestore {
+		t.Fatalf("restore event type = %q, want %q", restoreEvent.Type, models.EventRestore)
+	}
+	if got, want := restoreEvent.GetTypeDisplay(), "Норма"; got != want {
+		t.Fatalf("restore display type = %q, want %q", got, want)
+	}
+
+	alarmEvent := provider.mapEventRow(phoenixEventRow{
+		EventID:     726758,
+		PanelID:     "L00028",
+		TimeEvent:   time.Date(2026, time.March, 27, 11, 49, 42, 0, time.UTC),
+		EventCode:   sql.NullString{String: "E110", Valid: true},
+		CodeMessage: sql.NullString{String: "Пожежна тривога", Valid: true},
+		TypeCodeID:  sql.NullInt64{Int64: 14, Valid: true},
+		TypeMessage: sql.NullString{String: "Пожежа", Valid: true},
+		GroupName:   sql.NullString{String: "Приміщення ТОВ Альфа-Віта", Valid: true},
+		ZoneName:    sql.NullString{String: "Шлейф 1", Valid: true},
+	})
+
+	if alarmEvent.Type != models.EventFire {
+		t.Fatalf("alarm event type = %q, want %q", alarmEvent.Type, models.EventFire)
+	}
+	if got, want := alarmEvent.GetTypeDisplay(), "Пожежа"; got != want {
+		t.Fatalf("alarm display type = %q, want %q", got, want)
 	}
 }

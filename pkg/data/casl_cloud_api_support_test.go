@@ -451,7 +451,7 @@ func TestCASLProvider_ReadEventsJournalRejectsEventWithoutTime(t *testing.T) {
 	}
 }
 
-func TestCASLProvider_ReadDeviceStateByIDRejectsEmptyState(t *testing.T) {
+func TestCASLProvider_ReadDeviceStateByID_AllowsEmptyState(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -477,9 +477,12 @@ func TestCASLProvider_ReadDeviceStateByIDRejectsEmptyState(t *testing.T) {
 	defer server.Close()
 
 	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
-	_, err := provider.ReadDeviceStateByID(context.Background(), "23")
-	if err == nil || !strings.Contains(err.Error(), "state payload is empty") {
-		t.Fatalf("expected validation error for empty state, got %v", err)
+	state, err := provider.ReadDeviceStateByID(context.Background(), "23")
+	if err != nil {
+		t.Fatalf("expected empty state payload to be accepted, got %v", err)
+	}
+	if state.Power != 0 || state.Accum != 0 || state.Online != 0 || state.LastPingDate != 0 {
+		t.Fatalf("unexpected decoded state: %+v", state)
 	}
 }
 

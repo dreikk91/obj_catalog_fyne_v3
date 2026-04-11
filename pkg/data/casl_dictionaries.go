@@ -123,7 +123,7 @@ func extractCASLDeviceTypesMap(value any) map[string]string {
 func (p *CASLCloudProvider) loadDictionaryMap(ctx context.Context) map[string]string {
 	p.mu.RLock()
 	if len(p.cachedDictionary) > 0 && time.Since(p.cachedDictionaryAt) <= caslDictionaryTTL {
-		cached := flattenLocalizedDictionaryMap(p.cachedDictionary)
+		cached := flattenLocalizedDictionaryMap(p.cachedDictionary, p.dictionaryLanguage())
 		p.mu.RUnlock()
 		return cached
 	}
@@ -144,7 +144,7 @@ func (p *CASLCloudProvider) loadDictionaryMap(ctx context.Context) map[string]st
 
 	go p.preloadTranslatorsFromDict(context.Background(), dict)
 
-	return flattenLocalizedDictionaryMap(dict)
+	return flattenLocalizedDictionaryMap(dict, p.dictionaryLanguage())
 }
 
 // preloadTranslatorsFromDict читає список user_device_types зі словника
@@ -216,25 +216,28 @@ func extractCASLUserDeviceTypes(dict map[string]any) []string {
 	return types
 }
 
-func flattenLocalizedDictionaryMap(dict map[string]any) map[string]string {
-	base := flattenStringMap(dict)
-	uk := extractCASLDictionaryLanguageMap(dict, "uk")
-	for key, value := range uk {
-		if strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
-			continue
-		}
-		base[key] = value
+func (p *CASLCloudProvider) dictionaryLanguage() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	lang := strings.TrimSpace(p.dictionaryLang)
+	if lang == "" {
+		return "uk"
 	}
-	return base
+	return lang
+}
+
+func flattenLocalizedDictionaryMap(dict map[string]any, lang string) map[string]string {
+	return extractCASLDictionaryLanguageMap(dict, lang)
 }
 
 func extractCASLDictionaryLanguageMap(dict map[string]any, lang string) map[string]string {
-	lang = strings.ToLower(strings.TrimSpace(lang))
+	lang = normalizeCASLDictionaryLanguage(lang)
 	if len(dict) == 0 || lang == "" {
 		return nil
 	}
 
-	langCandidates := []string{lang, strings.ToUpper(lang), "uk-UA", "uk_ua", "ua", "UA"}
+	langCandidates := caslDictionaryLanguageCandidates(lang)
 	resolveLangMap := func(node any) map[string]string {
 		root, ok := node.(map[string]any)
 		if !ok || len(root) == 0 {
@@ -345,7 +348,7 @@ func (p *CASLCloudProvider) loadTranslatorCatalog(ctx context.Context, deviceTyp
 		return nil, nil
 	}
 
-	texts, flags := flattenCASLTranslatorCatalog(rawTranslator)
+	texts, flags := extractCASLTranslatorCatalogByType(rawTranslator, key)
 	if len(texts) == 0 && len(flags) == 0 {
 		p.mu.Lock()
 		p.cachedTranslators[key] = map[string]string{}
@@ -413,18 +416,21 @@ func extractCASLTranslatorAlarmFlagsByType(raw any, deviceType string) map[strin
 }
 
 func extractCASLTranslatorCatalogByType(raw any, deviceType string) (map[string]string, map[string]bool) {
-	texts, flags := flattenCASLTranslatorCatalog(raw)
-	if len(texts) == 0 && len(flags) == 0 {
-		return nil, nil
-	}
-
 	root, ok := raw.(map[string]any)
 	if !ok {
+		texts, flags := flattenCASLTranslatorCatalog(raw)
+		if len(texts) == 0 && len(flags) == 0 {
+			return nil, nil
+		}
 		return texts, flags
 	}
 
 	key := strings.TrimSpace(deviceType)
 	if key == "" {
+		texts, flags := flattenCASLTranslatorCatalog(raw)
+		if len(texts) == 0 && len(flags) == 0 {
+			return nil, nil
+		}
 		return texts, flags
 	}
 
@@ -438,7 +444,115 @@ func extractCASLTranslatorCatalogByType(raw any, deviceType string) (map[string]
 		}
 	}
 
+	if nested, ok := extractCASLTranslatorNestedCatalog(root); ok {
+		nestedTexts, nestedFlags := flattenCASLTranslatorCatalog(nested)
+		if len(nestedTexts) > 0 || len(nestedFlags) > 0 {
+			return nestedTexts, nestedFlags
+		}
+	}
+
+	if hasCASLTranslatorTypeBuckets(root) {
+		return nil, nil
+	}
+
+	texts, flags := flattenCASLTranslatorCatalog(raw)
+	if len(texts) == 0 && len(flags) == 0 {
+		return nil, nil
+	}
 	return texts, flags
+}
+
+func normalizeCASLDictionaryLanguage(lang string) string {
+	switch strings.ToLower(strings.TrimSpace(lang)) {
+	case "", "uk", "uk-ua", "uk_ua", "ua":
+		return "uk"
+	case "ru", "ru-ru", "ru_ru":
+		return "ru"
+	case "en", "en-us", "en_us", "en-gb", "en_gb":
+		return "en"
+	default:
+		return strings.ToLower(strings.TrimSpace(lang))
+	}
+}
+
+func caslDictionaryLanguageCandidates(lang string) []string {
+	lang = normalizeCASLDictionaryLanguage(lang)
+	if lang == "" {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, 8)
+	result := make([]string, 0, 8)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+
+	add(lang)
+	add(strings.ToUpper(lang))
+	switch lang {
+	case "uk":
+		add("ua")
+		add("UA")
+		add("uk-UA")
+		add("uk_ua")
+	case "ru":
+		add("ru-RU")
+		add("ru_ru")
+	case "en":
+		add("en-US")
+		add("en_us")
+		add("en-GB")
+		add("en_gb")
+	}
+	return result
+}
+
+func extractCASLTranslatorNestedCatalog(root map[string]any) (any, bool) {
+	for _, key := range []string{"dict", "translator", "msg_translator", "data"} {
+		nested, exists := root[key]
+		if !exists {
+			continue
+		}
+		if texts, flags := flattenCASLTranslatorCatalog(nested); len(texts) > 0 || len(flags) > 0 {
+			return nested, true
+		}
+	}
+	return nil, false
+}
+
+func hasCASLTranslatorTypeBuckets(root map[string]any) bool {
+	for key, value := range root {
+		if !looksLikeCASLTranslatorTypeBucket(key) {
+			continue
+		}
+		switch value.(type) {
+		case map[string]any, []any:
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeCASLTranslatorTypeBucket(key string) bool {
+	key = strings.TrimSpace(key)
+	if key == "" || looksLikeCASLTranslatorCode(key) {
+		return false
+	}
+
+	switch strings.ToUpper(key) {
+	case "DICT", "DATA", "DEVICE_TYPE", "TYPE_DEVICE", "TYPE_PROTOCOL", "TRANSLATOR", "MSG_TRANSLATOR", "STATUS", "ERROR":
+		return false
+	}
+
+	return true
 }
 
 func flattenCASLTranslatorCatalog(value any) (map[string]string, map[string]bool) {

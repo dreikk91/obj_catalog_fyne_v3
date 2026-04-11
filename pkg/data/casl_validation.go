@@ -38,14 +38,9 @@ func validateCASLUser(item caslUser, path string) error {
 }
 
 func validateCASLUserInScope(item caslUser, path string, scope string) error {
-	errs := make([]error, 0, len(item.PhoneNumbers)+1)
+	errs := make([]error, 0, 1)
 	if strings.TrimSpace(item.UserID) == "" {
 		errs = append(errs, fmt.Errorf("%s: %s.user_id is required", scope, path))
-	}
-	for idx, phone := range item.PhoneNumbers {
-		if phone.Active && strings.TrimSpace(phone.Number) == "" {
-			errs = append(errs, fmt.Errorf("%s: %s.phone_numbers[%d].number is required for active phone", scope, path, idx))
-		}
 	}
 	return errors.Join(errs...)
 }
@@ -110,12 +105,9 @@ func validateCASLGuardObjects(items []caslGrdObject) error {
 }
 
 func validateCASLGuardObject(item caslGrdObject, path string, scope string) error {
-	errs := make([]error, 0, len(item.Rooms)+3)
+	errs := make([]error, 0, len(item.Rooms)+2)
 	if strings.TrimSpace(item.ObjID) == "" {
 		errs = append(errs, fmt.Errorf("%s: %s.obj_id is required", scope, path))
-	}
-	if item.DeviceID.Int64() <= 0 && item.DeviceNumber.Int64() <= 0 {
-		errs = append(errs, fmt.Errorf("%s: %s must contain device_id or device_number", scope, path))
 	}
 	if err := validateCASLRooms(item.Rooms, path, scope); err != nil {
 		errs = append(errs, err)
@@ -147,15 +139,9 @@ func validateCASLConnection(item caslConnectionRecord, idx int) error {
 }
 
 func validateCASLObjectEditorResponse(resp caslObjectEditorFullResponse) error {
-	errs := make([]error, 0, len(resp.Rooms)+3)
+	errs := make([]error, 0, len(resp.Rooms)+1)
 	if strings.TrimSpace(resp.Name) == "" {
 		errs = append(errs, errors.New("casl get_grd_object_full: name is required"))
-	}
-	if strings.TrimSpace(resp.PultID.String()) == "" {
-		errs = append(errs, errors.New("casl get_grd_object_full: pult_id is required"))
-	}
-	if resp.Device.Number.Int64() <= 0 && strings.TrimSpace(firstCASLString(resp.Device.ID.String(), resp.Device.DeviceID.String())) == "" {
-		errs = append(errs, errors.New("casl get_grd_object_full: device identity is required"))
 	}
 	for idx, room := range resp.Rooms {
 		if err := validateCASLObjectEditorRoom(room, idx); err != nil {
@@ -252,17 +238,8 @@ func validateCASLRealtimeObjectEvent(item CASLObjectEvent, scope string) error {
 }
 
 func validateCASLDeviceState(state caslDeviceState, scope string) error {
-	hasSignal := state.Power.Int64() != 0 ||
-		state.Accum.Int64() != 0 ||
-		state.Door.Int64() != 0 ||
-		state.Online.Int64() != 0 ||
-		state.LastPingDate.Int64() != 0 ||
-		state.Lines != nil ||
-		state.Groups != nil ||
-		state.Adapters != nil
-	if !hasSignal {
-		return fmt.Errorf("%s: state payload is empty", scope)
-	}
+	_ = state
+	_ = scope
 	return nil
 }
 

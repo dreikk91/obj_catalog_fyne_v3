@@ -269,6 +269,61 @@ func TestCASLProvider_GetCASLObjectEditorSnapshotRejectsInvalidFullObject(t *tes
 	}
 }
 
+func TestCASLProvider_GetCASLObjectEditorSnapshot_AllowsFullObjectWithoutDeviceAndPult(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-editor-object-no-device","user_id":"1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmd := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+			switch cmd {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"29","name":"1007 Офіс"}]}`))
+			case "get_grd_object_full":
+				_, _ = w.Write([]byte(`{
+					"status":"ok",
+					"name":"1007 Офіс",
+					"address":"Львів, Зелена 69",
+					"rooms":[{"room_id":"36","name":"Офіс 1","users":[],"lines":{}}],
+					"device":{"id":"","number":0}
+				}`))
+			case "read_user":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_pult":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{}}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	internalID := int64(mapCASLObjectID("29", "1007 Офіс", ""))
+	snapshot, err := provider.GetCASLObjectEditorSnapshot(context.Background(), internalID)
+	if err != nil {
+		t.Fatalf("expected full object without device and pult to be accepted, got %v", err)
+	}
+	if snapshot.Object.ObjID != "29" || snapshot.Object.Name != "1007 Офіс" {
+		t.Fatalf("unexpected object snapshot: %+v", snapshot.Object)
+	}
+	if snapshot.Object.PultID != "" || snapshot.Object.Device.DeviceID != "" || snapshot.Object.Device.Number != 0 {
+		t.Fatalf("unexpected device/pult snapshot: %+v", snapshot.Object)
+	}
+}
+
 func TestCASLProvider_GetCASLObjectEditorSnapshotRejectsRoomUserWithoutID(t *testing.T) {
 	t.Parallel()
 

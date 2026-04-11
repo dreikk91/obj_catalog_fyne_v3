@@ -79,18 +79,25 @@ type phoenixResponsibleRow struct {
 }
 
 type phoenixEventRow struct {
-	EventID     int64          `db:"event_id"`
-	PanelID     string         `db:"panel_id"`
-	GroupNo     sql.NullInt64  `db:"group_no"`
-	ZoneNo      sql.NullInt64  `db:"zone_no"`
-	TimeEvent   time.Time      `db:"time_event"`
-	EventCode   sql.NullString `db:"event_code"`
-	CodeMessage sql.NullString `db:"code_message"`
-	TypeCodeID  sql.NullInt64  `db:"type_code_id"`
-	GroupName   sql.NullString `db:"group_name"`
-	ZoneName    sql.NullString `db:"zone_name"`
-	CompanyName sql.NullString `db:"company_name"`
-	Address     sql.NullString `db:"company_address"`
+	EventID       int64          `db:"event_id"`
+	PanelID       string         `db:"panel_id"`
+	GroupNo       sql.NullInt64  `db:"group_no"`
+	ZoneNo        sql.NullInt64  `db:"zone_no"`
+	TimeEvent     time.Time      `db:"time_event"`
+	EventCode     sql.NullString `db:"event_code"`
+	CodeMessage   sql.NullString `db:"code_message"`
+	TypeCodeID    sql.NullInt64  `db:"type_code_id"`
+	TypeMessage   sql.NullString `db:"type_code_message"`
+	AutoReset     sql.NullBool   `db:"auto_reset"`
+	GroupSent     sql.NullBool   `db:"group_sent"`
+	AccessCode    sql.NullString `db:"access_code"`
+	ContactIDCode sql.NullString `db:"contact_id_code"`
+	SystemFlag    sql.NullBool   `db:"system_flag"`
+	CodeZoneNo    sql.NullInt64  `db:"code_zone_no"`
+	GroupName     sql.NullString `db:"group_name"`
+	ZoneName      sql.NullString `db:"zone_name"`
+	CompanyName   sql.NullString `db:"company_name"`
+	Address       sql.NullString `db:"company_address"`
 }
 
 type phoenixActiveAlarmRow struct {
@@ -103,6 +110,12 @@ type phoenixActiveAlarmRow struct {
 	CodeMessage   sql.NullString `db:"code_message"`
 	TypeCodeID    sql.NullInt64  `db:"type_code_id"`
 	TypeMessage   sql.NullString `db:"type_code_message"`
+	AutoReset     sql.NullBool   `db:"auto_reset"`
+	GroupSent     sql.NullBool   `db:"group_sent"`
+	AccessCode    sql.NullString `db:"access_code"`
+	ContactIDCode sql.NullString `db:"contact_id_code"`
+	SystemFlag    sql.NullBool   `db:"system_flag"`
+	CodeZoneNo    sql.NullInt64  `db:"code_zone_no"`
 	GroupName     sql.NullString `db:"group_name"`
 	GroupMessage  sql.NullString `db:"group_message"`
 	ZoneName      sql.NullString `db:"zone_name"`

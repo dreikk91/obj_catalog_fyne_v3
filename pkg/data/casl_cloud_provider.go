@@ -89,6 +89,7 @@ type CASLCloudProvider struct {
 	cachedDictionaryAt      time.Time
 	cachedAlarmEvents       map[string]bool
 	cachedAlarmEventsAt     time.Time
+	dictionaryLang          string
 	cachedTranslators       map[string]map[string]string
 	cachedTranslatorAlarms  map[string]map[string]bool
 	cachedTransAt           map[string]time.Time
@@ -131,6 +132,7 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 		cachedObjectEventsAt:   make(map[int]time.Time),
 		cachedGroupStats:       make(map[string]map[int]int),
 		cachedAlarmEvents:      make(map[string]bool),
+		dictionaryLang:         "uk",
 		cachedTranslators:      make(map[string]map[string]string),
 		cachedTranslatorAlarms: make(map[string]map[string]bool),
 		cachedTransAt:          make(map[string]time.Time),

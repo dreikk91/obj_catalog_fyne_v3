@@ -74,6 +74,8 @@ type settingsDialogState struct {
 	fontObjEntry              *widget.Entry
 	fontEvEntry               *widget.Entry
 	fontAlmEntry              *widget.Entry
+	bottomAlarmJournalCheck   *widget.Check
+	bottomEventJournalCheck   *widget.Check
 	eventLimitEntry           *widget.Entry
 	objectLimitEntry          *widget.Entry
 	bridgeHistoryModeSelect   *widget.Select
@@ -233,6 +235,12 @@ func (s *settingsDialogState) initUIFields() {
 	s.fontAlmEntry = widget.NewEntry()
 	s.fontAlmEntry.SetText(fmt.Sprintf("%.1f", s.uiCfg.FontSizeAlarms))
 
+	s.bottomAlarmJournalCheck = widget.NewCheck("Показувати журнал активних тривог знизу на всю ширину", nil)
+	s.bottomAlarmJournalCheck.SetChecked(s.uiCfg.ShowBottomAlarmJournal)
+
+	s.bottomEventJournalCheck = widget.NewCheck("Показувати загальний журнал знизу на всю ширину", nil)
+	s.bottomEventJournalCheck.SetChecked(s.uiCfg.ShowBottomEventJournal)
+
 	s.eventLimitEntry = widget.NewEntry()
 	s.eventLimitEntry.SetText(strconv.Itoa(s.uiCfg.EventLogLimit))
 	s.eventLimitEntry.SetPlaceHolder("2000")
@@ -386,6 +394,8 @@ func (s *settingsDialogState) buildInterfaceTab() fyne.CanvasObject {
 		widget.NewFormItem("Шрифт об'єктів", s.fontObjEntry),
 		widget.NewFormItem("Шрифт подій", s.fontEvEntry),
 		widget.NewFormItem("Шрифт тривог", s.fontAlmEntry),
+		widget.NewFormItem("Нижній журнал тривог", s.bottomAlarmJournalCheck),
+		widget.NewFormItem("Нижній загальний журнал", s.bottomEventJournalCheck),
 		widget.NewFormItem("Режим логування", s.logLevelSelect),
 		widget.NewFormItem("Ліміт загального журналу", s.eventLimitEntry),
 		widget.NewFormItem("Ліміт журналу об'єкта", s.objectLimitEntry),
@@ -699,6 +709,8 @@ func (s *settingsDialogState) buildUIConfigFromForm() config.UIConfig {
 		FontSizeObjects:        parseFloat32(s.fontObjEntry.Text),
 		FontSizeEvents:         parseFloat32(s.fontEvEntry.Text),
 		FontSizeAlarms:         parseFloat32(s.fontAlmEntry.Text),
+		ShowBottomAlarmJournal: s.bottomAlarmJournalCheck.Checked,
+		ShowBottomEventJournal: s.bottomEventJournalCheck.Checked,
 		ExportDir:              strings.TrimSpace(s.exportDirEntry.Text),
 		EventLogLimit:          parseInt(s.eventLimitEntry.Text),
 		ObjectLogLimit:         parseInt(s.objectLimitEntry.Text),

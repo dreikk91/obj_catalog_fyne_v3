@@ -78,6 +78,7 @@ func (p *PhoenixDataProvider) GetObjects() []models.Object {
 	}
 
 	objects := p.buildObjects(rows)
+	p.enrichObjectsWithSIM(ctx, objects)
 
 	p.objectMu.Lock()
 	p.cachedObjects = append([]models.Object(nil), objects...)
@@ -397,6 +398,12 @@ func (p *PhoenixDataProvider) buildObjects(rows []phoenixObjectGroupRow) []model
 				GuardState:    1,
 				LaunchDate:    phoenixDateText(row.CreateDate),
 			}
+			if sim := strings.TrimSpace(nullString(row.Sim1Number)); sim != "" {
+				obj.SIM1 = sim
+			}
+			if sim := strings.TrimSpace(nullString(row.Sim2Number)); sim != "" {
+				obj.SIM2 = sim
+			}
 			objectsByPanel[panelID] = obj
 			order = append(order, panelID)
 		}
@@ -425,6 +432,47 @@ func (p *PhoenixDataProvider) buildObjects(rows []phoenixObjectGroupRow) []model
 		result = append(result, *obj)
 	}
 	return result
+}
+
+func (p *PhoenixDataProvider) enrichObjectsWithSIM(ctx context.Context, objects []models.Object) {
+	if p == nil || p.db == nil || len(objects) == 0 {
+		return
+	}
+
+	var rows []phoenixPanelSIMRow
+	if err := p.db.SelectContext(ctx, &rows, phoenixObjectSIMListQuery); err != nil {
+		log.Error().Err(err).Msg("Phoenix: помилка пакетного отримання SIM для списку об'єктів")
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+
+	byPanel := make(map[string]phoenixPanelSIMRow, len(rows))
+	for _, row := range rows {
+		panelID := strings.TrimSpace(row.PanelID)
+		if panelID == "" {
+			continue
+		}
+		byPanel[panelID] = row
+	}
+
+	for i := range objects {
+		panelID := strings.TrimSpace(objects[i].DisplayNumber)
+		if panelID == "" {
+			continue
+		}
+		row, ok := byPanel[panelID]
+		if !ok {
+			continue
+		}
+		if sim := strings.TrimSpace(nullString(row.Sim1Number)); sim != "" {
+			objects[i].SIM1 = sim
+		}
+		if sim := strings.TrimSpace(nullString(row.Sim2Number)); sim != "" {
+			objects[i].SIM2 = sim
+		}
+	}
 }
 
 func (p *PhoenixDataProvider) buildPhoenixAlarms(rows []phoenixObjectGroupRow) []models.Alarm {

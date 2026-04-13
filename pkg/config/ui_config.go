@@ -9,6 +9,8 @@ const (
 	PrefFontSizeObjects        = "ui.font_size_objects"
 	PrefFontSizeEvents         = "ui.font_size_events"
 	PrefFontSizeAlarms         = "ui.font_size_alarms"
+	PrefShowBottomAlarmJournal = "ui.show_bottom_alarm_journal"
+	PrefShowBottomEventJournal = "ui.show_bottom_event_journal"
 	PrefExportDir              = "ui.export_dir"
 	PrefEventLogLimit          = "ui.event_log_limit"
 	PrefObjectLogLimit         = "ui.object_log_limit"
@@ -43,6 +45,8 @@ type UIConfig struct {
 	FontSizeObjects        float32
 	FontSizeEvents         float32
 	FontSizeAlarms         float32
+	ShowBottomAlarmJournal bool
+	ShowBottomEventJournal bool
 	ExportDir              string
 	EventLogLimit          int
 	ObjectLogLimit         int
@@ -111,6 +115,8 @@ func LoadUIConfig(p fyne.Preferences) UIConfig {
 		FontSizeObjects:        fontSizeObjects,
 		FontSizeEvents:         fontSizeEvents,
 		FontSizeAlarms:         fontSizeAlarms,
+		ShowBottomAlarmJournal: p.BoolWithFallback(PrefShowBottomAlarmJournal, false),
+		ShowBottomEventJournal: p.BoolWithFallback(PrefShowBottomEventJournal, false),
 		ExportDir:              p.StringWithFallback(PrefExportDir, ""),
 		EventLogLimit:          clampEventLimit(int(p.IntWithFallback(PrefEventLogLimit, 2000))),
 		ObjectLogLimit:         clampEventLimit(int(p.IntWithFallback(PrefObjectLogLimit, 0))),
@@ -129,6 +135,8 @@ func SaveUIConfig(p fyne.Preferences, cfg UIConfig) {
 	p.SetFloat(PrefFontSizeObjects, float64(clampFontSize(cfg.FontSizeObjects)))
 	p.SetFloat(PrefFontSizeEvents, float64(clampFontSize(cfg.FontSizeEvents)))
 	p.SetFloat(PrefFontSizeAlarms, float64(clampFontSize(cfg.FontSizeAlarms)))
+	p.SetBool(PrefShowBottomAlarmJournal, cfg.ShowBottomAlarmJournal)
+	p.SetBool(PrefShowBottomEventJournal, cfg.ShowBottomEventJournal)
 	p.SetString(PrefExportDir, cfg.ExportDir)
 	p.SetInt(PrefEventLogLimit, clampEventLimit(cfg.EventLogLimit))
 	p.SetInt(PrefObjectLogLimit, clampEventLimit(cfg.ObjectLogLimit))

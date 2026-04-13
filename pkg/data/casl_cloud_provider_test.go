@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 	"strconv"
@@ -385,7 +386,7 @@ func TestMapCASLObjectStatusState(t *testing.T) {
 	}
 
 	blocked := mapCASLObjectStatusState("Включено", true)
-	if blocked.StatusText != "ЗАБЛОКОВАНО" || blocked.TechAlarmState != 1 {
+	if blocked.Status != models.StatusNormal || blocked.StatusText != "ЗАБЛОКОВАНО" || blocked.TechAlarmState != 0 {
 		t.Fatalf("unexpected blocked state: %+v", blocked)
 	}
 }
@@ -609,6 +610,32 @@ func TestMapCASLRealtimeRow_UserActionObjectOnly(t *testing.T) {
 	}
 }
 
+func TestMapCASLRealtimeRow_PreservesRealtimeActionAliases(t *testing.T) {
+	t.Parallel()
+
+	source := map[string]any{
+		"type":             "user_action",
+		"user_action_type": "ppk_action",
+		"ppk_action_type":  "DEVICE_BLOCK",
+		"device_id":        "23",
+		"time":             float64(1774788999196),
+	}
+
+	row, ok := mapCASLRealtimeRow(source, "")
+	if !ok {
+		t.Fatal("expected row to be parsed")
+	}
+	if row.UserActionType != "ppk_action" {
+		t.Fatalf("unexpected user action type: %q", row.UserActionType)
+	}
+	if row.PPKActionType != "DEVICE_BLOCK" {
+		t.Fatalf("unexpected ppk action type: %q", row.PPKActionType)
+	}
+	if row.Code != "DEVICE_BLOCK" || row.Action != "DEVICE_BLOCK" {
+		t.Fatalf("unexpected action/code mapping: %+v", row)
+	}
+}
+
 func TestMapCASLRealtimeRow_RejectsMissingTime(t *testing.T) {
 	t.Parallel()
 
@@ -802,6 +829,41 @@ func TestMapCASLObjectEvents_UserActionAliasDetails(t *testing.T) {
 	}
 	if strings.Contains(events[0].Details, "src=user_action") {
 		t.Fatalf("user_action source noise must not be shown: %q", events[0].Details)
+	}
+}
+
+func TestCASLProvider_MapCASLRowsToEvents_AllowsSystemActionWithoutObject(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	nowMs := time.Now().UnixMilli()
+
+	events, maxEventTime := provider.mapCASLRowsToEvents(context.Background(), []CASLObjectEvent{
+		{
+			Type:           "user_action",
+			UserActionType: "login_action",
+			Action:         "USER_LOGIN",
+			Code:           "USER_LOGIN",
+			UserID:         "483",
+			UserFIO:        "Оператор",
+			Time:           nowMs,
+		},
+	}, 0)
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if maxEventTime != nowMs {
+		t.Fatalf("unexpected maxEventTime: %d", maxEventTime)
+	}
+	if events[0].Type == models.EventOperatorAction {
+		t.Fatalf("expected non-operator event for login_action, got %s", events[0].Type)
+	}
+	if events[0].ObjectID != 0 || events[0].ObjectName != "CASL система" {
+		t.Fatalf("unexpected synthetic object for system event: %+v", events[0])
+	}
+	if !strings.Contains(events[0].Details, "Вхід користувача") {
+		t.Fatalf("unexpected details: %q", events[0].Details)
 	}
 }
 
@@ -3074,6 +3136,51 @@ func TestCASLProvider_UpdateRealtimeAlarmsFromRows_Lifecycle(t *testing.T) {
 	}
 }
 
+func TestCASLProvider_EnrichRealtimeRows_ResolvesM3InObjectByAlarmID(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-m3","user_id":"1","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			w.Header().Set("Content-Type", "application/json")
+			switch strings.TrimSpace(asString(payload["type"])) {
+			case "get_obj_by_alarm_id":
+				_, _ = w.Write([]byte(`{"status":"ok","data":"25"}`))
+			default:
+				t.Fatalf("unexpected command type: %v", payload["type"])
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	rows := provider.enrichRealtimeRows(context.Background(), []CASLObjectEvent{
+		{
+			Type:           "m3_in",
+			UserActionType: "mgr_action",
+			MgrActionType:  "GRD_OBJ_MGR_ARRIVE",
+			AlarmID:        "alarm-1",
+			MgrID:          "9",
+			Time:           time.Now().UnixMilli(),
+			Code:           "GRD_OBJ_MGR_ARRIVE",
+		},
+	})
+
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 enriched row, got %d", len(rows))
+	}
+	if rows[0].ObjID != "25" {
+		t.Fatalf("expected obj_id to be resolved via get_obj_by_alarm_id, got %+v", rows[0])
+	}
+}
+
 func TestCASLProvider_MapCASLRowsToEvents_SkipsRowsWithoutTime(t *testing.T) {
 	t.Parallel()
 
@@ -3185,6 +3292,45 @@ func TestCASLProvider_UpdateRealtimeAlarmsFromRows_SkipsRowsWithoutTime(t *testi
 	}
 }
 
+func TestCASLProvider_HandleCASLRealtimeStorageChange_InvalidatesCaches(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	provider.mu.Lock()
+	provider.cachedObjects = []caslGrdObject{{ObjID: "25", Name: "Obj"}}
+	provider.cachedObjectsAt = time.Now()
+	provider.objectByInternalID[1] = caslGrdObject{ObjID: "25", Name: "Obj"}
+	provider.deviceByDeviceID["23"] = caslDevice{DeviceID: "23"}
+	provider.cachedDevicesAt = time.Now()
+	provider.cachedUsers["41"] = caslUser{UserID: "41"}
+	provider.cachedUsersAt = time.Now()
+	provider.realtimeAlarmByObjID["25|z0"] = models.Alarm{ObjectName: "Obj"}
+	provider.mu.Unlock()
+
+	provider.handleCASLRealtimeStorageChange(map[string]any{
+		"type": "storage_change",
+		"data": map[string]any{
+			"action": "DELETE_GUARDED_OBJECT_SUCCESS",
+			"info":   "25",
+		},
+	})
+
+	provider.mu.RLock()
+	defer provider.mu.RUnlock()
+	if len(provider.cachedObjects) != 0 || !provider.cachedObjectsAt.IsZero() {
+		t.Fatalf("expected objects cache to be invalidated")
+	}
+	if len(provider.deviceByDeviceID) != 0 || !provider.cachedDevicesAt.IsZero() {
+		t.Fatalf("expected device cache to be invalidated")
+	}
+	if len(provider.realtimeAlarmByObjID) != 0 {
+		t.Fatalf("expected realtime alarms to be cleared for deleted object")
+	}
+	if provider.eventsRevision == 0 {
+		t.Fatalf("expected revision bump after storage change")
+	}
+}
+
 func TestCASLProvider_UpdateRealtimeAlarmsFromRows_UsesTranslatorIsAlarmForCustomDevice(t *testing.T) {
 	t.Parallel()
 
@@ -3234,11 +3380,8 @@ func TestCASLProvider_UpdateRealtimeAlarmsFromRows_UsesTranslatorIsAlarmForCusto
 	})
 
 	alarms := provider.snapshotRealtimeAlarms()
-	if len(alarms) != 1 {
-		t.Fatalf("expected 1 realtime alarm, got %d", len(alarms))
-	}
-	if alarms[0].Type != models.AlarmNotification {
-		t.Fatalf("realtime alarm type = %s, want %s", alarms[0].Type, models.AlarmNotification)
+	if len(alarms) != 0 {
+		t.Fatalf("ppk_event rows without GRD_OBJ_NOTIF must not create realtime tape alarms, got %+v", alarms)
 	}
 }
 
@@ -3289,11 +3432,173 @@ func TestCASLProvider_UpdateRealtimeAlarmsFromRows_UsesReadAlarmEventsForStandar
 	})
 
 	alarms := provider.snapshotRealtimeAlarms()
-	if len(alarms) != 1 {
-		t.Fatalf("expected 1 realtime alarm from read_alarm_events standard device path, got %d", len(alarms))
+	if len(alarms) != 0 {
+		t.Fatalf("standard ppk_event rows without GRD_OBJ_NOTIF must not create realtime tape alarms, got %+v", alarms)
 	}
-	if alarms[0].Type != models.AlarmNotification {
-		t.Fatalf("realtime alarm type = %s, want %s", alarms[0].Type, models.AlarmNotification)
+}
+
+func TestCASLProvider_GetObjects_UsesRealtimeAlarmStateForCASLObjectList(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	provider.mu.Lock()
+	record := caslGrdObject{
+		ObjID:        "25",
+		Name:         "1004 Будинок",
+		Address:      "Addr 25",
+		DeviceID:     caslInt64(23),
+		DeviceNumber: caslInt64(1004),
+		Status:       "Включено",
+	}
+	provider.cachedObjects = []caslGrdObject{record}
+	provider.cachedObjectsAt = time.Now()
+	internalID := mapCASLObjectID(record.ObjID, record.Name, strconv.FormatInt(record.DeviceNumber.Int64(), 10))
+	provider.objectByInternalID[internalID] = record
+	device := caslDevice{
+		DeviceID: caslText("23"),
+		ObjID:    caslText("25"),
+		Number:   caslInt64(1004),
+		Type:     caslText("TYPE_DEVICE_CASL"),
+	}
+	provider.deviceByDeviceID = map[string]caslDevice{"23": device}
+	provider.deviceByObjectID = map[string]caslDevice{"25": device}
+	provider.deviceByNumber = map[int64]caslDevice{1004: device}
+	provider.cachedDevicesAt = time.Now()
+	provider.realtimeAlarmByObjID["1004|z4"] = models.Alarm{
+		ID:           internalID,
+		ObjectID:     internalID,
+		ObjectNumber: "1004",
+		ObjectName:   "1004 Будинок",
+		Time:         time.Now(),
+		Type:         models.AlarmOperator,
+		ZoneNumber:   4,
+		Details:      "Тривога оператора",
+	}
+	provider.mu.Unlock()
+
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].Status != models.StatusFire || objects[0].AlarmState != 1 {
+		t.Fatalf("expected CASL object to inherit active tape alarm state, got %+v", objects[0])
+	}
+	expectedStatusText := (&models.Alarm{Type: models.AlarmOperator}).GetTypeDisplay()
+	if objects[0].StatusText != expectedStatusText {
+		t.Fatalf("unexpected status text for active CASL alarm: %q", objects[0].StatusText)
+	}
+}
+
+func TestCASLProvider_GetObjects_BlockedWinsOverRealtimeAlarmLikeChessMode(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	provider.mu.Lock()
+	record := caslGrdObject{
+		ObjID:         "25",
+		Name:          "1004 Будинок",
+		Address:       "Addr 25",
+		DeviceID:      caslInt64(23),
+		DeviceNumber:  caslInt64(1004),
+		Status:        "Включено",
+		DeviceBlocked: true,
+		BlockMessage:  "blocked",
+	}
+	provider.cachedObjects = []caslGrdObject{record}
+	provider.cachedObjectsAt = time.Now()
+	internalID := mapCASLObjectID(record.ObjID, record.Name, strconv.FormatInt(record.DeviceNumber.Int64(), 10))
+	provider.objectByInternalID[internalID] = record
+	device := caslDevice{
+		DeviceID: caslText("23"),
+		ObjID:    caslText("25"),
+		Number:   caslInt64(1004),
+		Type:     caslText("TYPE_DEVICE_CASL"),
+		Blocked:  true,
+	}
+	provider.deviceByDeviceID = map[string]caslDevice{"23": device}
+	provider.deviceByObjectID = map[string]caslDevice{"25": device}
+	provider.deviceByNumber = map[int64]caslDevice{1004: device}
+	provider.cachedDevicesAt = time.Now()
+	provider.realtimeAlarmByObjID["1004|z4"] = models.Alarm{
+		ID:           internalID,
+		ObjectID:     internalID,
+		ObjectNumber: "1004",
+		ObjectName:   "1004 Будинок",
+		Time:         time.Now(),
+		Type:         models.AlarmDevice,
+		ZoneNumber:   4,
+		Details:      "Тривога приладу",
+	}
+	provider.mu.Unlock()
+
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].BlockedArmedOnOff != 1 || objects[0].StatusText != "ЗАБЛОКОВАНО" {
+		t.Fatalf("blocked CASL object must keep blocked state over active tape alarm, got %+v", objects[0])
+	}
+	if objects[0].AlarmState != 0 {
+		t.Fatalf("blocked object must not be recolored as active alarm, got %+v", objects[0])
+	}
+}
+
+func TestCASLProvider_GetObjects_DisconnectedWinsOverRealtimeAlarmLikeChessMode(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-disconnected-alarm","user_id":"u-off","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","address":"Addr 24","status":"Включено","device_id":"23","device_number":1003}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"name":"MAKS PRO","lastPingDate":1774769732941}]}`))
+			case "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"offline":1774769732941}]}`))
+			case "read_device_state":
+				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":0,"accum":0,"online":1,"lastPingDate":1774769732941}}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	internalID := mapCASLObjectID("24", "Object 24", "1003")
+	provider.mu.Lock()
+	provider.realtimeAlarmByObjID["1003|z2"] = models.Alarm{
+		ID:           internalID,
+		ObjectID:     internalID,
+		ObjectNumber: "1003",
+		ObjectName:   "Object 24",
+		Time:         time.Now(),
+		Type:         models.AlarmMobile,
+		ZoneNumber:   2,
+		Details:      "Мобільна тривога",
+	}
+	provider.mu.Unlock()
+
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].Status != models.StatusOffline || objects[0].IsConnState != 0 {
+		t.Fatalf("disconnected CASL object must keep offline state over active tape alarm, got %+v", objects[0])
+	}
+	if objects[0].AlarmState != 0 {
+		t.Fatalf("disconnected CASL object must not stay active alarm in list, got %+v", objects[0])
 	}
 }
 
@@ -3347,5 +3652,220 @@ func TestCASLProvider_GetObjectsMarksDisconnectedDevicesOffline(t *testing.T) {
 	}
 	if gotByID.Status != models.StatusOffline || gotByID.IsConnState != 0 {
 		t.Fatalf("expected offline object by id, got %+v", gotByID)
+	}
+}
+
+func TestCASLProvider_GetObjectsMarksReadDeviceOfflineAsOffline(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-device-offline","user_id":"u-off","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","address":"Addr 24","status":"Включено","device_id":"23","device_number":1003}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"name":"MAKS PRO","offline":1774769732941,"lastPingDate":1774769732000}]}`))
+			case "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_device_state":
+				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":0,"accum":0,"online":1,"lastPingDate":1774769732000}}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].Status != models.StatusOffline || objects[0].IsConnState != 0 {
+		t.Fatalf("expected offline object from read_device.offline, got %+v", objects[0])
+	}
+
+	gotByID := provider.GetObjectByID(strconv.Itoa(objects[0].ID))
+	if gotByID == nil {
+		t.Fatalf("expected object by id")
+	}
+	if gotByID.Status != models.StatusOffline || gotByID.IsConnState != 0 {
+		t.Fatalf("expected offline object by id from read_device.offline, got %+v", gotByID)
+	}
+}
+
+func TestCASLProvider_GetObjects_BlockedWinsOverOffline(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-blocked-offline","user_id":"u-off","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","address":"Addr 24","status":"Включено","device_id":"23","device_number":1003,"device_blocked":true,"block_message":"blocked"}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"name":"MAKS PRO","blocked":true,"offline":1774769732941,"lastPingDate":1774769732000}]}`))
+			case "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"offline":1774769732941}]}`))
+			case "read_device_state":
+				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":0,"accum":0,"online":0,"lastPingDate":1774769732000}}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].BlockedArmedOnOff != 1 || objects[0].StatusText != "ЗАБЛОКОВАНО" {
+		t.Fatalf("blocked object must keep blocked state over offline markers, got %+v", objects[0])
+	}
+
+	gotByID := provider.GetObjectByID(strconv.Itoa(objects[0].ID))
+	if gotByID == nil {
+		t.Fatalf("expected object by id")
+	}
+	if gotByID.BlockedArmedOnOff != 1 || gotByID.StatusText != "ЗАБЛОКОВАНО" {
+		t.Fatalf("blocked object by id must keep blocked state over offline markers, got %+v", gotByID)
+	}
+}
+
+func TestCASLProvider_GetAlarmProcessingOptions_UsesDictionaryAlarmCauses(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	provider.mu.Lock()
+	provider.cachedDictionary = map[string]any{
+		"alarm_causes": []any{
+			"CAUSES_FALSE_ALARM",
+			"CAUSES_TECHNICAL_WORK",
+		},
+		"translate": map[string]any{
+			"uk": map[string]any{
+				"CAUSES_FALSE_ALARM":    "Хибна тривога",
+				"CAUSES_TECHNICAL_WORK": "Технічні роботи",
+			},
+		},
+	}
+	provider.cachedDictionaryAt = time.Now()
+	provider.mu.Unlock()
+
+	options, err := provider.GetAlarmProcessingOptions(context.Background(), models.Alarm{ID: 1})
+	if err != nil {
+		t.Fatalf("GetAlarmProcessingOptions error: %v", err)
+	}
+	if len(options) != 2 {
+		t.Fatalf("expected 2 options, got %d", len(options))
+	}
+	if options[0].Code != "CAUSES_FALSE_ALARM" || options[0].Label != "Хибна тривога" {
+		t.Fatalf("unexpected first option: %+v", options[0])
+	}
+	if options[1].Code != "CAUSES_TECHNICAL_WORK" || options[1].Label != "Технічні роботи" {
+		t.Fatalf("unexpected second option: %+v", options[1])
+	}
+}
+
+func TestCASLProvider_ProcessAlarmWithRequest_UsesSelectedCause(t *testing.T) {
+	t.Parallel()
+
+	var pickPayload map[string]any
+	var finishPayload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-process","user_id":"u-process","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "grd_obj_pick":
+				pickPayload = copyStringAnyMap(payload)
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			case "grd_obj_finish":
+				finishPayload = copyStringAnyMap(payload)
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	alarmID := ids.CASLObjectIDNamespaceStart + 50
+
+	provider.mu.Lock()
+	provider.objectByInternalID[alarmID] = caslGrdObject{
+		ObjID:        "25",
+		Name:         "1004 Object",
+		DeviceID:     caslInt64(23),
+		DeviceNumber: caslInt64(1004),
+	}
+	provider.realtimeAlarmByObjID["25"] = models.Alarm{
+		ID:       alarmID,
+		ObjectID: alarmID,
+	}
+	provider.mu.Unlock()
+
+	err := provider.ProcessAlarmWithRequest(context.Background(), models.Alarm{
+		ID:       alarmID,
+		ObjectID: alarmID,
+	}, "Диспетчер", contracts.AlarmProcessingRequest{
+		CauseCode: "CAUSES_TECHNICAL_WORK",
+		Note:      "Перевірено оператором",
+	})
+	if err != nil {
+		t.Fatalf("ProcessAlarmWithRequest error: %v", err)
+	}
+	if asString(pickPayload["obj_id"]) != "25" {
+		t.Fatalf("unexpected pick payload: %#v", pickPayload)
+	}
+	if asString(finishPayload["obj_id"]) != "25" {
+		t.Fatalf("unexpected finish obj_id: %#v", finishPayload)
+	}
+	if asString(finishPayload["cause"]) != "CAUSES_TECHNICAL_WORK" {
+		t.Fatalf("unexpected finish cause: %#v", finishPayload)
+	}
+	if asString(finishPayload["note"]) != "Перевірено оператором" {
+		t.Fatalf("unexpected finish note: %#v", finishPayload)
+	}
+
+	provider.mu.RLock()
+	_, exists := provider.realtimeAlarmByObjID["25"]
+	provider.mu.RUnlock()
+	if exists {
+		t.Fatalf("expected realtime alarm to be removed after successful processing")
 	}
 }

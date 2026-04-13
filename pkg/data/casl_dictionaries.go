@@ -924,6 +924,10 @@ func buildCASLUserActionDetails(row CASLObjectEvent, dictionary map[string]strin
 	}
 
 	switch action {
+	case "USER_GROUP_ON":
+		return "Постановка групи користувачем"
+	case "USER_LOGIN":
+		return "Вхід користувача"
 	case "GRD_OBJ_NOTIF":
 		return "Попадання тривоги в стрічку"
 	case "GRD_OBJ_PICK":
@@ -1021,6 +1025,12 @@ func buildCASLUserActionDetails(row CASLObjectEvent, dictionary map[string]strin
 		return base
 	case "DEVICE_UNBLOCK":
 		return "Розблокування ППК"
+	case "POST_PROC_ALARM_REPORT":
+		return "Формування післятривожного звіту"
+	case "UPDATING_START":
+		return "Початок оновлення CASL"
+	case "RESTORE_START":
+		return "Початок відновлення CASL"
 	default:
 		return ""
 	}

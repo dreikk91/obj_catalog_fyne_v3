@@ -2,6 +2,7 @@
 package contracts
 
 import (
+	"context"
 	"obj_catalog_fyne_v3/pkg/models"
 	"time"
 )
@@ -59,6 +60,25 @@ type ActiveAlarmHistoryProvider interface {
 type AlarmProvider interface {
 	GetAlarms() []models.Alarm
 	ProcessAlarm(id string, user string, note string)
+}
+
+// AlarmProcessingOption описує одну причину відпрацювання тривоги.
+type AlarmProcessingOption struct {
+	Code  string
+	Label string
+}
+
+// AlarmProcessingRequest описує параметри відпрацювання тривоги.
+type AlarmProcessingRequest struct {
+	CauseCode string
+	Note      string
+}
+
+// AlarmProcessingProvider описує розширене відпрацювання тривоги
+// з причиною відпрацювання, як у CASL.
+type AlarmProcessingProvider interface {
+	GetAlarmProcessingOptions(ctx context.Context, alarm models.Alarm) ([]AlarmProcessingOption, error)
+	ProcessAlarmWithRequest(ctx context.Context, alarm models.Alarm, user string, request AlarmProcessingRequest) error
 }
 
 // DataProvider об'єднує всі інтерфейси даних

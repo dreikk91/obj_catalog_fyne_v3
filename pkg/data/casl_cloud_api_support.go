@@ -47,10 +47,12 @@ type CASLObjectEvent struct {
 	PPKNum         int64
 	DeviceID       string
 	ObjID          string
+	ObjIDs         []string
 	ObjName        string
 	ObjAddr        string
 	Action         string
 	AlarmType      string
+	AlarmID        string
 	MgrID          string
 	UserID         string
 	UserFIO        string

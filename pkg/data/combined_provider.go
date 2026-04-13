@@ -27,6 +27,10 @@ type caslObjectEditorProvider interface {
 	contracts.CASLObjectEditorProvider
 }
 
+type alarmProcessingProvider interface {
+	contracts.AlarmProcessingProvider
+}
+
 // ProviderSource описує одне джерело даних у мультисистемній конфігурації.
 // OwnsObjectID/OwnsAlarmID задають, як маршрутизувати запити до цього джерела.
 // Якщо жоден matcher не спрацював, використовується перше (основне) джерело.
@@ -476,6 +480,34 @@ func (p *CombinedDataProvider) ProcessAlarm(id string, user string, note string)
 		source.Provider.ProcessAlarm(id, user, note)
 		return
 	}
+}
+
+func (p *CombinedDataProvider) GetAlarmProcessingOptions(ctx context.Context, alarm models.Alarm) ([]contracts.AlarmProcessingOption, error) {
+	if p == nil {
+		return nil, errors.New("combined provider is nil")
+	}
+
+	provider := p.providerForAlarmID(strconv.Itoa(alarm.ID))
+	if advanced, ok := provider.(alarmProcessingProvider); ok {
+		return advanced.GetAlarmProcessingOptions(ctx, alarm)
+	}
+	return nil, nil
+}
+
+func (p *CombinedDataProvider) ProcessAlarmWithRequest(ctx context.Context, alarm models.Alarm, user string, request contracts.AlarmProcessingRequest) error {
+	if p == nil {
+		return errors.New("combined provider is nil")
+	}
+
+	provider := p.providerForAlarmID(strconv.Itoa(alarm.ID))
+	if advanced, ok := provider.(alarmProcessingProvider); ok {
+		return advanced.ProcessAlarmWithRequest(ctx, alarm, user, request)
+	}
+	if provider != nil {
+		provider.ProcessAlarm(strconv.Itoa(alarm.ID), user, request.Note)
+		return nil
+	}
+	return errors.New("alarm provider is not configured")
 }
 
 func (p *CombinedDataProvider) GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time) {

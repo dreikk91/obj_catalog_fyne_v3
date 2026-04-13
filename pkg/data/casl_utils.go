@@ -197,10 +197,10 @@ func firstCASLTimeValue(values ...any) (time.Time, bool) {
 func mapCASLObjectStatusState(statusRaw string, blocked bool) caslObjectStatusState {
 	if blocked {
 		return caslObjectStatusState{
-			Status:         models.StatusFault,
+			Status:         models.StatusNormal,
 			StatusText:     "ЗАБЛОКОВАНО",
-			GuardState:     0,
-			TechAlarmState: 1,
+			GuardState:     1,
+			TechAlarmState: 0,
 			IsConnState:    1,
 			IsUnderGuard:   false,
 		}

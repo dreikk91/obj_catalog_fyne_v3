@@ -61,9 +61,12 @@ type Application struct {
 	eventLog   *ui.EventLogPanel
 
 	// Праві вкладки (картка об'єкта / журнал / тривоги)
-	rightTabs *container.AppTabs
-	eventsTab *container.TabItem
-	alarmsTab *container.TabItem
+	rightTabs   *container.AppTabs
+	bottomTabs  *container.AppTabs
+	eventsTab   *container.TabItem
+	alarmsTab   *container.TabItem
+	objectSplit *container.Split
+	bottomSplit *container.Split
 
 	// Стан лічильників для бейджів правих вкладок.
 	lastAlarmsCount   int
@@ -74,6 +77,8 @@ type Application struct {
 	isDarkTheme bool
 
 	statusLabel     *widget.Label
+	themeBtn        *widget.Button
+	settingsBtn     *widget.Button
 	versionInfo     appversion.Info
 	firebirdEnabled bool
 	phoenixEnabled  bool
@@ -141,6 +146,7 @@ func (a *Application) backendStatusConnectedText() string {
 
 const (
 	prefKeyObjectListSplitOffset = "ui.objectList.splitOffset"
+	prefKeyBottomSplitOffset     = "ui.bottom.splitOffset"
 	prefKeyDarkTheme             = "ui.theme.dark"
 )
 
@@ -250,27 +256,11 @@ func (a *Application) buildUI() {
 	// Головне меню (в т.ч. адмінський функціонал з документації)
 	a.mainWindow.SetMainMenu(a.buildMainMenu())
 
-	themeBtn := a.buildThemeButton()
-	settingsBtn := a.buildSettingsButton()
-	toolbar := a.buildToolbar(themeBtn, settingsBtn)
-	rightTabs := a.buildRightTabs()
+	a.themeBtn = a.buildThemeButton()
+	a.settingsBtn = a.buildSettingsButton()
 	a.bindTabBadgeHandlers()
-
-	log.Debug().Msg("Компонування макета...")
-
-	rootSplit := a.buildRootSplit(rightTabs)
-	statusBar := a.buildStatusBar()
-
-	finalLayout := container.NewBorder(
-		container.NewVBox(toolbar, widget.NewSeparator()),
-		statusBar, nil, nil,
-		rootSplit,
-	)
-	a.mainWindow.SetContent(finalLayout)
-	log.Debug().Msg("UI побудований та встановлений на вікно")
-
-	a.installCloseIntercept(rootSplit)
-	a.registerShortcuts(themeBtn)
+	a.rebuildMainWindowLayout(config.LoadUIConfig(a.fyneApp.Preferences()))
+	a.registerShortcuts(a.themeBtn)
 }
 
 func (a *Application) buildUIPanels() {
@@ -317,16 +307,19 @@ func (a *Application) configurePanelCallbacks() {
 
 	a.alarmPanel.OnProcessAlarm = func(alarm models.Alarm) {
 		log.Debug().Int("alarmID", alarm.ID).Msg("Початок обробки тривоги...")
-		dialogs.ShowProcessAlarmDialog(a.mainWindow, alarm, func(result dialogs.ProcessAlarmResult) {
-			log.Info().Int("alarmID", alarm.ID).Str("action", result.Action).Str("note", result.Note).Msg("Тривога оброблена")
-			provider := a.getDataProvider()
-			if provider == nil {
-				dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Провайдер даних недоступний.")
-				return
-			}
-			provider.ProcessAlarm(fmt.Sprintf("%d", alarm.ID), "Диспетчер", result.Note)
-			a.publishDataRefresh(eventbus.DataRefreshEvent{RefreshAlarms: true})
-			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Тривогу оброблено: "+result.Action)
+		provider := a.getDataProvider()
+		if provider == nil {
+			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Провайдер даних недоступний.")
+			return
+		}
+
+		dialogs.ShowProcessAlarmDialog(a.mainWindow, alarm, provider, "Диспетчер", func() {
+			log.Info().Int("alarmID", alarm.ID).Msg("Тривога відпрацьована")
+			a.publishDataRefresh(eventbus.DataRefreshEvent{
+				RefreshAlarms: true,
+				RefreshEvents: true,
+			})
+			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Тривогу відпрацьовано.")
 		})
 	}
 
@@ -415,13 +408,84 @@ func (a *Application) buildToolbar(themeBtn *widget.Button, settingsBtn *widget.
 	return container.NewHBox(title, layout.NewSpacer(), themeBtn, settingsBtn)
 }
 
-func (a *Application) buildRightTabs() *container.AppTabs {
+type journalLayoutPlan struct {
+	rightShowsEvents  bool
+	rightShowsAlarms  bool
+	bottomShowsEvents bool
+	bottomShowsAlarms bool
+}
+
+func buildJournalLayoutPlan(uiCfg config.UIConfig) journalLayoutPlan {
+	return journalLayoutPlan{
+		rightShowsEvents:  !uiCfg.ShowBottomEventJournal,
+		rightShowsAlarms:  !uiCfg.ShowBottomAlarmJournal,
+		bottomShowsEvents: uiCfg.ShowBottomEventJournal,
+		bottomShowsAlarms: uiCfg.ShowBottomAlarmJournal,
+	}
+}
+
+func (a *Application) rebuildMainWindowLayout(uiCfg config.UIConfig) {
+	if a == nil || a.mainWindow == nil || a.objectList == nil || a.workArea == nil || a.alarmPanel == nil || a.eventLog == nil {
+		return
+	}
+
+	log.Debug().
+		Bool("bottomAlarms", uiCfg.ShowBottomAlarmJournal).
+		Bool("bottomEvents", uiCfg.ShowBottomEventJournal).
+		Msg("Компонування макета...")
+
+	toolbar := a.buildToolbar(a.themeBtn, a.settingsBtn)
+	rightTabs, bottomTabs := a.buildJournalTabs(uiCfg)
+	content := a.buildMainContent(rightTabs, bottomTabs)
+	statusBar := a.buildStatusBar()
+
+	finalLayout := container.NewBorder(
+		container.NewVBox(toolbar, widget.NewSeparator()),
+		statusBar, nil, nil,
+		content,
+	)
+	a.mainWindow.SetContent(finalLayout)
+	log.Debug().Msg("UI побудований та встановлений на вікно")
+
+	a.installCloseIntercept()
+	a.updateTabBadges(a.lastAlarmsCount, a.lastCriticalCount, a.lastEventsCount)
+}
+
+func (a *Application) buildJournalTabs(uiCfg config.UIConfig) (*container.AppTabs, *container.AppTabs) {
+	plan := buildJournalLayoutPlan(uiCfg)
+
 	detailsTab := container.NewTabItem("КАРТКА ОБ'ЄКТА", a.workArea.Container)
-	eventsTab := container.NewTabItem("ЖУРНАЛ ПОДІЙ", a.eventLog.Container)
-	alarmsTab := container.NewTabItem("ТРИВОГИ", a.alarmPanel.Container)
-	rightTabs := container.NewAppTabs(detailsTab, eventsTab, alarmsTab)
-	a.configureTabsState(detailsTab, eventsTab, alarmsTab, rightTabs)
-	return rightTabs
+	rightItems := []*container.TabItem{detailsTab}
+	var eventsTab *container.TabItem
+	var alarmsTab *container.TabItem
+
+	if plan.rightShowsEvents {
+		eventsTab = container.NewTabItem("ЖУРНАЛ ПОДІЙ", a.eventLog.Container)
+		rightItems = append(rightItems, eventsTab)
+	}
+	if plan.rightShowsAlarms {
+		alarmsTab = container.NewTabItem("АКТИВНІ ТРИВОГИ", a.alarmPanel.Container)
+		rightItems = append(rightItems, alarmsTab)
+	}
+
+	rightTabs := container.NewAppTabs(rightItems...)
+
+	var bottomTabs *container.AppTabs
+	bottomItems := make([]*container.TabItem, 0, 2)
+	if plan.bottomShowsAlarms {
+		alarmsTab = container.NewTabItem("АКТИВНІ ТРИВОГИ", a.alarmPanel.Container)
+		bottomItems = append(bottomItems, alarmsTab)
+	}
+	if plan.bottomShowsEvents {
+		eventsTab = container.NewTabItem("ЖУРНАЛ ПОДІЙ", a.eventLog.Container)
+		bottomItems = append(bottomItems, eventsTab)
+	}
+	if len(bottomItems) > 0 {
+		bottomTabs = container.NewAppTabs(bottomItems...)
+	}
+
+	a.configureTabsState(detailsTab, eventsTab, alarmsTab, rightTabs, bottomTabs)
+	return rightTabs, bottomTabs
 }
 
 func (a *Application) bindTabBadgeHandlers() {
@@ -440,16 +504,32 @@ func (a *Application) bindTabBadgeHandlers() {
 	}
 }
 
-func (a *Application) buildRootSplit(rightTabs *container.AppTabs) *container.Split {
-	rootSplit := container.NewHSplit(a.objectList.Container, rightTabs)
-	rootSplit.SetOffset(a.savedObjectListSplitOffset())
-	return rootSplit
+func (a *Application) buildMainContent(rightTabs *container.AppTabs, bottomTabs *container.AppTabs) fyne.CanvasObject {
+	a.objectSplit = container.NewHSplit(a.objectList.Container, rightTabs)
+	a.objectSplit.SetOffset(a.savedObjectListSplitOffset())
+
+	if bottomTabs == nil {
+		a.bottomSplit = nil
+		return a.objectSplit
+	}
+
+	a.bottomSplit = container.NewVSplit(a.objectSplit, bottomTabs)
+	a.bottomSplit.SetOffset(a.savedBottomSplitOffset())
+	return a.bottomSplit
 }
 
 func (a *Application) savedObjectListSplitOffset() float64 {
 	savedOffset := a.fyneApp.Preferences().FloatWithFallback(prefKeyObjectListSplitOffset, 0.32)
 	if savedOffset < 0.10 || savedOffset > 0.90 {
 		return 0.32
+	}
+	return savedOffset
+}
+
+func (a *Application) savedBottomSplitOffset() float64 {
+	savedOffset := a.fyneApp.Preferences().FloatWithFallback(prefKeyBottomSplitOffset, 0.68)
+	if savedOffset < 0.35 || savedOffset > 0.90 {
+		return 0.68
 	}
 	return savedOffset
 }
@@ -463,7 +543,19 @@ func (a *Application) buildStatusBar() fyne.CanvasObject {
 	)
 }
 
-func (a *Application) installCloseIntercept(rootSplit *container.Split) {
+func (a *Application) persistCurrentLayoutOffsets() {
+	if a == nil || a.fyneApp == nil {
+		return
+	}
+	if a.objectSplit != nil {
+		a.fyneApp.Preferences().SetFloat(prefKeyObjectListSplitOffset, a.objectSplit.Offset)
+	}
+	if a.bottomSplit != nil {
+		a.fyneApp.Preferences().SetFloat(prefKeyBottomSplitOffset, a.bottomSplit.Offset)
+	}
+}
+
+func (a *Application) installCloseIntercept() {
 	a.mainWindow.SetCloseIntercept(func() {
 		if a.isShuttingDown {
 			return
@@ -474,7 +566,7 @@ func (a *Application) installCloseIntercept(rootSplit *container.Split) {
 			a.refreshLoopCancel = nil
 		}
 
-		a.fyneApp.Preferences().SetFloat(prefKeyObjectListSplitOffset, rootSplit.Offset)
+		a.persistCurrentLayoutOffsets()
 
 		otherWindows := append([]fyne.Window(nil), a.fyneApp.Driver().AllWindows()...)
 		for _, w := range otherWindows {
@@ -735,20 +827,11 @@ func (a *Application) RefreshUI(cfg config.UIConfig) {
 	log.Info().Float32("fontSize", cfg.FontSize).Msg("🎨 Оновлення параметрів інтерфейсу...")
 	log.Debug().Float32("fontSizeAlarms", cfg.FontSizeAlarms).Float32("fontSizeObjects", cfg.FontSizeObjects).Float32("fontSizeEvents", cfg.FontSizeEvents).Msg("Нові розміри шрифтів")
 
+	a.persistCurrentLayoutOffsets()
 	a.setTheme(a.isDarkTheme)
 
-	// Оновлюємо панелі
-	log.Debug().Msg("Оновлення AlarmPanel...")
-	a.alarmPanel.OnThemeChanged(cfg.FontSizeAlarms)
-
-	log.Debug().Msg("Оновлення ObjectListPanel...")
-	a.objectList.OnThemeChanged(cfg.FontSizeObjects)
-
-	log.Debug().Msg("Оновлення WorkAreaPanel...")
-	a.workArea.OnThemeChanged(cfg.FontSize)
-
-	log.Debug().Msg("Оновлення EventLogPanel...")
-	a.eventLog.OnThemeChanged(cfg.FontSizeEvents)
+	a.applyThemeToPanels(cfg)
+	a.rebuildMainWindowLayout(cfg)
 	a.publishDataRefresh(eventbus.DataRefreshEvent{
 		RefreshObjects: true,
 		RefreshAlarms:  true,

@@ -18,7 +18,9 @@ SELECT
 	T.StateEvent AS state_event,
 	P.CreateDate AS create_date,
 	P.DateLastChange AS date_last_change,
-	CAST(NULL AS nvarchar(255)) AS engineer_name
+	CAST(NULL AS nvarchar(255)) AS engineer_name,
+	PrimarySIM.sim_number AS sim1_number,
+	SecondarySIM.sim_number AS sim2_number
 FROM Groups G WITH (NOLOCK)
 LEFT JOIN Company C WITH (NOLOCK) ON C.ID = G.CompanyID
 LEFT JOIN (
@@ -27,6 +29,38 @@ LEFT JOIN (
 	GROUP BY Panel_id, Group_
 ) T ON T.Panel_id = G.Panel_id AND T.Group_ = G.Group_
 INNER JOIN vwRealPanel P WITH (NOLOCK) ON P.Panel_id = G.Panel_id
+OUTER APPLY (
+	SELECT TOP (1)
+		COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) AS sim_number
+	FROM Mphone M WITH (NOLOCK)
+	INNER JOIN OnBoardDevice D WITH (NOLOCK) ON D.Mphone_id = M.Mphone_id
+	INNER JOIN OnBoardDeviceType DT WITH (NOLOCK) ON DT.OnBoardDeviceType_ID = D.OnBoardDeviceType_ID
+	INNER JOIN Sim S WITH (NOLOCK) ON S.OnBoardDevice_ID = D.OnBoardDevice_ID
+	WHERE
+		M.Panel_id = G.Panel_id
+		AND DT.Enum = 0
+		AND COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) IS NOT NULL
+	ORDER BY
+		CASE WHEN ISNULL(S.IsCurrentSim, 0) = 1 THEN 0 ELSE 1 END,
+		CASE WHEN ISNULL(S.IsMainSim, 0) = 1 THEN 0 ELSE 1 END,
+		S.Sim_ID
+) AS PrimarySIM
+OUTER APPLY (
+	SELECT TOP (1)
+		COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) AS sim_number
+	FROM Mphone M WITH (NOLOCK)
+	INNER JOIN OnBoardDevice D WITH (NOLOCK) ON D.Mphone_id = M.Mphone_id
+	INNER JOIN OnBoardDeviceType DT WITH (NOLOCK) ON DT.OnBoardDeviceType_ID = D.OnBoardDeviceType_ID
+	INNER JOIN Sim S WITH (NOLOCK) ON S.OnBoardDevice_ID = D.OnBoardDevice_ID
+	WHERE
+		M.Panel_id = G.Panel_id
+		AND DT.Enum = 1
+		AND COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) IS NOT NULL
+	ORDER BY
+		CASE WHEN ISNULL(S.IsCurrentSim, 0) = 1 THEN 0 ELSE 1 END,
+		CASE WHEN ISNULL(S.IsMainSim, 0) = 1 THEN 0 ELSE 1 END,
+		S.Sim_ID
+) AS SecondarySIM
 ORDER BY G.Panel_id, G.Group_
 `
 
@@ -104,7 +138,7 @@ OUTER APPLY (
 ) AS ChannelMeta
 OUTER APPLY (
 	SELECT TOP (1)
-		COALESCE(NULLIF(LTRIM(RTRIM(S.RealSimNumber)), ''), NULLIF(LTRIM(RTRIM(S.SimNumber)), '')) AS sim_number,
+		COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) AS sim_number,
 		OP.OperatorName AS operator_name
 	FROM OnBoardDevice D WITH (NOLOCK)
 	INNER JOIN OnBoardDeviceType DT WITH (NOLOCK) ON DT.OnBoardDeviceType_ID = D.OnBoardDeviceType_ID
@@ -113,7 +147,7 @@ OUTER APPLY (
 	WHERE
 		D.MPhone_ID = MDC.Mphone_id
 		AND DT.Enum = 0
-		AND COALESCE(NULLIF(LTRIM(RTRIM(S.RealSimNumber)), ''), NULLIF(LTRIM(RTRIM(S.SimNumber)), '')) IS NOT NULL
+		AND COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) IS NOT NULL
 	ORDER BY
 		CASE WHEN ISNULL(S.IsCurrentSim, 0) = 1 THEN 0 ELSE 1 END,
 		CASE WHEN ISNULL(S.IsMainSim, 0) = 1 THEN 0 ELSE 1 END,
@@ -121,7 +155,7 @@ OUTER APPLY (
 ) AS PrimarySIM
 OUTER APPLY (
 	SELECT TOP (1)
-		COALESCE(NULLIF(LTRIM(RTRIM(S.RealSimNumber)), ''), NULLIF(LTRIM(RTRIM(S.SimNumber)), '')) AS sim_number,
+		COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) AS sim_number,
 		OP.OperatorName AS operator_name
 	FROM OnBoardDevice D WITH (NOLOCK)
 	INNER JOIN OnBoardDeviceType DT WITH (NOLOCK) ON DT.OnBoardDeviceType_ID = D.OnBoardDeviceType_ID
@@ -130,7 +164,7 @@ OUTER APPLY (
 	WHERE
 		D.MPhone_ID = MDC.Mphone_id
 		AND DT.Enum = 1
-		AND COALESCE(NULLIF(LTRIM(RTRIM(S.RealSimNumber)), ''), NULLIF(LTRIM(RTRIM(S.SimNumber)), '')) IS NOT NULL
+		AND COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) IS NOT NULL
 	ORDER BY
 		CASE WHEN ISNULL(S.IsCurrentSim, 0) = 1 THEN 0 ELSE 1 END,
 		CASE WHEN ISNULL(S.IsMainSim, 0) = 1 THEN 0 ELSE 1 END,
@@ -150,6 +184,33 @@ ORDER BY
 		ELSE 100
 	END,
 	MDC.Channel_ID
+`
+
+const phoenixObjectSIMListQuery = `
+WITH SimBase AS (
+	SELECT
+		M.Panel_id AS panel_id,
+		DT.Enum AS sim_slot,
+		COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) AS sim_number,
+		ROW_NUMBER() OVER (
+			PARTITION BY M.Panel_id, DT.Enum
+			ORDER BY
+				CASE WHEN ISNULL(S.IsCurrentSim, 0) = 1 THEN 0 ELSE 1 END,
+				CASE WHEN ISNULL(S.IsMainSim, 0) = 1 THEN 0 ELSE 1 END,
+				S.Sim_ID
+		) AS rn
+	FROM Mphone M WITH (NOLOCK)
+	INNER JOIN OnBoardDevice D WITH (NOLOCK) ON D.Mphone_id = M.Mphone_id
+	INNER JOIN OnBoardDeviceType DT WITH (NOLOCK) ON DT.OnBoardDeviceType_ID = D.OnBoardDeviceType_ID
+	INNER JOIN Sim S WITH (NOLOCK) ON S.OnBoardDevice_ID = D.OnBoardDevice_ID
+	WHERE COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) IS NOT NULL
+)
+SELECT
+	panel_id,
+	MAX(CASE WHEN sim_slot = 0 AND rn = 1 THEN sim_number END) AS sim1_number,
+	MAX(CASE WHEN sim_slot = 1 AND rn = 1 THEN sim_number END) AS sim2_number
+FROM SimBase
+GROUP BY panel_id
 `
 
 const phoenixZonesQuery = `

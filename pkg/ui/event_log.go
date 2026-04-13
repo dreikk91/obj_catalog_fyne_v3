@@ -62,8 +62,7 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 	}
 
 	// Заголовок
-	// panel.TitleText = canvas.NewText("📜 ЖУРНАЛ ПОДІЙ", nil)
-	panel.TitleText = canvas.NewText("📜", nil)
+	panel.TitleText = canvas.NewText("📜 ЖУРНАЛ ПОДІЙ", nil)
 	themeSize := fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
 	panel.TitleText.TextSize = themeSize + 1
 	panel.TitleText.TextStyle = fyne.TextStyle{Bold: true}

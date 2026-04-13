@@ -1,10 +1,12 @@
 package data
 
 import (
+	"context"
 	"strconv"
 	"testing"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
@@ -19,6 +21,9 @@ type combinedStubProvider struct {
 	testMessages map[string][]models.TestMessage
 	latestID     int64
 	latestErr    error
+	processCalls []contracts.AlarmProcessingRequest
+	processErr   error
+	processOpts  []contracts.AlarmProcessingOption
 }
 
 func (s *combinedStubProvider) GetObjects() []models.Object {
@@ -59,6 +64,15 @@ func (s *combinedStubProvider) GetAlarms() []models.Alarm {
 }
 
 func (s *combinedStubProvider) ProcessAlarm(id string, user string, note string) {}
+
+func (s *combinedStubProvider) GetAlarmProcessingOptions(ctx context.Context, alarm models.Alarm) ([]contracts.AlarmProcessingOption, error) {
+	return append([]contracts.AlarmProcessingOption(nil), s.processOpts...), nil
+}
+
+func (s *combinedStubProvider) ProcessAlarmWithRequest(ctx context.Context, alarm models.Alarm, user string, request contracts.AlarmProcessingRequest) error {
+	s.processCalls = append(s.processCalls, request)
+	return s.processErr
+}
 
 func (s *combinedStubProvider) GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time) {
 	return "", "", time.Time{}, time.Time{}
@@ -223,5 +237,45 @@ func TestCombinedDataProvider_MergesBridgePhoenixAndCASLAlarms(t *testing.T) {
 	}
 	if alarms[2].ObjectID != 101 {
 		t.Fatalf("third alarm must be Bridge, got objectID=%d", alarms[2].ObjectID)
+	}
+}
+
+func TestCombinedDataProvider_ProcessAlarmWithRequest_RoutesToCASLSource(t *testing.T) {
+	t.Parallel()
+
+	caslObjID := ids.CASLObjectIDNamespaceStart + 42
+	primary := &combinedStubProvider{}
+	secondary := &combinedStubProvider{
+		processOpts: []contracts.AlarmProcessingOption{
+			{Code: "CAUSES_FALSE_ALARM", Label: "Хибна тривога"},
+		},
+	}
+
+	provider := NewCombinedDataProvider(primary, secondary)
+	alarm := models.Alarm{ID: caslObjID, ObjectID: caslObjID}
+
+	options, err := provider.GetAlarmProcessingOptions(context.Background(), alarm)
+	if err != nil {
+		t.Fatalf("GetAlarmProcessingOptions error: %v", err)
+	}
+	if len(options) != 1 || options[0].Code != "CAUSES_FALSE_ALARM" {
+		t.Fatalf("unexpected options: %+v", options)
+	}
+
+	err = provider.ProcessAlarmWithRequest(context.Background(), alarm, "Диспетчер", contracts.AlarmProcessingRequest{
+		CauseCode: "CAUSES_FALSE_ALARM",
+		Note:      "note",
+	})
+	if err != nil {
+		t.Fatalf("ProcessAlarmWithRequest error: %v", err)
+	}
+	if len(secondary.processCalls) != 1 {
+		t.Fatalf("expected 1 CASL process call, got %d", len(secondary.processCalls))
+	}
+	if secondary.processCalls[0].CauseCode != "CAUSES_FALSE_ALARM" || secondary.processCalls[0].Note != "note" {
+		t.Fatalf("unexpected process request: %+v", secondary.processCalls[0])
+	}
+	if len(primary.processCalls) != 0 {
+		t.Fatalf("primary provider must not receive advanced CASL request")
 	}
 }

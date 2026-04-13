@@ -23,6 +23,8 @@ type phoenixObjectGroupRow struct {
 	CreateDate    sql.NullTime   `db:"create_date"`
 	LastChange    sql.NullTime   `db:"date_last_change"`
 	EngineerName  sql.NullString `db:"engineer_name"`
+	Sim1Number    sql.NullString `db:"sim1_number"`
+	Sim2Number    sql.NullString `db:"sim2_number"`
 }
 
 type phoenixChannelRow struct {
@@ -40,6 +42,12 @@ type phoenixChannelRow struct {
 	Sim1OperatorName      sql.NullString `db:"sim1_operator_name"`
 	Sim2Number            sql.NullString `db:"sim2_number"`
 	Sim2OperatorName      sql.NullString `db:"sim2_operator_name"`
+}
+
+type phoenixPanelSIMRow struct {
+	PanelID    string         `db:"panel_id"`
+	Sim1Number sql.NullString `db:"sim1_number"`
+	Sim2Number sql.NullString `db:"sim2_number"`
 }
 
 type phoenixZoneRow struct {

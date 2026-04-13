@@ -35,6 +35,10 @@ func extractCASLRealtimeRows(raw []byte) []CASLObjectEvent {
 	if !ok {
 		return nil
 	}
+	return extractCASLRealtimeRowsFromValue(payload)
+}
+
+func extractCASLRealtimeRowsFromValue(payload any) []CASLObjectEvent {
 	rows := make([]CASLObjectEvent, 0, 4)
 	collectCASLRealtimeRows(payload, "", &rows)
 	return rows
@@ -158,6 +162,9 @@ func caslRealtimeNestedPayloads(source map[string]any) []any {
 func mapCASLRealtimeRow(source map[string]any, fallbackType string) (CASLObjectEvent, bool) {
 	deviceID := firstCASLTextValue(source["device_id"], source["deviceId"])
 	rawObjID := firstCASLTextValue(source["obj_id"], source["object_id"])
+	userActionType := firstCASLTextValue(source["user_action_type"])
+	mgrActionType := firstCASLTextValue(source["mgr_action_type"])
+	ppkActionType := firstCASLTextValue(source["ppk_action_type"])
 
 	ppkNumValue, _ := firstCASLIntValue(
 		source["ppk_num"],
@@ -167,9 +174,6 @@ func mapCASLRealtimeRow(source map[string]any, fallbackType string) (CASLObjectE
 		source["device_num"],
 	)
 	ppkNum := int64(ppkNumValue)
-	if ppkNum <= 0 && deviceID == "" && rawObjID == "" {
-		return CASLObjectEvent{}, false
-	}
 
 	numberValue, _ := firstCASLIntValue(
 		source["number"],
@@ -181,24 +185,50 @@ func mapCASLRealtimeRow(source map[string]any, fallbackType string) (CASLObjectE
 	)
 	number := int64(numberValue)
 
+	action := firstCASLTextValue(
+		source["action"],
+		mgrActionType,
+		ppkActionType,
+		userActionType,
+		source["subtype"],
+		source["msg"],
+		source["type_event"],
+	)
 	code := firstCASLTextValue(
 		source["code"],
 		source["event_code"],
-		source["ppk_action_type"],
-		source["user_action_type"],
-		source["mgr_action_type"],
+		ppkActionType,
+		userActionType,
+		mgrActionType,
 		source["action"],
 		source["subtype"],
 		source["msg"],
 		source["type_event"],
 	)
 	contactID := firstCASLTextValue(source["contact_id"], source["contactId"])
-	rowType := firstCASLTextValue(source["type"], fallbackType, source["user_action_type"], source["module"])
+	rowType := firstCASLTextValue(source["type"], fallbackType, source["module"])
+	if strings.EqualFold(rowType, "m3_in") {
+		if userActionType == "" {
+			userActionType = "mgr_action"
+		}
+		if mgrActionType == "" {
+			mgrActionType = firstCASLTextValue(source["code"], source["subtype"])
+		}
+		if action == "" {
+			action = mgrActionType
+		}
+		if code == "" {
+			code = mgrActionType
+		}
+	}
 	if code == "" && contactID == "" {
 		code = firstCASLTextValue(source["status"])
 	}
 	if code == "" && contactID == "" {
 		code = rowType
+	}
+	if ppkNum <= 0 && deviceID == "" && rawObjID == "" && !isCASLActionSource(firstCASLValue(userActionType, rowType)) {
+		return CASLObjectEvent{}, false
 	}
 
 	ts, ok := firstCASLTimeValue(source["time"], source["timestamp"], source["ts"], source["create_date"])
@@ -207,25 +237,30 @@ func mapCASLRealtimeRow(source map[string]any, fallbackType string) (CASLObjectE
 	}
 
 	row := CASLObjectEvent{
-		PPKNum:    ppkNum,
-		DeviceID:  deviceID,
-		ObjID:     rawObjID,
-		ObjName:   firstCASLTextValue(source["obj_name"]),
-		ObjAddr:   firstCASLTextValue(source["obj_address"]),
-		Action:    firstCASLTextValue(source["action"]),
-		AlarmType: firstCASLTextValue(source["alarm_type"]),
-		MgrID:     firstCASLTextValue(source["mgr_id"]),
-		UserID:    firstCASLTextValue(source["user_id"]),
-		UserFIO:   firstCASLTextValue(source["user_fio"]),
-		Time:      ts.UnixMilli(),
-		Code:      code,
-		Type:      rowType,
-		Subtype:   firstCASLTextValue(source["type_event"], source["typeEvent"]),
-		Number:    number,
-		ContactID: contactID,
-		HozUserID: firstCASLTextValue(source["hoz_user_id"]),
-		Cause:     firstCASLTextValue(source["cause"]),
-		Note:      firstCASLTextValue(source["note"]),
+		PPKNum:         ppkNum,
+		DeviceID:       deviceID,
+		ObjID:          rawObjID,
+		ObjIDs:         extractCASLRealtimeStringList(source["objIds"], source["obj_ids"]),
+		ObjName:        firstCASLTextValue(source["obj_name"]),
+		ObjAddr:        firstCASLTextValue(source["obj_address"]),
+		Action:         action,
+		AlarmType:      firstCASLTextValue(source["alarm_type"]),
+		AlarmID:        firstCASLTextValue(source["alarm_id"]),
+		MgrID:          firstCASLTextValue(source["mgr_id"], source["mgr"]),
+		UserID:         firstCASLTextValue(source["user_id"]),
+		UserFIO:        firstCASLTextValue(source["user_fio"]),
+		Time:           ts.UnixMilli(),
+		Code:           code,
+		Type:           rowType,
+		UserActionType: userActionType,
+		MgrActionType:  mgrActionType,
+		PPKActionType:  ppkActionType,
+		Subtype:        firstCASLTextValue(source["subtype"], source["type_event"], source["typeEvent"]),
+		Number:         number,
+		ContactID:      contactID,
+		HozUserID:      firstCASLTextValue(source["hoz_user_id"]),
+		Cause:          firstCASLTextValue(source["cause"]),
+		Note:           firstCASLTextValue(source["note"]),
 		BlockMessage: firstCASLTextValue(
 			source["block_message"],
 			source["blockMessage"],
@@ -241,6 +276,43 @@ func mapCASLRealtimeRow(source map[string]any, fallbackType string) (CASLObjectE
 		return CASLObjectEvent{}, false
 	}
 	return row, true
+}
+
+func extractCASLRealtimeStringList(values ...any) []string {
+	seen := make(map[string]struct{})
+	result := make([]string, 0, 4)
+	for _, value := range values {
+		switch typed := value.(type) {
+		case []any:
+			for _, item := range typed {
+				itemValue := strings.TrimSpace(asString(item))
+				if itemValue == "" {
+					continue
+				}
+				if _, exists := seen[itemValue]; exists {
+					continue
+				}
+				seen[itemValue] = struct{}{}
+				result = append(result, itemValue)
+			}
+		case []string:
+			for _, item := range typed {
+				itemValue := strings.TrimSpace(item)
+				if itemValue == "" {
+					continue
+				}
+				if _, exists := seen[itemValue]; exists {
+					continue
+				}
+				seen[itemValue] = struct{}{}
+				result = append(result, itemValue)
+			}
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func extractCASLConnIDFromAny(value any) string {
@@ -508,6 +580,10 @@ func (p *CASLCloudProvider) runRealtimeSession(ctx context.Context) error {
 			if !ok {
 				return io.EOF
 			}
+			payload, _ := decodeCASLRealtimePayload(raw)
+			if payload != nil {
+				p.handleCASLRealtimePayload(payload)
+			}
 
 			if connID == "" {
 				if extracted := extractCASLRealtimeConnID(raw); extracted != "" {
@@ -519,7 +595,10 @@ func (p *CASLCloudProvider) runRealtimeSession(ctx context.Context) error {
 				subscribeOnce(connID)
 			}
 
-			rows := extractCASLRealtimeRows(raw)
+			rows := extractCASLRealtimeRowsFromValue(payload)
+			if payload == nil {
+				rows = extractCASLRealtimeRows(raw)
+			}
 			if len(rows) > 0 {
 				if appendErr := p.appendRealtimeRows(ctx, rows); appendErr != nil {
 					log.Debug().Err(appendErr).Msg("CASL realtime append failed")
@@ -592,7 +671,128 @@ func (p *CASLCloudProvider) subscribeRealtimeTags(ctx context.Context, connID st
 	return nil
 }
 
+func shouldProcessCASLRealtimeRow(row CASLObjectEvent) bool {
+	sourceType := strings.ToLower(strings.TrimSpace(row.Type))
+	action := strings.ToUpper(strings.TrimSpace(firstCASLValue(row.Action, row.Code)))
+	switch sourceType {
+	case "ppk_in", "ppk_service":
+		return action != "FIRMWARE_CHUNK" && action != "FIRMWARE_END" && action != "PPK_SER_NUM"
+	case "mob_user_action":
+		return strings.EqualFold(strings.TrimSpace(row.UserActionType), "MOB_ALARM")
+	case "system_action":
+		return action == "POST_PROC_ALARM_REPORT"
+	case "chat_action", "notif", "ping", "system_info", "storage_change":
+		return false
+	}
+	if action == "CREATE_USER" || action == "DELETE_USER" || action == "UPDATE_USER" {
+		return false
+	}
+	return true
+}
+
+func (p *CASLCloudProvider) enrichRealtimeRows(ctx context.Context, rows []CASLObjectEvent) []CASLObjectEvent {
+	if len(rows) == 0 {
+		return nil
+	}
+
+	result := make([]CASLObjectEvent, 0, len(rows))
+	for _, row := range rows {
+		if !shouldProcessCASLRealtimeRow(row) {
+			continue
+		}
+		if strings.TrimSpace(row.ObjID) == "" && strings.TrimSpace(row.AlarmID) != "" && strings.EqualFold(strings.TrimSpace(row.UserActionType), "mgr_action") {
+			if objID, ok := p.getCASLObjectByAlarmID(ctx, row.AlarmID); ok {
+				row.ObjID = objID
+			}
+		}
+		result = append(result, row)
+	}
+	return result
+}
+
+func (p *CASLCloudProvider) handleCASLRealtimePayload(payload any) {
+	root, ok := payload.(map[string]any)
+	if !ok {
+		return
+	}
+
+	switch strings.ToLower(strings.TrimSpace(asString(root["type"]))) {
+	case "storage_change":
+		p.handleCASLRealtimeStorageChange(root)
+	}
+}
+
+func (p *CASLCloudProvider) handleCASLRealtimeStorageChange(payload map[string]any) {
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		return
+	}
+
+	action := strings.ToUpper(strings.TrimSpace(asString(data["action"])))
+	if action == "" {
+		return
+	}
+	info := data["info"]
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if strings.Contains(action, "GUARDED_OBJECT") || strings.Contains(action, "CONNECTION") || strings.Contains(action, "DEVICE") {
+		p.cachedObjects = nil
+		p.cachedObjectsAt = time.Time{}
+		p.objectByInternalID = make(map[int]caslGrdObject)
+		p.deviceByDeviceID = make(map[string]caslDevice)
+		p.deviceByObjectID = make(map[string]caslDevice)
+		p.deviceByNumber = make(map[int64]caslDevice)
+		p.cachedDevicesAt = time.Time{}
+		p.cachedObjectEvents = make(map[int][]models.Event)
+		p.cachedObjectEventsAt = make(map[int]time.Time)
+	}
+	if strings.Contains(action, "USER") || strings.Contains(action, "MGR") {
+		p.cachedUsers = make(map[string]caslUser)
+		p.cachedUsersAt = time.Time{}
+	}
+	if action == "ADD_NEW_EVENTS_JOURNAL" {
+		p.eventsRevision++
+	}
+	if strings.Contains(action, "GUARDED_OBJECT") || strings.Contains(action, "CONNECTION") || strings.Contains(action, "DEVICE") || strings.Contains(action, "USER") || strings.Contains(action, "MGR") {
+		p.eventsRevision++
+	}
+	if strings.HasPrefix(action, "DELETE_GUARDED_OBJECT") {
+		deleteRealtimeAlarmsByObjectKey(p.realtimeAlarmByObjID, strings.TrimSpace(asString(info)))
+	}
+}
+
+func (p *CASLCloudProvider) getCASLObjectByAlarmID(ctx context.Context, alarmID string) (string, bool) {
+	alarmID = strings.TrimSpace(alarmID)
+	if alarmID == "" {
+		return "", false
+	}
+
+	var resp struct {
+		Status string `json:"status"`
+		Data   any    `json:"data"`
+		Error  string `json:"error"`
+	}
+	if err := p.postCommand(ctx, map[string]any{
+		"type":     "get_obj_by_alarm_id",
+		"alarm_id": alarmID,
+	}, &resp, true); err != nil {
+		return "", false
+	}
+	if !statusIsOK(resp.Status) {
+		return "", false
+	}
+	value := strings.TrimSpace(asString(resp.Data))
+	return value, value != ""
+}
+
 func (p *CASLCloudProvider) appendRealtimeRows(ctx context.Context, rows []CASLObjectEvent) error {
+	rows = p.enrichRealtimeRows(ctx, rows)
+	if len(rows) == 0 {
+		return nil
+	}
+
 	p.mu.RLock()
 	startGate := p.eventsStartAtMs
 	p.mu.RUnlock()
@@ -825,9 +1025,21 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		cacheKey := canonicalCASLRealtimeAlarmKey(objectKey, zoneNumber)
 
 		switch action {
+		case "MANY_GRD_OBJ_FINISH":
+			for _, objID := range row.ObjIDs {
+				deleteRealtimeAlarmsByObjectKey(p.realtimeAlarmByObjID, objID)
+			}
+			if len(row.ObjIDs) == 0 {
+				deleteRealtimeAlarmsByObjectKey(p.realtimeAlarmByObjID, objectKey)
+			}
+			continue
 		case "GRD_OBJ_MGR_CANCEL", "GRD_OBJ_FINISH":
 			deleteRealtimeAlarmsByObjectKey(p.realtimeAlarmByObjID, objectKey)
 			continue
+		case "DEVICE_BLOCK":
+			p.applyCASLRealtimeDeviceBlockLocked(row, true)
+		case "DEVICE_UNBLOCK":
+			p.applyCASLRealtimeDeviceBlockLocked(row, false)
 		}
 
 		deviceType := ""
@@ -859,7 +1071,7 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		if classifierCode == "" {
 			classifierCode = action
 		}
-		eventType := classifyCASLEventTypeWithContext(classifierCode, strings.TrimSpace(row.ContactID), strings.TrimSpace(row.Type), details)
+		eventType := classifyCASLEventTypeWithContext(classifierCode, strings.TrimSpace(row.ContactID), effectiveCASLSourceType(row), details)
 		alarmFlags := translatorAlarms
 		if !isCustomDeviceType {
 			alarmFlags = standardAlarmFlags
@@ -936,6 +1148,9 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			continue
 		}
 
+		if action != "GRD_OBJ_NOTIF" {
+			continue
+		}
 		if !isCASLEventAlarmCandidate(eventType) || !include {
 			continue
 		}
@@ -953,6 +1168,65 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			ZoneNumber:   zoneNumber,
 			SC1:          mapCASLEventSC1(eventType),
 		}
+	}
+}
+
+func (p *CASLCloudProvider) applyCASLRealtimeDeviceBlockLocked(row CASLObjectEvent, blocked bool) {
+	deviceID := strings.TrimSpace(row.DeviceID)
+	objID := strings.TrimSpace(row.ObjID)
+
+	updateDevice := func(device caslDevice) {
+		device.Blocked = blocked
+		if deviceID != "" {
+			p.deviceByDeviceID[deviceID] = device
+		}
+		if deviceObjID := strings.TrimSpace(device.ObjID.String()); deviceObjID != "" {
+			p.deviceByObjectID[deviceObjID] = device
+			if objID == "" {
+				objID = deviceObjID
+			}
+		}
+		if number := device.Number.Int64(); number > 0 {
+			p.deviceByNumber[number] = device
+		}
+	}
+
+	if deviceID != "" {
+		if device, ok := p.deviceByDeviceID[deviceID]; ok {
+			updateDevice(device)
+		}
+	}
+	if objID != "" {
+		if device, ok := p.deviceByObjectID[objID]; ok {
+			updateDevice(device)
+		}
+	}
+
+	if len(p.cachedObjects) == 0 {
+		return
+	}
+	for idx := range p.cachedObjects {
+		record := &p.cachedObjects[idx]
+		if objID != "" && strings.TrimSpace(record.ObjID) != objID {
+			continue
+		}
+		if deviceID != "" && strconv.FormatInt(record.DeviceID.Int64(), 10) != deviceID && objID == "" {
+			continue
+		}
+
+		record.DeviceBlocked = blocked
+		if blocked {
+			record.BlockMessage = caslText(strings.TrimSpace(row.BlockMessage))
+			if row.TimeUnblock > 0 {
+				record.TimeUnblock = caslText(strconv.FormatInt(row.TimeUnblock, 10))
+			}
+		} else {
+			record.BlockMessage = ""
+			record.TimeUnblock = ""
+		}
+
+		internalID := mapCASLObjectID(record.ObjID, record.Name, strconv.FormatInt(record.DeviceNumber.Int64(), 10))
+		p.objectByInternalID[internalID] = *record
 	}
 }
 

@@ -15,6 +15,8 @@ import (
 )
 
 func (p *CASLCloudProvider) GetObjects() []models.Object {
+	p.ensureRealtimeStream()
+
 	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
 	defer cancel()
 
@@ -37,14 +39,23 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 		log.Debug().Err(devicesErr).Msg("CASL: не вдалося завантажити read_device (продовжую без enrich)")
 	}
 	disconnected := p.loadDisconnectedDevicesIndex(ctx)
+	activeAlarms := p.loadCASLActiveAlarmIndex(ctx)
 
 	objects := make([]models.Object, 0, len(records))
 	for _, record := range records {
 		device, hasDevice := p.resolveDeviceForObject(record)
 		obj := mapCASLGrdObjectToObject(record, selectCASLDevice(hasDevice, device))
 		p.enrichCASLObjectWithDeviceMeta(ctx, &obj, hasDevice, device)
+		if hasDevice {
+			applyCASLObjectDeviceConnectivityState(&obj, device)
+		}
 		if disconnected.match(record, selectCASLDevice(hasDevice, device)) {
 			applyCASLObjectDisconnectedState(&obj, disconnected.lastSeen(record, selectCASLDevice(hasDevice, device)))
+		}
+		if obj.IsConnState > 0 {
+			if alarm, ok := activeAlarms[obj.ID]; ok {
+				applyCASLObjectAlarmState(&obj, alarm)
+			}
 		}
 		objects = append(objects, obj)
 	}
@@ -91,6 +102,8 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 		return nil
 	}
 
+	p.ensureRealtimeStream()
+
 	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
 	defer cancel()
 
@@ -106,6 +119,9 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 	device, hasDevice := p.resolveDeviceForObject(record)
 	obj := mapCASLGrdObjectToObject(record, selectCASLDevice(hasDevice, device))
 	p.enrichCASLObjectWithDeviceMeta(ctx, &obj, hasDevice, device)
+	if hasDevice {
+		applyCASLObjectDeviceConnectivityState(&obj, device)
+	}
 	if state, stateErr := p.readDeviceState(ctx, record); stateErr == nil {
 		obj.PowerFault = normalizeCASLAlarmState(state.Power.Int64())
 		obj.AkbState = normalizeCASLAlarmState(state.Accum.Int64())
@@ -126,10 +142,18 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 		}
 		obj.Groups = p.buildCASLObjectGroups(ctx, record, state.Groups)
 	}
+	if hasDevice {
+		applyCASLObjectDeviceConnectivityState(&obj, device)
+	}
 	if obj.IsConnState > 0 {
 		disconnected := p.loadDisconnectedDevicesIndex(ctx)
 		if disconnected.match(record, selectCASLDevice(hasDevice, device)) {
 			applyCASLObjectDisconnectedState(&obj, disconnected.lastSeen(record, selectCASLDevice(hasDevice, device)))
+		}
+	}
+	if obj.IsConnState > 0 {
+		if alarm, ok := p.loadCASLActiveAlarmIndex(ctx)[obj.ID]; ok {
+			applyCASLObjectAlarmState(&obj, alarm)
 		}
 	}
 
@@ -213,16 +237,122 @@ func applyCASLObjectDisconnectedState(obj *models.Object, lastSeen time.Time) {
 	if obj == nil {
 		return
 	}
+	if obj.BlockedArmedOnOff == 1 {
+		if !lastSeen.IsZero() && lastSeen.After(obj.LastMessageTime) {
+			obj.LastMessageTime = lastSeen
+			if obj.LastTestTime.IsZero() {
+				obj.LastTestTime = lastSeen
+			}
+		}
+		return
+	}
 	obj.Status = models.StatusOffline
 	obj.StatusText = "НЕМАЄ ЗВ'ЯЗКУ"
+	obj.AlarmState = 0
+	obj.TechAlarmState = 0
+	obj.BlockedArmedOnOff = 0
 	obj.IsConnState = 0
 	obj.IsConnOK = false
-	obj.BlockedArmedOnOff = 0
 	if !lastSeen.IsZero() {
 		obj.LastMessageTime = lastSeen
 		if obj.LastTestTime.IsZero() {
 			obj.LastTestTime = lastSeen
 		}
+	}
+}
+
+func applyCASLObjectDeviceConnectivityState(obj *models.Object, device caslDevice) {
+	if obj == nil {
+		return
+	}
+
+	if device.Disconnected {
+		lastSeen := time.Time{}
+		if device.LastPingDate.Int64() > 0 {
+			lastSeen = time.UnixMilli(device.LastPingDate.Int64()).Local()
+		}
+		applyCASLObjectDisconnectedState(obj, lastSeen)
+		return
+	}
+
+	if device.Offline.Int64() > 0 {
+		applyCASLObjectDisconnectedState(obj, time.UnixMilli(device.Offline.Int64()).Local())
+	}
+}
+
+func (p *CASLCloudProvider) loadCASLActiveAlarmIndex(ctx context.Context) map[int]models.Alarm {
+	_ = ctx
+	alarms := p.snapshotRealtimeAlarms()
+	if len(alarms) == 0 {
+		return nil
+	}
+
+	index := make(map[int]models.Alarm, len(alarms))
+	for _, alarm := range alarms {
+		if alarm.ObjectID <= 0 {
+			continue
+		}
+		existing, exists := index[alarm.ObjectID]
+		if !exists ||
+			caslObjectAlarmPriority(alarm) > caslObjectAlarmPriority(existing) ||
+			(caslObjectAlarmPriority(alarm) == caslObjectAlarmPriority(existing) && alarm.Time.After(existing.Time)) {
+			index[alarm.ObjectID] = alarm
+		}
+	}
+	return index
+}
+
+func applyCASLObjectAlarmState(obj *models.Object, alarm models.Alarm) {
+	if obj == nil || obj.BlockedArmedOnOff == 1 || obj.IsConnState == 0 {
+		return
+	}
+
+	obj.Status = models.StatusFire
+	obj.StatusText = alarm.GetTypeDisplay()
+	if strings.TrimSpace(obj.StatusText) == "" {
+		obj.StatusText = "ТРИВОГА"
+	}
+	obj.AlarmState = 1
+	obj.TechAlarmState = 0
+	obj.IsConnState = 1
+	obj.IsConnOK = true
+	if !alarm.Time.IsZero() && alarm.Time.After(obj.LastMessageTime) {
+		obj.LastMessageTime = alarm.Time
+	}
+}
+
+func caslObjectAlarmPriority(alarm models.Alarm) int {
+	switch alarm.Type {
+	case models.AlarmFire:
+		return 120
+	case models.AlarmPanic:
+		return 115
+	case models.AlarmBurglary:
+		return 110
+	case models.AlarmMedical:
+		return 105
+	case models.AlarmGas:
+		return 100
+	case models.AlarmTamper:
+		return 95
+	case models.AlarmDevice:
+		return 90
+	case models.AlarmMobile:
+		return 85
+	case models.AlarmOperator:
+		return 80
+	case models.AlarmPowerFail:
+		return 70
+	case models.AlarmBatteryLow:
+		return 65
+	case models.AlarmOffline:
+		return 60
+	case models.AlarmFault:
+		return 55
+	case models.AlarmNotification:
+		return 50
+	default:
+		return 10
 	}
 }
 

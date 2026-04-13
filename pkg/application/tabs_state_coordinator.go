@@ -7,17 +7,15 @@ import (
 	"fyne.io/fyne/v2/container"
 )
 
-func (a *Application) configureTabsState(detailsTab *container.TabItem, eventsTab *container.TabItem, alarmsTab *container.TabItem, rightTabs *container.AppTabs) {
+func (a *Application) configureTabsState(detailsTab *container.TabItem, eventsTab *container.TabItem, alarmsTab *container.TabItem, rightTabs *container.AppTabs, bottomTabs *container.AppTabs) {
 	if a == nil {
 		return
 	}
 
 	a.rightTabs = rightTabs
+	a.bottomTabs = bottomTabs
 	a.eventsTab = eventsTab
 	a.alarmsTab = alarmsTab
-	a.lastAlarmsCount = 0
-	a.lastCriticalCount = 0
-	a.lastEventsCount = 0
 
 	if rightTabs != nil && detailsTab != nil {
 		fyne.Do(func() {
@@ -64,6 +62,9 @@ func (a *Application) updateTabBadges(alarmsCount int, criticalCount int, events
 
 		if a.rightTabs != nil {
 			a.rightTabs.Refresh()
+		}
+		if a.bottomTabs != nil {
+			a.bottomTabs.Refresh()
 		}
 
 		a.updateWindowTitle()

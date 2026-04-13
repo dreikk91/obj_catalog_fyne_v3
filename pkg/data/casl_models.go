@@ -273,7 +273,9 @@ type caslDevice struct {
 	Type         caslText         `json:"type"`
 	Timeout      caslInt64        `json:"timeout"`
 	LastPingDate caslInt64        `json:"lastPingDate"`
+	Offline      caslInt64        `json:"offline"`
 	Blocked      bool             `json:"blocked"`
+	Disconnected bool             `json:"disconnected"`
 	SIM1         caslText         `json:"sim1"`
 	SIM2         caslText         `json:"sim2"`
 	Lines        []caslDeviceLine `json:"lines"`
@@ -344,17 +346,20 @@ func (r caslConnectionRecord) hasPayload() bool {
 
 func (d *caslDevice) UnmarshalJSON(data []byte) error {
 	type rawDevice struct {
-		DeviceID     caslText        `json:"device_id"`
-		ObjID        caslText        `json:"obj_id"`
-		Number       caslInt64       `json:"number"`
-		Name         caslText        `json:"name"`
-		Type         caslText        `json:"type"`
-		Timeout      caslInt64       `json:"timeout"`
-		LastPingDate caslInt64       `json:"lastPingDate"`
-		Blocked      bool            `json:"blocked"`
-		SIM1         caslText        `json:"sim1"`
-		SIM2         caslText        `json:"sim2"`
-		Lines        json.RawMessage `json:"lines"`
+		DeviceID          caslText        `json:"device_id"`
+		ObjID             caslText        `json:"obj_id"`
+		Number            caslInt64       `json:"number"`
+		Name              caslText        `json:"name"`
+		Type              caslText        `json:"type"`
+		Timeout           caslInt64       `json:"timeout"`
+		LastPingDate      caslInt64       `json:"lastPingDate"`
+		Offline           json.RawMessage `json:"offline"`
+		Blocked           bool            `json:"blocked"`
+		Disconnected      json.RawMessage `json:"disconnected"`
+		DisconnectedState json.RawMessage `json:"disconnected_state"`
+		SIM1              caslText        `json:"sim1"`
+		SIM2              caslText        `json:"sim2"`
+		Lines             json.RawMessage `json:"lines"`
 	}
 
 	var raw rawDevice
@@ -369,11 +374,51 @@ func (d *caslDevice) UnmarshalJSON(data []byte) error {
 	d.Type = raw.Type
 	d.Timeout = raw.Timeout
 	d.LastPingDate = raw.LastPingDate
+	d.Offline = decodeCASLRawInt64(raw.Offline)
 	d.Blocked = raw.Blocked
+	d.Disconnected = decodeCASLRawBool(raw.Disconnected) || decodeCASLRawBool(raw.DisconnectedState)
 	d.SIM1 = raw.SIM1
 	d.SIM2 = raw.SIM2
 	d.Lines = decodeCASLDeviceLines(raw.Lines)
 	return nil
+}
+
+func decodeCASLRawInt64(raw json.RawMessage) caslInt64 {
+	body := strings.TrimSpace(string(raw))
+	if body == "" || body == "null" {
+		return 0
+	}
+
+	var value caslInt64
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return value
+	}
+	return 0
+}
+
+func decodeCASLRawBool(raw json.RawMessage) bool {
+	body := strings.TrimSpace(string(raw))
+	if body == "" || body == "null" {
+		return false
+	}
+
+	var boolean bool
+	if err := json.Unmarshal(raw, &boolean); err == nil {
+		return boolean
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		text = strings.TrimSpace(text)
+		return strings.EqualFold(text, "true") || text == "1"
+	}
+
+	var number json.Number
+	if err := json.Unmarshal(raw, &number); err == nil {
+		return strings.TrimSpace(number.String()) == "1"
+	}
+
+	return false
 }
 
 func overlayCASLCoreDevice(base *caslDevice, overlay caslDevice) {

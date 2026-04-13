@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
 
 	"github.com/rs/zerolog/log"
@@ -24,6 +25,28 @@ func isCASLActionSource(sourceType string) bool {
 	default:
 		return false
 	}
+}
+
+func effectiveCASLSourceType(row CASLObjectEvent) string {
+	sourceType := strings.TrimSpace(row.Type)
+	switch strings.ToLower(sourceType) {
+	case "user_action", "mob_user_action":
+		if value := strings.TrimSpace(row.UserActionType); value != "" {
+			return value
+		}
+		if value := strings.TrimSpace(row.MgrActionType); value != "" {
+			return value
+		}
+		if value := strings.TrimSpace(row.PPKActionType); value != "" {
+			return value
+		}
+	case "m3_in":
+		if value := strings.TrimSpace(row.UserActionType); value != "" {
+			return value
+		}
+		return "mgr_action"
+	}
+	return sourceType
 }
 
 func isCASLUnknownText(value string) bool {
@@ -457,7 +480,8 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 			}
 		}
 		rawObjID := strings.TrimSpace(row.ObjID)
-		if row.PPKNum <= 0 && rawObjID == "" {
+		sourceType := effectiveCASLSourceType(row)
+		if row.PPKNum <= 0 && rawObjID == "" && !isCASLActionSource(sourceType) {
 			continue
 		}
 		if row.Time <= 0 {
@@ -502,7 +526,7 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 		number := int(row.Number)
 		code := strings.TrimSpace(row.Code)
 		contactID := strings.TrimSpace(row.ContactID)
-		sourceType := strings.TrimSpace(row.Type)
+		sourceType := effectiveCASLSourceType(row)
 		rawObjID := strings.TrimSpace(row.ObjID)
 
 		ctxItem, hasCtx := contextByPPK[ppkNum]
@@ -512,13 +536,20 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 				hasCtx = true
 			}
 		}
-		objectID := mapCASLObjectID(strconv.FormatInt(ppkNum, 10))
+		objectID := 0
+		if ppkNum > 0 {
+			objectID = mapCASLObjectID(strconv.FormatInt(ppkNum, 10))
+		} else if rawObjID != "" {
+			objectID = mapCASLObjectID(rawObjID)
+		}
 		objectName := strings.TrimSpace(row.ObjName)
 		if objectName == "" {
 			if ppkNum > 0 {
 				objectName = "Об'єкт ППК #" + strconv.FormatInt(ppkNum, 10)
 			} else if rawObjID != "" {
 				objectName = "Об'єкт #" + rawObjID
+			} else if isCASLActionSource(sourceType) {
+				objectName = "CASL система"
 			} else {
 				objectName = "Об'єкт"
 			}
@@ -579,7 +610,7 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 		}
 
 		events = append(events, models.Event{
-			ID:           stableCASLEventID(strconv.FormatInt(ppkNum, 10), eventTS, seed, 0),
+			ID:           stableCASLEventID(firstCASLValue(strconv.FormatInt(ppkNum, 10), rawObjID, sourceType), eventTS, seed, 0),
 			Time:         eventTime,
 			ObjectID:     objectID,
 			ObjectNumber: objectNum,
@@ -1564,40 +1595,172 @@ func (p *CASLCloudProvider) ProcessAlarm(id string, user string, note string) {
 		return
 	}
 
-	var foundObjectID int
+	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+	defer cancel()
+
+	err := p.ProcessAlarmWithRequest(ctx, models.Alarm{
+		ID: alarmID,
+	}, user, contracts.AlarmProcessingRequest{
+		CauseCode: "CAUSES_FALSE_ALARM",
+		Note:      note,
+	})
+	if err != nil {
+		log.Debug().Err(err).Int("alarmID", alarmID).Msg("CASL: ProcessAlarm failed")
+	}
+}
+
+func (p *CASLCloudProvider) GetAlarmProcessingOptions(ctx context.Context, _ models.Alarm) ([]contracts.AlarmProcessingOption, error) {
+	dict, ok := p.cachedDictionarySnapshot(ctx)
+	if !ok || len(dict) == 0 {
+		loaded, err := p.ReadDictionary(ctx)
+		if err != nil {
+			return nil, err
+		}
+		p.mu.Lock()
+		p.cachedDictionary = copyStringAnyMap(loaded)
+		p.cachedDictionaryAt = time.Now()
+		p.mu.Unlock()
+		dict = loaded
+	}
+
+	codes := extractCASLAlarmCauseCodes(dict)
+	dictMap := p.loadDictionaryMap(ctx)
+	options := make([]contracts.AlarmProcessingOption, 0, len(codes))
+	for _, code := range codes {
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+
+		label := strings.TrimSpace(dictMap[code])
+		if label == "" {
+			label = code
+		}
+		options = append(options, contracts.AlarmProcessingOption{
+			Code:  code,
+			Label: label,
+		})
+	}
+	if len(options) == 0 {
+		options = append(options, contracts.AlarmProcessingOption{
+			Code:  "CAUSES_FALSE_ALARM",
+			Label: resolveCASLTextFromMap(dictMap, "CAUSES_FALSE_ALARM", "Хибна тривога"),
+		})
+	}
+	return options, nil
+}
+
+func (p *CASLCloudProvider) ProcessAlarmWithRequest(ctx context.Context, alarm models.Alarm, _ string, request contracts.AlarmProcessingRequest) error {
+	if p == nil {
+		return errors.New("casl provider is nil")
+	}
+
+	alarmID := alarm.ID
+	if alarmID <= 0 {
+		return errors.New("alarm ID is required")
+	}
+
+	causeCode := strings.TrimSpace(request.CauseCode)
+	if causeCode == "" {
+		options, err := p.GetAlarmProcessingOptions(ctx, alarm)
+		if err != nil {
+			return err
+		}
+		if len(options) > 0 {
+			causeCode = strings.TrimSpace(options[0].Code)
+		}
+	}
+	if causeCode == "" {
+		causeCode = "CAUSES_FALSE_ALARM"
+	}
+
+	foundObjectID := alarm.ObjectID
 	var foundCacheKey string
 
-	p.mu.Lock()
-	for key, alarm := range p.realtimeAlarmByObjID {
-		if alarm.ID == alarmID {
-			foundObjectID = alarm.ObjectID
+	p.mu.RLock()
+	for key, cachedAlarm := range p.realtimeAlarmByObjID {
+		if cachedAlarm.ID == alarmID {
+			foundObjectID = cachedAlarm.ObjectID
 			foundCacheKey = key
 			break
 		}
 	}
+	record, hasRecord := p.objectByInternalID[foundObjectID]
+	p.mu.RUnlock()
+
+	if !hasRecord && foundObjectID > 0 {
+		resolved, found, err := p.resolveObjectRecord(ctx, foundObjectID)
+		if err != nil {
+			return err
+		}
+		if found {
+			record = resolved
+			hasRecord = true
+		}
+	}
+
+	caslObjID := strings.TrimSpace(record.ObjID)
+	if !hasRecord || caslObjID == "" {
+		return fmt.Errorf("casl alarm processing: object record not found for alarm %d", alarmID)
+	}
+
+	if err := p.PickGuardObject(ctx, caslObjID, ""); err != nil {
+		return fmt.Errorf("casl alarm processing pick: %w", err)
+	}
+	if err := p.FinishGuardObject(ctx, caslObjID, "", causeCode, strings.TrimSpace(request.Note)); err != nil {
+		return fmt.Errorf("casl alarm processing finish: %w", err)
+	}
 
 	if foundCacheKey != "" {
+		p.mu.Lock()
 		delete(p.realtimeAlarmByObjID, foundCacheKey)
+		p.mu.Unlock()
 	}
 
-	record, hasRecord := p.objectByInternalID[foundObjectID]
-	p.mu.Unlock()
+	return nil
+}
 
-	if hasRecord && strings.TrimSpace(record.ObjID) != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
-		defer cancel()
-
-		caslObjID := strings.TrimSpace(record.ObjID)
-		// Для grd_obj_pick/finish у CASL API достатньо obj_id, якщо ми не маємо event_id.
-		if err := p.PickGuardObject(ctx, caslObjID, ""); err != nil {
-			log.Debug().Err(err).Str("objID", caslObjID).Msg("CASL: PickGuardObject failed")
-		}
-		if err := p.FinishGuardObject(ctx, caslObjID, "", "CAUSES_FALSE_ALARM", note); err != nil {
-			log.Debug().Err(err).Str("objID", caslObjID).Msg("CASL: FinishGuardObject failed")
-		}
-	} else {
-		log.Debug().Int("alarmID", alarmID).Int("objectID", foundObjectID).Msg("CASL: record not found for ProcessAlarm or not a CASL alarm")
+func extractCASLAlarmCauseCodes(dict map[string]any) []string {
+	if len(dict) == 0 {
+		return nil
 	}
+
+	seen := make(map[string]struct{})
+	codes := make([]string, 0, 16)
+	appendCodes := func(raw any) {
+		items, ok := raw.([]any)
+		if !ok {
+			return
+		}
+		for _, item := range items {
+			code := strings.TrimSpace(asString(item))
+			if code == "" {
+				continue
+			}
+			if _, exists := seen[code]; exists {
+				continue
+			}
+			seen[code] = struct{}{}
+			codes = append(codes, code)
+		}
+	}
+
+	appendCodes(dict["alarm_causes"])
+	if nestedRaw, ok := dict["dictionary"]; ok {
+		if nested, ok := nestedRaw.(map[string]any); ok {
+			appendCodes(nested["alarm_causes"])
+		}
+	}
+
+	return codes
+}
+
+func resolveCASLTextFromMap(dict map[string]string, key string, fallback string) string {
+	value := strings.TrimSpace(dict[key])
+	if value != "" {
+		return value
+	}
+	return fallback
 }
 
 func (p *CASLCloudProvider) GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time) {
@@ -1809,10 +1972,7 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 
 		zoneNumber := int(row.Number)
 		contactID := strings.TrimSpace(row.ContactID)
-		sourceType := strings.TrimSpace(row.Type)
-		if strings.EqualFold(sourceType, "user_action") && strings.TrimSpace(row.UserActionType) != "" {
-			sourceType = strings.TrimSpace(row.UserActionType)
-		}
+		sourceType := effectiveCASLSourceType(row)
 
 		details := buildCASLUserActionDetails(row, dictMap)
 		if details == "" && isCASLPPKMessageSource(sourceType) {

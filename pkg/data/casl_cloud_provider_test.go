@@ -1885,6 +1885,61 @@ func TestCASLProvider_ObjectDetailsEndpoints(t *testing.T) {
 	}
 }
 
+func TestCASLProvider_GetObjectByID_DoesNotTreatNegativePowerStateAsAlarm(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-neg-power","user_id":"u-neg","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","address":"Addr 24","device_id":"23","device_number":1003}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"type":"TYPE_DEVICE_CASL"}]}`))
+			case "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_device_state":
+				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":-1,"accum":-1,"online":1,"lastPingDate":1774769732941}}`))
+			case "get_objects_statistic":
+				_, _ = w.Write([]byte(`{"status":"ok","data":{"groupStatistics":{"24":{"1":1}},"countOfRooms":1}}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+
+	got := provider.GetObjectByID(strconv.Itoa(objects[0].ID))
+	if got == nil {
+		t.Fatalf("expected object by id")
+	}
+	if got.PowerFault != -1 {
+		t.Fatalf("expected raw power fault -1, got %d", got.PowerFault)
+	}
+	if got.AkbState != -1 {
+		t.Fatalf("expected raw battery state -1, got %d", got.AkbState)
+	}
+	if got.PowerSource != models.PowerMains {
+		t.Fatalf("expected mains power source, got %v", got.PowerSource)
+	}
+}
+
 func TestCASLProvider_GetEmployees_EnrichesRoomUsersFromReadUser(t *testing.T) {
 	t.Parallel()
 

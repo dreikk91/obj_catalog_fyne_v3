@@ -35,6 +35,12 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation(t *testing.T) {
 	if presentation.DeviceTypeText != "🔧 Тип: Tiras" {
 		t.Fatalf("unexpected device type text: %q", presentation.DeviceTypeText)
 	}
+	if presentation.SummaryPowerText != "Резерв АКБ" {
+		t.Fatalf("unexpected summary power text: %q", presentation.SummaryPowerText)
+	}
+	if presentation.ConnectionText != "На зв'язку" {
+		t.Fatalf("unexpected connection text: %q", presentation.ConnectionText)
+	}
 	if presentation.SIMText != "📱 SIM1: 111 | SIM2: 222" {
 		t.Fatalf("unexpected sim text: %q", presentation.SIMText)
 	}
@@ -53,7 +59,7 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation(t *testing.T) {
 	if presentation.AkbText != "🔋 АКБ: ТРИВОГА (Розряд/Відсутній)" {
 		t.Fatalf("unexpected akb text: %q", presentation.AkbText)
 	}
-	if presentation.GuardText != "🔒 ПІД ОХОРОНОЮ" {
+	if presentation.GuardText != "Частково без охорони" {
 		t.Fatalf("unexpected guard text: %q", presentation.GuardText)
 	}
 	if presentation.GroupsText != "🔐 Групи:\nГрупа 1 | Room A | ПІД ОХОРОНОЮ\nГрупа 2 | Room B | ЗНЯТО" {
@@ -87,7 +93,7 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_NoGuard(t *testing.T) {
 	if presentation.ChannelText != "📡 Канал: Автододзвон" {
 		t.Fatalf("unexpected channel text: %q", presentation.ChannelText)
 	}
-	if presentation.GuardText != "🔓 ЗНЯТО З ОХОРОНИ" {
+	if presentation.GuardText != "Знято з охорони" {
 		t.Fatalf("unexpected guard text: %q", presentation.GuardText)
 	}
 }
@@ -104,7 +110,7 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoenixBlocked(t *testi
 		},
 	})
 
-	if presentation.GuardText != "⛔ ЗАБЛОКОВАНО" {
+	if presentation.GuardText != "Заблоковано" {
 		t.Fatalf("unexpected phoenix guard text: %q", presentation.GuardText)
 	}
 	if presentation.GroupsText != "🔐 Групи:\nГрупа 1 | Група 1 | ЗАБЛОКОВАНО" {
@@ -123,7 +129,7 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoenixDisarmed(t *test
 		},
 	})
 
-	if presentation.GuardText != "🔓 БЕЗ ОХОРОНИ" {
+	if presentation.GuardText != "Без охорони" {
 		t.Fatalf("unexpected phoenix disarmed text: %q", presentation.GuardText)
 	}
 }
@@ -153,8 +159,47 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLFallbacks(t *testin
 	if presentation.ChannelText != "📡 Канал: GPRS" {
 		t.Fatalf("unexpected channel text: %q", presentation.ChannelText)
 	}
+	if presentation.ConnectionText != "На зв'язку" {
+		t.Fatalf("unexpected connection text: %q", presentation.ConnectionText)
+	}
 	if presentation.GroupsText != "🔐 Групи: —" {
 		t.Fatalf("unexpected groups fallback: %q", presentation.GroupsText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLPowerUnknown(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:         ids.CASLObjectIDNamespaceStart + 25,
+		ObjChan:    5,
+		PowerFault: -1,
+		AkbState:   -1,
+	})
+
+	if presentation.SummaryPowerText != "Стан живлення невідомий" {
+		t.Fatalf("unexpected CASL power summary: %q", presentation.SummaryPowerText)
+	}
+	if presentation.AkbText != "🔋 АКБ: Невідомо" {
+		t.Fatalf("unexpected CASL battery text: %q", presentation.AkbText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLPowerStates(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:         ids.CASLObjectIDNamespaceStart + 26,
+		ObjChan:    5,
+		PowerFault: 0,
+		AkbState:   1,
+	})
+
+	if presentation.SummaryPowerText != "220В відсутнє, АКБ в нормі" {
+		t.Fatalf("unexpected CASL power summary: %q", presentation.SummaryPowerText)
+	}
+	if presentation.AkbText != "🔋 АКБ: Норма" {
+		t.Fatalf("unexpected CASL battery text: %q", presentation.AkbText)
 	}
 }
 
@@ -193,6 +238,12 @@ func TestWorkAreaDeviceViewModel_BuildExternalPresentation(t *testing.T) {
 	if presentation.LastMessageTimeText != "📅 Ост. подія: 28.03.2026 11:00:00" {
 		t.Fatalf("unexpected last message time text: %q", presentation.LastMessageTimeText)
 	}
+	if presentation.SummarySignalText != "85%" {
+		t.Fatalf("unexpected summary signal text: %q", presentation.SummarySignalText)
+	}
+	if presentation.SummaryActivityText != "28.03.2026 11:00:00" {
+		t.Fatalf("unexpected summary activity text: %q", presentation.SummaryActivityText)
+	}
 }
 
 func TestWorkAreaDeviceViewModel_BuildExternalPresentation_ZeroTimes(t *testing.T) {
@@ -205,6 +256,9 @@ func TestWorkAreaDeviceViewModel_BuildExternalPresentation_ZeroTimes(t *testing.
 	if presentation.LastMessageTimeText != "📅 Ост. подія: —" {
 		t.Fatalf("unexpected zero message time text: %q", presentation.LastMessageTimeText)
 	}
+	if presentation.SummaryActivityText != "—" {
+		t.Fatalf("unexpected zero summary activity text: %q", presentation.SummaryActivityText)
+	}
 }
 
 func TestWorkAreaDeviceViewModel_BuildLoadingExternalPresentation(t *testing.T) {
@@ -216,6 +270,9 @@ func TestWorkAreaDeviceViewModel_BuildLoadingExternalPresentation(t *testing.T) 
 	}
 	if presentation.LastTestText != "📝 Тест: ..." {
 		t.Fatalf("unexpected loading test text: %q", presentation.LastTestText)
+	}
+	if presentation.SummarySignalText != "—" {
+		t.Fatalf("unexpected loading summary signal text: %q", presentation.SummarySignalText)
 	}
 }
 

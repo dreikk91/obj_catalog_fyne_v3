@@ -986,7 +986,7 @@ func formatCASLJournalObjectName(objNum string, name string) string {
 }
 
 func normalizeCASLAlarmState(raw int64) int64 {
-	if raw == 0 {
+	if raw <= 0 {
 		return 0
 	}
 	return 1

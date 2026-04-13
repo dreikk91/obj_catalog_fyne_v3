@@ -16,6 +16,8 @@ func TestWorkAreaExternalStateViewModel_DefaultState(t *testing.T) {
 	lastTest, _ := vm.LastTestBinding().Get()
 	lastTestTime, _ := vm.LastTestTimeBinding().Get()
 	lastMessageTime, _ := vm.LastMessageTimeBinding().Get()
+	summarySignal, _ := vm.SummarySignalBinding().Get()
+	summaryActivity, _ := vm.SummaryActivityBinding().Get()
 
 	if signal != "📶 Рівень: ..." {
 		t.Fatalf("unexpected default signal: %q", signal)
@@ -29,6 +31,9 @@ func TestWorkAreaExternalStateViewModel_DefaultState(t *testing.T) {
 	if lastMessageTime != "📅 Ост. подія: ..." {
 		t.Fatalf("unexpected default last message time: %q", lastMessageTime)
 	}
+	if summarySignal != "—" || summaryActivity != "—" {
+		t.Fatalf("unexpected summary defaults: signal=%q activity=%q", summarySignal, summaryActivity)
+	}
 }
 
 func TestWorkAreaExternalStateViewModel_Apply(t *testing.T) {
@@ -41,12 +46,16 @@ func TestWorkAreaExternalStateViewModel_Apply(t *testing.T) {
 		LastTestText:        "📝 Тест: OK",
 		LastTestTimeText:    "📅 Ост. тест: 28.03.2026 10:00:00",
 		LastMessageTimeText: "📅 Ост. подія: 28.03.2026 10:05:00",
+		SummarySignalText:   "85%",
+		SummaryActivityText: "28.03.2026 10:05:00",
 	})
 
 	signal, _ := vm.SignalBinding().Get()
 	lastTest, _ := vm.LastTestBinding().Get()
 	lastTestTime, _ := vm.LastTestTimeBinding().Get()
 	lastMessageTime, _ := vm.LastMessageTimeBinding().Get()
+	summarySignal, _ := vm.SummarySignalBinding().Get()
+	summaryActivity, _ := vm.SummaryActivityBinding().Get()
 
 	if signal != "📶 Рівень: 85%" {
 		t.Fatalf("unexpected signal: %q", signal)
@@ -59,5 +68,8 @@ func TestWorkAreaExternalStateViewModel_Apply(t *testing.T) {
 	}
 	if lastMessageTime != "📅 Ост. подія: 28.03.2026 10:05:00" {
 		t.Fatalf("unexpected last message time: %q", lastMessageTime)
+	}
+	if summarySignal != "85%" || summaryActivity != "28.03.2026 10:05:00" {
+		t.Fatalf("unexpected summary state: signal=%q activity=%q", summarySignal, summaryActivity)
 	}
 }

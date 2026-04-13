@@ -4,40 +4,44 @@ import "fyne.io/fyne/v2/data/binding"
 
 // WorkAreaDeviceStateViewModel зберігає статичні поля вкладки "Стан" через binding.
 type WorkAreaDeviceStateViewModel struct {
-	deviceType  binding.String
-	panelMark   binding.String
-	groups      binding.String
-	power       binding.String
-	sim         binding.String
-	sim1        binding.String
-	sim2        binding.String
-	autoTest    binding.String
-	guard       binding.String
-	channel     binding.String
-	phone       binding.String
-	akb         binding.String
-	testControl binding.String
-	notes       binding.String
-	location    binding.String
+	deviceType   binding.String
+	panelMark    binding.String
+	groups       binding.String
+	power        binding.String
+	summaryPower binding.String
+	sim          binding.String
+	sim1         binding.String
+	sim2         binding.String
+	autoTest     binding.String
+	guard        binding.String
+	connection   binding.String
+	channel      binding.String
+	phone        binding.String
+	akb          binding.String
+	testControl  binding.String
+	notes        binding.String
+	location     binding.String
 }
 
 func NewWorkAreaDeviceStateViewModel() *WorkAreaDeviceStateViewModel {
 	vm := &WorkAreaDeviceStateViewModel{
-		deviceType:  binding.NewString(),
-		panelMark:   binding.NewString(),
-		groups:      binding.NewString(),
-		power:       binding.NewString(),
-		sim:         binding.NewString(),
-		sim1:        binding.NewString(),
-		sim2:        binding.NewString(),
-		autoTest:    binding.NewString(),
-		guard:       binding.NewString(),
-		channel:     binding.NewString(),
-		phone:       binding.NewString(),
-		akb:         binding.NewString(),
-		testControl: binding.NewString(),
-		notes:       binding.NewString(),
-		location:    binding.NewString(),
+		deviceType:   binding.NewString(),
+		panelMark:    binding.NewString(),
+		groups:       binding.NewString(),
+		power:        binding.NewString(),
+		summaryPower: binding.NewString(),
+		sim:          binding.NewString(),
+		sim1:         binding.NewString(),
+		sim2:         binding.NewString(),
+		autoTest:     binding.NewString(),
+		guard:        binding.NewString(),
+		connection:   binding.NewString(),
+		channel:      binding.NewString(),
+		phone:        binding.NewString(),
+		akb:          binding.NewString(),
+		testControl:  binding.NewString(),
+		notes:        binding.NewString(),
+		location:     binding.NewString(),
 	}
 	vm.Reset()
 	return vm
@@ -47,11 +51,15 @@ func (vm *WorkAreaDeviceStateViewModel) DeviceTypeBinding() binding.String { ret
 func (vm *WorkAreaDeviceStateViewModel) PanelMarkBinding() binding.String  { return vm.panelMark }
 func (vm *WorkAreaDeviceStateViewModel) GroupsBinding() binding.String     { return vm.groups }
 func (vm *WorkAreaDeviceStateViewModel) PowerBinding() binding.String      { return vm.power }
+func (vm *WorkAreaDeviceStateViewModel) SummaryPowerBinding() binding.String {
+	return vm.summaryPower
+}
 func (vm *WorkAreaDeviceStateViewModel) SIMBinding() binding.String        { return vm.sim }
 func (vm *WorkAreaDeviceStateViewModel) SIM1Binding() binding.String       { return vm.sim1 }
 func (vm *WorkAreaDeviceStateViewModel) SIM2Binding() binding.String       { return vm.sim2 }
 func (vm *WorkAreaDeviceStateViewModel) AutoTestBinding() binding.String   { return vm.autoTest }
 func (vm *WorkAreaDeviceStateViewModel) GuardBinding() binding.String      { return vm.guard }
+func (vm *WorkAreaDeviceStateViewModel) ConnectionBinding() binding.String { return vm.connection }
 func (vm *WorkAreaDeviceStateViewModel) ChannelBinding() binding.String    { return vm.channel }
 func (vm *WorkAreaDeviceStateViewModel) PhoneBinding() binding.String      { return vm.phone }
 func (vm *WorkAreaDeviceStateViewModel) AkbBinding() binding.String        { return vm.akb }
@@ -66,11 +74,13 @@ func (vm *WorkAreaDeviceStateViewModel) Reset() {
 	_ = vm.panelMark.Set("🏷️ Марка: —")
 	_ = vm.groups.Set("🔐 Групи: —")
 	_ = vm.power.Set("🔌 Живлення: —")
+	_ = vm.summaryPower.Set("—")
 	_ = vm.sim.Set("📱 SIM: —")
 	_ = vm.sim1.Set("📱 SIM1: —")
 	_ = vm.sim2.Set("📱 SIM2: —")
 	_ = vm.autoTest.Set("⏱️ Автотест: —")
-	_ = vm.guard.Set("🔒 Стан: —")
+	_ = vm.guard.Set("—")
+	_ = vm.connection.Set("—")
 	_ = vm.channel.Set("📡 Канал: —")
 	_ = vm.phone.Set("☎️ Тел. об'єкта: —")
 	_ = vm.akb.Set("🔋 АКБ: —")
@@ -84,11 +94,13 @@ func (vm *WorkAreaDeviceStateViewModel) Apply(p WorkAreaDevicePresentation) {
 	_ = vm.panelMark.Set(p.PanelMarkText)
 	_ = vm.groups.Set(p.GroupsText)
 	_ = vm.power.Set(p.PowerText)
+	_ = vm.summaryPower.Set(p.SummaryPowerText)
 	_ = vm.sim.Set(p.SIMText)
 	_ = vm.sim1.Set(p.SIM1Text)
 	_ = vm.sim2.Set(p.SIM2Text)
 	_ = vm.autoTest.Set(p.AutoTestText)
 	_ = vm.guard.Set(p.GuardText)
+	_ = vm.connection.Set(p.ConnectionText)
 	_ = vm.channel.Set(p.ChannelText)
 	_ = vm.phone.Set(p.PhoneText)
 	_ = vm.akb.Set(p.AkbText)

@@ -65,30 +65,35 @@ type WorkAreaPanel struct {
 	Tabs          *container.AppTabs
 
 	// Лейбли інформації про прилад
-	DeviceTypeLabel      *widget.Label
-	PanelMarkLabel       *widget.Label // Added PanelMarkLabel
-	GroupsLabel          *widget.Label
-	GSMLabel             *widget.Label
-	PowerLabel           *widget.Label
-	SIMLabel             *widget.Label
-	SIM1Label            *widget.Label
-	SIM2Label            *widget.Label
-	AutoTestLabel        *widget.Label
-	GuardLabel           *widget.Label
-	ChanLabel            *widget.Label
-	PhoneLabel           *widget.Label
-	AkbLabel             *widget.Label
-	TestControlLabel     *widget.Label
-	SignalLabel          *widget.Label
-	LastTestLabel        *widget.Label
-	LastTestTimeLabel    *widget.Label
-	LastMessageTimeLabel *widget.Label
-	SummaryStateCaption  *canvas.Text
-	SummaryStatePanel    *canvas.Rectangle
-	SummarySectionPanels []*canvas.Rectangle
-	TestLogsBtn          *widget.Button
-	Notes1Label          *widget.Label
-	Location1Label       *widget.Label
+	DeviceTypeLabel        *widget.Label
+	PanelMarkLabel         *widget.Label // Added PanelMarkLabel
+	GroupsLabel            *widget.Label
+	GSMLabel               *widget.Label
+	PowerLabel             *widget.Label
+	SIMLabel               *widget.Label
+	SIM1Label              *widget.Label
+	SIM2Label              *widget.Label
+	AutoTestLabel          *widget.Label
+	GuardLabel             *widget.Label
+	SummaryModeLabel       *widget.Label
+	SummaryConnectionLabel *widget.Label
+	SummaryPowerLabel      *widget.Label
+	SummarySignalLabel     *widget.Label
+	SummaryActivityLabel   *widget.Label
+	ChanLabel              *widget.Label
+	PhoneLabel             *widget.Label
+	AkbLabel               *widget.Label
+	TestControlLabel       *widget.Label
+	SignalLabel            *widget.Label
+	LastTestLabel          *widget.Label
+	LastTestTimeLabel      *widget.Label
+	LastMessageTimeLabel   *widget.Label
+	SummaryStateCaption    *canvas.Text
+	SummaryStatePanel      *canvas.Rectangle
+	SummarySectionPanels   []*canvas.Rectangle
+	TestLogsBtn            *widget.Button
+	Notes1Label            *widget.Label
+	Location1Label         *widget.Label
 
 	// Кнопки копіювання
 	CopyNameBtn     *widget.Button
@@ -223,6 +228,11 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 	w.AutoTestLabel = widget.NewLabelWithData(w.DeviceStateVM.AutoTestBinding())
 	w.GuardLabel = widget.NewLabelWithData(w.DeviceStateVM.GuardBinding())
 	w.GuardLabel.TextStyle = fyne.TextStyle{Bold: true}
+	w.SummaryModeLabel = widget.NewLabelWithData(w.DeviceStateVM.GuardBinding())
+	w.SummaryModeLabel.TextStyle = fyne.TextStyle{Bold: true}
+	w.SummaryModeLabel.Wrapping = fyne.TextWrapWord
+	w.SummaryConnectionLabel = widget.NewLabelWithData(w.DeviceStateVM.ConnectionBinding())
+	w.SummaryPowerLabel = widget.NewLabelWithData(w.DeviceStateVM.SummaryPowerBinding())
 	w.CopySimBtn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
 	w.CopySIM1Btn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
 	w.CopySIM2Btn = widget.NewButtonWithIcon("", fyneTheme.ContentCopyIcon(), nil)
@@ -237,6 +247,8 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 	w.LastTestLabel = widget.NewLabelWithData(w.ExternalVM.LastTestBinding())
 	w.LastTestTimeLabel = widget.NewLabelWithData(w.ExternalVM.LastTestTimeBinding())
 	w.LastMessageTimeLabel = widget.NewLabelWithData(w.ExternalVM.LastMessageTimeBinding())
+	w.SummarySignalLabel = widget.NewLabelWithData(w.ExternalVM.SummarySignalBinding())
+	w.SummaryActivityLabel = widget.NewLabelWithData(w.ExternalVM.SummaryActivityBinding())
 	w.TestLogsBtn = widget.NewButtonWithIcon("Тестові повідомлення", fyneTheme.HistoryIcon(), nil)
 
 	w.Notes1Label = widget.NewLabelWithData(w.DeviceStateVM.NotesBinding())
@@ -252,19 +264,24 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 		w.PanelMarkLabel,
 		w.GroupsLabel,
 		w.PowerLabel,
+		w.SummaryPowerLabel,
 		w.SIMLabel,
 		w.SIM1Label,
 		w.SIM2Label,
 		w.AutoTestLabel,
 		w.GuardLabel,
+		w.SummaryModeLabel,
+		w.SummaryConnectionLabel,
 		w.ChanLabel,
 		w.PhoneLabel,
 		w.AkbLabel,
 		w.TestControlLabel,
 		w.SignalLabel,
+		w.SummarySignalLabel,
 		w.LastTestLabel,
 		w.LastTestTimeLabel,
 		w.LastMessageTimeLabel,
+		w.SummaryActivityLabel,
 	} {
 		label.Wrapping = fyne.TextWrapWord
 	}
@@ -281,29 +298,27 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 	statusSummary := container.NewStack(
 		w.SummaryStatePanel,
 		container.NewPadded(
-			container.NewAdaptiveGrid(
-				2,
-				container.NewVBox(
-					w.SummaryStateCaption,
-					w.GuardLabel,
-				),
-				container.NewVBox(
-					w.PowerLabel,
-					w.SignalLabel,
-					w.LastMessageTimeLabel,
+			container.NewVBox(
+				container.NewBorder(nil, nil, w.SummaryStateCaption, nil, w.SummaryModeLabel),
+				container.NewGridWithColumns(
+					2,
+					makeWorkAreaSummaryMetricCompact("Зв'язок", w.SummaryConnectionLabel),
+					makeWorkAreaSummaryMetricCompact("Живлення", w.SummaryPowerLabel),
+					makeWorkAreaSummaryMetricCompact("Сигнал", w.SummarySignalLabel),
+					makeWorkAreaSummaryMetricCompact("Ост. подія", w.SummaryActivityLabel),
 				),
 			),
 		),
 	)
 
 	groupsScroll := container.NewScroll(w.GroupsLabel)
-	groupsScroll.SetMinSize(fyne.NewSize(0, 120))
+	groupsScroll.SetMinSize(fyne.NewSize(0, 96))
 
 	notesScroll := container.NewScroll(w.Notes1Label)
-	notesScroll.SetMinSize(fyne.NewSize(0, 84))
+	notesScroll.SetMinSize(fyne.NewSize(0, 72))
 
 	locationScroll := container.NewScroll(w.Location1Label)
-	locationScroll.SetMinSize(fyne.NewSize(0, 68))
+	locationScroll.SetMinSize(fyne.NewSize(0, 58))
 
 	deviceSection, devicePanel := makeWorkAreaSummarySection(
 		"Прилад",
@@ -399,6 +414,18 @@ func makeWorkAreaActionRow(content fyne.CanvasObject, actions ...fyne.CanvasObje
 		return content
 	}
 	return container.NewBorder(nil, nil, nil, container.NewHBox(visibleActions...), content)
+}
+
+func makeWorkAreaSummaryMetric(title string, value fyne.CanvasObject) fyne.CanvasObject {
+	titleLabel := canvas.NewText(title, appTheme.ColorSectionTitle)
+	titleLabel.TextSize = fyne.CurrentApp().Settings().Theme().Size(fyneTheme.SizeNameText) - 1
+	return container.NewVBox(titleLabel, value)
+}
+
+func makeWorkAreaSummaryMetricCompact(title string, value fyne.CanvasObject) fyne.CanvasObject {
+	titleLabel := canvas.NewText(title+":", appTheme.ColorSectionTitle)
+	titleLabel.TextSize = fyne.CurrentApp().Settings().Theme().Size(fyneTheme.SizeNameText) - 1
+	return container.NewBorder(nil, nil, titleLabel, nil, value)
 }
 
 func (w *WorkAreaPanel) updateSummaryStatusAccent(status models.ObjectStatus) {

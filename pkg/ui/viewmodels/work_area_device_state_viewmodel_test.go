@@ -15,6 +15,7 @@ func TestWorkAreaDeviceStateViewModel_DefaultState(t *testing.T) {
 	deviceType, _ := vm.DeviceTypeBinding().Get()
 	groups, _ := vm.GroupsBinding().Get()
 	guard, _ := vm.GuardBinding().Get()
+	connection, _ := vm.ConnectionBinding().Get()
 	sim1, _ := vm.SIM1Binding().Get()
 	sim2, _ := vm.SIM2Binding().Get()
 	notes, _ := vm.NotesBinding().Get()
@@ -22,8 +23,11 @@ func TestWorkAreaDeviceStateViewModel_DefaultState(t *testing.T) {
 	if deviceType != "🔧 Тип: —" {
 		t.Fatalf("unexpected default device type: %q", deviceType)
 	}
-	if guard != "🔒 Стан: —" {
+	if guard != "—" {
 		t.Fatalf("unexpected default guard: %q", guard)
+	}
+	if connection != "—" {
+		t.Fatalf("unexpected default connection: %q", connection)
 	}
 	if groups != "🔐 Групи: —" {
 		t.Fatalf("unexpected default groups: %q", groups)
@@ -42,26 +46,32 @@ func TestWorkAreaDeviceStateViewModel_ApplyAndReset(t *testing.T) {
 
 	vm := NewWorkAreaDeviceStateViewModel()
 	vm.Apply(WorkAreaDevicePresentation{
-		DeviceTypeText:  "🔧 Тип: Tiras",
-		PanelMarkText:   "🏷️ Марка: TM-1",
-		GroupsText:      "🔐 Групи:\nГрупа 1: ПІД ОХОРОНОЮ",
-		PowerText:       "🔌 🔋 АКБ (резерв)",
-		SIMText:         "📱 SIM1: 111",
-		SIM1Text:        "📱 SIM1: 111",
-		SIM2Text:        "📱 SIM2: 222",
-		AutoTestText:    "⏱️ Автотест: кожні 12 год",
-		GuardText:       "🔓 ЗНЯТО З ОХОРОНИ",
-		ChannelText:     "📡 Канал: GPRS",
-		PhoneText:       "☎️ Тел. об'єкта: 380001",
-		AkbText:         "🔋 АКБ: Норма",
-		TestControlText: "⏲️ Контроль тесту: Виключено",
-		NotesText:       "note",
-		LocationText:    "location",
+		DeviceTypeText:   "🔧 Тип: Tiras",
+		PanelMarkText:    "🏷️ Марка: TM-1",
+		GroupsText:       "🔐 Групи:\nГрупа 1: ПІД ОХОРОНОЮ",
+		PowerText:        "🔌 🔋 АКБ (резерв)",
+		SIMText:          "📱 SIM1: 111",
+		SIM1Text:         "📱 SIM1: 111",
+		SIM2Text:         "📱 SIM2: 222",
+		AutoTestText:     "⏱️ Автотест: кожні 12 год",
+		GuardText:        "Знято з охорони",
+		ConnectionText:   "На зв'язку",
+		SummaryPowerText: "220В в нормі",
+		ChannelText:      "📡 Канал: GPRS",
+		PhoneText:        "☎️ Тел. об'єкта: 380001",
+		AkbText:          "🔋 АКБ: Норма",
+		TestControlText:  "⏲️ Контроль тесту: Виключено",
+		NotesText:        "note",
+		LocationText:     "location",
 	})
 
 	gotGuard, _ := vm.GuardBinding().Get()
-	if gotGuard != "🔓 ЗНЯТО З ОХОРОНИ" {
+	if gotGuard != "Знято з охорони" {
 		t.Fatalf("unexpected applied guard: %q", gotGuard)
+	}
+	gotConnection, _ := vm.ConnectionBinding().Get()
+	if gotConnection != "На зв'язку" {
+		t.Fatalf("unexpected applied connection: %q", gotConnection)
 	}
 	gotNotes, _ := vm.NotesBinding().Get()
 	if gotNotes != "note" {

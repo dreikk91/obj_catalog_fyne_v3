@@ -123,10 +123,10 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 		applyCASLObjectDeviceConnectivityState(&obj, device)
 	}
 	if state, stateErr := p.readDeviceState(ctx, record); stateErr == nil {
-		obj.PowerFault = normalizeCASLAlarmState(state.Power.Int64())
-		obj.AkbState = normalizeCASLAlarmState(state.Accum.Int64())
+		obj.PowerFault = state.Power.Int64()
+		obj.AkbState = state.Accum.Int64()
 		obj.PowerSource = models.PowerMains
-		if obj.PowerFault > 0 {
+		if obj.PowerFault == 0 {
 			obj.PowerSource = models.PowerBattery
 		}
 		if state.Online.Int64() > 0 {

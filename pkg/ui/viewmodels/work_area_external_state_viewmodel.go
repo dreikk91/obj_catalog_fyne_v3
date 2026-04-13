@@ -8,6 +8,8 @@ type WorkAreaExternalStateViewModel struct {
 	lastTest        binding.String
 	lastTestTime    binding.String
 	lastMessageTime binding.String
+	summarySignal   binding.String
+	summaryActivity binding.String
 }
 
 func NewWorkAreaExternalStateViewModel() *WorkAreaExternalStateViewModel {
@@ -16,12 +18,16 @@ func NewWorkAreaExternalStateViewModel() *WorkAreaExternalStateViewModel {
 		lastTest:        binding.NewString(),
 		lastTestTime:    binding.NewString(),
 		lastMessageTime: binding.NewString(),
+		summarySignal:   binding.NewString(),
+		summaryActivity: binding.NewString(),
 	}
 	vm.Apply(WorkAreaExternalPresentation{
 		SignalText:          "📶 Рівень: ...",
 		LastTestText:        "📝 Тест: ...",
 		LastTestTimeText:    "📅 Ост. тест: ...",
 		LastMessageTimeText: "📅 Ост. подія: ...",
+		SummarySignalText:   "—",
+		SummaryActivityText: "—",
 	})
 	return vm
 }
@@ -42,9 +48,19 @@ func (vm *WorkAreaExternalStateViewModel) LastMessageTimeBinding() binding.Strin
 	return vm.lastMessageTime
 }
 
+func (vm *WorkAreaExternalStateViewModel) SummarySignalBinding() binding.String {
+	return vm.summarySignal
+}
+
+func (vm *WorkAreaExternalStateViewModel) SummaryActivityBinding() binding.String {
+	return vm.summaryActivity
+}
+
 func (vm *WorkAreaExternalStateViewModel) Apply(presentation WorkAreaExternalPresentation) {
 	_ = vm.signal.Set(presentation.SignalText)
 	_ = vm.lastTest.Set(presentation.LastTestText)
 	_ = vm.lastTestTime.Set(presentation.LastTestTimeText)
 	_ = vm.lastMessageTime.Set(presentation.LastMessageTimeText)
+	_ = vm.summarySignal.Set(presentation.SummarySignalText)
+	_ = vm.summaryActivity.Set(presentation.SummaryActivityText)
 }

@@ -565,6 +565,11 @@ func (a *Application) installCloseIntercept() {
 			a.refreshLoopCancel()
 			a.refreshLoopCancel = nil
 		}
+		if provider := a.getDataProvider(); provider != nil {
+			if shutdowner, ok := provider.(contracts.ShutdownProvider); ok {
+				shutdowner.Shutdown()
+			}
+		}
 
 		a.persistCurrentLayoutOffsets()
 

@@ -78,6 +78,19 @@ func NewMultiSourceDataProvider(sources ...ProviderSource) *CombinedDataProvider
 	return &CombinedDataProvider{sources: filtered}
 }
 
+func (p *CombinedDataProvider) Shutdown() {
+	if p == nil {
+		return
+	}
+	for _, source := range p.sources {
+		shutdowner, ok := source.Provider.(contracts.ShutdownProvider)
+		if !ok || shutdowner == nil {
+			continue
+		}
+		shutdowner.Shutdown()
+	}
+}
+
 func (p *CombinedDataProvider) AdminProvider() contracts.AdminProvider {
 	if p == nil {
 		return nil

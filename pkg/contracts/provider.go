@@ -88,3 +88,9 @@ type DataProvider interface {
 	AlarmProvider
 	DetailProvider
 }
+
+// ShutdownProvider описує провайдер, який має довгоживучі фонові ресурси
+// (goroutines, realtime streams, reconnect loops) і повинен бути явно зупинений.
+type ShutdownProvider interface {
+	Shutdown()
+}

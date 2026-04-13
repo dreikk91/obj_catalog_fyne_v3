@@ -142,6 +142,23 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 	}
 }
 
+func (p *CASLCloudProvider) Shutdown() {
+	if p == nil {
+		return
+	}
+
+	p.realtimeMu.Lock()
+	cancel := p.realtimeCancel
+	p.realtimeCancel = nil
+	p.realtimeRunning = false
+	p.realtimeSubscribed = false
+	p.realtimeMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+}
+
 // GetLatestEventID повертає компактний курсор змін для scheduler.
 
 // Оновлюємо всі активні тривоги об'єкта даними про оператора/ГМР.

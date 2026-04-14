@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 const kyivstarBaseURL = "https://b2b-api.kyivstar.ua"
@@ -634,7 +636,10 @@ func decodeKyivstarAPIError(resp *http.Response) error {
 		return errors.New("kyivstar: empty http response")
 	}
 
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if readErr != nil {
+		log.Debug().Err(readErr).Msg("kyivstar: failed to read error response body")
+	}
 	var payload struct {
 		Message          string `json:"message"`
 		Error            string `json:"error"`

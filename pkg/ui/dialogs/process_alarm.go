@@ -246,7 +246,13 @@ func showLegacyProcessAlarmDialog(parent fyne.Window, alarm models.Alarm, provid
 			if !confirmed {
 				return
 			}
-			provider.ProcessAlarm(fmt.Sprintf("%d", alarm.ID), user, strings.TrimSpace(noteEntry.Text))
+			err := provider.ProcessAlarm(fmt.Sprintf("%d", alarm.ID), user, strings.TrimSpace(noteEntry.Text))
+			if err != nil {
+				fyne.Do(func() {
+					dialog.ShowError(fmt.Errorf("помилка обробки тривоги: %w", err), parent)
+				})
+				return
+			}
 			if onSuccess != nil {
 				onSuccess()
 			}

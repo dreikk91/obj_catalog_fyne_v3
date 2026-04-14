@@ -322,7 +322,9 @@ func (p *PhoenixDataProvider) GetAlarms() []models.Alarm {
 	return p.buildPhoenixAlarms(rows)
 }
 
-func (p *PhoenixDataProvider) ProcessAlarm(id string, user string, note string) {}
+func (p *PhoenixDataProvider) ProcessAlarm(id string, user string, note string) error {
+	return ErrAlarmProcessingNotImplemented
+}
 
 func (p *PhoenixDataProvider) GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time) {
 	panelID, ok := p.resolvePanelID(objectID)

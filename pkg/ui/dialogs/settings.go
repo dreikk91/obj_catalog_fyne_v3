@@ -1,6 +1,7 @@
 package dialogs
 
 import (
+	"context"
 	"fmt"
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
@@ -27,6 +28,9 @@ type settingsDialogAdminProvider interface {
 }
 
 type settingsDialogState struct {
+	// ... existing fields ...
+	dialogCtx       context.Context
+	dialogCancel    context.CancelFunc
 	win             fyne.Window
 	pref            fyne.Preferences
 	adminProvider   settingsDialogAdminProvider
@@ -113,11 +117,14 @@ func newSettingsDialogState(
 	onSave func(config.DBConfig, config.UIConfig),
 	onColorsChanged func(),
 ) *settingsDialogState {
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &settingsDialogState{
 		win:             win,
 		pref:            pref,
 		adminProvider:   adminProvider,
 		isDarkTheme:     isDarkTheme,
+		dialogCtx:       ctx,
+		dialogCancel:    cancel,
 		onSave:          onSave,
 		onColorsChanged: onColorsChanged,
 		dbCfg:           config.LoadDBConfig(pref),
@@ -298,6 +305,7 @@ func (s *settingsDialogState) buildDialog() dialog.Dialog {
 		s.buildTabs(),
 		func(save bool) {
 			if !save {
+				s.dialogCancel()
 				return
 			}
 			s.applySave()
@@ -528,9 +536,12 @@ func (s *settingsDialogState) handleVodafoneSMSRequest() {
 	phone := strings.TrimSpace(s.vodafonePhoneEntry.Text)
 	s.setVodafoneBusy(true)
 	s.vodafoneStatusLabel.SetText("Vodafone: надсилання SMS-коду...")
-	go func() {
+	go func(ctx context.Context) {
 		err := s.adminProvider.RequestVodafoneLoginSMS(phone)
 		fyne.Do(func() {
+			if ctx.Err() != nil {
+				return // Dialog was closed, skip update
+			}
 			s.setVodafoneBusy(false)
 			if err != nil {
 				s.vodafoneStatusLabel.SetText(err.Error())
@@ -538,7 +549,7 @@ func (s *settingsDialogState) handleVodafoneSMSRequest() {
 			}
 			s.vodafoneStatusLabel.SetText("Vodafone: SMS-код надіслано")
 		})
-	}()
+	}(s.dialogCtx)
 }
 
 func (s *settingsDialogState) handleVodafoneCodeVerify() {

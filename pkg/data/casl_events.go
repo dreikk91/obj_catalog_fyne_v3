@@ -1589,16 +1589,16 @@ func (p *CASLCloudProvider) readGeneralTapeItemRowsForObjectIDs(ctx context.Cont
 	return rows, nil
 }
 
-func (p *CASLCloudProvider) ProcessAlarm(id string, user string, note string) {
-	alarmID, _ := strconv.Atoi(id)
-	if alarmID <= 0 {
-		return
+func (p *CASLCloudProvider) ProcessAlarm(id string, user string, note string) error {
+	alarmID, err := strconv.Atoi(id)
+	if err != nil || alarmID <= 0 {
+		return fmt.Errorf("casl: invalid alarm ID: %s", id)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
 	defer cancel()
 
-	err := p.ProcessAlarmWithRequest(ctx, models.Alarm{
+	err = p.ProcessAlarmWithRequest(ctx, models.Alarm{
 		ID: alarmID,
 	}, user, contracts.AlarmProcessingRequest{
 		CauseCode: "CAUSES_FALSE_ALARM",
@@ -1606,7 +1606,9 @@ func (p *CASLCloudProvider) ProcessAlarm(id string, user string, note string) {
 	})
 	if err != nil {
 		log.Debug().Err(err).Int("alarmID", alarmID).Msg("CASL: ProcessAlarm failed")
+		return fmt.Errorf("casl: failed to process alarm %d: %w", alarmID, err)
 	}
+	return nil
 }
 
 func (p *CASLCloudProvider) GetAlarmProcessingOptions(ctx context.Context, _ models.Alarm) ([]contracts.AlarmProcessingOption, error) {

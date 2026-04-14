@@ -31,6 +31,13 @@ type alarmProcessingProvider interface {
 	contracts.AlarmProcessingProvider
 }
 
+// Default slice capacities for pre-allocation
+const (
+	defaultObjectsCapacity = 128
+	defaultEventsCapacity  = 256
+	defaultAlarmsCapacity  = 64
+)
+
 // ProviderSource описує одне джерело даних у мультисистемній конфігурації.
 // OwnsObjectID/OwnsAlarmID задають, як маршрутизувати запити до цього джерела.
 // Якщо жоден matcher не спрацював, використовується перше (основне) джерело.
@@ -320,7 +327,7 @@ func (p *CombinedDataProvider) SourceNameForObjectID(objectID int) string {
 }
 
 func (p *CombinedDataProvider) GetObjects() []models.Object {
-	objects := make([]models.Object, 0, 128)
+	objects := make([]models.Object, 0, defaultObjectsCapacity)
 	if p != nil {
 		for _, source := range p.sources {
 			objects = append(objects, source.Provider.GetObjects()...)
@@ -331,21 +338,6 @@ func (p *CombinedDataProvider) GetObjects() []models.Object {
 		return nil
 	}
 
-	// seen := make(map[int]struct{}, len(objects))
-	// deduped := objects[:0]
-	// for _, obj := range objects {
-	// 	if _, exists := seen[obj.ID]; exists {
-	// 		continue
-	// 	}
-	// 	seen[obj.ID] = struct{}{}
-	// 	deduped = append(deduped, obj)
-	// }
-
-	// sort.SliceStable(deduped, func(i, j int) bool {
-	// 	return deduped[i].ID < deduped[j].ID
-	// })
-	// return deduped
-	// return viewmodels.ObjectDisplayNumber(deduped[i]) < viewmodels.ObjectDisplayNumber(deduped[j])
 	sort.SliceStable(objects, func(i, j int) bool {
 		return viewmodels.ObjectDisplayNumber(objects[i]) < viewmodels.ObjectDisplayNumber(objects[j])
 	})
@@ -393,7 +385,7 @@ func (p *CombinedDataProvider) GetEmployees(objectID string) []models.Contact {
 }
 
 func (p *CombinedDataProvider) GetEvents() []models.Event {
-	events := make([]models.Event, 0, 256)
+	events := make([]models.Event, 0, defaultEventsCapacity)
 	if p != nil {
 		for _, source := range p.sources {
 			events = append(events, source.Provider.GetEvents()...)
@@ -460,7 +452,7 @@ func (p *CombinedDataProvider) GetActiveAlarmSourceMessages(alarm models.Alarm) 
 }
 
 func (p *CombinedDataProvider) GetAlarms() []models.Alarm {
-	alarms := make([]models.Alarm, 0, 64)
+	alarms := make([]models.Alarm, 0, defaultAlarmsCapacity)
 	if p != nil {
 		for _, source := range p.sources {
 			alarms = append(alarms, source.Provider.GetAlarms()...)
@@ -477,22 +469,21 @@ func (p *CombinedDataProvider) GetAlarms() []models.Alarm {
 	return alarms
 }
 
-func (p *CombinedDataProvider) ProcessAlarm(id string, user string, note string) {
+func (p *CombinedDataProvider) ProcessAlarm(id string, user string, note string) error {
 	if p == nil {
-		return
+		return errors.New("combined provider is nil")
 	}
 
 	provider := p.providerForAlarmID(id)
 	if provider != nil {
-		provider.ProcessAlarm(id, user, note)
-		return
+		return provider.ProcessAlarm(id, user, note)
 	}
 
 	// Fallback: відправляємо в перше доступне джерело.
 	for _, source := range p.sources {
-		source.Provider.ProcessAlarm(id, user, note)
-		return
+		return source.Provider.ProcessAlarm(id, user, note)
 	}
+	return errors.New("no data source available to process alarm")
 }
 
 func (p *CombinedDataProvider) GetAlarmProcessingOptions(ctx context.Context, alarm models.Alarm) ([]contracts.AlarmProcessingOption, error) {
@@ -517,8 +508,7 @@ func (p *CombinedDataProvider) ProcessAlarmWithRequest(ctx context.Context, alar
 		return advanced.ProcessAlarmWithRequest(ctx, alarm, user, request)
 	}
 	if provider != nil {
-		provider.ProcessAlarm(strconv.Itoa(alarm.ID), user, request.Note)
-		return nil
+		return provider.ProcessAlarm(strconv.Itoa(alarm.ID), user, request.Note)
 	}
 	return errors.New("alarm provider is not configured")
 }

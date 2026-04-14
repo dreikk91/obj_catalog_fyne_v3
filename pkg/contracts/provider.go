@@ -59,7 +59,7 @@ type ActiveAlarmHistoryProvider interface {
 // AlarmProvider визначає інтерфейс для отримання тривог
 type AlarmProvider interface {
 	GetAlarms() []models.Alarm
-	ProcessAlarm(id string, user string, note string)
+	ProcessAlarm(id string, user string, note string) error
 }
 
 // AlarmProcessingOption описує одну причину відпрацювання тривоги.

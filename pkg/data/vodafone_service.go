@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -850,10 +852,13 @@ func (s *VodafoneService) doJSON(req *http.Request, out any) error {
 		return errVodafoneAuthRequired
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		msg := strings.TrimSpace(string(body))
 		if msg == "" {
 			msg = resp.Status
+		}
+		if readErr != nil {
+			log.Debug().Err(readErr).Msg("vodafone: failed to read error response body")
 		}
 		return fmt.Errorf("vodafone: %s", msg)
 	}

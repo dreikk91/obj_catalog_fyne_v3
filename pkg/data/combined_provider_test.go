@@ -63,7 +63,7 @@ func (s *combinedStubProvider) GetAlarms() []models.Alarm {
 	return append([]models.Alarm(nil), s.alarms...)
 }
 
-func (s *combinedStubProvider) ProcessAlarm(id string, user string, note string) {}
+func (s *combinedStubProvider) ProcessAlarm(id string, user string, note string) error { return nil }
 
 func (s *combinedStubProvider) GetAlarmProcessingOptions(ctx context.Context, alarm models.Alarm) ([]contracts.AlarmProcessingOption, error) {
 	return append([]contracts.AlarmProcessingOption(nil), s.processOpts...), nil

@@ -17,6 +17,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// Event cache limit to prevent excessive memory usage.
+const maxCachedEvents = 100000
+
 // DBDataProvider реалізує інтерфейс DataProvider для реальної БД
 type DBDataProvider struct {
 	db *sqlx.DB
@@ -264,7 +267,6 @@ func (p *DBDataProvider) GetEvents() []models.Event {
 		p.cachedEvents = append(newEvents, p.cachedEvents...)
 
 		// Технічне обмеження кешу, щоб не роздувати пам'ять.
-		const maxCachedEvents = 100000
 		if len(p.cachedEvents) > maxCachedEvents {
 			log.Debug().Int("cachedEventsBefore", len(p.cachedEvents)).Int("maxCachedEvents", maxCachedEvents).Msg("Кеш подій перевищує ліміт, обрізаємо...")
 			p.cachedEvents = p.cachedEvents[:maxCachedEvents]
@@ -631,8 +633,12 @@ func isDBAlarmEventType(eventType models.EventType) bool {
 	}
 }
 
-func (p *DBDataProvider) ProcessAlarm(id string, user string, note string) {
+// ErrAlarmProcessingNotImplemented is returned when ProcessAlarm is not implemented for a provider.
+var ErrAlarmProcessingNotImplemented = fmt.Errorf("обробка тривог не реалізована для цього джерела даних")
+
+func (p *DBDataProvider) ProcessAlarm(id string, user string, note string) error {
 	log.Warn().Str("alarmID", id).Str("user", user).Str("note", note).Msg("Обробка тривоги для DBDataProvider ще не реалізована")
+	return ErrAlarmProcessingNotImplemented
 }
 
 func (p *DBDataProvider) GetExternalData(objectID string) (signal string, lastTestMsg string, lastTest time.Time, lastMsg time.Time) {

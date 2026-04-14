@@ -11,15 +11,15 @@ type shutdownProviderStub struct {
 	shutdownCalls int
 }
 
-func (s *shutdownProviderStub) GetObjects() []models.Object                          { return nil }
-func (s *shutdownProviderStub) GetObjectByID(id string) *models.Object               { return nil }
-func (s *shutdownProviderStub) GetEvents() []models.Event                            { return nil }
-func (s *shutdownProviderStub) GetObjectEvents(objectID string) []models.Event       { return nil }
-func (s *shutdownProviderStub) GetAlarms() []models.Alarm                            { return nil }
-func (s *shutdownProviderStub) ProcessAlarm(id string, user string, note string)     {}
-func (s *shutdownProviderStub) GetZones(objectID string) []models.Zone               { return nil }
-func (s *shutdownProviderStub) GetEmployees(objectID string) []models.Contact        { return nil }
-func (s *shutdownProviderStub) GetTestMessages(objectID string) []models.TestMessage { return nil }
+func (s *shutdownProviderStub) GetObjects() []models.Object                            { return nil }
+func (s *shutdownProviderStub) GetObjectByID(id string) *models.Object                 { return nil }
+func (s *shutdownProviderStub) GetEvents() []models.Event                              { return nil }
+func (s *shutdownProviderStub) GetObjectEvents(objectID string) []models.Event         { return nil }
+func (s *shutdownProviderStub) GetAlarms() []models.Alarm                              { return nil }
+func (s *shutdownProviderStub) ProcessAlarm(id string, user string, note string) error { return nil }
+func (s *shutdownProviderStub) GetZones(objectID string) []models.Zone                 { return nil }
+func (s *shutdownProviderStub) GetEmployees(objectID string) []models.Contact          { return nil }
+func (s *shutdownProviderStub) GetTestMessages(objectID string) []models.TestMessage   { return nil }
 func (s *shutdownProviderStub) GetExternalData(objectID string) (string, string, time.Time, time.Time) {
 	return "", "", time.Time{}, time.Time{}
 }

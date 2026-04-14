@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+
 	// "math/rand"
 	"strings"
 	"sync"
@@ -163,10 +164,8 @@ func NewApplication() *Application {
 	isDark := fyneApp.Preferences().BoolWithFallback(prefKeyDarkTheme, true)
 
 	// Створюємо головне вікно
-	log.Debug().Msg("Створення головного вікна...")
 	mainWindow := fyneApp.NewWindow(fmt.Sprintf("Каталог об'єктів [%s]", ver.Label()))
 	mainWindow.Resize(fyne.NewSize(1024, 768))
-	log.Debug().Str("size", "1024x768").Msg("Головне вікно налаштовано")
 
 	// Завантажуємо налаштування БД
 	log.Info().Msg("Завантаження налаштувань БД...")
@@ -205,13 +204,10 @@ func NewApplication() *Application {
 		phoenixEnabled:  buildResult.phoenixEnabled,
 		caslEnabled:     buildResult.caslEnabled,
 	}
-	log.Debug().Msg("Структура додатку готова")
 	log.Info().Str("version", ver.String()).Msg("Версія застосунку")
 
 	// Встановлюємо тему
-	log.Debug().Msg("Встановлення теми...")
 	application.setTheme(isDark)
-	log.Debug().Bool("darkTheme", isDark).Msg("Тема встановлена")
 
 	// Будуємо інтерфейс (це тепер швидко, бо все асинхронно)
 	log.Info().Msg("Побудова UI компонентів...")
@@ -236,19 +232,14 @@ func (a *Application) setTheme(dark bool) {
 
 	uiCfg := config.LoadUIConfig(a.fyneApp.Preferences())
 	if dark {
-		log.Debug().Msg("Застосування темної теми...")
 		a.fyneApp.Settings().SetTheme(apptheme.NewDarkTheme(uiCfg.FontSize))
 	} else {
-		log.Debug().Msg("Застосування світлої теми...")
 		a.fyneApp.Settings().SetTheme(apptheme.NewLightTheme(uiCfg.FontSize))
 	}
-	log.Debug().Bool("darkTheme", dark).Float32("fontSize", uiCfg.FontSize).Msg("Тема застосована")
 }
 
 // buildUI будує головний інтерфейс
 func (a *Application) buildUI() {
-	log.Debug().Msg("Початок побудови UI компонентів...")
-
 	a.buildUIPanels()
 	a.registerEventBusHandlers()
 	a.configurePanelCallbacks()
@@ -264,27 +255,14 @@ func (a *Application) buildUI() {
 }
 
 func (a *Application) buildUIPanels() {
-	log.Debug().Msg("Створення AlarmPanel...")
 	provider := a.getDataProvider()
 	a.alarmPanel = ui.NewAlarmPanelWidget(provider)
-	log.Debug().Msg("AlarmPanel створена")
-
-	log.Debug().Msg("Створення ObjectListPanel...")
 	a.objectList = ui.NewObjectListPanel(provider)
-	log.Debug().Msg("ObjectListPanel створена")
-
-	log.Debug().Msg("Створення WorkAreaPanel...")
 	a.workArea = ui.NewWorkAreaPanel(provider, a.mainWindow)
-	log.Debug().Msg("WorkAreaPanel створена")
-
-	log.Debug().Msg("Створення EventLogPanel...")
 	a.eventLog = ui.NewEventLogPanel(provider)
-	log.Debug().Msg("EventLogPanel створена")
 }
 
 func (a *Application) configurePanelCallbacks() {
-	log.Debug().Msg("Налаштування callbacks...")
-
 	a.objectList.OnObjectSelected = func(object models.Object) {
 		log.Debug().Int("objectID", object.ID).Str("objectName", object.Name).Msg("Об'єкт вибраний з списку")
 		a.applyObjectContext(&object, true)
@@ -322,8 +300,6 @@ func (a *Application) configurePanelCallbacks() {
 			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Тривогу відпрацьовано.")
 		})
 	}
-
-	log.Debug().Msg("Callbacks налаштовані")
 }
 
 func (a *Application) buildThemeButton() *widget.Button {
@@ -348,7 +324,6 @@ func (a *Application) updateThemeButtonLabel(themeBtn *widget.Button) {
 
 func (a *Application) toggleTheme(themeBtn *widget.Button) {
 	newDark := !a.isDarkTheme
-	log.Debug().Bool("darkTheme", newDark).Msg("Перемикання теми...")
 	a.setTheme(newDark)
 	a.updateThemeButtonLabel(themeBtn)
 
@@ -378,7 +353,6 @@ func (a *Application) applyThemeToPanels(uiCfg config.UIConfig) {
 
 func (a *Application) buildSettingsButton() *widget.Button {
 	return widget.NewButtonWithIcon("Налаштування", fyneTheme.SettingsIcon(), func() {
-		log.Debug().Msg("Відкриття діалогу налаштувань...")
 		dialogs.ShowSettingsDialog(
 			a.mainWindow,
 			a.resolveAdminProvider(),
@@ -445,7 +419,6 @@ func (a *Application) rebuildMainWindowLayout(uiCfg config.UIConfig) {
 		content,
 	)
 	a.mainWindow.SetContent(finalLayout)
-	log.Debug().Msg("UI побудований та встановлений на вікно")
 
 	a.installCloseIntercept()
 	a.updateTabBadges(a.lastAlarmsCount, a.lastCriticalCount, a.lastEventsCount)
@@ -767,55 +740,61 @@ func (a *Application) Run() {
 func (a *Application) Reconnect(cfg config.DBConfig) {
 	cfg.LogLevel = applogger.SetLogLevel(cfg.LogLevel)
 	log.Warn().Msg("🔄 Перепідключення до джерел даних...")
-	if a.statusLabel != nil {
-		a.statusLabel.SetText("Джерела даних: перепідключення...")
-	}
 
-	buildResult, err := buildDataProviderFromConfig(cfg, a.fyneApp.Preferences(), true)
-	if err != nil {
-		log.Error().Err(err).Msg("❌ Помилка перевірки з'єднання з новими джерелами")
-		if a.statusLabel != nil {
-			a.statusLabel.SetText("Джерела даних: помилка підключення")
+	// Виконуємо операції з БД у горутині, щоб не блокувати UI
+	go func() {
+		fyne.Do(func() {
+			if a.statusLabel != nil {
+				a.statusLabel.SetText("Джерела даних: перепідключення...")
+			}
+		})
+
+		buildResult, err := buildDataProviderFromConfig(cfg, a.fyneApp.Preferences(), true)
+		if err != nil {
+			log.Error().Err(err).Msg("❌ Помилка перевірки з'єднання з новими джерелами")
+			fyne.Do(func() {
+				if a.statusLabel != nil {
+					a.statusLabel.SetText("Джерела даних: помилка підключення")
+				}
+				dialogs.ShowErrorDialog(a.mainWindow, "Помилка підключення", err)
+			})
+			return
 		}
-		dialogs.ShowErrorDialog(a.mainWindow, "Помилка підключення", err)
-		return
-	}
 
-	a.closeManagedDBs()
-	a.managedDBs = buildResult.managedDBs
-	a.setDataProvider(buildResult.provider)
-	a.firebirdEnabled = buildResult.firebirdEnabled
-	a.phoenixEnabled = buildResult.phoenixEnabled
-	a.caslEnabled = buildResult.caslEnabled
-	log.Debug().Msg("Провайдер даних оновлено")
+		a.closeManagedDBs()
+		a.managedDBs = buildResult.managedDBs
+		a.setDataProvider(buildResult.provider)
+		a.firebirdEnabled = buildResult.firebirdEnabled
+		a.phoenixEnabled = buildResult.phoenixEnabled
+		a.caslEnabled = buildResult.caslEnabled
+		log.Debug().Msg("Провайдер даних оновлено")
 
-	// Оновлюємо посилання в панелях
-	log.Debug().Msg("Оновлення посилань на БД у панелях...")
-	provider := a.getDataProvider()
-	a.alarmPanel.Data = provider
-	a.objectList.Data = provider
-	a.workArea.Data = provider
-	a.eventLog.Data = provider
-	log.Debug().Msg("✓ Посилання оновлено")
+		// Оновлюємо посилання в панелях та перезавантажуємо дані
+		provider := a.getDataProvider()
+		a.alarmPanel.Data = provider
+		a.objectList.Data = provider
+		a.workArea.Data = provider
+		a.eventLog.Data = provider
 
-	// Перезавантажуємо дані
-	log.Debug().Msg("Перезавантаження даних у всіх панелях...")
-	a.publishDataRefresh(eventbus.DataRefreshEvent{
-		RefreshObjects: true,
-		RefreshAlarms:  true,
-		RefreshEvents:  true,
-	})
-	log.Debug().Msg("✓ Дані перезавантажено")
+		a.publishDataRefresh(eventbus.DataRefreshEvent{
+			RefreshObjects: true,
+			RefreshAlarms:  true,
+			RefreshEvents:  true,
+		})
 
-	log.Info().
-		Bool("firebirdEnabled", buildResult.firebirdEnabled).
-		Bool("phoenixEnabled", buildResult.phoenixEnabled).
-		Bool("caslEnabled", buildResult.caslEnabled).
-		Msg("✅ Перепідключення джерел даних завершено успішно")
-	if a.statusLabel != nil {
-		a.statusLabel.SetText(a.backendStatusConnectedText())
-	}
-	dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Підключення до джерел даних оновлено")
+		log.Info().
+			Bool("firebirdEnabled", buildResult.firebirdEnabled).
+			Bool("phoenixEnabled", buildResult.phoenixEnabled).
+			Bool("caslEnabled", buildResult.caslEnabled).
+			Msg("✅ Перепідключення джерел даних завершено успішно")
+
+		fyne.Do(func() {
+			if a.statusLabel != nil {
+				a.statusLabel.SetText(a.backendStatusConnectedText())
+			}
+			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Підключення до джерел даних оновлено")
+		})
+	}()
 }
 
 func (a *Application) closeManagedDBs() {

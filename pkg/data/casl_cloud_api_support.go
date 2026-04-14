@@ -639,13 +639,18 @@ func normalizeCASLObjectEvent(item caslObjectEvent) CASLObjectEvent {
 	}
 }
 
+// firstCASLValue returns the first non-empty trimmed string from values.
+// This is a convenience wrapper around firstCASLTextValue for string-only inputs.
 func firstCASLValue(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
+	return firstCASLTextValue(toAnySlice(values)...)
+}
+
+func toAnySlice(values []string) []any {
+	result := make([]any, len(values))
+	for i, v := range values {
+		result[i] = v
 	}
-	return ""
+	return result
 }
 
 // ReadDeviceStateByID executes read_device_state for the given device id.

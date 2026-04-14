@@ -1320,34 +1320,36 @@ func (w *WorkAreaPanel) showTestMessages(objectID string) {
 }
 
 func (w *WorkAreaPanel) OnThemeChanged(fontSize float32) {
-	if w.HeaderStatus != nil {
-		w.HeaderStatus.TextSize = fontSize + 3
-		w.HeaderStatus.Refresh()
-	}
-	if w.SummaryStateCaption != nil {
-		w.SummaryStateCaption.TextSize = fontSize - 1
-	}
-	w.updateSummaryThemeColors()
-	if w.CurrentObject != nil {
-		w.updateSummaryStatusAccent(w.CurrentObject.Status)
-	}
-	// Віджети (Labels, Tables) оновляться автоматично через Refresh
-	if w.ZonesTable != nil {
-		w.ZonesTable.Refresh()
-	}
-	if w.ContactsList != nil {
-		w.ContactsList.Refresh()
-	}
-	if w.EventsList != nil {
-		ensureJournalListMinWidth(w.EventsWidthGuide, workAreaEventRowTexts(w.Events), fontSize, fyne.TextStyle{})
-		w.EventsList.Refresh()
-	}
-	if w.ZonesContent != nil {
-		w.ZonesContent.Refresh()
-	}
-	if w.ContactsContent != nil {
-		w.ContactsContent.Refresh()
-	}
+	fyne.Do(func() {
+		if w.HeaderStatus != nil {
+			w.HeaderStatus.TextSize = fontSize + 3
+			w.HeaderStatus.Refresh()
+		}
+		if w.SummaryStateCaption != nil {
+			w.SummaryStateCaption.TextSize = fontSize - 1
+		}
+		w.updateSummaryThemeColors()
+		if w.CurrentObject != nil {
+			w.updateSummaryStatusAccent(w.CurrentObject.Status)
+		}
+		// Віджети (Labels, Tables) оновляться автоматично через Refresh
+		if w.ZonesTable != nil {
+			w.ZonesTable.Refresh()
+		}
+		if w.ContactsList != nil {
+			w.ContactsList.Refresh()
+		}
+		if w.EventsList != nil {
+			ensureJournalListMinWidth(w.EventsWidthGuide, workAreaEventRowTexts(w.Events), fontSize, fyne.TextStyle{})
+			w.EventsList.Refresh()
+		}
+		if w.ZonesContent != nil {
+			w.ZonesContent.Refresh()
+		}
+		if w.ContactsContent != nil {
+			w.ContactsContent.Refresh()
+		}
+	})
 }
 
 func formatWorkAreaEventRowText(event models.Event) string {

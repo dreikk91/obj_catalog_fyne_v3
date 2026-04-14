@@ -688,11 +688,13 @@ func (p *ObjectListPanel) Refresh() {
 
 func (p *ObjectListPanel) OnThemeChanged(fontSize float32) {
 	p.lastFontSize = fontSize
-	if p.TitleText != nil {
-		p.TitleText.TextSize = fontSize + 1
-		p.TitleText.Refresh()
-	}
-	if p.Table != nil {
-		p.Table.Refresh()
-	}
+	fyne.Do(func() {
+		if p.TitleText != nil {
+			p.TitleText.TextSize = fontSize + 1
+			p.TitleText.Refresh()
+		}
+		if p.Table != nil {
+			p.Table.Refresh()
+		}
+	})
 }

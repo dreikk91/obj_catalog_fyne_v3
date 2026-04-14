@@ -357,26 +357,28 @@ func getEventIcon(eventType models.EventType) string {
 
 func (p *EventLogPanel) OnThemeChanged(fontSize float32) {
 	p.lastFontSize = fontSize
-	if p.TitleText != nil {
-		p.TitleText.TextSize = fontSize + 1
-		p.TitleText.Refresh()
-	}
-	if p.List != nil {
-		p.mutex.RLock()
-		texts := eventLogRowTexts(p.FilteredEvents)
-		p.mutex.RUnlock()
-		ensureJournalListMinWidth(p.listWidthGuide, texts, fontSize, fyne.TextStyle{})
-		p.List.Refresh()
-	}
-	if p.RangeSelect != nil {
-		p.RangeSelect.Refresh()
-	}
-	if p.SourceSelect != nil {
-		p.SourceSelect.Refresh()
-	}
-	if p.ImportantOnly != nil {
-		p.ImportantOnly.Refresh()
-	}
+	fyne.Do(func() {
+		if p.TitleText != nil {
+			p.TitleText.TextSize = fontSize + 1
+			p.TitleText.Refresh()
+		}
+		if p.List != nil {
+			p.mutex.RLock()
+			texts := eventLogRowTexts(p.FilteredEvents)
+			p.mutex.RUnlock()
+			ensureJournalListMinWidth(p.listWidthGuide, texts, fontSize, fyne.TextStyle{})
+			p.List.Refresh()
+		}
+		if p.RangeSelect != nil {
+			p.RangeSelect.Refresh()
+		}
+		if p.SourceSelect != nil {
+			p.SourceSelect.Refresh()
+		}
+		if p.ImportantOnly != nil {
+			p.ImportantOnly.Refresh()
+		}
+	})
 }
 
 // SetCurrentObject встановлює поточний об'єкт для контекстного журналу.

@@ -59,6 +59,9 @@ type CASLCloudProvider struct {
 	authMu sync.Mutex
 	mu     sync.RWMutex
 
+	lifecycleCtx    context.Context
+	lifecycleCancel context.CancelFunc
+
 	token  string
 	wsURL  string
 	userID string
@@ -113,6 +116,7 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 	if len(credentials) > 1 {
 		pass = strings.TrimSpace(credentials[1])
 	}
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 
 	return &CASLCloudProvider{
 		baseURL: normalizeCASLBaseURL(baseURL),
@@ -123,6 +127,8 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 		httpClient: &http.Client{
 			Timeout: caslHTTPTimeout,
 		},
+		lifecycleCtx:           lifecycleCtx,
+		lifecycleCancel:        lifecycleCancel,
 		objectByInternalID:     make(map[int]caslGrdObject),
 		deviceByDeviceID:       make(map[string]caslDevice),
 		deviceByObjectID:       make(map[string]caslDevice),
@@ -145,6 +151,10 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 func (p *CASLCloudProvider) Shutdown() {
 	if p == nil {
 		return
+	}
+
+	if p.lifecycleCancel != nil {
+		p.lifecycleCancel()
 	}
 
 	p.realtimeMu.Lock()

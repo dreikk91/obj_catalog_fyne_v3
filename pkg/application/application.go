@@ -761,6 +761,11 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 			return
 		}
 
+		if oldProvider := a.getDataProvider(); oldProvider != nil {
+			if shutdowner, ok := oldProvider.(contracts.ShutdownProvider); ok {
+				shutdowner.Shutdown()
+			}
+		}
 		a.closeManagedDBs()
 		a.managedDBs = buildResult.managedDBs
 		a.setDataProvider(buildResult.provider)

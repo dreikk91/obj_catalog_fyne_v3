@@ -2,7 +2,7 @@ package database
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"strings"
 	"time"
 
@@ -12,11 +12,11 @@ import (
 	zlog "github.com/rs/zerolog/log"
 )
 
-func InitDB(connStr string) *sqlx.DB {
+func InitDB(connStr string) (*sqlx.DB, error) {
 	return InitNamedDB("firebirdsql", connStr, "Firebird")
 }
 
-func InitNamedDB(driverName string, connStr string, label string) *sqlx.DB {
+func InitNamedDB(driverName string, connStr string, label string) (*sqlx.DB, error) {
 	dbLabel := strings.TrimSpace(label)
 	if dbLabel == "" {
 		dbLabel = driverName
@@ -29,7 +29,7 @@ func InitNamedDB(driverName string, connStr string, label string) *sqlx.DB {
 	db, err := sqlx.Open(driverName, connStr)
 	if err != nil {
 		zlog.Error().Err(err).Str("driver", driverName).Str("label", dbLabel).Msg("Критична помилка: не вдалося налаштувати драйвер БД")
-		log.Fatalf("Помилка конфігурації БД: %v", err)
+		return nil, fmt.Errorf("database driver setup failed for %s: %w", dbLabel, err)
 	}
 	zlog.Debug().Msg("Драйвер відкритий")
 
@@ -49,7 +49,7 @@ func InitNamedDB(driverName string, connStr string, label string) *sqlx.DB {
 		zlog.Info().Str("label", dbLabel).Msg("З'єднання з БД встановлено успішно")
 	}
 
-	return db
+	return db, nil
 }
 
 func StartHealthCheck(db *sqlx.DB) context.CancelFunc {

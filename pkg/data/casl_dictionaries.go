@@ -142,9 +142,16 @@ func (p *CASLCloudProvider) loadDictionaryMap(ctx context.Context) map[string]st
 	p.cachedDictionaryAt = time.Now()
 	p.mu.Unlock()
 
-	go p.preloadTranslatorsFromDict(context.Background(), dict)
+	go p.preloadTranslatorsFromDict(p.lifecycleContext(), dict)
 
 	return flattenLocalizedDictionaryMap(dict, p.dictionaryLanguage())
+}
+
+func (p *CASLCloudProvider) lifecycleContext() context.Context {
+	if p == nil || p.lifecycleCtx == nil {
+		return context.Background()
+	}
+	return p.lifecycleCtx
 }
 
 // preloadTranslatorsFromDict читає список user_device_types зі словника

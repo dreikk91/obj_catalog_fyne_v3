@@ -54,7 +54,10 @@ func buildDataProviderFromConfig(cfg config.DBConfig, pref fyne.Preferences, ver
 
 	if firebirdEnabled {
 		dsn := cfg.FirebirdDSN()
-		db := database.InitNamedDB("firebirdsql", dsn, "БД/МІСТ")
+		db, err := database.InitNamedDB("firebirdsql", dsn, "БД/МІСТ")
+		if err != nil {
+			return providerBuildResult{}, err
+		}
 		if verifyConnectivity {
 			if err := db.Ping(); err != nil {
 				_ = db.Close()
@@ -79,7 +82,11 @@ func buildDataProviderFromConfig(cfg config.DBConfig, pref fyne.Preferences, ver
 
 	if phoenixEnabled {
 		dsn := cfg.PhoenixDSN()
-		db := database.InitNamedDB("sqlserver", dsn, "Phoenix")
+		db, err := database.InitNamedDB("sqlserver", dsn, "Phoenix")
+		if err != nil {
+			closeManagedDBResources(result.managedDBs)
+			return providerBuildResult{}, err
+		}
 		if verifyConnectivity {
 			if err := db.Ping(); err != nil {
 				_ = db.Close()

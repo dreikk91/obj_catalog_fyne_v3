@@ -15,6 +15,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ui/dialogs/casleditor"
 )
 
 const caslEndlessBlockUnix = int64(2554790050)
@@ -29,8 +30,8 @@ func ShowCASLObjectDeleteDialog(parent fyne.Window, provider contracts.CASLObjec
 	}
 
 	loadCASLObjectSnapshot(parent, provider, objectID, func(snapshot contracts.CASLObjectEditorSnapshot) {
-		name := firstNonEmpty(strings.TrimSpace(snapshot.Object.Name), "Без назви")
-		objID := firstNonEmpty(strings.TrimSpace(snapshot.Object.ObjID), strconv.FormatInt(objectID, 10))
+		name := casleditor.FirstNonEmpty(strings.TrimSpace(snapshot.Object.Name), "Без назви")
+		objID := casleditor.FirstNonEmpty(strings.TrimSpace(snapshot.Object.ObjID), strconv.FormatInt(objectID, 10))
 		message := fmt.Sprintf(
 			"Видалити об'єкт \"%s\" [obj_id=%s]?\n\nПеред видаленням об'єкт буде збережений у корзину CASL.",
 			name,
@@ -86,7 +87,7 @@ func ShowCASLObjectBasketDialog(parent fyne.Window, provider contracts.CASLObjec
 
 			rows := make([]string, 0, len(items))
 			for _, item := range items {
-				name := firstNonEmpty(strings.TrimSpace(item.Name), "Без назви")
+				name := casleditor.FirstNonEmpty(strings.TrimSpace(item.Name), "Без назви")
 				address := strings.TrimSpace(item.Address)
 				line := fmt.Sprintf("#%d | %s", item.BasketID, name)
 				if address != "" {
@@ -330,11 +331,11 @@ func buildCASLObjectBlockRequest(snapshot contracts.CASLObjectEditorSnapshot, ho
 
 	until := caslEndlessBlockUnix
 	if !endless {
-		hours, err := parseCASLEditorInt(hoursRaw)
+		hours, err := casleditor.ParseCASLEditorInt(hoursRaw)
 		if err != nil || hours < 0 || hours > 24 {
 			return contracts.CASLDeviceBlockRequest{}, fmt.Errorf("години блокування мають бути в межах 0..24")
 		}
-		minutes, err := parseCASLEditorInt(minutesRaw)
+		minutes, err := casleditor.ParseCASLEditorInt(minutesRaw)
 		if err != nil || minutes < 0 || minutes > 59 {
 			return contracts.CASLDeviceBlockRequest{}, fmt.Errorf("хвилини блокування мають бути в межах 0..59")
 		}
@@ -350,8 +351,8 @@ func buildCASLObjectBlockRequest(snapshot contracts.CASLObjectEditorSnapshot, ho
 }
 
 func caslActionObjectLabel(object contracts.CASLGuardObjectDetails) string {
-	name := firstNonEmpty(strings.TrimSpace(object.Name), "Без назви")
-	objID := firstNonEmpty(strings.TrimSpace(object.ObjID), "n/a")
+	name := casleditor.FirstNonEmpty(strings.TrimSpace(object.Name), "Без назви")
+	objID := casleditor.FirstNonEmpty(strings.TrimSpace(object.ObjID), "n/a")
 	return fmt.Sprintf("\"%s\" [obj_id=%s]", name, objID)
 }
 

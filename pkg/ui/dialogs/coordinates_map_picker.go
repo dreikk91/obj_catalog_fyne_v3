@@ -18,6 +18,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
+	"obj_catalog_fyne_v3/pkg/ui/dialogs/casleditor"
 )
 
 const (
@@ -95,6 +96,10 @@ type coordinatesMapPickerOptions struct {
 	Title           string
 	InitialAddress  string
 	ForceLvivCenter bool
+}
+
+func ShowCoordinatesMapPicker(parent fyne.Window, initialLatRaw string, initialLonRaw string, onPick func(lat, lon string)) {
+	showCoordinatesMapPicker(parent, initialLatRaw, initialLonRaw, onPick)
 }
 
 func showCoordinatesMapPicker(parent fyne.Window, initialLatRaw string, initialLonRaw string, onPick func(lat, lon string)) {
@@ -475,7 +480,7 @@ func (s *coordinatesMapPickerState) applySuggestion(candidate geocodeCandidate) 
 	s.setSelectionAt(lat, lon)
 	s.mapView.PanToLatLon(lat, lon)
 	s.forceMapOverlayRefresh()
-	s.searchStatus.SetText(fmt.Sprintf("Підказка: %s", firstNonEmpty(candidate.DisplayName, s.searchEntry.Text)))
+	s.searchStatus.SetText(fmt.Sprintf("Підказка: %s", casleditor.FirstNonEmpty(candidate.DisplayName, s.searchEntry.Text)))
 }
 
 func (s *coordinatesMapPickerState) handleSearchChange(value string) {

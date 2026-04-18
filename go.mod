@@ -9,6 +9,7 @@ require (
 	github.com/jung-kurt/gofpdf v1.16.2
 	github.com/microsoft/go-mssqldb v1.9.8
 	github.com/nakagami/firebirdsql v0.9.18
+	github.com/nyaruka/phonenumbers v1.7.1
 	github.com/rs/zerolog v1.35.0
 	github.com/xuri/excelize/v2 v2.10.1
 	golang.org/x/image v0.38.0
@@ -62,6 +63,7 @@ require (
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b // indirect
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/mathutil v1.4.2-0.20220822142738-b13e5b564332 // indirect
 )

@@ -29,6 +29,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ui/dialogs/casleditor"
 )
 
 type caslObjectEditorState struct {
@@ -128,6 +129,17 @@ type caslObjectEditorState struct {
 func ShowCASLObjectEditorDialog(parent fyne.Window, provider contracts.CASLObjectEditorProvider, objectID int64, onChanged func()) {
 	if provider == nil {
 		ShowInfoDialog(parent, "Недоступно", "CASL-редактор недоступний.")
+		return
+	}
+	casleditor.ShowObjectCoordinatesPicker = func(parent fyne.Window, initialLatRaw string, initialLonRaw string, title string, initialAddress string, onPick func(lat, lon string)) {
+		showCoordinatesMapPickerWithOptions(parent, initialLatRaw, initialLonRaw, coordinatesMapPickerOptions{
+			Title:           title,
+			InitialAddress:  initialAddress,
+			ForceLvivCenter: true,
+		}, onPick)
+	}
+	if objectID <= 0 {
+		casleditor.OpenEditor(parent, provider, objectID, onChanged)
 		return
 	}
 

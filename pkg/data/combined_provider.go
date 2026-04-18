@@ -27,6 +27,10 @@ type caslObjectEditorProvider interface {
 	contracts.CASLObjectEditorProvider
 }
 
+type caslGeoZoneAccessProvider interface {
+	ReadManagers(ctx context.Context, skip int, limit int) ([]map[string]any, error)
+}
+
 type alarmProcessingProvider interface {
 	contracts.AlarmProcessingProvider
 }
@@ -307,6 +311,18 @@ func (p *CombinedDataProvider) FetchCASLImagePreview(ctx context.Context, imageI
 		return nil, err
 	}
 	return provider.FetchCASLImagePreview(ctx, imageID)
+}
+
+func (p *CombinedDataProvider) ReadManagers(ctx context.Context, skip int, limit int) ([]map[string]any, error) {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return nil, err
+	}
+	accessProvider, ok := provider.(caslGeoZoneAccessProvider)
+	if !ok {
+		return nil, fmt.Errorf("manager list is not supported by current CASL provider")
+	}
+	return accessProvider.ReadManagers(ctx, skip, limit)
 }
 
 func (p *CombinedDataProvider) CanUseAdminForObjectID(objectID int) bool {

@@ -11,22 +11,17 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 )
 
-type admin220VConstructorProvider interface {
-	List220VMessageBuckets(protocolIDs []int64, filter string) (contracts.Admin220VMessageBuckets, error)
-	SetMessage220VMode(uin int64, mode contracts.Admin220VMode) error
-}
-
-func Show220VConstructorDialog(parent fyne.Window, provider admin220VConstructorProvider) {
+func Show220VConstructorDialog(parent fyne.Window, provider adminv1.Message220VProvider) {
 	win := fyne.CurrentApp().NewWindow("Пропажа / відновлення 220В")
 	win.Resize(fyne.NewSize(980, 700))
 
 	var (
-		freeMessages    []contracts.AdminMessage
-		alarmMessages   []contracts.AdminMessage
-		restoreMessages []contracts.AdminMessage
+		freeMessages    []adminv1.Message
+		alarmMessages   []adminv1.Message
+		restoreMessages []adminv1.Message
 		selectedFree    = -1
 		selectedAlarm   = -1
 		selectedRestore = -1
@@ -44,7 +39,7 @@ func Show220VConstructorDialog(parent fyne.Window, provider admin220VConstructor
 	chk20BPS := widget.NewCheck("20BPS / Ademco-Express", nil)
 	chk20BPS.SetChecked(true)
 
-	messageDisplay := func(m contracts.AdminMessage) string {
+	messageDisplay := func(m adminv1.Message) string {
 		code := strconv.FormatInt(m.UIN, 10)
 		if m.MessageID != nil {
 			code = strconv.FormatInt(*m.MessageID, 10)
@@ -210,7 +205,7 @@ func Show220VConstructorDialog(parent fyne.Window, provider admin220VConstructor
 			return
 		}
 		msg := freeMessages[selectedFree]
-		if err := provider.SetMessage220VMode(msg.UIN, contracts.Admin220VAlarm); err != nil {
+		if err := provider.SetMessage220VMode(msg.UIN, adminv1.Message220VModeAlarm); err != nil {
 			dialog.ShowError(err, win)
 			statusLabel.SetText("Не вдалося додати повідомлення до «Пропажа 220В»")
 			return
@@ -224,7 +219,7 @@ func Show220VConstructorDialog(parent fyne.Window, provider admin220VConstructor
 			return
 		}
 		msg := alarmMessages[selectedAlarm]
-		if err := provider.SetMessage220VMode(msg.UIN, contracts.Admin220VNone); err != nil {
+		if err := provider.SetMessage220VMode(msg.UIN, adminv1.Message220VModeNone); err != nil {
 			dialog.ShowError(err, win)
 			statusLabel.SetText("Не вдалося прибрати повідомлення з «Пропажа 220В»")
 			return
@@ -238,7 +233,7 @@ func Show220VConstructorDialog(parent fyne.Window, provider admin220VConstructor
 			return
 		}
 		msg := freeMessages[selectedFree]
-		if err := provider.SetMessage220VMode(msg.UIN, contracts.Admin220VRestore); err != nil {
+		if err := provider.SetMessage220VMode(msg.UIN, adminv1.Message220VModeRestore); err != nil {
 			dialog.ShowError(err, win)
 			statusLabel.SetText("Не вдалося додати повідомлення до «Відновлення 220В»")
 			return
@@ -252,7 +247,7 @@ func Show220VConstructorDialog(parent fyne.Window, provider admin220VConstructor
 			return
 		}
 		msg := restoreMessages[selectedRestore]
-		if err := provider.SetMessage220VMode(msg.UIN, contracts.Admin220VNone); err != nil {
+		if err := provider.SetMessage220VMode(msg.UIN, adminv1.Message220VModeNone); err != nil {
 			dialog.ShowError(err, win)
 			statusLabel.SetText("Не вдалося прибрати повідомлення з «Відновлення 220В»")
 			return

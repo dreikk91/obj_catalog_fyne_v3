@@ -260,10 +260,10 @@ func buildWorkAreaCASLBatteryState(raw int64) (text string, known bool, alarm bo
 }
 
 func buildWorkAreaConnectionSummary(obj models.Object) string {
-	if obj.Status == models.StatusOffline {
+	if obj.ConnectionStatusValue() == models.ConnectionStatusOffline || obj.Status == models.StatusOffline {
 		return "Немає зв'язку"
 	}
-	if obj.IsConnState > 0 || obj.IsConnOK {
+	if obj.ConnectionStatusValue() == models.ConnectionStatusOnline || obj.IsConnOK {
 		return "На зв'язку"
 	}
 	return "На зв'язку"
@@ -296,15 +296,15 @@ func buildWorkAreaGuardSummary(obj models.Object) string {
 	}
 
 	switch {
-	case ids.IsPhoenixObjectID(obj.ID) && obj.BlockedArmedOnOff == 1:
+	case ids.IsPhoenixObjectID(obj.ID) && obj.MonitoringStatusValue() == models.MonitoringStatusBlocked:
 		return "Заблоковано"
-	case ids.IsPhoenixObjectID(obj.ID) && obj.BlockedArmedOnOff == 2:
+	case ids.IsPhoenixObjectID(obj.ID) && obj.MonitoringStatusValue() == models.MonitoringStatusDebug:
 		return "Стенди"
-	case obj.BlockedArmedOnOff == 1:
+	case obj.MonitoringStatusValue() == models.MonitoringStatusBlocked:
 		return "Знято зі спостереження"
-	case obj.BlockedArmedOnOff == 2:
+	case obj.MonitoringStatusValue() == models.MonitoringStatusDebug:
 		return "Режим налагодження"
-	case obj.GuardState == 0 || !obj.IsUnderGuard:
+	case obj.GuardStatusValue() == models.GuardStatusDisarmed || !obj.IsUnderGuard:
 		if ids.IsPhoenixObjectID(obj.ID) {
 			return "Без охорони"
 		}

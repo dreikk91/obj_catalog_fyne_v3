@@ -24,9 +24,9 @@ func TestObjectListRowColors_PriorityBlockedOverAlarm(t *testing.T) {
 
 func TestObjectListRowColors_PhoenixBlockedUsesDedicatedPalette(t *testing.T) {
 	item := models.Object{
-		ID:                1000000077,
-		BlockedArmedOnOff: 1,
-		Status:            models.StatusNormal,
+		ID:               1000000077,
+		MonitoringStatus: models.MonitoringStatusBlocked,
+		Status:           models.StatusNormal,
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
@@ -37,9 +37,10 @@ func TestObjectListRowColors_PhoenixBlockedUsesDedicatedPalette(t *testing.T) {
 
 func TestObjectListRowColors_PhoenixDisarmedUsesDedicatedPalette(t *testing.T) {
 	item := models.Object{
-		ID:         1000000078,
-		GuardState: 0,
-		Status:     models.StatusNormal,
+		ID:               1000000078,
+		MonitoringStatus: models.MonitoringStatusActive,
+		GuardStatus:      models.GuardStatusDisarmed,
+		Status:           models.StatusNormal,
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
@@ -50,8 +51,8 @@ func TestObjectListRowColors_PhoenixDisarmedUsesDedicatedPalette(t *testing.T) {
 
 func TestObjectListRowColors_OfflinePriority(t *testing.T) {
 	item := models.Object{
-		IsConnState: 0,
-		Status:      models.StatusOffline,
+		ConnectionStatus: models.ConnectionStatusOffline,
+		Status:           models.StatusOffline,
 	}
 
 	vm := viewmodels.NewObjectListViewModel()
@@ -63,10 +64,10 @@ func TestObjectListRowColors_OfflinePriority(t *testing.T) {
 
 func TestObjectListRowColors_CASLAssignmentWarning(t *testing.T) {
 	item := models.Object{
-		ID:            1500000010,
-		HasAssignment: false,
-		IsConnState:   1,
-		Status:        models.StatusNormal,
+		ID:               1500000010,
+		HasAssignment:    false,
+		ConnectionStatus: models.ConnectionStatusOnline,
+		Status:           models.StatusNormal,
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
@@ -116,5 +117,26 @@ func TestObjectListRowColors_DoNotFollowCustomizedEventPalette_Dark(t *testing.T
 	gotText, gotRow := vm.GetRowColors(item, true)
 	if gotText != wantText || gotRow != wantRow {
 		t.Fatalf("dark object colors must ignore customized event palette: got text=%+v row=%+v want text=%+v row=%+v", gotText, gotRow, wantText, wantRow)
+	}
+}
+
+func TestObjectListRowColors_UsesNormalizedStatuses(t *testing.T) {
+	vm := viewmodels.NewObjectListViewModel()
+
+	text, row := vm.GetRowColors(models.Object{
+		MonitoringStatus: models.MonitoringStatusBlocked,
+		Status:           models.StatusNormal,
+	}, false)
+	if text.R != 255 || row.R != 144 {
+		t.Fatalf("unexpected blocked colors from normalized state: text=%+v row=%+v", text, row)
+	}
+
+	_, offlineRow := vm.GetRowColors(models.Object{
+		ConnectionStatus: models.ConnectionStatusOffline,
+		GuardStatus:      models.GuardStatusGuarded,
+		Status:           models.StatusNormal,
+	}, false)
+	if offlineRow.G != 235 {
+		t.Fatalf("unexpected offline row color from normalized state: %+v", offlineRow)
 	}
 }

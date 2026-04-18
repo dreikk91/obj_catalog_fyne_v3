@@ -14,18 +14,13 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
+	frontendv1 "obj_catalog_fyne_v3/pkg/frontendapi/v1"
 )
 
-type statisticsDialogProvider interface {
-	CollectObjectStatistics(filter contracts.AdminStatisticsFilter, limit int) ([]contracts.AdminStatisticsRow, error)
-	ListObjectTypes() ([]contracts.DictionaryItem, error)
-	ListObjectDistricts() ([]contracts.DictionaryItem, error)
-}
-
-type statisticsDialogState struct {
+type mostStatisticsDialogState struct {
 	win      fyne.Window
-	provider statisticsDialogProvider
+	provider adminv1.StatisticsProvider
 
 	statusLabel  *widget.Label
 	summaryLabel *widget.Label
@@ -43,8 +38,8 @@ type statisticsDialogState struct {
 
 	typeLabelToID          map[string]int64
 	regionLabelToID        map[string]int64
-	channelLabelToProtocol map[string]contracts.AdminStatisticsProtocolFilter
-	rows                   []contracts.AdminStatisticsRow
+	channelLabelToProtocol map[string]adminv1.StatisticsProtocolFilter
+	rows                   []adminv1.StatisticsRow
 }
 
 var statisticsColumns = []string{
@@ -63,8 +58,8 @@ var statisticsColumnWidths = []float32{
 	80, 80, 140, 200, 180, 70, 90,
 }
 
-func ShowStatisticsDialog(parent fyne.Window, provider statisticsDialogProvider) {
-	state := newStatisticsDialogState(provider)
+func ShowMostStatisticsDialog(parent fyne.Window, provider adminv1.StatisticsProvider) {
+	state := newMostStatisticsDialogState(provider)
 	state.win.SetContent(state.buildContent())
 	state.bindActions()
 	state.loadReferenceOptions()
@@ -72,19 +67,19 @@ func ShowStatisticsDialog(parent fyne.Window, provider statisticsDialogProvider)
 	state.win.Show()
 }
 
-func newStatisticsDialogState(provider statisticsDialogProvider) *statisticsDialogState {
-	state := &statisticsDialogState{
-		win:             fyne.CurrentApp().NewWindow("Збір статистики"),
+func newMostStatisticsDialogState(provider adminv1.StatisticsProvider) *mostStatisticsDialogState {
+	state := &mostStatisticsDialogState{
+		win:             fyne.CurrentApp().NewWindow("Мост статистика"),
 		provider:        provider,
 		typeLabelToID:   map[string]int64{"Всі типи": 0},
 		regionLabelToID: map[string]int64{"Всі райони": 0},
-		channelLabelToProtocol: map[string]contracts.AdminStatisticsProtocolFilter{
-			"Всі протоколи": contracts.StatsProtocolAll,
-			"Автододзвон":   contracts.StatsProtocolAutodial,
-			"Мост":          contracts.StatsProtocolMost,
-			"Нова":          contracts.StatsProtocolNova,
+		channelLabelToProtocol: map[string]adminv1.StatisticsProtocolFilter{
+			"Всі протоколи": adminv1.StatisticsProtocolAll,
+			"Автододзвон":   adminv1.StatisticsProtocolAutodial,
+			"Мост":          adminv1.StatisticsProtocolMost,
+			"Нова":          adminv1.StatisticsProtocolNova,
 		},
-		rows: []contracts.AdminStatisticsRow{},
+		rows: []adminv1.StatisticsRow{},
 	}
 	state.win.Resize(fyne.NewSize(1360, 820))
 	state.initControls()
@@ -93,7 +88,7 @@ func newStatisticsDialogState(provider statisticsDialogProvider) *statisticsDial
 	return state
 }
 
-func (s *statisticsDialogState) initControls() {
+func (s *mostStatisticsDialogState) initControls() {
 	s.statusLabel = widget.NewLabel("Готово")
 	s.summaryLabel = widget.NewLabel("Поки що немає даних")
 	s.summaryLabel.Wrapping = fyne.TextWrapWord
@@ -151,7 +146,7 @@ func (s *statisticsDialogState) initControls() {
 	s.sortSelect.SetSelected("№ об'єкта ↑")
 }
 
-func (s *statisticsDialogState) buildContent() fyne.CanvasObject {
+func (s *mostStatisticsDialogState) buildContent() fyne.CanvasObject {
 	closeBtn := makeIconButton("Закрити", iconClose(), widget.LowImportance, func() {
 		s.win.Close()
 	})
@@ -170,7 +165,7 @@ func (s *statisticsDialogState) buildContent() fyne.CanvasObject {
 	)
 }
 
-func (s *statisticsDialogState) buildFiltersCard() fyne.CanvasObject {
+func (s *mostStatisticsDialogState) buildFiltersCard() fyne.CanvasObject {
 	executeBtn := makePrimaryButton("Виконати", s.reload)
 	refreshBtn := makeIconButton("Оновити", iconRefresh(), widget.MediumImportance, s.reload)
 	exportBtn := makeIconButton("Експорт CSV", iconExport(), widget.LowImportance, s.exportCSV)
@@ -212,7 +207,7 @@ func (s *statisticsDialogState) buildFiltersCard() fyne.CanvasObject {
 	))
 }
 
-func (s *statisticsDialogState) buildTable() *widget.Table {
+func (s *mostStatisticsDialogState) buildTable() *widget.Table {
 	table := widget.NewTable(
 		func() (int, int) { return len(s.rows) + 1, len(statisticsColumns) },
 		func() fyne.CanvasObject {
@@ -232,7 +227,7 @@ func (s *statisticsDialogState) buildTable() *widget.Table {
 	return table
 }
 
-func (s *statisticsDialogState) bindActions() {
+func (s *mostStatisticsDialogState) bindActions() {
 	s.sortSelect.OnChanged = func(string) {
 		s.sortRows()
 		s.table.Refresh()
@@ -245,7 +240,7 @@ func (s *statisticsDialogState) bindActions() {
 	}
 }
 
-func (s *statisticsDialogState) updateTableCell(id widget.TableCellID, label *widget.Label) {
+func (s *mostStatisticsDialogState) updateTableCell(id widget.TableCellID, label *widget.Label) {
 	if id.Row == 0 {
 		label.TextStyle = fyne.TextStyle{Bold: true}
 		label.SetText(statisticsColumns[id.Col])
@@ -262,9 +257,9 @@ func (s *statisticsDialogState) updateTableCell(id widget.TableCellID, label *wi
 	label.SetText(statisticsCellValue(s.rows[index], id.Col))
 }
 
-func (s *statisticsDialogState) sortRows() {
+func (s *mostStatisticsDialogState) sortRows() {
 	sortMode := s.sortSelect.Selected
-	slices.SortStableFunc(s.rows, func(left, right contracts.AdminStatisticsRow) int {
+	slices.SortStableFunc(s.rows, func(left, right adminv1.StatisticsRow) int {
 		switch sortMode {
 		case "№ об'єкта ↓":
 			return cmp.Compare(right.ObjN, left.ObjN)
@@ -279,7 +274,7 @@ func (s *statisticsDialogState) sortRows() {
 			}
 			return cmp.Compare(left.ObjN, right.ObjN)
 		case "Режим":
-			if diff := cmp.Compare(left.GuardState, right.GuardState); diff != 0 {
+			if diff := cmp.Compare(adminGuardSortRank(left.GuardStatus), adminGuardSortRank(right.GuardStatus)); diff != 0 {
 				return diff
 			}
 			return cmp.Compare(left.ObjN, right.ObjN)
@@ -294,7 +289,7 @@ func (s *statisticsDialogState) sortRows() {
 			}
 			return cmp.Compare(left.ObjN, right.ObjN)
 		case "Зв'язок":
-			if diff := cmp.Compare(right.IsConnState, left.IsConnState); diff != 0 {
+			if diff := cmp.Compare(adminConnectionSortRank(right.ConnectionStatus), adminConnectionSortRank(left.ConnectionStatus)); diff != 0 {
 				return diff
 			}
 			return cmp.Compare(left.ObjN, right.ObjN)
@@ -304,7 +299,7 @@ func (s *statisticsDialogState) sortRows() {
 	})
 }
 
-func (s *statisticsDialogState) updateSummary() {
+func (s *mostStatisticsDialogState) updateSummary() {
 	total := len(s.rows)
 	online := 0
 	offline := 0
@@ -313,18 +308,18 @@ func (s *statisticsDialogState) updateSummary() {
 	blocked := 0
 
 	for _, row := range s.rows {
-		if row.IsConnState > 0 {
+		if row.ConnectionStatus == frontendv1.ConnectionStatusOnline {
 			online++
 		} else {
 			offline++
 		}
-		if row.AlarmState > 0 {
+		if row.VisualSeverity == frontendv1.VisualSeverityCritical {
 			alarm++
 		}
-		if row.TechAlarmState > 0 {
+		if row.TechAlarmState > 0 || (row.VisualSeverity == frontendv1.VisualSeverityWarning && row.AlarmState == 0) {
 			tech++
 		}
-		if row.BlockMode != contracts.DisplayBlockNone {
+		if row.MonitoringStatus != frontendv1.MonitoringStatusActive {
 			blocked++
 		}
 	}
@@ -340,7 +335,7 @@ func (s *statisticsDialogState) updateSummary() {
 	))
 }
 
-func (s *statisticsDialogState) parseLimit() int {
+func (s *mostStatisticsDialogState) parseLimit() int {
 	raw := strings.TrimSpace(s.limitEntry.Text)
 	if raw == "" {
 		return 5000
@@ -357,17 +352,17 @@ func (s *statisticsDialogState) parseLimit() int {
 	return limit
 }
 
-func (s *statisticsDialogState) buildFilter() contracts.AdminStatisticsFilter {
-	filter := contracts.AdminStatisticsFilter{
-		ConnectionMode: contracts.StatsConnectionAll,
+func (s *mostStatisticsDialogState) buildFilter() adminv1.StatisticsFilter {
+	filter := adminv1.StatisticsFilter{
+		ConnectionMode: adminv1.StatisticsConnectionModeAll,
 		Search:         strings.TrimSpace(s.searchEntry.Text),
 	}
 
 	switch s.connectionRadio.Selected {
 	case "Зв'язок норма":
-		filter.ConnectionMode = contracts.StatsConnectionOnline
+		filter.ConnectionMode = adminv1.StatisticsConnectionModeOnline
 	case "Без зв'язку":
-		filter.ConnectionMode = contracts.StatsConnectionOffline
+		filter.ConnectionMode = adminv1.StatisticsConnectionModeOffline
 	}
 
 	if protocol, ok := s.channelLabelToProtocol[s.channelSelect.Selected]; ok {
@@ -394,21 +389,21 @@ func (s *statisticsDialogState) buildFilter() contracts.AdminStatisticsFilter {
 
 	switch s.blockSelect.Selected {
 	case "Тимчасово зняті з нагляду":
-		mode := contracts.DisplayBlockTemporaryOff
+		mode := adminv1.DisplayBlockModeTemporaryOff
 		filter.BlockMode = &mode
 	case "В режимі налагодження":
-		mode := contracts.DisplayBlockDebug
+		mode := adminv1.DisplayBlockModeDebug
 		filter.BlockMode = &mode
 	}
 
 	return filter
 }
 
-func (s *statisticsDialogState) reload() {
+func (s *mostStatisticsDialogState) reload() {
 	loadedRows, err := s.provider.CollectObjectStatistics(s.buildFilter(), s.parseLimit())
 	if err != nil {
 		dialog.ShowError(err, s.win)
-		s.statusLabel.SetText("Не вдалося зібрати статистику")
+		s.statusLabel.SetText("Не вдалося зібрати Мост статистику")
 		return
 	}
 
@@ -419,12 +414,12 @@ func (s *statisticsDialogState) reload() {
 	s.statusLabel.SetText(fmt.Sprintf("Завантажено записів: %d", len(s.rows)))
 }
 
-func (s *statisticsDialogState) loadReferenceOptions() {
+func (s *mostStatisticsDialogState) loadReferenceOptions() {
 	s.loadObjectTypeOptions()
 	s.loadRegionOptions()
 }
 
-func (s *statisticsDialogState) loadObjectTypeOptions() {
+func (s *mostStatisticsDialogState) loadObjectTypeOptions() {
 	types, err := s.provider.ListObjectTypes()
 	if err != nil {
 		return
@@ -447,7 +442,7 @@ func (s *statisticsDialogState) loadObjectTypeOptions() {
 	s.typeSelect.Refresh()
 }
 
-func (s *statisticsDialogState) loadRegionOptions() {
+func (s *mostStatisticsDialogState) loadRegionOptions() {
 	regions, err := s.provider.ListObjectDistricts()
 	if err != nil {
 		return
@@ -470,7 +465,7 @@ func (s *statisticsDialogState) loadRegionOptions() {
 	s.regionSelect.Refresh()
 }
 
-func (s *statisticsDialogState) exportCSV() {
+func (s *mostStatisticsDialogState) exportCSV() {
 	dialog.NewFileSave(func(uc fyne.URIWriteCloser, err error) {
 		if err != nil {
 			dialog.ShowError(err, s.win)
@@ -491,7 +486,7 @@ func (s *statisticsDialogState) exportCSV() {
 	}, s.win).Show()
 }
 
-func (s *statisticsDialogState) buildCSVContent() string {
+func (s *mostStatisticsDialogState) buildCSVContent() string {
 	header := make([]string, 0, len(statisticsColumns))
 	for _, column := range statisticsColumns {
 		header = append(header, escapeCSVCell(column))
@@ -509,7 +504,7 @@ func (s *statisticsDialogState) buildCSVContent() string {
 	return strings.Join(lines, "\n")
 }
 
-func statisticsCellValue(item contracts.AdminStatisticsRow, column int) string {
+func statisticsCellValue(item adminv1.StatisticsRow, column int) string {
 	switch column {
 	case 0:
 		return strconv.FormatInt(item.ObjN, 10)
@@ -548,9 +543,9 @@ func statisticsCellValue(item contracts.AdminStatisticsRow, column int) string {
 	case 17:
 		return strconv.FormatInt(item.TestTime, 10)
 	case 18:
-		return guardStateCaption(item.GuardState)
+		return guardStatusCaption(item.GuardStatus, item.GuardState)
 	case 19:
-		return connStateCaption(item.IsConnState)
+		return connectionStatusCaption(item.ConnectionStatus)
 	case 20:
 		return binaryCaption(item.AlarmState)
 	case 21:
@@ -594,24 +589,52 @@ func channelCodeCaption(code int64) string {
 	}
 }
 
-func guardStateCaption(state int64) string {
-	switch state {
-	case 0:
+func guardStatusCaption(status frontendv1.GuardStatus, rawState int64) string {
+	switch status {
+	case frontendv1.GuardStatusDisarmed:
 		return "0 (знято)"
-	case 1:
-		return "1 (охорона)"
-	case 2:
-		return "2 (тривога)"
-	default:
-		return strconv.FormatInt(state, 10)
+	case frontendv1.GuardStatusGuarded:
+		switch rawState {
+		case 1:
+			return "1 (охорона)"
+		case 2:
+			return "2 (тривога)"
+		default:
+			if rawState > 0 {
+				return fmt.Sprintf("%d (охорона)", rawState)
+			}
+		}
 	}
+	return strconv.FormatInt(rawState, 10)
 }
 
-func connStateCaption(v int64) string {
-	if v > 0 {
+func connectionStatusCaption(status frontendv1.ConnectionStatus) string {
+	if status == frontendv1.ConnectionStatusOnline {
 		return "є зв'язок"
 	}
 	return "без зв'язку"
+}
+
+func adminGuardSortRank(status frontendv1.GuardStatus) int {
+	switch status {
+	case frontendv1.GuardStatusDisarmed:
+		return 0
+	case frontendv1.GuardStatusGuarded:
+		return 1
+	default:
+		return 2
+	}
+}
+
+func adminConnectionSortRank(status frontendv1.ConnectionStatus) int {
+	switch status {
+	case frontendv1.ConnectionStatusOnline:
+		return 1
+	case frontendv1.ConnectionStatusOffline:
+		return 0
+	default:
+		return -1
+	}
 }
 
 func binaryCaption(v int64) string {
@@ -621,11 +644,11 @@ func binaryCaption(v int64) string {
 	return "0"
 }
 
-func blockModeCaption(mode contracts.DisplayBlockMode) string {
+func blockModeCaption(mode adminv1.DisplayBlockMode) string {
 	switch mode {
-	case contracts.DisplayBlockTemporaryOff:
+	case adminv1.DisplayBlockModeTemporaryOff:
 		return "блок. постановки"
-	case contracts.DisplayBlockDebug:
+	case adminv1.DisplayBlockModeDebug:
 		return "налагодження"
 	default:
 		return "немає"

@@ -39,6 +39,9 @@ type Object struct {
 	TechAlarmState    int64
 	IsConnState       int64
 	BlockedArmedOnOff int16
+	GuardStatus       GuardStatus
+	ConnectionStatus  ConnectionStatus
+	MonitoringStatus  MonitoringStatus
 
 	// Інформація про прилад
 	DeviceType      string      // Тип приладу (напр. "Тірас-16П")

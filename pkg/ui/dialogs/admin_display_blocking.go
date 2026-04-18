@@ -14,43 +14,80 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
+	frontendv1 "obj_catalog_fyne_v3/pkg/frontendapi/v1"
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
-type adminDisplayBlockingProvider interface {
-	ListDisplayBlockObjects(filter string) ([]contracts.DisplayBlockObject, error)
-	SetDisplayBlockMode(objn int64, mode contracts.DisplayBlockMode) error
+func adminDisplayBlockObjectColors(item adminv1.DisplayBlockObject, isDark bool) (color.NRGBA, color.NRGBA) {
+	selectObjectColor := utils.SelectObjectColorNRGBA
+	if isDark {
+		selectObjectColor = utils.SelectObjectColorNRGBADark
+	}
+
+	switch item.MonitoringStatus {
+	case frontendv1.MonitoringStatusBlocked:
+		if isDark {
+			return color.NRGBA{R: 230, G: 220, B: 245, A: 255}, color.NRGBA{R: 98, G: 52, B: 125, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 144, G: 64, B: 196, A: 255}
+	case frontendv1.MonitoringStatusDebug:
+		if isDark {
+			return color.NRGBA{R: 238, G: 236, B: 195, A: 255}, color.NRGBA{R: 95, G: 96, B: 42, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 128, G: 128, B: 0, A: 255}
+	}
+
+	if item.VisualSeverity == frontendv1.VisualSeverityCritical {
+		return selectObjectColor(1)
+	}
+	if item.TechAlarmState > 0 {
+		return selectObjectColor(2)
+	}
+	if item.ConnectionStatus == frontendv1.ConnectionStatusOffline {
+		if isDark {
+			return color.NRGBA{R: 255, G: 250, B: 180, A: 255}, color.NRGBA{R: 90, G: 90, B: 20, A: 255}
+		}
+		return color.NRGBA{R: 0, G: 0, B: 0, A: 255}, color.NRGBA{R: 225, G: 235, B: 35, A: 255}
+	}
+	if item.GuardStatus == frontendv1.GuardStatusDisarmed {
+		if isDark {
+			return color.NRGBA{R: 230, G: 230, B: 250, A: 255}, color.NRGBA{R: 100, G: 15, B: 120, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 170, G: 14, B: 201, A: 255}
+	}
+
+	return selectObjectColor(10)
 }
 
-func ShowDisplayBlockingDialog(parent fyne.Window, provider adminDisplayBlockingProvider, onUpdated func()) {
+func ShowDisplayBlockingDialog(parent fyne.Window, provider adminv1.DisplayBlockingProvider, onUpdated func()) {
 	win := fyne.CurrentApp().NewWindow("Блокування відображення інформації")
 	win.Resize(fyne.NewSize(1020, 620))
 
 	var (
-		objects     []contracts.DisplayBlockObject
+		objects     []adminv1.DisplayBlockObject
 		selectedRow = -1
 	)
 
-	blockModeText := func(mode contracts.DisplayBlockMode) string {
+	blockModeText := func(mode adminv1.DisplayBlockMode) string {
 		switch mode {
-		case contracts.DisplayBlockTemporaryOff:
+		case adminv1.DisplayBlockModeTemporaryOff:
 			return "Тимчасово зняти із спостереження"
-		case contracts.DisplayBlockDebug:
+		case adminv1.DisplayBlockModeDebug:
 			return "Ввести об'єкт в режим налагодження"
 		default:
 			return "Немає"
 		}
 	}
 
-	parseBlockMode := func(label string) contracts.DisplayBlockMode {
+	parseBlockMode := func(label string) adminv1.DisplayBlockMode {
 		switch label {
 		case "Тимчасово зняти із спостереження":
-			return contracts.DisplayBlockTemporaryOff
+			return adminv1.DisplayBlockModeTemporaryOff
 		case "Ввести об'єкт в режим налагодження":
-			return contracts.DisplayBlockDebug
+			return adminv1.DisplayBlockModeDebug
 		default:
-			return contracts.DisplayBlockNone
+			return adminv1.DisplayBlockModeNone
 		}
 	}
 
@@ -75,35 +112,8 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider adminDisplayBlocking
 		return fyne.CurrentApp().Settings().ThemeVariant() == theme.VariantDark
 	}
 
-	calcObjectColors := func(item contracts.DisplayBlockObject) (color.NRGBA, color.NRGBA) {
-		textColor, rowColor := utils.ChangeItemColorNRGBA(
-			item.AlarmState,
-			item.GuardState,
-			item.TechAlarmState,
-			item.IsConnState,
-			isDarkMode(),
-		)
-		switch item.BlockMode {
-		case contracts.DisplayBlockTemporaryOff:
-			// Тимчасово знято із спостереження -> фіолетовий.
-			if isDarkMode() {
-				textColor = color.NRGBA{R: 230, G: 220, B: 245, A: 255}
-				rowColor = color.NRGBA{R: 98, G: 52, B: 125, A: 255}
-			} else {
-				textColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-				rowColor = color.NRGBA{R: 144, G: 64, B: 196, A: 255}
-			}
-		case contracts.DisplayBlockDebug:
-			// Режим налагодження -> оливковий.
-			if isDarkMode() {
-				textColor = color.NRGBA{R: 238, G: 236, B: 195, A: 255}
-				rowColor = color.NRGBA{R: 95, G: 96, B: 42, A: 255}
-			} else {
-				textColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-				rowColor = color.NRGBA{R: 128, G: 128, B: 0, A: 255}
-			}
-		}
-		return textColor, rowColor
+	calcObjectColors := func(item adminv1.DisplayBlockObject) (color.NRGBA, color.NRGBA) {
+		return adminDisplayBlockObjectColors(item, isDarkMode())
 	}
 
 	table := widget.NewTable(

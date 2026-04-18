@@ -124,7 +124,7 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 		if obj.Status == models.StatusFire || obj.Status == models.StatusFault {
 			countAlarm++
 		}
-		if obj.IsConnState == 0 && obj.GuardState != 0 {
+		if obj.ConnectionStatusValue() == models.ConnectionStatusOffline && obj.GuardStatusValue() != models.GuardStatusDisarmed {
 			countOffline++
 		}
 		if isMonitoringOffObject(obj, source) {
@@ -141,7 +141,7 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 				statusMatch = false
 			}
 		case FilterOffline:
-			if !(obj.IsConnState == 0 && obj.GuardState != 0) {
+			if !(obj.ConnectionStatusValue() == models.ConnectionStatusOffline && obj.GuardStatusValue() != models.GuardStatusDisarmed) {
 				statusMatch = false
 			}
 		case FilterMonitoringOff:
@@ -199,11 +199,14 @@ func (vm *ObjectListViewModel) ApplyFilters(input ObjectListFilterInput) ObjectL
 }
 
 func isMonitoringOffObject(obj models.Object, source string) bool {
+	if obj.MonitoringStatusValue() == models.MonitoringStatusBlocked {
+		return true
+	}
 	switch NormalizeObjectSourceFilter(source) {
 	case ObjectSourcePhoenix, ObjectSourceCASL:
-		return obj.BlockedArmedOnOff == 1
+		return false
 	default:
-		return obj.GuardState == 0
+		return obj.GuardStatusValue() == models.GuardStatusDisarmed
 	}
 }
 
@@ -212,9 +215,9 @@ func isDebugObject(obj models.Object, source string) bool {
 	case ObjectSourceCASL:
 		return false
 	case ObjectSourcePhoenix:
-		return obj.BlockedArmedOnOff == 2
+		return obj.MonitoringStatusValue() == models.MonitoringStatusDebug
 	default:
-		return obj.BlockedArmedOnOff == 2
+		return obj.MonitoringStatusValue() == models.MonitoringStatusDebug
 	}
 }
 
@@ -290,9 +293,8 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 
 	// Спеціальні випадки для Phoenix
 	if ids.IsPhoenixObjectID(item.ID) &&
-		item.BlockedArmedOnOff == 1 &&
-		item.AlarmState == 0 &&
-		item.TechAlarmState == 0 &&
+		item.MonitoringStatusValue() == models.MonitoringStatusBlocked &&
+		item.SeverityValue() == models.VisualSeverityNormal &&
 		item.Status == models.StatusNormal {
 		if isDark {
 			return color.NRGBA{R: 232, G: 239, B: 246, A: 255}, color.NRGBA{R: 54, G: 74, B: 92, A: 255}
@@ -301,10 +303,9 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 	}
 
 	if ids.IsPhoenixObjectID(item.ID) &&
-		item.BlockedArmedOnOff == 0 &&
-		item.GuardState == 0 &&
-		item.AlarmState == 0 &&
-		item.TechAlarmState == 0 &&
+		item.MonitoringStatusValue() == models.MonitoringStatusActive &&
+		item.GuardStatusValue() == models.GuardStatusDisarmed &&
+		item.SeverityValue() == models.VisualSeverityNormal &&
 		item.Status == models.StatusNormal {
 		if isDark {
 			return color.NRGBA{R: 225, G: 244, B: 255, A: 255}, color.NRGBA{R: 37, G: 96, B: 128, A: 255}
@@ -315,14 +316,14 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 	// Пріоритети кольорів (зверху вниз):
 	// 1) блокування, 2) тривога, 3) технічна/пожежна несправність,
 	// 4) втрата зв'язку, 5) проблема приписки/конфігурації, 6) інші стани.
-	if item.BlockedArmedOnOff == 1 {
+	if item.MonitoringStatusValue() == models.MonitoringStatusBlocked {
 		// Тимчасово знято із спостереження.
 		if isDark {
 			return color.NRGBA{R: 230, G: 220, B: 245, A: 255}, color.NRGBA{R: 98, G: 52, B: 125, A: 255}
 		}
 		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 144, G: 64, B: 196, A: 255}
 	}
-	if item.BlockedArmedOnOff == 2 {
+	if item.MonitoringStatusValue() == models.MonitoringStatusDebug {
 		// Режим налагодження.
 		if isDark {
 			return color.NRGBA{R: 238, G: 236, B: 195, A: 255}, color.NRGBA{R: 95, G: 96, B: 42, A: 255}
@@ -330,15 +331,15 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 128, G: 128, B: 0, A: 255}
 	}
 
-	if item.AlarmState > 0 || item.Status == models.StatusFire {
+	if item.SeverityValue() == models.VisualSeverityCritical || item.Status == models.StatusFire {
 		return selectObjectColor(1)
 	}
 
-	if item.TechAlarmState > 0 || item.Status == models.StatusFault {
+	if item.Status == models.StatusFault {
 		return selectObjectColor(2)
 	}
 
-	if item.IsConnState == 0 || item.Status == models.StatusOffline {
+	if item.ConnectionStatusValue() == models.ConnectionStatusOffline || item.Status == models.StatusOffline {
 		if isDark {
 			return color.NRGBA{R: 255, G: 250, B: 180, A: 255}, color.NRGBA{R: 90, G: 90, B: 20, A: 255}
 		}
@@ -358,5 +359,12 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 		return color.NRGBA{R: 210, G: 0, B: 0, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	}
 
-	return utils.ChangeItemColorNRGBA(item.AlarmState, item.GuardState, item.TechAlarmState, item.IsConnState, isDark)
+	if item.GuardStatusValue() == models.GuardStatusDisarmed {
+		if isDark {
+			return color.NRGBA{R: 230, G: 230, B: 250, A: 255}, color.NRGBA{R: 100, G: 15, B: 120, A: 255}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 170, G: 14, B: 201, A: 255}
+	}
+
+	return selectObjectColor(10)
 }

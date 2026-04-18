@@ -38,10 +38,10 @@ func TestNormalizeObjectListFilter(t *testing.T) {
 func TestObjectListViewModel_ApplyFilters(t *testing.T) {
 	vm := NewObjectListViewModel()
 	all := []models.Object{
-		{ID: 1, Name: "Альфа", Status: models.StatusNormal, GuardState: 1, IsConnState: 1},
-		{ID: ids.PhoenixObjectIDNamespaceStart + 10, DisplayNumber: "L00028", Name: "Phoenix", Status: models.StatusNormal, GuardState: 1, IsConnState: 1},
-		{ID: ids.CASLObjectIDNamespaceStart + 2, Name: "Бета", Status: models.StatusFire, GuardState: 1, IsConnState: 1},
-		{ID: 3, Name: "Гамма", Status: models.StatusNormal, GuardState: 0, IsConnState: 0},
+		{ID: 1, Name: "Альфа", Status: models.StatusNormal, GuardStatus: models.GuardStatusGuarded, ConnectionStatus: models.ConnectionStatusOnline},
+		{ID: ids.PhoenixObjectIDNamespaceStart + 10, DisplayNumber: "L00028", Name: "Phoenix", Status: models.StatusNormal, GuardStatus: models.GuardStatusGuarded, ConnectionStatus: models.ConnectionStatusOnline},
+		{ID: ids.CASLObjectIDNamespaceStart + 2, Name: "Бета", Status: models.StatusFire, GuardStatus: models.GuardStatusGuarded, ConnectionStatus: models.ConnectionStatusOnline},
+		{ID: 3, Name: "Гамма", Status: models.StatusNormal, GuardStatus: models.GuardStatusDisarmed, ConnectionStatus: models.ConnectionStatusOffline},
 	}
 
 	out := vm.ApplyFilters(ObjectListFilterInput{
@@ -172,12 +172,12 @@ func TestObjectListViewModel_ApplyFilters_DoesNotAutoSelectOnInitialLoad(t *test
 func TestObjectListViewModel_ApplyFilters_MonitoringOffAndDebug(t *testing.T) {
 	vm := NewObjectListViewModel()
 	all := []models.Object{
-		{ID: 10, Name: "Bridge Off", GuardState: 0, IsConnState: 1},
-		{ID: 11, Name: "Bridge Debug", GuardState: 1, IsConnState: 1, BlockedArmedOnOff: 2},
-		{ID: ids.PhoenixObjectIDNamespaceStart + 20, Name: "Phoenix Blocked", GuardState: 1, IsConnState: 1, BlockedArmedOnOff: 1},
-		{ID: ids.PhoenixObjectIDNamespaceStart + 21, Name: "Phoenix Stand", GuardState: 1, IsConnState: 1, BlockedArmedOnOff: 2},
-		{ID: ids.PhoenixObjectIDNamespaceStart + 22, Name: "Phoenix Disarmed", GuardState: 0, IsConnState: 1},
-		{ID: ids.CASLObjectIDNamespaceStart + 30, Name: "CASL Blocked", GuardState: 0, IsConnState: 1, BlockedArmedOnOff: 1},
+		{ID: 10, Name: "Bridge Off", GuardStatus: models.GuardStatusDisarmed, ConnectionStatus: models.ConnectionStatusOnline, MonitoringStatus: models.MonitoringStatusActive},
+		{ID: 11, Name: "Bridge Debug", GuardStatus: models.GuardStatusGuarded, ConnectionStatus: models.ConnectionStatusOnline, MonitoringStatus: models.MonitoringStatusDebug},
+		{ID: ids.PhoenixObjectIDNamespaceStart + 20, Name: "Phoenix Blocked", GuardStatus: models.GuardStatusGuarded, ConnectionStatus: models.ConnectionStatusOnline, MonitoringStatus: models.MonitoringStatusBlocked},
+		{ID: ids.PhoenixObjectIDNamespaceStart + 21, Name: "Phoenix Stand", GuardStatus: models.GuardStatusGuarded, ConnectionStatus: models.ConnectionStatusOnline, MonitoringStatus: models.MonitoringStatusDebug},
+		{ID: ids.PhoenixObjectIDNamespaceStart + 22, Name: "Phoenix Disarmed", GuardStatus: models.GuardStatusDisarmed, ConnectionStatus: models.ConnectionStatusOnline, MonitoringStatus: models.MonitoringStatusActive},
+		{ID: ids.CASLObjectIDNamespaceStart + 30, Name: "CASL Blocked", GuardStatus: models.GuardStatusDisarmed, ConnectionStatus: models.ConnectionStatusOnline, MonitoringStatus: models.MonitoringStatusBlocked},
 	}
 
 	monitoringOff := vm.ApplyFilters(ObjectListFilterInput{
@@ -202,5 +202,59 @@ func TestObjectListViewModel_ApplyFilters_MonitoringOffAndDebug(t *testing.T) {
 	}
 	if debug.CountDebug != 2 {
 		t.Fatalf("unexpected debug count: %d", debug.CountDebug)
+	}
+}
+
+func TestObjectListViewModel_ApplyFilters_UsesNormalizedStatuses(t *testing.T) {
+	vm := NewObjectListViewModel()
+	all := []models.Object{
+		{
+			ID:               10,
+			Name:             "Guarded offline",
+			GuardStatus:      models.GuardStatusGuarded,
+			ConnectionStatus: models.ConnectionStatusOffline,
+			MonitoringStatus: models.MonitoringStatusActive,
+		},
+		{
+			ID:               11,
+			Name:             "Blocked",
+			GuardStatus:      models.GuardStatusGuarded,
+			ConnectionStatus: models.ConnectionStatusOnline,
+			MonitoringStatus: models.MonitoringStatusBlocked,
+		},
+		{
+			ID:               12,
+			Name:             "Debug",
+			GuardStatus:      models.GuardStatusGuarded,
+			ConnectionStatus: models.ConnectionStatusOnline,
+			MonitoringStatus: models.MonitoringStatusDebug,
+		},
+	}
+
+	offline := vm.ApplyFilters(ObjectListFilterInput{
+		AllObjects:    all,
+		CurrentFilter: FilterOffline,
+		CurrentSource: ObjectSourceAll,
+	})
+	if len(offline.Filtered) != 1 || offline.Filtered[0].ID != 10 {
+		t.Fatalf("expected normalized offline object, got %+v", offline.Filtered)
+	}
+
+	monitoringOff := vm.ApplyFilters(ObjectListFilterInput{
+		AllObjects:    all,
+		CurrentFilter: FilterMonitoringOff,
+		CurrentSource: ObjectSourceAll,
+	})
+	if len(monitoringOff.Filtered) != 1 || monitoringOff.Filtered[0].ID != 11 {
+		t.Fatalf("expected normalized blocked object, got %+v", monitoringOff.Filtered)
+	}
+
+	debug := vm.ApplyFilters(ObjectListFilterInput{
+		AllObjects:    all,
+		CurrentFilter: FilterDebug,
+		CurrentSource: ObjectSourceAll,
+	})
+	if len(debug.Filtered) != 1 || debug.Filtered[0].ID != 12 {
+		t.Fatalf("expected normalized debug object, got %+v", debug.Filtered)
 	}
 }

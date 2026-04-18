@@ -12,23 +12,15 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 )
 
-type eventOverrideDialogProvider interface {
-	adminMessagesDialogProvider
-	admin220VConstructorProvider
-	ListMessages(protocolID *int64, filter string) ([]contracts.AdminMessage, error)
-	SetMessageAdminOnly(uin int64, adminOnly bool) error
-	SetMessageCategory(uin int64, sc1 *int64) error
-}
-
-func ShowEventOverrideDialog(parent fyne.Window, provider eventOverrideDialogProvider) {
+func ShowEventOverrideDialog(parent fyne.Window, provider adminv1.EventOverrideProvider) {
 	win := fyne.CurrentApp().NewWindow("Глобальне перевизначення подій")
 	win.Resize(fyne.NewSize(980, 700))
 
 	var (
-		messages           []contracts.AdminMessage
+		messages           []adminv1.Message
 		selectedUIN        int64
 		selectedRowIdx           = -1
 		selectedProtocolID int64 = 18
@@ -52,54 +44,8 @@ func ShowEventOverrideDialog(parent fyne.Window, provider eventOverrideDialogPro
 		}
 	}
 
-	scenarioLabelFromSC1 := func(sc1 *int64) string {
-		if sc1 == nil {
-			return "Інформація"
-		}
-		switch *sc1 {
-		case 1:
-			return "Тривога"
-		case 2, 3:
-			return "Тривога техн."
-		case 5, 9, 13, 17:
-			return "Відновлення"
-		case 12:
-			return "Подію заборонено"
-		case 16:
-			return "Тестове повідомлення"
-		default:
-			return "Інформація"
-		}
-	}
-
-	scenarioSC1FromLabel := func(label string) *int64 {
-		switch label {
-		case "Тривога":
-			return i64(1)
-		case "Тривога техн.":
-			return i64(2)
-		case "Відновлення":
-			return i64(5)
-		case "Подію заборонено":
-			return i64(12)
-		case "Тестове повідомлення":
-			return i64(16)
-		case "Інформація":
-			return i64(6)
-		default:
-			return i64(6)
-		}
-	}
-
 	scenarioRadio := widget.NewRadioGroup(
-		[]string{
-			"Тривога",
-			"Тривога техн.",
-			"Відновлення",
-			"Інформація",
-			"Подію заборонено",
-			"Тестове повідомлення",
-		},
+		adminEventOverrideLabels(),
 		nil,
 	)
 	scenarioRadio.Disable()
@@ -116,7 +62,7 @@ func ShowEventOverrideDialog(parent fyne.Window, provider eventOverrideDialogPro
 		eventTextEntry.SetText("")
 	}
 
-	updateSelectionDetails := func(m *contracts.AdminMessage) {
+	updateSelectionDetails := func(m *adminv1.Message) {
 		if m == nil {
 			clearSelectionDetails()
 			scenarioRadio.Disable()
@@ -124,17 +70,17 @@ func ShowEventOverrideDialog(parent fyne.Window, provider eventOverrideDialogPro
 		}
 		scenarioRadio.Enable()
 		adminOnlyCheck.Enable()
-		scenarioRadio.SetSelected(scenarioLabelFromSC1(m.SC1))
+		scenarioRadio.SetSelected(adminEventOverrideLabelFromSC1(m.SC1))
 		adminOnlyCheck.SetChecked(m.ForAdminOnly)
 		eventTextEntry.SetText(strings.TrimSpace(m.Text))
 	}
 
-	applyCodeOnlyFilter := func(in []contracts.AdminMessage, needle string) []contracts.AdminMessage {
+	applyCodeOnlyFilter := func(in []adminv1.Message, needle string) []adminv1.Message {
 		needle = strings.ToLower(strings.TrimSpace(needle))
 		if needle == "" {
 			return in
 		}
-		out := make([]contracts.AdminMessage, 0, len(in))
+		out := make([]adminv1.Message, 0, len(in))
 		for _, m := range in {
 			decCode := ""
 			if m.MessageID != nil {
@@ -150,14 +96,14 @@ func ShowEventOverrideDialog(parent fyne.Window, provider eventOverrideDialogPro
 		return out
 	}
 
-	codeForSort := func(m contracts.AdminMessage) int64 {
+	codeForSort := func(m adminv1.Message) int64 {
 		if m.MessageID != nil {
 			return *m.MessageID
 		}
 		return m.UIN
 	}
 
-	sortMessages := func(in []contracts.AdminMessage) {
+	sortMessages := func(in []adminv1.Message) {
 		if strings.EqualFold(searchMode.Selected, "Повідомлення") {
 			sort.SliceStable(in, func(i, j int) bool {
 				ti := strings.ToLower(strings.TrimSpace(in[i].Text))
@@ -201,7 +147,7 @@ func ShowEventOverrideDialog(parent fyne.Window, provider eventOverrideDialogPro
 			case 1:
 				cellText = strings.TrimSpace(m.Text)
 			default:
-				cellText = scenarioLabelFromSC1(m.SC1)
+				cellText = adminEventOverrideLabelFromSC1(m.SC1)
 			}
 			updateColoredMessageCell(obj, cellText, m.SC1, id.Row == selectedRowIdx)
 		},
@@ -272,7 +218,7 @@ func ShowEventOverrideDialog(parent fyne.Window, provider eventOverrideDialogPro
 			statusLabel.SetText("Спочатку виберіть повідомлення в таблиці")
 			return
 		}
-		selectedCategory := scenarioSC1FromLabel(scenarioRadio.Selected)
+		selectedCategory := adminEventOverrideSC1FromLabel(scenarioRadio.Selected)
 		if err := provider.SetMessageCategory(selectedUIN, selectedCategory); err != nil {
 			dialog.ShowError(err, win)
 			statusLabel.SetText("Не вдалося змінити категорію")

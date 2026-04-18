@@ -8,7 +8,7 @@ import (
 
 // resolveObjectByID повертає об'єкт за ID через поточний провайдер даних.
 func (a *Application) resolveObjectByID(objectID int64) *models.Object {
-	provider := a.getDataProvider()
+	provider := a.getUIDataProvider()
 	if provider == nil {
 		return nil
 	}

@@ -152,7 +152,7 @@ func NewEventLogPanel(provider contracts.EventProvider) *EventLogPanel {
 				return
 			}
 
-			textColor, rowColor := eventRowColors(event.SC1)
+			textColor, rowColor := eventRowColorsBySeverity(event.VisualSeverityValue(), event.SC1)
 
 			bg.FillColor = rowColor
 			bg.Refresh()

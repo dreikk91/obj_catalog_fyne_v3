@@ -45,7 +45,7 @@ func buildCaseHistoryEventList(group viewmodels.WorkAreaCaseHistoryGroup) fyne.C
 }
 
 func buildCaseHistoryEventLine(event models.Event) fyne.CanvasObject {
-	textColor, rowColor := eventRowColors(event.SC1)
+	textColor, rowColor := eventRowColorsBySeverity(event.VisualSeverityValue(), event.SC1)
 	text := canvas.NewText(caseHistoryEventText(event), textColor)
 	text.TextSize = fyne.CurrentApp().Settings().Theme().Size(fyneTheme.SizeNameText)
 	text.TextStyle = fyne.TextStyle{Bold: event.IsCritical()}

@@ -58,6 +58,38 @@ type CombinedDataProvider struct {
 	sources []ProviderSource
 }
 
+func (p *CombinedDataProvider) FrontendSourceCapabilities() []contracts.FrontendSourceCapability {
+	if p == nil {
+		return nil
+	}
+
+	capabilities := make([]contracts.FrontendSourceCapability, 0, len(p.sources))
+	for _, source := range p.sources {
+		frontendSource := frontendSourceFromProviderName(source.Name)
+		capability := contracts.FrontendSourceCapability{
+			Source:            frontendSource,
+			DisplayName:       frontendSource.DisplayName(),
+			ReadObjects:       true,
+			ReadObjectDetails: true,
+			ReadEvents:        true,
+			ReadAlarms:        true,
+		}
+
+		if _, ok := source.Provider.(contracts.AdminProvider); ok {
+			capability.CreateObject = true
+			capability.UpdateObject = true
+		}
+		if _, ok := source.Provider.(contracts.CASLObjectEditorProvider); ok {
+			capability.CreateObject = true
+			capability.UpdateObject = true
+		}
+
+		capabilities = append(capabilities, capability)
+	}
+
+	return capabilities
+}
+
 func NewCombinedDataProvider(primary contracts.DataProvider, secondary contracts.DataProvider) *CombinedDataProvider {
 	sources := make([]ProviderSource, 0, 2)
 	if primary != nil {
@@ -678,4 +710,17 @@ func sortEvents(events []models.Event) {
 		}
 		return left.After(right)
 	})
+}
+
+func frontendSourceFromProviderName(name string) contracts.FrontendSource {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "bridge", "db", "firebird", "most":
+		return contracts.FrontendSourceBridge
+	case "phoenix":
+		return contracts.FrontendSourcePhoenix
+	case "casl":
+		return contracts.FrontendSourceCASL
+	default:
+		return contracts.FrontendSourceUnknown
+	}
 }

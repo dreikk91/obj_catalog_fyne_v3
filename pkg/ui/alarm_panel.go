@@ -146,7 +146,7 @@ func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 				return
 			}
 
-			textColor, rowColor := eventRowColors(alarm.SC1)
+			textColor, rowColor := eventRowColorsBySeverity(alarm.VisualSeverityValue(), alarm.SC1)
 
 			// Базовий колір рядка. Для вибраної тривоги додаємо підсвітку.
 			rowBg := rowColor

@@ -11,23 +11,16 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 )
 
-type adminEventEmulationProvider interface {
-	ListDisplayBlockObjects(filter string) ([]contracts.DisplayBlockObject, error)
-	ListMessages(protocolID *int64, filter string) ([]contracts.AdminMessage, error)
-	ListMessageProtocols() ([]int64, error)
-	EmulateEvent(objn int64, zone int64, messageUIN int64) error
-}
-
-func ShowEventEmulationDialog(parent fyne.Window, provider adminEventEmulationProvider, onEmulated func()) {
+func ShowEventEmulationDialog(parent fyne.Window, provider adminv1.EventEmulationProvider, onEmulated func()) {
 	win := fyne.CurrentApp().NewWindow("Емуляція подій")
 	win.Resize(fyne.NewSize(1120, 680))
 
 	var (
-		objects            []contracts.DisplayBlockObject
-		messages           []contracts.AdminMessage
+		objects            []adminv1.DisplayBlockObject
+		messages           []adminv1.Message
 		selectedMessageID  int64
 		selectedMessageRow = -1
 		protocolOptionID   = map[string]int64{}
@@ -133,7 +126,7 @@ func ShowEventEmulationDialog(parent fyne.Window, provider adminEventEmulationPr
 		return nil, fmt.Errorf("unknown protocol option: %s", v)
 	}
 
-	messagePasses := func(m contracts.AdminMessage) bool {
+	messagePasses := func(m adminv1.Message) bool {
 		families := []struct {
 			name  string
 			check *widget.Check
@@ -177,7 +170,7 @@ func ShowEventEmulationDialog(parent fyne.Window, provider adminEventEmulationPr
 			return
 		}
 
-		filtered := make([]contracts.AdminMessage, 0, len(loaded))
+		filtered := make([]adminv1.Message, 0, len(loaded))
 		for _, m := range loaded {
 			if messagePasses(m) {
 				filtered = append(filtered, m)

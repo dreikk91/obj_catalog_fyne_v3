@@ -45,6 +45,8 @@ type Application struct {
 
 	// Сховище даних (інтерфейс)
 	dataProvider contracts.DataProvider
+	frontendAPI  contracts.FrontendBackend
+	uiData       *backend.FrontendUIDataProvider
 	providerMu   sync.RWMutex
 	// Внутрішня шина подій для розв'язування UI-компонентів.
 	eventBus *eventbus.Bus
@@ -95,12 +97,33 @@ func (a *Application) getDataProvider() contracts.DataProvider {
 	return a.dataProvider
 }
 
+func (a *Application) getFrontendAPI() contracts.FrontendBackend {
+	if a == nil {
+		return nil
+	}
+	a.providerMu.RLock()
+	defer a.providerMu.RUnlock()
+	return a.frontendAPI
+}
+
+func (a *Application) getUIDataProvider() *backend.FrontendUIDataProvider {
+	if a == nil {
+		return nil
+	}
+	a.providerMu.RLock()
+	defer a.providerMu.RUnlock()
+	return a.uiData
+}
+
 func (a *Application) setDataProvider(provider contracts.DataProvider) {
 	if a == nil {
 		return
 	}
+	frontendAPI := backend.NewFrontendAdapter(provider)
 	a.providerMu.Lock()
 	a.dataProvider = provider
+	a.frontendAPI = frontendAPI
+	a.uiData = backend.NewFrontendUIDataProvider(frontendAPI, provider)
 	a.providerMu.Unlock()
 }
 
@@ -189,6 +212,7 @@ func NewApplication() *Application {
 	if err != nil {
 		log.Error().Err(err).Msg("Не вдалося повністю ініціалізувати джерела даних")
 	}
+	frontendAPI := backend.NewFrontendAdapter(buildResult.provider)
 
 	log.Info().Msg("Створення структури додатку...")
 	application := &Application{
@@ -196,6 +220,8 @@ func NewApplication() *Application {
 		mainWindow:   mainWindow,
 		managedDBs:   buildResult.managedDBs,
 		dataProvider: buildResult.provider,
+		frontendAPI:  frontendAPI,
+		uiData:       backend.NewFrontendUIDataProvider(frontendAPI, buildResult.provider),
 		eventBus:     eventbus.NewBus(),
 		// mockData:   mockData,
 		isDarkTheme:     isDark,
@@ -255,11 +281,25 @@ func (a *Application) buildUI() {
 }
 
 func (a *Application) buildUIPanels() {
-	provider := a.getDataProvider()
-	a.alarmPanel = ui.NewAlarmPanelWidget(provider)
-	a.objectList = ui.NewObjectListPanel(provider)
-	a.workArea = ui.NewWorkAreaPanel(provider, a.mainWindow)
-	a.eventLog = ui.NewEventLogPanel(provider)
+	uiProvider := a.getUIDataProvider()
+
+	var (
+		alarmProvider  contracts.DataProvider
+		objectProvider contracts.ObjectProvider
+		workProvider   contracts.WorkAreaProvider
+		eventProvider  contracts.EventProvider
+	)
+	if uiProvider != nil {
+		alarmProvider = uiProvider
+		objectProvider = uiProvider
+		workProvider = uiProvider
+		eventProvider = uiProvider
+	}
+
+	a.alarmPanel = ui.NewAlarmPanelWidget(alarmProvider)
+	a.objectList = ui.NewObjectListPanel(objectProvider)
+	a.workArea = ui.NewWorkAreaPanel(workProvider, a.mainWindow)
+	a.eventLog = ui.NewEventLogPanel(eventProvider)
 }
 
 func (a *Application) configurePanelCallbacks() {
@@ -285,7 +325,7 @@ func (a *Application) configurePanelCallbacks() {
 
 	a.alarmPanel.OnProcessAlarm = func(alarm models.Alarm) {
 		log.Debug().Int("alarmID", alarm.ID).Msg("Початок обробки тривоги...")
-		provider := a.getDataProvider()
+		provider := a.getUIDataProvider()
 		if provider == nil {
 			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Провайдер даних недоступний.")
 			return
@@ -561,12 +601,12 @@ func (a *Application) installCloseIntercept() {
 func (a *Application) buildMainMenu() *fyne.MainMenu {
 	adminMenu := fyne.NewMenu("Адмін",
 		fyne.NewMenuItem("Блокування відображення інформації", withAdminCapability(a, func(admin adminDisplayBlockingProvider) {
-			dialogs.ShowDisplayBlockingDialog(a.mainWindow, admin, func() {
+			dialogs.ShowDisplayBlockingDialog(a.mainWindow, backend.NewAdminV1DisplayBlockingProvider(admin), func() {
 				a.publishDataRefresh(eventbus.DataRefreshEvent{RefreshObjects: true})
 			})
 		})),
 		fyne.NewMenuItem("Емуляція подій", withAdminCapability(a, func(admin adminEventEmulationProvider) {
-			dialogs.ShowEventEmulationDialog(a.mainWindow, admin, func() {
+			dialogs.ShowEventEmulationDialog(a.mainWindow, backend.NewAdminV1EventEmulationProvider(admin), func() {
 				a.publishDataRefresh(eventbus.DataRefreshEvent{
 					RefreshObjects: true,
 					RefreshAlarms:  true,
@@ -594,10 +634,10 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 
 	adminSettings := fyne.NewMenu("Налаштування",
 		fyne.NewMenuItem("Перевизначення подій", withAdminCapability(a, func(admin adminEventOverrideProvider) {
-			dialogs.ShowEventOverrideDialog(a.mainWindow, admin)
+			dialogs.ShowEventOverrideDialog(a.mainWindow, backend.NewAdminV1EventOverrideProvider(admin))
 		})),
 		fyne.NewMenuItem("Управління повідомленнями адміністратора", withAdminCapability(a, func(admin adminMessagesProvider) {
-			dialogs.ShowAdminMessagesDialog(a.mainWindow, admin)
+			dialogs.ShowAdminMessagesDialog(a.mainWindow, backend.NewAdminV1MessagesProvider(admin))
 		})),
 		fyne.NewMenuItem("Контроль системи (БД/логи)", withAdminCapability(a, func(admin adminSystemControlProvider) {
 			dialogs.ShowAdminSystemControlDialog(a.mainWindow, admin)
@@ -616,8 +656,8 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	)
 
 	adminMonitoringItems := []*fyne.MenuItem{
-		fyne.NewMenuItem("Збір статистики", withAdminCapability(a, func(admin adminStatisticsProvider) {
-			dialogs.ShowStatisticsDialog(a.mainWindow, admin)
+		fyne.NewMenuItem("Мост статистика", withAdminCapability(a, func(admin mostStatisticsProvider) {
+			dialogs.ShowMostStatisticsDialog(a.mainWindow, backend.NewAdminV1StatisticsProvider(admin))
 		})),
 	}
 	if _, ok := a.resolveSIMInventoryReportProvider(); ok {

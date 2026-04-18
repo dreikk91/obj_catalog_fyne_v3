@@ -38,17 +38,18 @@ const (
 
 // Event представляє подію в журналі
 type Event struct {
-	ID           int       // Унікальний ID події
-	Time         time.Time // Час події
-	ObjectID     int       // ID об'єкта
-	ObjectNumber string    // Номер об'єкта (людський формат)
-	ObjectName   string    // Назва об'єкта
-	Type         EventType // Тип події
-	TypeLabel    string    // Оригінальний текст типу події від джерела
-	ZoneNumber   int       // Номер зони (якщо застосовно)
-	Details      string    // Додаткові деталі
-	UserName     string    // Користувач (для постановки/зняття)
-	SC1          int       // Код кольору з БД
+	ID             int       // Унікальний ID події
+	Time           time.Time // Час події
+	ObjectID       int       // ID об'єкта
+	ObjectNumber   string    // Номер об'єкта (людський формат)
+	ObjectName     string    // Назва об'єкта
+	Type           EventType // Тип події
+	TypeLabel      string    // Оригінальний текст типу події від джерела
+	ZoneNumber     int       // Номер зони (якщо застосовно)
+	Details        string    // Додаткові деталі
+	UserName       string    // Користувач (для постановки/зняття)
+	SC1            int       // Код кольору з БД
+	VisualSeverity VisualSeverity
 }
 
 // GetTypeDisplay повертає текстовий опис типу події українською

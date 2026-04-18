@@ -838,7 +838,7 @@ func (w *WorkAreaPanel) createEventsTab() fyne.CanvasObject {
 			txtContainer := stack.Objects[1].(*fyne.Container)
 			txt := txtContainer.Objects[0].(*canvas.Text)
 
-			textColor, rowColor := eventRowColors(event.SC1)
+			textColor, rowColor := eventRowColorsBySeverity(event.VisualSeverityValue(), event.SC1)
 
 			bg.FillColor = rowColor
 			bg.Refresh()

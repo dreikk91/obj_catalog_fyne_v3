@@ -21,27 +21,7 @@ func isDialogsDarkMode() bool {
 }
 
 func mapSC1ToPaletteCode(sc1 *int64) int {
-	if sc1 == nil {
-		return 6
-	}
-	switch *sc1 {
-	case 1:
-		return 1
-	case 2, 3:
-		return 2
-	case 5, 9, 13, 17:
-		return 5
-	case 10:
-		return 10
-	case 11:
-		return 11
-	case 14, 18:
-		return 14
-	case 12:
-		return 12
-	default:
-		return int(*sc1)
-	}
+	return adminEventPaletteCode(sc1)
 }
 
 func messageRowColors(sc1 *int64) (text color.NRGBA, row color.NRGBA) {

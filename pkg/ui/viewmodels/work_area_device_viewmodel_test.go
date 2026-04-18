@@ -134,6 +134,25 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoenixDisarmed(t *test
 	}
 }
 
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_UsesNormalizedStatuses(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:               ids.PhoenixObjectIDNamespaceStart + 99,
+		MonitoringStatus: models.MonitoringStatusBlocked,
+		ConnectionStatus: models.ConnectionStatusOffline,
+		GuardStatus:      models.GuardStatusGuarded,
+		IsUnderGuard:     true,
+	})
+
+	if presentation.GuardText != "Заблоковано" {
+		t.Fatalf("unexpected normalized guard text: %q", presentation.GuardText)
+	}
+	if presentation.ConnectionText != "Немає зв'язку" {
+		t.Fatalf("unexpected normalized connection text: %q", presentation.ConnectionText)
+	}
+}
+
 func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLFallbacks(t *testing.T) {
 	vm := NewWorkAreaDeviceViewModel()
 

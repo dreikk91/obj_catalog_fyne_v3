@@ -64,7 +64,7 @@ type adminSubServerObjectsProvider interface {
 	ClearObjectSubServer(objn int64, channel int) error
 }
 
-type adminStatisticsProvider interface {
+type mostStatisticsProvider interface {
 	CollectObjectStatistics(filter contracts.AdminStatisticsFilter, limit int) ([]contracts.AdminStatisticsRow, error)
 	ListObjectTypes() ([]contracts.DictionaryItem, error)
 	ListObjectDistricts() ([]contracts.DictionaryItem, error)
@@ -206,7 +206,8 @@ func (a *Application) ensureCurrentObjectSelected() (id int64, name string, ok b
 }
 
 func (a *Application) openNewObjectDialog(admin contracts.AdminObjectWizardProvider) {
-	dialogs.ShowNewObjectDialog(a.mainWindow, admin, func(objn int64) {
+	provider := backend.NewFrontendAdminWizardBridge(a.getFrontendAPI(), admin)
+	dialogs.ShowNewObjectDialog(a.mainWindow, provider, func(objn int64) {
 		a.publishObjectSaved(objn)
 	})
 }
@@ -216,7 +217,8 @@ func (a *Application) openEditCurrentObjectDialog(admin contracts.AdminObjectCar
 	if !ok {
 		return
 	}
-	dialogs.ShowEditObjectDialog(a.mainWindow, admin, objectID, func(objn int64) {
+	provider := backend.NewFrontendAdminCardBridge(a.getFrontendAPI(), admin)
+	dialogs.ShowEditObjectDialog(a.mainWindow, provider, objectID, func(objn int64) {
 		a.publishObjectSaved(objn)
 	})
 }

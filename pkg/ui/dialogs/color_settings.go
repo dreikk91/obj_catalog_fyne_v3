@@ -19,14 +19,7 @@ type eventColorOption struct {
 }
 
 func eventColorOptions() []eventColorOption {
-	return []eventColorOption{
-		{Label: "Тривоги", Codes: []int{1, 21, 22, 23, 24, 25}, PreviewCode: 1},
-		{Label: "Несправності / живлення / зв'язок", Codes: []int{2, 3, 4, 12, 26, 27, 29}, PreviewCode: 2},
-		{Label: "Відновлення / на зв'язку", Codes: []int{5, 9, 13, 17, 28}, PreviewCode: 5},
-		{Label: "Постановка під охорону", Codes: []int{7, 8, 10}, PreviewCode: 10},
-		{Label: "Зняття з охорони", Codes: []int{11, 14, 18}, PreviewCode: 11},
-		{Label: "Інформація / тест / сервіс", Codes: []int{6, 16, 30}, PreviewCode: 6},
-	}
+	return adminEventColorOptions()
 }
 
 // ShowColorPaletteDialog відкриває діалог налаштування кольорів подій та об'єктів

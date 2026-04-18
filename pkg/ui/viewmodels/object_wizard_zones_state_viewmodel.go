@@ -5,13 +5,11 @@ import (
 	"slices"
 	"sort"
 	"strings"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 // ObjectWizardZonesStateViewModel керує чернетками зон у майстрі.
 type ObjectWizardZonesStateViewModel struct {
-	pending  []contracts.AdminObjectZone
+	pending  []ObjectZone
 	selected int
 }
 
@@ -30,13 +28,13 @@ func (vm *ObjectWizardZonesStateViewModel) Count() int {
 	return len(vm.pending)
 }
 
-func (vm *ObjectWizardZonesStateViewModel) Items() []contracts.AdminObjectZone {
+func (vm *ObjectWizardZonesStateViewModel) Items() []ObjectZone {
 	return slices.Clone(vm.pending)
 }
 
-func (vm *ObjectWizardZonesStateViewModel) At(idx int) (contracts.AdminObjectZone, bool) {
+func (vm *ObjectWizardZonesStateViewModel) At(idx int) (ObjectZone, bool) {
 	if idx < 0 || idx >= len(vm.pending) {
-		return contracts.AdminObjectZone{}, false
+		return ObjectZone{}, false
 	}
 	return vm.pending[idx], true
 }
@@ -91,11 +89,11 @@ func (vm *ObjectWizardZonesStateViewModel) SelectByNumber(zoneNumber int64) bool
 	return true
 }
 
-func (vm *ObjectWizardZonesStateViewModel) SelectedData() (idx int, zone contracts.AdminObjectZone, zoneNumber int64, ok bool) {
+func (vm *ObjectWizardZonesStateViewModel) SelectedData() (idx int, zone ObjectZone, zoneNumber int64, ok bool) {
 	idx = vm.selected
 	zone, ok = vm.At(idx)
 	if !ok {
-		return -1, contracts.AdminObjectZone{}, 0, false
+		return -1, ObjectZone{}, 0, false
 	}
 	zoneNumber = vm.EffectiveNumberAt(idx)
 	return idx, zone, zoneNumber, true
@@ -120,7 +118,7 @@ func (vm *ObjectWizardZonesStateViewModel) EnsureExists(zoneNumber int64, defaul
 	if description == "" {
 		description = fmt.Sprintf("Шлейф %d", zoneNumber)
 	}
-	vm.pending = append(vm.pending, contracts.AdminObjectZone{
+	vm.pending = append(vm.pending, ObjectZone{
 		ZoneNumber:    zoneNumber,
 		ZoneType:      1,
 		Description:   description,
@@ -130,7 +128,7 @@ func (vm *ObjectWizardZonesStateViewModel) EnsureExists(zoneNumber int64, defaul
 	return nil
 }
 
-func (vm *ObjectWizardZonesStateViewModel) Update(idx int, zone contracts.AdminObjectZone) bool {
+func (vm *ObjectWizardZonesStateViewModel) Update(idx int, zone ObjectZone) bool {
 	if idx < 0 || idx >= len(vm.pending) {
 		return false
 	}

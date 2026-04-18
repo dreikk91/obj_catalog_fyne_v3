@@ -10,24 +10,17 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 )
 
 const subServerChannelPrimary = 1
 
-type subServerObjectsDialogProvider interface {
-	ListSubServers() ([]contracts.AdminSubServer, error)
-	ListSubServerObjects(filter string) ([]contracts.AdminSubServerObject, error)
-	SetObjectSubServer(objn int64, channel int, bind string) error
-	ClearObjectSubServer(objn int64, channel int) error
-}
-
 type subServerObjectsDialogState struct {
 	win        fyne.Window
-	provider   subServerObjectsDialogProvider
+	provider   adminv1.SubServerObjectsProvider
 	onUpdated  func()
-	objects    []contracts.AdminSubServerObject
-	subservers []contracts.AdminSubServer
+	objects    []adminv1.SubServerObject
+	subservers []adminv1.SubServer
 
 	selectedObject  int
 	selectedServer  int
@@ -44,7 +37,7 @@ type subServerObjectsDialogState struct {
 	subserverTable   *widget.Table
 }
 
-func ShowSubServerObjectsDialog(parent fyne.Window, provider subServerObjectsDialogProvider, onUpdated func()) {
+func ShowSubServerObjectsDialog(parent fyne.Window, provider adminv1.SubServerObjectsProvider, onUpdated func()) {
 	state := newSubServerObjectsDialogState(provider, onUpdated)
 	state.win.SetContent(state.buildContent())
 	state.bindActions()
@@ -53,15 +46,15 @@ func ShowSubServerObjectsDialog(parent fyne.Window, provider subServerObjectsDia
 }
 
 func newSubServerObjectsDialogState(
-	provider subServerObjectsDialogProvider,
+	provider adminv1.SubServerObjectsProvider,
 	onUpdated func(),
 ) *subServerObjectsDialogState {
 	state := &subServerObjectsDialogState{
 		win:             fyne.CurrentApp().NewWindow("Керування об'єктами підсерверів"),
 		provider:        provider,
 		onUpdated:       onUpdated,
-		objects:         []contracts.AdminSubServerObject{},
-		subservers:      []contracts.AdminSubServer{},
+		objects:         []adminv1.SubServerObject{},
+		subservers:      []adminv1.SubServer{},
 		selectedObject:  -1,
 		selectedServer:  -1,
 		selectedObjNSet: map[int64]struct{}{},
@@ -305,12 +298,12 @@ func (s *subServerObjectsDialogState) handleObjectSelection(id widget.TableCellI
 	s.statusLabel.SetText(fmt.Sprintf("Вибрано об'єкт #%d", rows[index].ObjN))
 }
 
-func (s *subServerObjectsDialogState) currentObjects() []contracts.AdminSubServerObject {
+func (s *subServerObjectsDialogState) currentObjects() []adminv1.SubServerObject {
 	if !s.onlyUnboundCheck.Checked {
 		return s.objects
 	}
 
-	filtered := make([]contracts.AdminSubServerObject, 0, len(s.objects))
+	filtered := make([]adminv1.SubServerObject, 0, len(s.objects))
 	for _, obj := range s.objects {
 		if strings.TrimSpace(obj.SubServerA) == "" && strings.TrimSpace(obj.SubServerB) == "" {
 			filtered = append(filtered, obj)
@@ -345,7 +338,7 @@ func (s *subServerObjectsDialogState) bindLabel(bind string) string {
 	return "—"
 }
 
-func serverTypeLabel(subserver contracts.AdminSubServer) string {
+func serverTypeLabel(subserver adminv1.SubServer) string {
 	switch subserver.Type {
 	case 2:
 		return "GPRS"
@@ -359,9 +352,9 @@ func serverTypeLabel(subserver contracts.AdminSubServer) string {
 	}
 }
 
-func (s *subServerObjectsDialogState) getSelectedObjects() []contracts.AdminSubServerObject {
+func (s *subServerObjectsDialogState) getSelectedObjects() []adminv1.SubServerObject {
 	rows := s.currentObjects()
-	selected := make([]contracts.AdminSubServerObject, 0, len(s.selectedObjNSet))
+	selected := make([]adminv1.SubServerObject, 0, len(s.selectedObjNSet))
 	for _, obj := range rows {
 		if _, ok := s.selectedObjNSet[obj.ObjN]; ok {
 			selected = append(selected, obj)
@@ -370,7 +363,7 @@ func (s *subServerObjectsDialogState) getSelectedObjects() []contracts.AdminSubS
 	return selected
 }
 
-func (s *subServerObjectsDialogState) selectedTargets() []contracts.AdminSubServerObject {
+func (s *subServerObjectsDialogState) selectedTargets() []adminv1.SubServerObject {
 	targets := s.getSelectedObjects()
 	if len(targets) > 0 {
 		return targets
@@ -378,10 +371,10 @@ func (s *subServerObjectsDialogState) selectedTargets() []contracts.AdminSubServ
 
 	rows := s.currentObjects()
 	if s.selectedObject >= 0 && s.selectedObject < len(rows) {
-		return []contracts.AdminSubServerObject{rows[s.selectedObject]}
+		return []adminv1.SubServerObject{rows[s.selectedObject]}
 	}
 
-	return []contracts.AdminSubServerObject{}
+	return []adminv1.SubServerObject{}
 }
 
 func (s *subServerObjectsDialogState) selectSingleObject(objn int64) {
@@ -465,24 +458,24 @@ func (s *subServerObjectsDialogState) reload(selectObjN int64, selectServerIndex
 	}
 }
 
-func (s *subServerObjectsDialogState) selectedSubserver() (contracts.AdminSubServer, bool) {
+func (s *subServerObjectsDialogState) selectedSubserver() (adminv1.SubServer, bool) {
 	if s.selectedServer < 0 || s.selectedServer >= len(s.subservers) {
 		s.statusLabel.SetText("Виберіть підсервер")
-		return contracts.AdminSubServer{}, false
+		return adminv1.SubServer{}, false
 	}
 
 	subserver := s.subservers[s.selectedServer]
 	if strings.TrimSpace(subserver.Bind) == "" {
 		s.statusLabel.SetText("У підсервера порожній BIND")
-		return contracts.AdminSubServer{}, false
+		return adminv1.SubServer{}, false
 	}
 
 	return subserver, true
 }
 
 func (s *subServerObjectsDialogState) runForTargets(
-	targets []contracts.AdminSubServerObject,
-	apply func(contracts.AdminSubServerObject) error,
+	targets []adminv1.SubServerObject,
+	apply func(adminv1.SubServerObject) error,
 ) (applied int, failed int, lastObjN int64) {
 	for _, obj := range targets {
 		if err := apply(obj); err != nil {
@@ -520,7 +513,7 @@ func (s *subServerObjectsDialogState) attachSelectedObjects() {
 	apply := func() {
 		applied, failed, lastObjN := s.runForTargets(
 			targets,
-			func(obj contracts.AdminSubServerObject) error {
+			func(obj adminv1.SubServerObject) error {
 				return s.provider.SetObjectSubServer(obj.ObjN, subServerChannelPrimary, subserver.Bind)
 			},
 		)
@@ -558,7 +551,7 @@ func (s *subServerObjectsDialogState) clearSelectedObjects() {
 
 	applied, failed, lastObjN := s.runForTargets(
 		targets,
-		func(obj contracts.AdminSubServerObject) error {
+		func(obj adminv1.SubServerObject) error {
 			return s.provider.ClearObjectSubServer(obj.ObjN, subServerChannelPrimary)
 		},
 	)
@@ -588,7 +581,7 @@ func (s *subServerObjectsDialogState) attachAllFilteredObjects() {
 
 			applied, failed, _ := s.runForTargets(
 				rows,
-				func(obj contracts.AdminSubServerObject) error {
+				func(obj adminv1.SubServerObject) error {
 					return s.provider.SetObjectSubServer(obj.ObjN, subServerChannelPrimary, subserver.Bind)
 				},
 			)
@@ -616,7 +609,7 @@ func (s *subServerObjectsDialogState) clearAllFilteredObjects() {
 
 			applied, failed, _ := s.runForTargets(
 				rows,
-				func(obj contracts.AdminSubServerObject) error {
+				func(obj adminv1.SubServerObject) error {
 					return s.provider.ClearObjectSubServer(obj.ObjN, subServerChannelPrimary)
 				},
 			)

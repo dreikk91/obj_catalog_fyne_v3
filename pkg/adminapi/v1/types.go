@@ -119,3 +119,124 @@ type Message220VBuckets struct {
 	Alarm   []Message
 	Restore []Message
 }
+
+type AccessStatus struct {
+	CurrentUser      string
+	MatchedPersonal  string
+	HasFullAccess    bool
+	AdminUsersCount  int64
+	MatchDescription string
+}
+
+type DataCheckIssue struct {
+	Severity string
+	Code     string
+	ObjN     int64
+	Details  string
+}
+
+type SubServer struct {
+	ID    int64
+	Info  string
+	Bind  string
+	Host  string
+	Type  int64
+	Host2 string
+}
+
+type SubServerObject struct {
+	ObjN       int64
+	Name       string
+	Address    string
+	SubServerA string
+	SubServerB string
+}
+
+type PPKConstructorItem struct {
+	ID        int64
+	Name      string
+	Channel   int64
+	ZoneCount int64
+}
+
+type FireMonitoringServer struct {
+	Host    string
+	Port    int64
+	Info    string
+	Enabled bool
+}
+
+type FireMonitoringSettings struct {
+	Enabled       bool
+	ObjectID      string
+	AckWaitSec    int64
+	UseStdDateFmt bool
+	Servers       []FireMonitoringServer
+}
+
+type ObjectCard struct {
+	ObjUIN int64
+	ObjN   int64
+	GrpN   int64
+
+	ShortName string
+	FullName  string
+	ObjTypeID int64
+	ObjRegID  int64
+
+	Address   string
+	Phones    string
+	Contract  string
+	StartDate string
+	Location  string
+	Notes     string
+
+	ChannelCode int64
+	PPKID       int64
+	GSMPhone1   string
+	GSMPhone2   string
+	GSMHiddenN  int64
+	SubServerA  string
+	SubServerB  string
+
+	TestControlEnabled bool
+	TestIntervalMin    int64
+}
+
+type ObjectPersonal struct {
+	ID          int64
+	SourceObjN  int64
+	Number      int64
+	Surname     string
+	Name        string
+	SecName     string
+	Address     string
+	Phones      string
+	Position    string
+	Notes       string
+	IsTRKTester bool
+	Access1     int64
+	IsRang      bool
+	ViberID     string
+	TelegramID  string
+	CreatedAt   string
+}
+
+type ObjectZone struct {
+	ID            int64
+	ZoneNumber    int64
+	ZoneType      int64
+	Description   string
+	EntryDelaySec int64
+}
+
+type ObjectCoordinates struct {
+	Latitude  string
+	Longitude string
+}
+
+type SIMPhoneUsage struct {
+	ObjN int64
+	Name string
+	Slot string
+}

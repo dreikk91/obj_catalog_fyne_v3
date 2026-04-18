@@ -12,22 +12,23 @@ import (
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/simoperator"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
-func ShowNewObjectDialog(parent fyne.Window, provider contracts.AdminObjectWizardProvider, onSaved func(objn int64)) {
+func ShowNewObjectDialog(parent fyne.Window, provider adminv1.ObjectWizardProvider, onSaved func(objn int64)) {
 	ShowNewObjectWizardDialog(parent, provider, onSaved)
 }
 
-func ShowEditObjectDialog(parent fyne.Window, provider contracts.AdminObjectCardProvider, objn int64, onSaved func(objn int64)) {
+func ShowEditObjectDialog(parent fyne.Window, provider adminv1.ObjectCardProvider, objn int64, onSaved func(objn int64)) {
 	showObjectCardDialog(parent, provider, &objn, onSaved)
 }
 
 type objectCardDialogState struct {
 	win       fyne.Window
-	provider  contracts.AdminObjectCardProvider
+	provider  adminv1.ObjectCardProvider
 	onSaved   func(objn int64)
 	editObjN  *int64
 	isEdit    bool
@@ -86,7 +87,7 @@ type objectCardDialogState struct {
 	channelCodeToLabel map[int64]string
 }
 
-func newObjectCardDialogState(win fyne.Window, provider contracts.AdminObjectCardProvider, editObjN *int64, onSaved func(objn int64)) *objectCardDialogState {
+func newObjectCardDialogState(win fyne.Window, provider adminv1.ObjectCardProvider, editObjN *int64, onSaved func(objn int64)) *objectCardDialogState {
 	simState := viewmodels.NewObjectCardSIMUsageStateViewModel()
 	simAPI1VM := viewmodels.NewSIMOperatorStateViewModel("SIM API: перевірка за запитом")
 	simAPI2VM := viewmodels.NewSIMOperatorStateViewModel("SIM API: перевірка за запитом")
@@ -257,7 +258,7 @@ func (s *objectCardDialogState) refreshPPKOptionsByChannel(preferredID int64) {
 }
 
 func (s *objectCardDialogState) checkSIMUsage(rawPhone string, slot int) {
-	text := s.simVM.ResolveUsageText(s.provider, rawPhone, s.editObjN)
+	text := s.simVM.ResolveUsageText(objectV1SIMLookupAdapter{base: s.provider}, rawPhone, s.editObjN)
 	if slot == 2 {
 		s.simState.SetSIM2(text)
 		return
@@ -300,7 +301,7 @@ func (s *objectCardDialogState) currentSIM(slot int) string {
 }
 
 func (s *objectCardDialogState) loadReferenceData() error {
-	if err := s.refsVM.LoadFromProvider(s.provider); err != nil {
+	if err := s.refsVM.LoadFromProvider(objectV1ReferencesAdapter{base: s.provider}); err != nil {
 		return err
 	}
 
@@ -365,7 +366,7 @@ func (s *objectCardDialogState) loadCard(objn int64) error {
 		return err
 	}
 
-	presentation := s.loadVM.BuildPresentation(card, s.refsVM, s.channelCodeToLabel)
+	presentation := s.loadVM.BuildPresentation(adminv1.ToContractsObjectCard(card), s.refsVM, s.channelCodeToLabel)
 
 	s.objnEntry.SetText(presentation.ObjNText)
 	s.shortNameEntry.SetText(presentation.ShortName)
@@ -538,7 +539,7 @@ func (s *objectCardDialogState) placeholderTabText() string {
 func (s *objectCardDialogState) saveObject() {
 	out, err := s.submitVM.Submit(viewmodels.ObjectCardSubmitInput{
 		BuildCard:   s.buildCardFromUI,
-		Persistence: s.provider,
+		Persistence: objectV1CardPersistenceAdapter{base: s.provider},
 		EditObjN:    s.editObjN,
 	})
 	if err != nil {
@@ -636,7 +637,7 @@ func (s *objectCardDialogState) initializeDialogData() {
 	}
 }
 
-func showObjectCardDialog(parent fyne.Window, provider contracts.AdminObjectCardProvider, editObjN *int64, onSaved func(objn int64)) {
+func showObjectCardDialog(parent fyne.Window, provider adminv1.ObjectCardProvider, editObjN *int64, onSaved func(objn int64)) {
 	title := "Редагування/Створення об'єкта"
 
 	win := fyne.CurrentApp().NewWindow(title)

@@ -12,9 +12,9 @@ type ObjectWizardSubmitInput struct {
 	ValidateStep func(step int) error
 	BuildCard    func() (contracts.AdminObjectCard, error)
 	Persistence  ObjectWizardPersistence
-	Personals    []contracts.AdminObjectPersonal
-	Zones        []contracts.AdminObjectZone
-	Coordinates  contracts.AdminObjectCoordinates
+	Personals    []ObjectPersonal
+	Zones        []ObjectZone
+	Coordinates  ObjectCoordinates
 }
 
 // ObjectWizardSubmitOutput містить результат submit-операції для UI шару.

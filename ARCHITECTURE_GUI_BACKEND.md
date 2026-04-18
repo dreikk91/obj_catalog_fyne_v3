@@ -34,3 +34,15 @@ This keeps older imports working while new code should use `pkg/contracts` direc
 - Keep UI logic and widgets inside `pkg/ui`.
 - If backend implementation changes (new DB, API, mock), expose it through `pkg/backend` without touching GUI.
 - For new pult systems, add capability notes into `docs/integrations/` and route ownership logic in multi-source provider.
+
+## Versioned UI Boundaries
+
+For newer frontend/admin flows, use versioned in-process contracts instead of exposing legacy admin contracts directly to UI:
+
+- `pkg/frontendapi/v1`
+- `pkg/adminapi/v1`
+
+Additional rules are fixed in:
+
+- [ADR_UI_BOUNDARY.md](./ADR_UI_BOUNDARY.md)
+- [API_VERSIONING.md](./API_VERSIONING.md)

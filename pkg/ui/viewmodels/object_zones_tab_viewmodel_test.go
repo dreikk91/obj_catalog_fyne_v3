@@ -2,13 +2,11 @@ package viewmodels
 
 import (
 	"testing"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 func TestObjectZonesTabViewModel_SelectAndEffectiveZoneNumber(t *testing.T) {
 	vm := NewObjectZonesTabViewModel()
-	vm.SetItems([]contracts.AdminObjectZone{
+	vm.SetItems([]ObjectZone{
 		{ID: 1, ZoneNumber: 0, Description: "A"},
 		{ID: 2, ZoneNumber: 5, Description: "B"},
 	})
@@ -29,7 +27,7 @@ func TestObjectZonesTabViewModel_SelectAndEffectiveZoneNumber(t *testing.T) {
 
 func TestObjectZonesTabViewModel_SelectZoneByNumber(t *testing.T) {
 	vm := NewObjectZonesTabViewModel()
-	vm.SetItems([]contracts.AdminObjectZone{
+	vm.SetItems([]ObjectZone{
 		{ID: 1, ZoneNumber: 10},
 		{ID: 2, ZoneNumber: 20},
 	})
@@ -44,7 +42,7 @@ func TestObjectZonesTabViewModel_SelectZoneByNumber(t *testing.T) {
 
 func TestObjectZonesTabViewModel_NextZoneNumberForAdd(t *testing.T) {
 	vm := NewObjectZonesTabViewModel()
-	vm.SetItems([]contracts.AdminObjectZone{
+	vm.SetItems([]ObjectZone{
 		{ZoneNumber: 1},
 		{ZoneNumber: 4},
 	})
@@ -71,7 +69,7 @@ func TestObjectZonesTabViewModel_BuildZoneForCreate(t *testing.T) {
 
 func TestObjectZonesTabViewModel_PrepareSelectedZoneForSave(t *testing.T) {
 	vm := NewObjectZonesTabViewModel()
-	vm.SetItems([]contracts.AdminObjectZone{
+	vm.SetItems([]ObjectZone{
 		{ID: 7, ZoneNumber: 0, Description: "  old  "},
 	})
 	vm.SelectByTableRow(1)

@@ -2,8 +2,6 @@ package viewmodels
 
 import (
 	"testing"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 func TestObjectWizardPersonalsFlowViewModel_SelectAndPrepareEdit(t *testing.T) {
@@ -19,7 +17,7 @@ func TestObjectWizardPersonalsFlowViewModel_SelectAndPrepareEdit(t *testing.T) {
 		t.Fatalf("unexpected status: %q", prompt.StatusText)
 	}
 
-	vm.ApplyAdd(state, contracts.AdminObjectPersonal{Number: 1, Name: "Іван"})
+	vm.ApplyAdd(state, ObjectPersonal{Number: 1, Name: "Іван"})
 	vm.SelectTableRow(state, 1)
 	prompt = vm.PrepareEdit(state)
 	if !prompt.CanEdit {
@@ -34,7 +32,7 @@ func TestObjectWizardPersonalsFlowViewModel_AddUpdateDelete(t *testing.T) {
 	state := NewObjectWizardPersonalsStateViewModel()
 	vm := NewObjectWizardPersonalsFlowViewModel(NewObjectWizardPersonalsTableViewModel())
 
-	add := vm.ApplyAdd(state, contracts.AdminObjectPersonal{Number: 1, Name: "Іван"})
+	add := vm.ApplyAdd(state, ObjectPersonal{Number: 1, Name: "Іван"})
 	if add.StatusText != "Додано В/О. Всього: 1" {
 		t.Fatalf("unexpected add status: %q", add.StatusText)
 	}
@@ -80,7 +78,7 @@ func TestObjectWizardPersonalsFlowViewModel_NextNumber(t *testing.T) {
 		t.Fatalf("unexpected next number: %d", got)
 	}
 
-	vm.ApplyAdd(state, contracts.AdminObjectPersonal{Number: 7})
+	vm.ApplyAdd(state, ObjectPersonal{Number: 7})
 	if got := vm.NextNumber(state); got != 8 {
 		t.Fatalf("unexpected next number after add: %d", got)
 	}

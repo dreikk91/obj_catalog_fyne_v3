@@ -3,13 +3,11 @@ package viewmodels
 import (
 	"fmt"
 	"strings"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 // SIMPhoneUsageLookup описує мінімальний контракт для перевірки зайнятості SIM-номера.
 type SIMPhoneUsageLookup interface {
-	FindObjectsBySIMPhone(phone string, excludeObjN *int64) ([]contracts.AdminSIMPhoneUsage, error)
+	FindObjectsBySIMPhone(phone string, excludeObjN *int64) ([]SIMPhoneUsage, error)
 }
 
 // SIMPhoneUsageViewModel містить presentation-логіку повідомлень про використання SIM.
@@ -39,7 +37,7 @@ func (vm *SIMPhoneUsageViewModel) ResolveUsageText(
 	return vm.FormatUsageList(usages)
 }
 
-func (vm *SIMPhoneUsageViewModel) FormatUsageList(usages []contracts.AdminSIMPhoneUsage) string {
+func (vm *SIMPhoneUsageViewModel) FormatUsageList(usages []SIMPhoneUsage) string {
 	if len(usages) == 0 {
 		return ""
 	}

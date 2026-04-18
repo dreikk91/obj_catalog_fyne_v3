@@ -3,8 +3,6 @@ package viewmodels
 import (
 	"fmt"
 	"strings"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 // ObjectAdditionalTabViewModel керує state-логікою вкладки "Додатково".
@@ -52,8 +50,8 @@ func (vm *ObjectAdditionalTabViewModel) CachedDistrictHintsForAddress(address st
 	return append([]string(nil), vm.lastGeoDistrictHints...), true
 }
 
-func (vm *ObjectAdditionalTabViewModel) BuildCoordinates(latitudeRaw string, longitudeRaw string) contracts.AdminObjectCoordinates {
-	return contracts.AdminObjectCoordinates{
+func (vm *ObjectAdditionalTabViewModel) BuildCoordinates(latitudeRaw string, longitudeRaw string) ObjectCoordinates {
+	return ObjectCoordinates{
 		Latitude:  strings.TrimSpace(latitudeRaw),
 		Longitude: strings.TrimSpace(longitudeRaw),
 	}

@@ -17,22 +17,17 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 )
 
-type adminSystemControlDialogProvider interface {
-	GetAdminAccessStatus() (contracts.AdminAccessStatus, error)
-	RunDataIntegrityChecks(limit int) ([]contracts.AdminDataCheckIssue, error)
-}
-
-func ShowAdminSystemControlDialog(parent fyne.Window, provider adminSystemControlDialogProvider) {
+func ShowAdminSystemControlDialog(parent fyne.Window, provider adminv1.SystemControlProvider) {
 	win := fyne.CurrentApp().NewWindow("Контроль системи")
 	win.Resize(fyne.NewSize(1024, 768))
 
 	var (
-		issues       []contracts.AdminDataCheckIssue
-		accessStatus contracts.AdminAccessStatus
+		issues       []adminv1.DataCheckIssue
+		accessStatus adminv1.AccessStatus
 	)
 
 	statusLabel := makeStatusLabel("Готово")
@@ -46,12 +41,12 @@ func ShowAdminSystemControlDialog(parent fyne.Window, provider adminSystemContro
 	issueFilterEntry := widget.NewEntry()
 	issueFilterEntry.SetPlaceHolder("Фільтр перевірок: код / № об'єкта / текст")
 
-	filteredIssues := func() []contracts.AdminDataCheckIssue {
+	filteredIssues := func() []adminv1.DataCheckIssue {
 		filter := strings.ToLower(strings.TrimSpace(issueFilterEntry.Text))
 		if filter == "" {
 			return issues
 		}
-		out := make([]contracts.AdminDataCheckIssue, 0, len(issues))
+		out := make([]adminv1.DataCheckIssue, 0, len(issues))
 		for _, it := range issues {
 			objnText := ""
 			if it.ObjN > 0 {

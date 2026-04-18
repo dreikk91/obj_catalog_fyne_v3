@@ -11,12 +11,13 @@ import (
 	"fyne.io/fyne/v2/widget"
 	xwidget "fyne.io/x/fyne/widget"
 
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
 type objectWizardDialogState struct {
-	provider         contracts.AdminObjectWizardProvider
+	provider         adminv1.ObjectWizardProvider
 	personalsStateVM *viewmodels.ObjectWizardPersonalsStateViewModel
 	zonesStateVM     *viewmodels.ObjectWizardZonesStateViewModel
 	objectCardVM     *viewmodels.ObjectCardViewModel
@@ -135,7 +136,7 @@ func (s *objectWizardDialogState) onChannelChanged() {
 }
 
 func (s *objectWizardDialogState) checkSIMUsage(rawPhone string, slot int) {
-	text := s.simUsageVM.ResolveUsageText(s.provider, rawPhone, nil)
+	text := s.simUsageVM.ResolveUsageText(objectV1SIMLookupAdapter{base: s.provider}, rawPhone, nil)
 	if slot == 2 {
 		s.simStateVM.SetSIM2(text)
 		return
@@ -144,7 +145,7 @@ func (s *objectWizardDialogState) checkSIMUsage(rawPhone string, slot int) {
 }
 
 func (s *objectWizardDialogState) loadReferenceData() error {
-	if err := s.refsVM.LoadFromProvider(s.provider); err != nil {
+	if err := s.refsVM.LoadFromProvider(objectV1ReferencesAdapter{base: s.provider}); err != nil {
 		return err
 	}
 
@@ -377,11 +378,14 @@ func (s *objectWizardDialogState) buildPersonalsStep(win fyne.Window, statusLabe
 	}
 
 	addPersonalBtn := widget.NewButton("Додати", func() {
-		showObjectPersonalEditor(win, s.provider, "Додати В/О", contracts.AdminObjectPersonal{
+		showObjectPersonalEditor(win, s.provider, "Додати В/О", adminv1.ObjectPersonal{
 			Number: s.personalsFlow.NextNumber(s.personalsStateVM),
 			IsRang: true,
-		}, func(item contracts.AdminObjectPersonal) error {
-			out := s.personalsFlow.ApplyAdd(s.personalsStateVM, item)
+		}, func(item adminv1.ObjectPersonal) error {
+			out := s.personalsFlow.ApplyAdd(
+				s.personalsStateVM,
+				viewmodels.ObjectPersonalFromContracts(adminv1.ToContractsObjectPersonal(item)),
+			)
 			applyPersonalAction(out)
 			return nil
 		}, statusLabel, nil)
@@ -392,8 +396,12 @@ func (s *objectWizardDialogState) buildPersonalsStep(win fyne.Window, statusLabe
 			statusLabel.SetText(prompt.StatusText)
 			return
 		}
-		showObjectPersonalEditor(win, s.provider, "Редагування В/О", prompt.Initial, func(item contracts.AdminObjectPersonal) error {
-			out := s.personalsFlow.ApplyUpdate(s.personalsStateVM, prompt.SelectedIdx, item)
+		showObjectPersonalEditor(win, s.provider, "Редагування В/О", adminv1.ToObjectPersonal(prompt.Initial.ToContracts()), func(item adminv1.ObjectPersonal) error {
+			out := s.personalsFlow.ApplyUpdate(
+				s.personalsStateVM,
+				prompt.SelectedIdx,
+				viewmodels.ObjectPersonalFromContracts(adminv1.ToContractsObjectPersonal(item)),
+			)
 			applyPersonalAction(out)
 			return nil
 		}, statusLabel, nil)
@@ -617,7 +625,7 @@ func (s *objectWizardDialogState) buildZonesStep(win fyne.Window, statusLabel *w
 	return step, refreshZoneTable
 }
 
-func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminObjectWizardProvider, onSaved func(objn int64)) {
+func ShowNewObjectWizardDialog(parent fyne.Window, provider adminv1.ObjectWizardProvider, onSaved func(objn int64)) {
 	win := fyne.CurrentApp().NewWindow("Майстер створення об'єкта")
 	win.Resize(fyne.NewSize(1024, 768))
 
@@ -900,10 +908,10 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider contracts.AdminObjec
 		out, err := submitVM.Submit(viewmodels.ObjectWizardSubmitInput{
 			ValidateStep: validateStep,
 			BuildCard:    buildCardFromUI,
-			Persistence:  provider,
+			Persistence:  objectV1WizardPersistenceAdapter{base: provider},
 			Personals:    personalsStateVM.Items(),
 			Zones:        zonesStateVM.Items(),
-			Coordinates: contracts.AdminObjectCoordinates{
+			Coordinates: viewmodels.ObjectCoordinates{
 				Latitude:  latitudeEntry.Text,
 				Longitude: longitudeEntry.Text,
 			},

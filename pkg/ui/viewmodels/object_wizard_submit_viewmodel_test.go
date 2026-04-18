@@ -19,9 +19,9 @@ func TestObjectWizardSubmitViewModel_Submit_Success(t *testing.T) {
 			return contracts.AdminObjectCard{ObjN: 1501}, nil
 		},
 		Persistence: stub,
-		Personals:   []contracts.AdminObjectPersonal{{Number: 1}},
-		Zones:       []contracts.AdminObjectZone{{ZoneNumber: 1}},
-		Coordinates: contracts.AdminObjectCoordinates{Latitude: "49.1", Longitude: "24.1"},
+		Personals:   []ObjectPersonal{{Number: 1}},
+		Zones:       []ObjectZone{{ZoneNumber: 1}},
+		Coordinates: ObjectCoordinates{Latitude: "49.1", Longitude: "24.1"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected submit error: %v", err)
@@ -136,7 +136,7 @@ func TestObjectWizardSubmitViewModel_Submit_Warnings(t *testing.T) {
 			return contracts.AdminObjectCard{ObjN: 1504}, nil
 		},
 		Persistence: stub,
-		Personals:   []contracts.AdminObjectPersonal{{Number: 1}},
+		Personals:   []ObjectPersonal{{Number: 1}},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error with warnings: %v", err)

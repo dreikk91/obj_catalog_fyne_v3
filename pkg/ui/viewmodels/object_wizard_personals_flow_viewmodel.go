@@ -1,17 +1,15 @@
 package viewmodels
 
-import "obj_catalog_fyne_v3/pkg/contracts"
-
 // ObjectWizardPersonalsState описує мінімальний стан/операції В/О для flow-кроку майстра.
 type ObjectWizardPersonalsState interface {
 	Count() int
 	Selected() int
 	SetSelected(idx int) bool
-	At(idx int) (contracts.AdminObjectPersonal, bool)
-	Add(item contracts.AdminObjectPersonal) int
-	Update(idx int, item contracts.AdminObjectPersonal) bool
+	At(idx int) (ObjectPersonal, bool)
+	Add(item ObjectPersonal) int
+	Update(idx int, item ObjectPersonal) bool
 	Delete(idx int) bool
-	FullName(item contracts.AdminObjectPersonal) string
+	FullName(item ObjectPersonal) string
 	NextNumber() int64
 }
 
@@ -25,7 +23,7 @@ type ObjectWizardPersonalsActionResult struct {
 type ObjectWizardPersonalsEditPrompt struct {
 	CanEdit      bool
 	SelectedIdx  int
-	Initial      contracts.AdminObjectPersonal
+	Initial      ObjectPersonal
 	StatusText   string
 	RefreshTable bool
 }
@@ -64,7 +62,7 @@ func (vm *ObjectWizardPersonalsFlowViewModel) SelectTableRow(state ObjectWizardP
 	state.SetSelected(idx)
 }
 
-func (vm *ObjectWizardPersonalsFlowViewModel) ApplyAdd(state ObjectWizardPersonalsState, item contracts.AdminObjectPersonal) ObjectWizardPersonalsActionResult {
+func (vm *ObjectWizardPersonalsFlowViewModel) ApplyAdd(state ObjectWizardPersonalsState, item ObjectPersonal) ObjectWizardPersonalsActionResult {
 	state.Add(item)
 	return ObjectWizardPersonalsActionResult{
 		StatusText:   vm.tableVM.StatusAdded(state.Count()),
@@ -88,7 +86,7 @@ func (vm *ObjectWizardPersonalsFlowViewModel) PrepareEdit(state ObjectWizardPers
 	}
 }
 
-func (vm *ObjectWizardPersonalsFlowViewModel) ApplyUpdate(state ObjectWizardPersonalsState, idx int, item contracts.AdminObjectPersonal) ObjectWizardPersonalsActionResult {
+func (vm *ObjectWizardPersonalsFlowViewModel) ApplyUpdate(state ObjectWizardPersonalsState, idx int, item ObjectPersonal) ObjectWizardPersonalsActionResult {
 	if !state.Update(idx, item) {
 		return ObjectWizardPersonalsActionResult{
 			StatusText: vm.tableVM.StatusSelectionRequired(),

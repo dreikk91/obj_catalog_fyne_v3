@@ -2,8 +2,6 @@ package viewmodels
 
 import (
 	"testing"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 func TestObjectWizardPersonalsTableViewModel_HeaderText(t *testing.T) {
@@ -19,7 +17,7 @@ func TestObjectWizardPersonalsTableViewModel_HeaderText(t *testing.T) {
 
 func TestObjectWizardPersonalsTableViewModel_CellText(t *testing.T) {
 	vm := NewObjectWizardPersonalsTableViewModel()
-	item := contracts.AdminObjectPersonal{
+	item := ObjectPersonal{
 		Number:   7,
 		Phones:   " 0501234567 ",
 		Position: " Інженер ",

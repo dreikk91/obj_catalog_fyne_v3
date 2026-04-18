@@ -11,30 +11,8 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 )
-
-type objectTypesDictionaryProvider interface {
-	ListObjectTypes() ([]contracts.DictionaryItem, error)
-	AddObjectType(name string) error
-	UpdateObjectType(id int64, name string) error
-	DeleteObjectType(id int64) error
-}
-
-type regionsDictionaryProvider interface {
-	ListRegions() ([]contracts.DictionaryItem, error)
-	AddRegion(name string, regionCode *int64) error
-	UpdateRegion(id int64, name string, regionCode *int64) error
-	DeleteRegion(id int64) error
-}
-
-type alarmReasonsDictionaryProvider interface {
-	ListAlarmReasons() ([]contracts.DictionaryItem, error)
-	AddAlarmReason(name string) error
-	UpdateAlarmReason(id int64, name string) error
-	DeleteAlarmReason(id int64) error
-	MoveAlarmReason(id int64, direction int) error
-}
 
 type dictionaryDialogConfig struct {
 	Title       string
@@ -43,14 +21,14 @@ type dictionaryDialogConfig struct {
 	CodeLabel   string
 	SupportMove bool
 
-	List   func() ([]contracts.DictionaryItem, error)
+	List   func() ([]adminv1.DictionaryItem, error)
 	Add    func(name string, code *int64) error
 	Update func(id int64, name string, code *int64) error
 	Delete func(id int64) error
 	Move   func(id int64, direction int) error
 }
 
-func ShowObjectTypesDictionaryDialog(parent fyne.Window, provider objectTypesDictionaryProvider) {
+func ShowObjectTypesDictionaryDialog(parent fyne.Window, provider adminv1.ObjectTypesDictionaryProvider) {
 	showDictionaryDialog(parent, dictionaryDialogConfig{
 		Title:     "Типи об'єктів",
 		NameLabel: "Тип об'єкта:",
@@ -61,7 +39,7 @@ func ShowObjectTypesDictionaryDialog(parent fyne.Window, provider objectTypesDic
 	})
 }
 
-func ShowRegionsDictionaryDialog(parent fyne.Window, provider regionsDictionaryProvider) {
+func ShowRegionsDictionaryDialog(parent fyne.Window, provider adminv1.RegionsDictionaryProvider) {
 	showDictionaryDialog(parent, dictionaryDialogConfig{
 		Title:     "Регіони",
 		NameLabel: "Назва регіону:",
@@ -74,7 +52,7 @@ func ShowRegionsDictionaryDialog(parent fyne.Window, provider regionsDictionaryP
 	})
 }
 
-func ShowAlarmReasonsDictionaryDialog(parent fyne.Window, provider alarmReasonsDictionaryProvider) {
+func ShowAlarmReasonsDictionaryDialog(parent fyne.Window, provider adminv1.AlarmReasonsDictionaryProvider) {
 	showDictionaryDialog(parent, dictionaryDialogConfig{
 		Title:       "Причини тривог",
 		NameLabel:   "Причина тривоги:",
@@ -92,7 +70,7 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 	win.Resize(fyne.NewSize(780, 520))
 
 	var (
-		items         []contracts.DictionaryItem
+		items         []adminv1.DictionaryItem
 		selectedIndex = -1
 		selectedID    int64
 		mode          = "view" // view | add | edit
@@ -120,7 +98,7 @@ func showDictionaryDialog(parent fyne.Window, cfg dictionaryDialogConfig) {
 		}
 	}
 
-	formatItem := func(item contracts.DictionaryItem) string {
+	formatItem := func(item adminv1.DictionaryItem) string {
 		if cfg.ShowCode && item.Code != nil {
 			return fmt.Sprintf("%s [%d]", item.Name, *item.Code)
 		}

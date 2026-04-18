@@ -111,3 +111,122 @@ func TestToMessage220VBuckets(t *testing.T) {
 		t.Fatalf("restore = %+v, want one item with UIN=3", got.Restore)
 	}
 }
+
+func TestToAccessStatusAndDataCheckIssues(t *testing.T) {
+	status := ToAccessStatus(contracts.AdminAccessStatus{
+		CurrentUser:      "user",
+		HasFullAccess:    true,
+		AdminUsersCount:  2,
+		MatchDescription: "ok",
+	})
+	if status.CurrentUser != "user" || !status.HasFullAccess || status.AdminUsersCount != 2 {
+		t.Fatalf("status = %+v, want mapped access status", status)
+	}
+
+	issues := ToDataCheckIssues([]contracts.AdminDataCheckIssue{{Severity: "warn", Code: "C1", ObjN: 7, Details: "demo"}})
+	if len(issues) != 1 || issues[0].Code != "C1" || issues[0].ObjN != 7 {
+		t.Fatalf("issues = %+v, want one mapped issue", issues)
+	}
+}
+
+func TestToSubServersAndObjects(t *testing.T) {
+	servers := ToSubServers([]contracts.AdminSubServer{{ID: 1, Bind: "a", Host: "host", Type: 2}})
+	if len(servers) != 1 || servers[0].Bind != "a" || servers[0].Type != 2 {
+		t.Fatalf("servers = %+v, want one mapped server", servers)
+	}
+
+	objects := ToSubServerObjects([]contracts.AdminSubServerObject{{ObjN: 11, Name: "obj", SubServerA: "a"}})
+	if len(objects) != 1 || objects[0].ObjN != 11 || objects[0].SubServerA != "a" {
+		t.Fatalf("objects = %+v, want one mapped object", objects)
+	}
+}
+
+func TestToPPKConstructorItems(t *testing.T) {
+	items := ToPPKConstructorItems([]contracts.PPKConstructorItem{{ID: 3, Name: "demo", Channel: 7, ZoneCount: 16}})
+	if len(items) != 1 || items[0].ID != 3 || items[0].Channel != 7 || items[0].ZoneCount != 16 {
+		t.Fatalf("items = %+v, want one mapped PPK item", items)
+	}
+}
+
+func TestFireMonitoringSettingsRoundTrip(t *testing.T) {
+	original := contracts.FireMonitoringSettings{
+		Enabled:       true,
+		ObjectID:      "fire-1",
+		AckWaitSec:    15,
+		UseStdDateFmt: false,
+		Servers: []contracts.FireMonitoringServer{
+			{Host: "host", Port: 1234, Info: "ДСНС", Enabled: true},
+		},
+	}
+
+	mapped := ToFireMonitoringSettings(original)
+	if mapped.ObjectID != "fire-1" || len(mapped.Servers) != 1 || mapped.Servers[0].Info != "ДСНС" {
+		t.Fatalf("mapped = %+v, want round-tripped values", mapped)
+	}
+
+	roundTrip := ToContractsFireMonitoringSettings(mapped)
+	if roundTrip.AckWaitSec != 15 || len(roundTrip.Servers) != 1 || roundTrip.Servers[0].Port != 1234 {
+		t.Fatalf("roundTrip = %+v, want original values", roundTrip)
+	}
+}
+
+func TestObjectAdminRoundTrip(t *testing.T) {
+	card := contracts.AdminObjectCard{
+		ObjUIN:             10,
+		ObjN:               1001,
+		ShortName:          "School",
+		ObjTypeID:          7,
+		ObjRegID:           3,
+		GSMPhone1:          "380671234567",
+		GSMHiddenN:         55,
+		TestControlEnabled: true,
+		TestIntervalMin:    30,
+	}
+	mappedCard := ToObjectCard(card)
+	if mappedCard.ObjN != 1001 || !mappedCard.TestControlEnabled || mappedCard.ObjTypeID != 7 {
+		t.Fatalf("mappedCard = %+v, want mapped object card", mappedCard)
+	}
+	if roundTrip := ToContractsObjectCard(mappedCard); roundTrip.GSMHiddenN != 55 || roundTrip.ObjRegID != 3 {
+		t.Fatalf("roundTrip card = %+v, want original values", roundTrip)
+	}
+
+	personal := contracts.AdminObjectPersonal{
+		ID:         1,
+		SourceObjN: 1001,
+		Number:     2,
+		Surname:    "Petrenko",
+		Name:       "Ivan",
+		Access1:    1,
+		IsRang:     true,
+	}
+	mappedPersonal := ToObjectPersonal(personal)
+	if mappedPersonal.Name != "Ivan" || mappedPersonal.Access1 != 1 || !mappedPersonal.IsRang {
+		t.Fatalf("mappedPersonal = %+v, want mapped personal", mappedPersonal)
+	}
+	if roundTrip := ToContractsObjectPersonal(mappedPersonal); roundTrip.Surname != "Petrenko" || roundTrip.SourceObjN != 1001 {
+		t.Fatalf("roundTrip personal = %+v, want original values", roundTrip)
+	}
+
+	zone := contracts.AdminObjectZone{ID: 8, ZoneNumber: 4, Description: "Hall"}
+	mappedZone := ToObjectZone(zone)
+	if mappedZone.ZoneNumber != 4 || mappedZone.Description != "Hall" {
+		t.Fatalf("mappedZone = %+v, want mapped zone", mappedZone)
+	}
+	if roundTrip := ToContractsObjectZone(mappedZone); roundTrip.ID != 8 || roundTrip.ZoneNumber != 4 {
+		t.Fatalf("roundTrip zone = %+v, want original values", roundTrip)
+	}
+
+	coords := contracts.AdminObjectCoordinates{Latitude: "49.1", Longitude: "24.1"}
+	mappedCoords := ToObjectCoordinates(coords)
+	if mappedCoords.Latitude != "49.1" || mappedCoords.Longitude != "24.1" {
+		t.Fatalf("mappedCoords = %+v, want mapped coordinates", mappedCoords)
+	}
+	if roundTrip := ToContractsObjectCoordinates(mappedCoords); roundTrip.Longitude != "24.1" {
+		t.Fatalf("roundTrip coords = %+v, want original values", roundTrip)
+	}
+
+	simUsages := ToSIMPhoneUsages([]contracts.AdminSIMPhoneUsage{{ObjN: 1001, Name: "School", Slot: "SIM1"}})
+	if len(simUsages) != 1 || simUsages[0].Slot != "SIM1" {
+		t.Fatalf("simUsages = %+v, want mapped usage", simUsages)
+	}
+}

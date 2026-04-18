@@ -16,20 +16,15 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 )
 
-type fireMonitoringSettingsDialogProvider interface {
-	GetFireMonitoringSettings() (contracts.FireMonitoringSettings, error)
-	SaveFireMonitoringSettings(settings contracts.FireMonitoringSettings) error
-}
-
-func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider fireMonitoringSettingsDialogProvider) {
+func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider adminv1.FireMonitoringProvider) {
 	win := fyne.CurrentApp().NewWindow("Налаштування пожежного моніторингу")
 	win.Resize(fyne.NewSize(1060, 680))
 
 	var (
-		servers       []contracts.FireMonitoringServer
+		servers       []adminv1.FireMonitoringServer
 		serverStatus  []string
 		selectedRow   = -1
 		serversMu     sync.RWMutex
@@ -150,7 +145,7 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider fireMonitorin
 		}
 
 		serversMu.Lock()
-		servers[selectedRow] = contracts.FireMonitoringServer{
+		servers[selectedRow] = adminv1.FireMonitoringServer{
 			Host:    host,
 			Port:    port,
 			Info:    info,
@@ -161,7 +156,7 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider fireMonitorin
 		return nil
 	}
 
-	statusForServer := func(s contracts.FireMonitoringServer) string {
+	statusForServer := func(s adminv1.FireMonitoringServer) string {
 		if !s.Enabled {
 			return "вимкн"
 		}
@@ -248,7 +243,7 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider fireMonitorin
 		serversMu.Lock()
 		servers = slices.Clone(s.Servers)
 		if len(servers) == 0 {
-			servers = []contracts.FireMonitoringServer{{Enabled: true}}
+			servers = []adminv1.FireMonitoringServer{{Enabled: true}}
 		}
 		serverStatus = make([]string, len(servers))
 		serversMu.Unlock()
@@ -272,7 +267,7 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider fireMonitorin
 		}
 		serversMu.RUnlock()
 		serversMu.Lock()
-		servers = append(servers, contracts.FireMonitoringServer{Enabled: true})
+		servers = append(servers, adminv1.FireMonitoringServer{Enabled: true})
 		serverStatus = append(serverStatus, "не задано")
 		serversMu.Unlock()
 		serverTable.Refresh()
@@ -292,7 +287,7 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider fireMonitorin
 			serverStatus = append(serverStatus[:selectedRow], serverStatus[selectedRow+1:]...)
 		}
 		if len(servers) == 0 {
-			servers = []contracts.FireMonitoringServer{{Enabled: true}}
+			servers = []adminv1.FireMonitoringServer{{Enabled: true}}
 			serverStatus = []string{"не задано"}
 			selectedRow = 0
 		} else if selectedRow >= len(servers) {
@@ -329,12 +324,12 @@ func ShowFireMonitoringSettingsDialog(parent fyne.Window, provider fireMonitorin
 			ackWait = n
 		}
 
-		settings := contracts.FireMonitoringSettings{
+		settings := adminv1.FireMonitoringSettings{
 			Enabled:       enabledCheck.Checked,
 			ObjectID:      strings.TrimSpace(objectIDEntry.Text),
 			AckWaitSec:    ackWait,
 			UseStdDateFmt: dateFmtRadio.Selected == "Стандартний формат дати",
-			Servers: func() []contracts.FireMonitoringServer {
+			Servers: func() []adminv1.FireMonitoringServer {
 				serversMu.RLock()
 				defer serversMu.RUnlock()
 				return slices.Clone(servers)

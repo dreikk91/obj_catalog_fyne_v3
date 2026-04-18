@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 // ObjectWizardPersonalsTableViewModel формує тексти таблиці та статуси кроку "В/О" в майстрі.
@@ -32,7 +30,7 @@ func (vm *ObjectWizardPersonalsTableViewModel) HeaderText(col int) string {
 	}
 }
 
-func (vm *ObjectWizardPersonalsTableViewModel) CellText(item contracts.AdminObjectPersonal, fullName string, col int) string {
+func (vm *ObjectWizardPersonalsTableViewModel) CellText(item ObjectPersonal, fullName string, col int) string {
 	switch col {
 	case 0:
 		return strconv.FormatInt(item.Number, 10)

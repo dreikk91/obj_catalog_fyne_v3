@@ -10,15 +10,15 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 )
 
 func showObjectPersonalEditor(
 	parent fyne.Window,
-	provider contracts.AdminObjectPersonalService,
+	provider adminv1.ObjectPersonalService,
 	title string,
-	initial contracts.AdminObjectPersonal,
-	onSave func(item contracts.AdminObjectPersonal) error,
+	initial adminv1.ObjectPersonal,
+	onSave func(item adminv1.ObjectPersonal) error,
 	statusLabel *widget.Label,
 	onDone func(),
 ) {
@@ -73,7 +73,7 @@ func showObjectPersonalEditor(
 		return cnt
 	}
 
-	applyPersonalLookup := func(found *contracts.AdminObjectPersonal) {
+	applyPersonalLookup := func(found *adminv1.ObjectPersonal) {
 		if found == nil {
 			return
 		}
@@ -172,7 +172,7 @@ func showObjectPersonalEditor(
 			number = n
 		}
 
-		item := contracts.AdminObjectPersonal{
+		item := adminv1.ObjectPersonal{
 			Number:      number,
 			Surname:     strings.TrimSpace(surnameEntry.Text),
 			Name:        strings.TrimSpace(nameEntry.Text),
@@ -193,7 +193,9 @@ func showObjectPersonalEditor(
 			statusLabel.SetText("Не вдалося зберегти В/О")
 			return
 		}
-		onDone()
+		if onDone != nil {
+			onDone()
+		}
 	}, parent)
 	dlg.Show()
 }

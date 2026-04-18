@@ -11,9 +11,9 @@ import (
 // ObjectWizardPersistence описує мінімальні backend-операції майстра створення об'єкта.
 type ObjectWizardPersistence interface {
 	CreateObject(card contracts.AdminObjectCard) error
-	AddObjectPersonal(objn int64, item contracts.AdminObjectPersonal) error
-	AddObjectZone(objn int64, zone contracts.AdminObjectZone) error
-	SaveObjectCoordinates(objn int64, coords contracts.AdminObjectCoordinates) error
+	AddObjectPersonal(objn int64, item ObjectPersonal) error
+	AddObjectZone(objn int64, zone ObjectZone) error
+	SaveObjectCoordinates(objn int64, coords ObjectCoordinates) error
 }
 
 // ObjectWizardCreateResult містить підсумок команди створення об'єкта в майстрі.
@@ -66,9 +66,9 @@ func (vm *ObjectWizardViewModel) ValidateStep(input ObjectWizardStepValidationIn
 func (vm *ObjectWizardViewModel) CreateObjectWithRelatedData(
 	persistence ObjectWizardPersistence,
 	card contracts.AdminObjectCard,
-	personals []contracts.AdminObjectPersonal,
-	zones []contracts.AdminObjectZone,
-	coords contracts.AdminObjectCoordinates,
+	personals []ObjectPersonal,
+	zones []ObjectZone,
+	coords ObjectCoordinates,
 ) (ObjectWizardCreateResult, error) {
 	if err := persistence.CreateObject(card); err != nil {
 		return ObjectWizardCreateResult{

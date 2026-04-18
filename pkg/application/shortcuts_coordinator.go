@@ -5,6 +5,7 @@ import (
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 
+	"obj_catalog_fyne_v3/pkg/backend"
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
@@ -28,19 +29,23 @@ func (a *Application) registerShortcuts(themeBtn *widget.Button) {
 
 	canvas.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyN, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
 		withAdminCapability(a, func(admin contracts.AdminObjectWizardProvider) {
-			a.openNewObjectDialog(admin)
+			a.openNewObjectDialog(backend.NewAdminV1ObjectWizardProvider(
+				backend.NewFrontendAdminWizardBridge(a.getFrontendAPI(), admin),
+			))
 		})()
 	})
 
 	canvas.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyE, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
 		withAdminCapability(a, func(admin contracts.AdminObjectCardProvider) {
-			a.openEditCurrentObjectDialog(admin)
+			a.openEditCurrentObjectDialog(backend.NewAdminV1ObjectCardProvider(
+				backend.NewFrontendAdminCardBridge(a.getFrontendAPI(), admin),
+			))
 		})()
 	})
 
 	canvas.AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyX, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
-		withAdminCapability(a, func(admin adminObjectDeleteProvider) {
-			a.confirmDeleteCurrentObject(admin)
+		withAdminCapability(a, func(admin interface{ DeleteObject(objn int64) error }) {
+			a.confirmDeleteCurrentObject(backend.NewAdminV1ObjectDeleteProvider(admin))
 		})()
 	})
 

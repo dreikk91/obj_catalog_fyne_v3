@@ -2,13 +2,11 @@ package viewmodels
 
 import (
 	"testing"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 func TestObjectPersonalsTabViewModel_SetItemsAndSelect(t *testing.T) {
 	vm := NewObjectPersonalsTabViewModel()
-	vm.SetItems([]contracts.AdminObjectPersonal{
+	vm.SetItems([]ObjectPersonal{
 		{ID: 1, Name: "Іван"},
 		{ID: 2, Name: "Петро"},
 	})
@@ -30,7 +28,7 @@ func TestObjectPersonalsTabViewModel_SetItemsAndSelect(t *testing.T) {
 
 func TestObjectPersonalsTabViewModel_SelectInvalid(t *testing.T) {
 	vm := NewObjectPersonalsTabViewModel()
-	vm.SetItems([]contracts.AdminObjectPersonal{{ID: 1}})
+	vm.SetItems([]ObjectPersonal{{ID: 1}})
 
 	if vm.SelectByTableRow(0) {
 		t.Fatalf("header row must not be selectable")
@@ -45,7 +43,7 @@ func TestObjectPersonalsTabViewModel_SelectInvalid(t *testing.T) {
 
 func TestObjectPersonalsTabViewModel_FullName(t *testing.T) {
 	vm := NewObjectPersonalsTabViewModel()
-	got := vm.FullName(contracts.AdminObjectPersonal{
+	got := vm.FullName(ObjectPersonal{
 		Surname: " Петренко ",
 		Name:    " Іван ",
 		SecName: " Іванович ",
@@ -57,12 +55,12 @@ func TestObjectPersonalsTabViewModel_FullName(t *testing.T) {
 
 func TestObjectPersonalsTabViewModel_PrepareUpdatedItem(t *testing.T) {
 	vm := NewObjectPersonalsTabViewModel()
-	original := contracts.AdminObjectPersonal{
+	original := ObjectPersonal{
 		ID:        77,
 		CreatedAt: "2026-01-02 03:04:05",
 		Name:      "Old",
 	}
-	edited := contracts.AdminObjectPersonal{
+	edited := ObjectPersonal{
 		Name: "New",
 	}
 

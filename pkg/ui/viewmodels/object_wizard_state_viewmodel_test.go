@@ -2,14 +2,12 @@ package viewmodels
 
 import (
 	"testing"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 func TestObjectWizardPersonalsStateViewModel_CRUD(t *testing.T) {
 	vm := NewObjectWizardPersonalsStateViewModel()
 
-	added := vm.Add(contracts.AdminObjectPersonal{Name: "Ivan"})
+	added := vm.Add(ObjectPersonal{Name: "Ivan"})
 	if added != 0 {
 		t.Fatalf("unexpected added index: %d", added)
 	}
@@ -24,7 +22,7 @@ func TestObjectWizardPersonalsStateViewModel_CRUD(t *testing.T) {
 		t.Fatalf("expected auto number 1, got %d", item.Number)
 	}
 
-	updated := vm.Update(0, contracts.AdminObjectPersonal{
+	updated := vm.Update(0, ObjectPersonal{
 		Number:  0,
 		Surname: "Petrenko",
 		Name:    "Ivan",
@@ -50,8 +48,8 @@ func TestObjectWizardPersonalsStateViewModel_CRUD(t *testing.T) {
 
 func TestObjectWizardPersonalsStateViewModel_NextNumberUsesMaxExisting(t *testing.T) {
 	vm := NewObjectWizardPersonalsStateViewModel()
-	vm.Add(contracts.AdminObjectPersonal{Number: 5})
-	vm.Add(contracts.AdminObjectPersonal{Number: 2})
+	vm.Add(ObjectPersonal{Number: 5})
+	vm.Add(ObjectPersonal{Number: 2})
 
 	if next := vm.NextNumber(); next != 6 {
 		t.Fatalf("unexpected next number: %d", next)

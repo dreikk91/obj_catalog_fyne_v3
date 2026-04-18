@@ -20,7 +20,7 @@ func (s *objectWizardPersistenceStub) CreateObject(card contracts.AdminObjectCar
 	return s.createErr
 }
 
-func (s *objectWizardPersistenceStub) AddObjectPersonal(objn int64, item contracts.AdminObjectPersonal) error {
+func (s *objectWizardPersistenceStub) AddObjectPersonal(objn int64, item ObjectPersonal) error {
 	if len(s.addPersErrs) == 0 {
 		return nil
 	}
@@ -29,7 +29,7 @@ func (s *objectWizardPersistenceStub) AddObjectPersonal(objn int64, item contrac
 	return err
 }
 
-func (s *objectWizardPersistenceStub) AddObjectZone(objn int64, zone contracts.AdminObjectZone) error {
+func (s *objectWizardPersistenceStub) AddObjectZone(objn int64, zone ObjectZone) error {
 	if len(s.addZoneErrs) == 0 {
 		return nil
 	}
@@ -38,7 +38,7 @@ func (s *objectWizardPersistenceStub) AddObjectZone(objn int64, zone contracts.A
 	return err
 }
 
-func (s *objectWizardPersistenceStub) SaveObjectCoordinates(objn int64, coords contracts.AdminObjectCoordinates) error {
+func (s *objectWizardPersistenceStub) SaveObjectCoordinates(objn int64, coords ObjectCoordinates) error {
 	return s.coordsErr
 }
 
@@ -49,9 +49,9 @@ func TestObjectWizardViewModel_CreateObjectWithRelatedData_Success(t *testing.T)
 	result, err := vm.CreateObjectWithRelatedData(
 		stub,
 		contracts.AdminObjectCard{ObjN: 111},
-		[]contracts.AdminObjectPersonal{{Number: 1}},
-		[]contracts.AdminObjectZone{{ZoneNumber: 1}},
-		contracts.AdminObjectCoordinates{Latitude: "49.1", Longitude: "24.1"},
+		[]ObjectPersonal{{Number: 1}},
+		[]ObjectZone{{ZoneNumber: 1}},
+		ObjectCoordinates{Latitude: "49.1", Longitude: "24.1"},
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -78,7 +78,7 @@ func TestObjectWizardViewModel_CreateObjectWithRelatedData_CreateFails(t *testin
 		contracts.AdminObjectCard{ObjN: 112},
 		nil,
 		nil,
-		contracts.AdminObjectCoordinates{},
+		ObjectCoordinates{},
 	)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -99,9 +99,9 @@ func TestObjectWizardViewModel_CreateObjectWithRelatedData_Warnings(t *testing.T
 	result, err := vm.CreateObjectWithRelatedData(
 		stub,
 		contracts.AdminObjectCard{ObjN: 113},
-		[]contracts.AdminObjectPersonal{{Number: 1}},
-		[]contracts.AdminObjectZone{{ZoneNumber: 1}},
-		contracts.AdminObjectCoordinates{},
+		[]ObjectPersonal{{Number: 1}},
+		[]ObjectZone{{ZoneNumber: 1}},
+		ObjectCoordinates{},
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

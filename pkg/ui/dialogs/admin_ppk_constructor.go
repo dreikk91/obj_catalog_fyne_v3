@@ -11,22 +11,15 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 )
 
-type ppkConstructorDialogProvider interface {
-	AddPPKConstructor(name string, channel int64, zoneCount int64) error
-	UpdatePPKConstructor(id int64, name string, channel int64, zoneCount int64) error
-	DeletePPKConstructor(id int64) error
-	ListPPKConstructor() ([]contracts.PPKConstructorItem, error)
-}
-
-func ShowPPKConstructorDialog(parent fyne.Window, provider ppkConstructorDialogProvider) {
+func ShowPPKConstructorDialog(parent fyne.Window, provider adminv1.PPKConstructorProvider) {
 	win := fyne.CurrentApp().NewWindow("Конструктор ППК")
 	win.Resize(fyne.NewSize(1024, 768))
 
 	var (
-		items       []contracts.PPKConstructorItem
+		items       []adminv1.PPKConstructorItem
 		selectedRow = -1
 		selectedID  int64
 		mode        = "view" // view | add | edit
@@ -55,7 +48,7 @@ func ShowPPKConstructorDialog(parent fyne.Window, provider ppkConstructorDialogP
 		zoneCountEntry.Disable()
 	}
 
-	fillEditor := func(item contracts.PPKConstructorItem) {
+	fillEditor := func(item adminv1.PPKConstructorItem) {
 		nameEntry.SetText(strings.TrimSpace(item.Name))
 		channelEntry.SetText(strconv.FormatInt(item.Channel, 10))
 		zoneCountEntry.SetText(strconv.FormatInt(item.ZoneCount, 10))

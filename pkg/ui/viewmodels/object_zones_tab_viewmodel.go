@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 // ObjectZonesTabViewModel керує станом вкладки зон у картці об'єкта.
 type ObjectZonesTabViewModel struct {
-	items       []contracts.AdminObjectZone
+	items       []ObjectZone
 	selectedRow int
 }
 
@@ -20,12 +18,12 @@ func NewObjectZonesTabViewModel() *ObjectZonesTabViewModel {
 	}
 }
 
-func (vm *ObjectZonesTabViewModel) SetItems(items []contracts.AdminObjectZone) {
+func (vm *ObjectZonesTabViewModel) SetItems(items []ObjectZone) {
 	vm.items = slices.Clone(items)
 	vm.selectedRow = -1
 }
 
-func (vm *ObjectZonesTabViewModel) Items() []contracts.AdminObjectZone {
+func (vm *ObjectZonesTabViewModel) Items() []ObjectZone {
 	return slices.Clone(vm.items)
 }
 
@@ -37,14 +35,14 @@ func (vm *ObjectZonesTabViewModel) CountStatusText() string {
 	return fmt.Sprintf("Зони: %d запис(ів)", vm.Count())
 }
 
-func (vm *ObjectZonesTabViewModel) ItemAt(idx int) (contracts.AdminObjectZone, bool) {
+func (vm *ObjectZonesTabViewModel) ItemAt(idx int) (ObjectZone, bool) {
 	if idx < 0 || idx >= len(vm.items) {
-		return contracts.AdminObjectZone{}, false
+		return ObjectZone{}, false
 	}
 	return vm.items[idx], true
 }
 
-func (vm *ObjectZonesTabViewModel) SelectedItem() (contracts.AdminObjectZone, bool) {
+func (vm *ObjectZonesTabViewModel) SelectedItem() (ObjectZone, bool) {
 	return vm.ItemAt(vm.selectedRow)
 }
 
@@ -139,15 +137,15 @@ func (vm *ObjectZonesTabViewModel) NextZoneNumberForAdd() int64 {
 	return 1
 }
 
-func (vm *ObjectZonesTabViewModel) BuildZoneForCreate(zoneNumber int64, defaultDescription string) (contracts.AdminObjectZone, error) {
+func (vm *ObjectZonesTabViewModel) BuildZoneForCreate(zoneNumber int64, defaultDescription string) (ObjectZone, error) {
 	if zoneNumber <= 0 {
-		return contracts.AdminObjectZone{}, fmt.Errorf("invalid zone number")
+		return ObjectZone{}, fmt.Errorf("invalid zone number")
 	}
 	description := strings.TrimSpace(defaultDescription)
 	if description == "" {
 		description = fmt.Sprintf("Шлейф %d", zoneNumber)
 	}
-	return contracts.AdminObjectZone{
+	return ObjectZone{
 		ZoneNumber:    zoneNumber,
 		ZoneType:      1,
 		Description:   description,
@@ -155,14 +153,14 @@ func (vm *ObjectZonesTabViewModel) BuildZoneForCreate(zoneNumber int64, defaultD
 	}, nil
 }
 
-func (vm *ObjectZonesTabViewModel) PrepareSelectedZoneForSave(description string) (contracts.AdminObjectZone, int64, bool) {
+func (vm *ObjectZonesTabViewModel) PrepareSelectedZoneForSave(description string) (ObjectZone, int64, bool) {
 	current, ok := vm.SelectedItem()
 	if !ok {
-		return contracts.AdminObjectZone{}, 0, false
+		return ObjectZone{}, 0, false
 	}
 	currentZoneNumber, ok := vm.SelectedZoneNumber()
 	if !ok {
-		return contracts.AdminObjectZone{}, 0, false
+		return ObjectZone{}, 0, false
 	}
 	if current.ZoneNumber <= 0 {
 		current.ZoneNumber = currentZoneNumber

@@ -2,14 +2,12 @@ package viewmodels
 
 import (
 	"testing"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 func TestObjectWizardPersonalsStateViewModel_CRUDAndSelection(t *testing.T) {
 	vm := NewObjectWizardPersonalsStateViewModel()
 
-	if idx := vm.Add(contracts.AdminObjectPersonal{Name: "A"}); idx != 0 {
+	if idx := vm.Add(ObjectPersonal{Name: "A"}); idx != 0 {
 		t.Fatalf("unexpected add index: %d", idx)
 	}
 	if vm.Count() != 1 {
@@ -23,7 +21,7 @@ func TestObjectWizardPersonalsStateViewModel_CRUDAndSelection(t *testing.T) {
 		t.Fatalf("unexpected selected item: %+v", selected)
 	}
 
-	if !vm.Update(0, contracts.AdminObjectPersonal{Number: 0, Surname: "Petrenko", Name: "Ivan"}) {
+	if !vm.Update(0, ObjectPersonal{Number: 0, Surname: "Petrenko", Name: "Ivan"}) {
 		t.Fatalf("expected update success")
 	}
 	updated, _ := vm.At(0)

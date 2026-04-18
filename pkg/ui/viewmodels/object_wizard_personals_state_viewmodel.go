@@ -1,15 +1,13 @@
 package viewmodels
 
 import (
-	"slices"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/utils"
+	"slices"
 )
 
 // ObjectWizardPersonalsStateViewModel керує чернетками відповідальних осіб у майстрі.
 type ObjectWizardPersonalsStateViewModel struct {
-	pending  []contracts.AdminObjectPersonal
+	pending  []ObjectPersonal
 	selected int
 }
 
@@ -28,13 +26,13 @@ func (vm *ObjectWizardPersonalsStateViewModel) Count() int {
 	return len(vm.pending)
 }
 
-func (vm *ObjectWizardPersonalsStateViewModel) Items() []contracts.AdminObjectPersonal {
+func (vm *ObjectWizardPersonalsStateViewModel) Items() []ObjectPersonal {
 	return slices.Clone(vm.pending)
 }
 
-func (vm *ObjectWizardPersonalsStateViewModel) At(idx int) (contracts.AdminObjectPersonal, bool) {
+func (vm *ObjectWizardPersonalsStateViewModel) At(idx int) (ObjectPersonal, bool) {
 	if idx < 0 || idx >= len(vm.pending) {
-		return contracts.AdminObjectPersonal{}, false
+		return ObjectPersonal{}, false
 	}
 	return vm.pending[idx], true
 }
@@ -62,7 +60,7 @@ func (vm *ObjectWizardPersonalsStateViewModel) NextNumber() int64 {
 	return maxVal + 1
 }
 
-func (vm *ObjectWizardPersonalsStateViewModel) Add(item contracts.AdminObjectPersonal) int {
+func (vm *ObjectWizardPersonalsStateViewModel) Add(item ObjectPersonal) int {
 	if item.Number <= 0 {
 		item.Number = vm.NextNumber()
 	}
@@ -71,7 +69,7 @@ func (vm *ObjectWizardPersonalsStateViewModel) Add(item contracts.AdminObjectPer
 	return vm.selected
 }
 
-func (vm *ObjectWizardPersonalsStateViewModel) Update(idx int, item contracts.AdminObjectPersonal) bool {
+func (vm *ObjectWizardPersonalsStateViewModel) Update(idx int, item ObjectPersonal) bool {
 	if idx < 0 || idx >= len(vm.pending) {
 		return false
 	}
@@ -92,7 +90,7 @@ func (vm *ObjectWizardPersonalsStateViewModel) Delete(idx int) bool {
 	return true
 }
 
-func (vm *ObjectWizardPersonalsStateViewModel) FullName(item contracts.AdminObjectPersonal) string {
+func (vm *ObjectWizardPersonalsStateViewModel) FullName(item ObjectPersonal) string {
 	fullName := utils.JoinTrimmedNonEmpty(item.Surname, item.Name, item.SecName)
 	if fullName == "" {
 		return "(без ПІБ)"

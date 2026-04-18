@@ -11,11 +11,11 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
-func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminObjectPersonalTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
+func buildObjectPersonalTab(parent fyne.Window, provider adminv1.ObjectPersonalTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
 	state := newObjectPersonalTabState(parent, provider, objn, statusLabel)
 	content := state.buildContent()
 	state.reload()
@@ -24,7 +24,7 @@ func buildObjectPersonalTab(parent fyne.Window, provider contracts.AdminObjectPe
 
 type objectPersonalTabState struct {
 	parent      fyne.Window
-	provider    contracts.AdminObjectPersonalTabProvider
+	provider    adminv1.ObjectPersonalTabProvider
 	objn        int64
 	statusLabel *widget.Label
 	vm          *viewmodels.ObjectPersonalsTabViewModel
@@ -33,7 +33,7 @@ type objectPersonalTabState struct {
 
 func newObjectPersonalTabState(
 	parent fyne.Window,
-	provider contracts.AdminObjectPersonalTabProvider,
+	provider adminv1.ObjectPersonalTabProvider,
 	objn int64,
 	statusLabel *widget.Label,
 ) *objectPersonalTabState {
@@ -155,7 +155,7 @@ func (s *objectPersonalTabState) reload() {
 		return
 	}
 
-	s.vm.SetItems(loaded)
+	s.vm.SetItems(toViewmodelObjectPersonals(loaded))
 	s.table.UnselectAll()
 	s.table.Refresh()
 	s.statusLabel.SetText(s.vm.CountStatusText())
@@ -166,8 +166,8 @@ func (s *objectPersonalTabState) showAddDialog() {
 		s.parent,
 		s.provider,
 		"Додати В/О",
-		contracts.AdminObjectPersonal{},
-		func(item contracts.AdminObjectPersonal) error {
+		adminv1.ObjectPersonal{},
+		func(item adminv1.ObjectPersonal) error {
 			return s.provider.AddObjectPersonal(s.objn, item)
 		},
 		s.statusLabel,
@@ -189,9 +189,13 @@ func (s *objectPersonalTabState) showEditDialog() {
 		s.parent,
 		s.provider,
 		"Редагування В/О",
-		initial,
-		func(item contracts.AdminObjectPersonal) error {
-			return s.provider.UpdateObjectPersonal(s.objn, s.vm.PrepareUpdatedItem(initial, item))
+		adminv1.ToObjectPersonal(initial.ToContracts()),
+		func(item adminv1.ObjectPersonal) error {
+			updated := s.vm.PrepareUpdatedItem(
+				initial,
+				viewmodels.ObjectPersonalFromContracts(adminv1.ToContractsObjectPersonal(item)),
+			)
+			return s.provider.UpdateObjectPersonal(s.objn, adminv1.ToObjectPersonal(updated.ToContracts()))
 		},
 		s.statusLabel,
 		func() {
@@ -227,7 +231,7 @@ func (s *objectPersonalTabState) deleteSelected() {
 	)
 }
 
-func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminObjectZonesTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
+func buildObjectZonesTab(parent fyne.Window, provider adminv1.ObjectZonesTabProvider, objn int64, statusLabel *widget.Label) fyne.CanvasObject {
 	state := newObjectZonesTabState(parent, provider, objn, statusLabel)
 	content := state.buildContent()
 	state.reload()
@@ -236,7 +240,7 @@ func buildObjectZonesTab(parent fyne.Window, provider contracts.AdminObjectZones
 
 type objectZonesTabState struct {
 	parent            fyne.Window
-	provider          contracts.AdminObjectZonesTabProvider
+	provider          adminv1.ObjectZonesTabProvider
 	objn              int64
 	statusLabel       *widget.Label
 	vm                *viewmodels.ObjectZonesTabViewModel
@@ -247,7 +251,7 @@ type objectZonesTabState struct {
 
 func newObjectZonesTabState(
 	parent fyne.Window,
-	provider contracts.AdminObjectZonesTabProvider,
+	provider adminv1.ObjectZonesTabProvider,
 	objn int64,
 	statusLabel *widget.Label,
 ) *objectZonesTabState {
@@ -373,7 +377,7 @@ func (s *objectZonesTabState) ensureZoneExists(zoneNumber int64, defaultDescript
 	if err != nil {
 		return err
 	}
-	return s.provider.AddObjectZone(s.objn, zone)
+	return s.provider.AddObjectZone(s.objn, adminv1.ToObjectZone(zone.ToContracts()))
 }
 
 func (s *objectZonesTabState) selectByZoneNumber(zoneNumber int64, focusQuickName bool) {
@@ -401,7 +405,7 @@ func (s *objectZonesTabState) reloadAndSelect(targetZoneNumber int64, focusQuick
 		return
 	}
 
-	s.vm.SetItems(loaded)
+	s.vm.SetItems(toViewmodelObjectZones(loaded))
 	s.table.Refresh()
 	s.applyTableLayout(s.table)
 	s.statusLabel.SetText(s.vm.CountStatusText())
@@ -444,7 +448,7 @@ func (s *objectZonesTabState) moveToNextZone() {
 		s.statusLabel.SetText("Виберіть зону у таблиці")
 		return
 	}
-	if err := s.provider.UpdateObjectZone(s.objn, current); err != nil {
+	if err := s.provider.UpdateObjectZone(s.objn, adminv1.ToObjectZone(current.ToContracts())); err != nil {
 		dialog.ShowError(err, s.parent)
 		s.statusLabel.SetText("Не вдалося зберегти назву зони")
 		return
@@ -530,7 +534,7 @@ func (s *objectZonesTabState) deleteZone() {
 }
 
 func (s *objectZonesTabState) fillZones() {
-	defaultCount := suggestZoneFillCount(s.provider, s.objn, s.vm.Items())
+	defaultCount := suggestZoneFillCount(s.provider, s.objn, toAdminObjectZones(s.vm.Items()))
 	showZoneFillDialog(s.parent, defaultCount, func(count int64) {
 		if err := s.provider.FillObjectZones(s.objn, count); err != nil {
 			dialog.ShowError(err, s.parent)
@@ -564,7 +568,7 @@ func (s *objectZonesTabState) clearZones() {
 
 func buildObjectAdditionalTab(
 	parent fyne.Window,
-	provider contracts.AdminObjectAdditionalTabProvider,
+	provider adminv1.ObjectAdditionalTabProvider,
 	objn int64,
 	statusLabel *widget.Label,
 	getAddressFromObjectTab func() string,
@@ -585,7 +589,7 @@ func buildObjectAdditionalTab(
 
 type objectAdditionalTabState struct {
 	parent               fyne.Window
-	provider             contracts.AdminObjectAdditionalTabProvider
+	provider             adminv1.ObjectAdditionalTabProvider
 	objn                 int64
 	statusLabel          *widget.Label
 	getAddressFromObject func() string
@@ -598,7 +602,7 @@ type objectAdditionalTabState struct {
 
 func newObjectAdditionalTabState(
 	parent fyne.Window,
-	provider contracts.AdminObjectAdditionalTabProvider,
+	provider adminv1.ObjectAdditionalTabProvider,
 	objn int64,
 	statusLabel *widget.Label,
 	getAddressFromObjectTab func() string,
@@ -688,7 +692,7 @@ func (s *objectAdditionalTabState) reload() {
 
 func (s *objectAdditionalTabState) save() {
 	coords := s.vm.BuildCoordinates(s.latitudeEntry.Text, s.longitudeEntry.Text)
-	if err := s.provider.SaveObjectCoordinates(s.objn, coords); err != nil {
+	if err := s.provider.SaveObjectCoordinates(s.objn, toAdminObjectCoordinates(coords)); err != nil {
 		dialog.ShowError(err, s.parent)
 		s.statusLabel.SetText("Не вдалося зберегти координати")
 		return
@@ -749,7 +753,7 @@ func (s *objectAdditionalTabState) fillDistrictFromAddress() {
 		hints = resolvedHints
 	}
 
-	regionID, regionName, err := resolveRegionByAddressHints(s.provider, hints)
+	regionID, regionName, err := resolveRegionByAddressHints(objectV1DistrictReferenceAdapter{base: s.provider}, hints)
 	if err != nil {
 		dialog.ShowError(err, s.parent)
 		s.statusLabel.SetText("Не вдалося підібрати район за адресою")

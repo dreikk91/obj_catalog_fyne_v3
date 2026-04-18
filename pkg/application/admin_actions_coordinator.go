@@ -6,18 +6,23 @@ import (
 
 	"fyne.io/fyne/v2/dialog"
 
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 	"obj_catalog_fyne_v3/pkg/backend"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
 )
 
+var (
+	showNewObjectDialogFn  = dialogs.ShowNewObjectDialog
+	showEditObjectDialogFn = dialogs.ShowEditObjectDialog
+	showInfoDialogFn       = dialogs.ShowInfoDialog
+	showErrorDialogFn      = dialogs.ShowErrorDialog
+	showConfirmDialogFn    = dialog.ShowConfirm
+)
+
 type adminObjectScope interface {
 	CanUseAdminForObjectID(objectID int) bool
 	SourceNameForObjectID(objectID int) string
-}
-
-type adminObjectDeleteProvider interface {
-	DeleteObject(objn int64) error
 }
 
 type adminDisplayBlockingProvider interface {
@@ -136,7 +141,7 @@ func withAdminCapability[T any](a *Application, onReady func(T)) func() {
 
 		capability, ok := any(adminProvider).(T)
 		if !ok {
-			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує потрібну адмін-функцію.")
+			showInfoDialogFn(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує потрібну адмін-функцію.")
 			return
 		}
 
@@ -149,7 +154,7 @@ func (a *Application) ensureAdminProviderAccess() (contracts.AdminProvider, bool
 	if a.currentObject != nil {
 		if scopedProvider, ok := provider.(adminObjectScope); ok && !scopedProvider.CanUseAdminForObjectID(a.currentObject.ID) {
 			source := normalizeSourceLabel(scopedProvider.SourceNameForObjectID(a.currentObject.ID))
-			dialogs.ShowInfoDialog(
+			showInfoDialogFn(
 				a.mainWindow,
 				"Недоступно для цього джерела",
 				fmt.Sprintf("Адмін-операції недоступні для джерела \"%s\". Використовуйте окреме меню CASL.", source),
@@ -160,13 +165,13 @@ func (a *Application) ensureAdminProviderAccess() (contracts.AdminProvider, bool
 
 	adminProvider, ok := backend.AsAdminProvider(provider)
 	if !ok {
-		dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
+		showInfoDialogFn(a.mainWindow, "Недоступно", "Поточний провайдер даних не підтримує адмінські функції.")
 		return nil, false
 	}
 
 	access, err := adminProvider.GetAdminAccessStatus()
 	if err != nil {
-		dialogs.ShowErrorDialog(a.mainWindow, "Помилка перевірки прав доступу", err)
+		showErrorDialogFn(a.mainWindow, "Помилка перевірки прав доступу", err)
 		return nil, false
 	}
 	if !access.HasFullAccess {
@@ -179,7 +184,7 @@ func (a *Application) ensureAdminProviderAccess() (contracts.AdminProvider, bool
 			userLabel,
 			access.AdminUsersCount,
 		)
-		dialogs.ShowInfoDialog(a.mainWindow, "Доступ обмежено", msg)
+		showInfoDialogFn(a.mainWindow, "Доступ обмежено", msg)
 		return nil, false
 	}
 
@@ -188,13 +193,13 @@ func (a *Application) ensureAdminProviderAccess() (contracts.AdminProvider, bool
 
 func (a *Application) ensureCurrentObjectSelected() (id int64, name string, ok bool) {
 	if a.currentObject == nil || a.currentObject.ID <= 0 {
-		dialogs.ShowInfoDialog(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
+		showInfoDialogFn(a.mainWindow, "Об'єкт не вибрано", "Виберіть об'єкт у сітці, а потім спробуйте знову.")
 		return 0, "", false
 	}
 	if scopedProvider, ok := a.getDataProvider().(adminObjectScope); ok {
 		if !scopedProvider.CanUseAdminForObjectID(a.currentObject.ID) {
 			source := normalizeSourceLabel(scopedProvider.SourceNameForObjectID(a.currentObject.ID))
-			dialogs.ShowInfoDialog(
+			showInfoDialogFn(
 				a.mainWindow,
 				"Недоступно для цього джерела",
 				fmt.Sprintf("Для об'єкта з джерела \"%s\" адмін-операції недоступні.", source),
@@ -205,43 +210,41 @@ func (a *Application) ensureCurrentObjectSelected() (id int64, name string, ok b
 	return int64(a.currentObject.ID), a.currentObject.Name, true
 }
 
-func (a *Application) openNewObjectDialog(admin contracts.AdminObjectWizardProvider) {
-	provider := backend.NewFrontendAdminWizardBridge(a.getFrontendAPI(), admin)
-	dialogs.ShowNewObjectDialog(a.mainWindow, provider, func(objn int64) {
+func (a *Application) openNewObjectDialog(provider adminv1.ObjectWizardProvider) {
+	showNewObjectDialogFn(a.mainWindow, provider, func(objn int64) {
 		a.publishObjectSaved(objn)
 	})
 }
 
-func (a *Application) openEditCurrentObjectDialog(admin contracts.AdminObjectCardProvider) {
+func (a *Application) openEditCurrentObjectDialog(provider adminv1.ObjectCardProvider) {
 	objectID, _, ok := a.ensureCurrentObjectSelected()
 	if !ok {
 		return
 	}
-	provider := backend.NewFrontendAdminCardBridge(a.getFrontendAPI(), admin)
-	dialogs.ShowEditObjectDialog(a.mainWindow, provider, objectID, func(objn int64) {
+	showEditObjectDialogFn(a.mainWindow, provider, objectID, func(objn int64) {
 		a.publishObjectSaved(objn)
 	})
 }
 
-func (a *Application) confirmDeleteCurrentObject(admin adminObjectDeleteProvider) {
+func (a *Application) confirmDeleteCurrentObject(provider adminv1.ObjectDeleteProvider) {
 	objectID, objectName, ok := a.ensureCurrentObjectSelected()
 	if !ok {
 		return
 	}
 
-	dialog.ShowConfirm(
+	showConfirmDialogFn(
 		"Підтвердження видалення",
 		fmt.Sprintf("Видалити об'єкт №%d \"%s\"?", objectID, objectName),
 		func(confirmed bool) {
 			if !confirmed {
 				return
 			}
-			if err := admin.DeleteObject(objectID); err != nil {
-				dialogs.ShowErrorDialog(a.mainWindow, "Помилка видалення об'єкта", err)
+			if err := provider.DeleteObject(objectID); err != nil {
+				showErrorDialogFn(a.mainWindow, "Помилка видалення об'єкта", err)
 				return
 			}
 			a.publishObjectDeleted(objectID)
-			dialogs.ShowInfoDialog(a.mainWindow, "Готово", "Об'єкт видалено")
+			showInfoDialogFn(a.mainWindow, "Готово", "Об'єкт видалено")
 		},
 		a.mainWindow,
 	)

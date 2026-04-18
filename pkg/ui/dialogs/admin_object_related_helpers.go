@@ -8,7 +8,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 )
 
 func showZoneFillDialog(parent fyne.Window, defaultCount int64, onApply func(count int64), statusLabel *widget.Label) {
@@ -37,7 +37,7 @@ func showZoneFillDialog(parent fyne.Window, defaultCount int64, onApply func(cou
 	dlg.Show()
 }
 
-func suggestZoneFillCount(provider contracts.AdminObjectZonesTabProvider, objn int64, current []contracts.AdminObjectZone) int64 {
+func suggestZoneFillCount(provider adminv1.ObjectZonesTabProvider, objn int64, current []adminv1.ObjectZone) int64 {
 	maxZone := int64(0)
 	for _, z := range current {
 		if z.ZoneNumber > maxZone {

@@ -152,6 +152,275 @@ func ToMessage220VBuckets(buckets contracts.Admin220VMessageBuckets) Message220V
 	}
 }
 
+func ToAccessStatus(item contracts.AdminAccessStatus) AccessStatus {
+	return AccessStatus{
+		CurrentUser:      item.CurrentUser,
+		MatchedPersonal:  item.MatchedPersonal,
+		HasFullAccess:    item.HasFullAccess,
+		AdminUsersCount:  item.AdminUsersCount,
+		MatchDescription: item.MatchDescription,
+	}
+}
+
+func ToDataCheckIssues(items []contracts.AdminDataCheckIssue) []DataCheckIssue {
+	result := make([]DataCheckIssue, 0, len(items))
+	for _, item := range items {
+		result = append(result, DataCheckIssue{
+			Severity: item.Severity,
+			Code:     item.Code,
+			ObjN:     item.ObjN,
+			Details:  item.Details,
+		})
+	}
+	return result
+}
+
+func ToSubServers(items []contracts.AdminSubServer) []SubServer {
+	result := make([]SubServer, 0, len(items))
+	for _, item := range items {
+		result = append(result, SubServer{
+			ID:    item.ID,
+			Info:  item.Info,
+			Bind:  item.Bind,
+			Host:  item.Host,
+			Type:  item.Type,
+			Host2: item.Host2,
+		})
+	}
+	return result
+}
+
+func ToSubServerObjects(items []contracts.AdminSubServerObject) []SubServerObject {
+	result := make([]SubServerObject, 0, len(items))
+	for _, item := range items {
+		result = append(result, SubServerObject{
+			ObjN:       item.ObjN,
+			Name:       item.Name,
+			Address:    item.Address,
+			SubServerA: item.SubServerA,
+			SubServerB: item.SubServerB,
+		})
+	}
+	return result
+}
+
+func ToPPKConstructorItems(items []contracts.PPKConstructorItem) []PPKConstructorItem {
+	result := make([]PPKConstructorItem, 0, len(items))
+	for _, item := range items {
+		result = append(result, PPKConstructorItem{
+			ID:        item.ID,
+			Name:      item.Name,
+			Channel:   item.Channel,
+			ZoneCount: item.ZoneCount,
+		})
+	}
+	return result
+}
+
+func ToFireMonitoringSettings(settings contracts.FireMonitoringSettings) FireMonitoringSettings {
+	servers := make([]FireMonitoringServer, 0, len(settings.Servers))
+	for _, server := range settings.Servers {
+		servers = append(servers, FireMonitoringServer{
+			Host:    server.Host,
+			Port:    server.Port,
+			Info:    server.Info,
+			Enabled: server.Enabled,
+		})
+	}
+	return FireMonitoringSettings{
+		Enabled:       settings.Enabled,
+		ObjectID:      settings.ObjectID,
+		AckWaitSec:    settings.AckWaitSec,
+		UseStdDateFmt: settings.UseStdDateFmt,
+		Servers:       servers,
+	}
+}
+
+func ToContractsFireMonitoringSettings(settings FireMonitoringSettings) contracts.FireMonitoringSettings {
+	servers := make([]contracts.FireMonitoringServer, 0, len(settings.Servers))
+	for _, server := range settings.Servers {
+		servers = append(servers, contracts.FireMonitoringServer{
+			Host:    server.Host,
+			Port:    server.Port,
+			Info:    server.Info,
+			Enabled: server.Enabled,
+		})
+	}
+	return contracts.FireMonitoringSettings{
+		Enabled:       settings.Enabled,
+		ObjectID:      settings.ObjectID,
+		AckWaitSec:    settings.AckWaitSec,
+		UseStdDateFmt: settings.UseStdDateFmt,
+		Servers:       servers,
+	}
+}
+
+func ToObjectCard(item contracts.AdminObjectCard) ObjectCard {
+	return ObjectCard{
+		ObjUIN:             item.ObjUIN,
+		ObjN:               item.ObjN,
+		GrpN:               item.GrpN,
+		ShortName:          item.ShortName,
+		FullName:           item.FullName,
+		ObjTypeID:          item.ObjTypeID,
+		ObjRegID:           item.ObjRegID,
+		Address:            item.Address,
+		Phones:             item.Phones,
+		Contract:           item.Contract,
+		StartDate:          item.StartDate,
+		Location:           item.Location,
+		Notes:              item.Notes,
+		ChannelCode:        item.ChannelCode,
+		PPKID:              item.PPKID,
+		GSMPhone1:          item.GSMPhone1,
+		GSMPhone2:          item.GSMPhone2,
+		GSMHiddenN:         item.GSMHiddenN,
+		SubServerA:         item.SubServerA,
+		SubServerB:         item.SubServerB,
+		TestControlEnabled: item.TestControlEnabled,
+		TestIntervalMin:    item.TestIntervalMin,
+	}
+}
+
+func ToContractsObjectCard(item ObjectCard) contracts.AdminObjectCard {
+	return contracts.AdminObjectCard{
+		ObjUIN:             item.ObjUIN,
+		ObjN:               item.ObjN,
+		GrpN:               item.GrpN,
+		ShortName:          item.ShortName,
+		FullName:           item.FullName,
+		ObjTypeID:          item.ObjTypeID,
+		ObjRegID:           item.ObjRegID,
+		Address:            item.Address,
+		Phones:             item.Phones,
+		Contract:           item.Contract,
+		StartDate:          item.StartDate,
+		Location:           item.Location,
+		Notes:              item.Notes,
+		ChannelCode:        item.ChannelCode,
+		PPKID:              item.PPKID,
+		GSMPhone1:          item.GSMPhone1,
+		GSMPhone2:          item.GSMPhone2,
+		GSMHiddenN:         item.GSMHiddenN,
+		SubServerA:         item.SubServerA,
+		SubServerB:         item.SubServerB,
+		TestControlEnabled: item.TestControlEnabled,
+		TestIntervalMin:    item.TestIntervalMin,
+	}
+}
+
+func ToObjectPersonals(items []contracts.AdminObjectPersonal) []ObjectPersonal {
+	result := make([]ObjectPersonal, 0, len(items))
+	for _, item := range items {
+		result = append(result, ToObjectPersonal(item))
+	}
+	return result
+}
+
+func ToObjectPersonal(item contracts.AdminObjectPersonal) ObjectPersonal {
+	return ObjectPersonal{
+		ID:          item.ID,
+		SourceObjN:  item.SourceObjN,
+		Number:      item.Number,
+		Surname:     item.Surname,
+		Name:        item.Name,
+		SecName:     item.SecName,
+		Address:     item.Address,
+		Phones:      item.Phones,
+		Position:    item.Position,
+		Notes:       item.Notes,
+		IsTRKTester: item.IsTRKTester,
+		Access1:     item.Access1,
+		IsRang:      item.IsRang,
+		ViberID:     item.ViberID,
+		TelegramID:  item.TelegramID,
+		CreatedAt:   item.CreatedAt,
+	}
+}
+
+func ToContractsObjectPersonal(item ObjectPersonal) contracts.AdminObjectPersonal {
+	return contracts.AdminObjectPersonal{
+		ID:          item.ID,
+		SourceObjN:  item.SourceObjN,
+		Number:      item.Number,
+		Surname:     item.Surname,
+		Name:        item.Name,
+		SecName:     item.SecName,
+		Address:     item.Address,
+		Phones:      item.Phones,
+		Position:    item.Position,
+		Notes:       item.Notes,
+		IsTRKTester: item.IsTRKTester,
+		Access1:     item.Access1,
+		IsRang:      item.IsRang,
+		ViberID:     item.ViberID,
+		TelegramID:  item.TelegramID,
+		CreatedAt:   item.CreatedAt,
+	}
+}
+
+func ToContractsObjectPersonalPtr(item *ObjectPersonal) *contracts.AdminObjectPersonal {
+	if item == nil {
+		return nil
+	}
+	value := ToContractsObjectPersonal(*item)
+	return &value
+}
+
+func ToObjectZones(items []contracts.AdminObjectZone) []ObjectZone {
+	result := make([]ObjectZone, 0, len(items))
+	for _, item := range items {
+		result = append(result, ToObjectZone(item))
+	}
+	return result
+}
+
+func ToObjectZone(item contracts.AdminObjectZone) ObjectZone {
+	return ObjectZone{
+		ID:            item.ID,
+		ZoneNumber:    item.ZoneNumber,
+		ZoneType:      item.ZoneType,
+		Description:   item.Description,
+		EntryDelaySec: item.EntryDelaySec,
+	}
+}
+
+func ToContractsObjectZone(item ObjectZone) contracts.AdminObjectZone {
+	return contracts.AdminObjectZone{
+		ID:            item.ID,
+		ZoneNumber:    item.ZoneNumber,
+		ZoneType:      item.ZoneType,
+		Description:   item.Description,
+		EntryDelaySec: item.EntryDelaySec,
+	}
+}
+
+func ToObjectCoordinates(item contracts.AdminObjectCoordinates) ObjectCoordinates {
+	return ObjectCoordinates{
+		Latitude:  item.Latitude,
+		Longitude: item.Longitude,
+	}
+}
+
+func ToContractsObjectCoordinates(item ObjectCoordinates) contracts.AdminObjectCoordinates {
+	return contracts.AdminObjectCoordinates{
+		Latitude:  item.Latitude,
+		Longitude: item.Longitude,
+	}
+}
+
+func ToSIMPhoneUsages(items []contracts.AdminSIMPhoneUsage) []SIMPhoneUsage {
+	result := make([]SIMPhoneUsage, 0, len(items))
+	for _, item := range items {
+		result = append(result, SIMPhoneUsage{
+			ObjN: item.ObjN,
+			Name: item.Name,
+			Slot: item.Slot,
+		})
+	}
+	return result
+}
+
 func toDisplayBlockMode(mode contracts.DisplayBlockMode) DisplayBlockMode {
 	switch mode {
 	case contracts.DisplayBlockTemporaryOff:

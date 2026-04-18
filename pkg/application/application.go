@@ -622,13 +622,17 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 
 	adminObjects := fyne.NewMenu("Об'єкти",
 		fyne.NewMenuItem("Новий об'єкт", withAdminCapability(a, func(admin contracts.AdminObjectWizardProvider) {
-			a.openNewObjectDialog(admin)
+			a.openNewObjectDialog(backend.NewAdminV1ObjectWizardProvider(
+				backend.NewFrontendAdminWizardBridge(a.getFrontendAPI(), admin),
+			))
 		})),
 		fyne.NewMenuItem("Змінити поточний", withAdminCapability(a, func(admin contracts.AdminObjectCardProvider) {
-			a.openEditCurrentObjectDialog(admin)
+			a.openEditCurrentObjectDialog(backend.NewAdminV1ObjectCardProvider(
+				backend.NewFrontendAdminCardBridge(a.getFrontendAPI(), admin),
+			))
 		})),
-		fyne.NewMenuItem("Видалити поточний", withAdminCapability(a, func(admin adminObjectDeleteProvider) {
-			a.confirmDeleteCurrentObject(admin)
+		fyne.NewMenuItem("Видалити поточний", withAdminCapability(a, func(admin interface{ DeleteObject(objn int64) error }) {
+			a.confirmDeleteCurrentObject(backend.NewAdminV1ObjectDeleteProvider(admin))
 		})),
 	)
 
@@ -640,13 +644,13 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 			dialogs.ShowAdminMessagesDialog(a.mainWindow, backend.NewAdminV1MessagesProvider(admin))
 		})),
 		fyne.NewMenuItem("Контроль системи (БД/логи)", withAdminCapability(a, func(admin adminSystemControlProvider) {
-			dialogs.ShowAdminSystemControlDialog(a.mainWindow, admin)
+			dialogs.ShowAdminSystemControlDialog(a.mainWindow, backend.NewAdminV1SystemControlProvider(admin))
 		})),
 		fyne.NewMenuItem("Налаштування пожежного моніторингу", withAdminCapability(a, func(admin adminFireMonitoringProvider) {
-			dialogs.ShowFireMonitoringSettingsDialog(a.mainWindow, admin)
+			dialogs.ShowFireMonitoringSettingsDialog(a.mainWindow, backend.NewAdminV1FireMonitoringProvider(admin))
 		})),
 		fyne.NewMenuItem("Керування об'єктами підсерверів", withAdminCapability(a, func(admin adminSubServerObjectsProvider) {
-			dialogs.ShowSubServerObjectsDialog(a.mainWindow, admin, func() {
+			dialogs.ShowSubServerObjectsDialog(a.mainWindow, backend.NewAdminV1SubServerObjectsProvider(admin), func() {
 				a.publishDataRefresh(eventbus.DataRefreshEvent{
 					RefreshObjects: true,
 					RefreshAlarms:  true,
@@ -669,16 +673,16 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 
 	adminDirectories := fyne.NewMenu("Довідники",
 		fyne.NewMenuItem("Конструктор ППК", withAdminCapability(a, func(admin adminPPKConstructorProvider) {
-			dialogs.ShowPPKConstructorDialog(a.mainWindow, admin)
+			dialogs.ShowPPKConstructorDialog(a.mainWindow, backend.NewAdminV1PPKConstructorProvider(admin))
 		})),
 		fyne.NewMenuItem("Типи об'єктів", withAdminCapability(a, func(admin adminObjectTypesProvider) {
-			dialogs.ShowObjectTypesDictionaryDialog(a.mainWindow, admin)
+			dialogs.ShowObjectTypesDictionaryDialog(a.mainWindow, backend.NewAdminV1ObjectTypesDictionaryProvider(admin))
 		})),
 		fyne.NewMenuItem("Регіони", withAdminCapability(a, func(admin adminRegionsProvider) {
-			dialogs.ShowRegionsDictionaryDialog(a.mainWindow, admin)
+			dialogs.ShowRegionsDictionaryDialog(a.mainWindow, backend.NewAdminV1RegionsDictionaryProvider(admin))
 		})),
 		fyne.NewMenuItem("Причини тривог", withAdminCapability(a, func(admin adminAlarmReasonsProvider) {
-			dialogs.ShowAlarmReasonsDictionaryDialog(a.mainWindow, admin)
+			dialogs.ShowAlarmReasonsDictionaryDialog(a.mainWindow, backend.NewAdminV1AlarmReasonsDictionaryProvider(admin))
 		})),
 	)
 

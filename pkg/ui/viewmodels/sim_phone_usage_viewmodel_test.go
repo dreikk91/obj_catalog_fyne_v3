@@ -3,19 +3,17 @@ package viewmodels
 import (
 	"errors"
 	"testing"
-
-	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 type simPhoneUsageLookupStub struct {
-	usages       []contracts.AdminSIMPhoneUsage
+	usages       []SIMPhoneUsage
 	err          error
 	lastPhone    string
 	lastExclude  *int64
 	calledLookup bool
 }
 
-func (s *simPhoneUsageLookupStub) FindObjectsBySIMPhone(phone string, excludeObjN *int64) ([]contracts.AdminSIMPhoneUsage, error) {
+func (s *simPhoneUsageLookupStub) FindObjectsBySIMPhone(phone string, excludeObjN *int64) ([]SIMPhoneUsage, error) {
 	s.calledLookup = true
 	s.lastPhone = phone
 	s.lastExclude = excludeObjN
@@ -58,7 +56,7 @@ func TestSIMPhoneUsageViewModel_ResolveUsageText_Success(t *testing.T) {
 	vm := NewSIMPhoneUsageViewModel()
 	exclude := int64(77)
 	stub := &simPhoneUsageLookupStub{
-		usages: []contracts.AdminSIMPhoneUsage{
+		usages: []SIMPhoneUsage{
 			{ObjN: 1001, Name: "  Об'єкт 1 ", Slot: "SIM1"},
 			{ObjN: 1002, Name: "", Slot: "SIM2"},
 		},

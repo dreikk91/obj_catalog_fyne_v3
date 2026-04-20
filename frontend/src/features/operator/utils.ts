@@ -25,8 +25,8 @@ export function toArchiveRow(item: FrontendEventItem): JournalRow {
   const date = parseDate(item.time)
   const sortTimestampMs = date.getTime()
   const typeText = item.typeText || 'Подія'
-  const isAlarm = item.visualSeverity === 'critical' || isAlarmTypeText(typeText)
-  const severity = resolveJournalSeverity(item.visualSeverity, isAlarm, typeText)
+  const isAlarm = item.visualSeverity === 'critical' || isCriticalCode(item.typeCode)
+  const severity = resolveJournalSeverity(item.visualSeverity, item.typeCode)
   return {
     rowID: `event-${item.id}-${item.time}`,
     alarmID: null,
@@ -59,10 +59,10 @@ export function toAlarmRow(item: FrontendAlarmItem): JournalRow {
   const date = parseDate(item.time)
   const sortTimestampMs = date.getTime()
   const typeText = item.typeText || 'Тривога'
-  const severity = resolveJournalSeverity(item.visualSeverity, true, typeText)
+  const severity = resolveJournalSeverity(item.visualSeverity, item.typeCode)
   const zone = item.zoneName.trim() || (item.zoneNumber > 0 ? String(item.zoneNumber) : '—')
   return {
-    rowID: `alarm-${item.id}-${item.time}`,
+    rowID: `alarm-${item.id}-${item.time}-${item.typeCode}-${item.zoneNumber}-${item.source}`,
     alarmID: item.id,
     source: item.source,
     sortTimestampMs: Number.isFinite(sortTimestampMs) ? sortTimestampMs : 0,
@@ -76,7 +76,7 @@ export function toAlarmRow(item: FrontendAlarmItem): JournalRow {
     group: resolveJournalGroup(item.details, item.zoneNumber),
     zone,
     objectName: item.objectName || '—',
-    state: item.isProcessed ? 'Оброблено' : item.isInProgress ? 'В роботі' : 'Нова',
+    state: item.isProcessed ? 'Оброблено' : item.isInProgress ? 'Прийнято' : 'Нова',
     details: buildAlarmDetailsText(item),
     alarm: true,
     processed: item.isProcessed,
@@ -143,18 +143,57 @@ export function toUnprocessedAlarmGroup(group: FrontendAlarmGroup): UnprocessedA
   }
 }
 
+export function getSeverityPriority(severity: string): number {
+  switch (severity) {
+    case 'critical':
+      return 100
+    case 'fault':
+      return 80
+    case 'warning':
+      return 60
+    case 'info':
+      return 40
+    case 'normal':
+      return 20
+    default:
+      return 0
+  }
+}
+
+export function isPanicAlarmRow(row: JournalRow): boolean {
+  if (!row) return false
+  return row.code === 'panic' || row.typeText === 'PANIC_ALARM' || row.code === 'PANIC_ALARM'
+}
+
 export function mergeUnprocessedGroupsByObject(groups: UnprocessedAlarmGroup[]): UnprocessedAlarmGroup[] {
-  const byObject = new Map<number, UnprocessedAlarmGroup>()
+  const byKey = new Map<string, UnprocessedAlarmGroup>()
+  
   for (const group of groups) {
-    const existing = byObject.get(group.objectID)
+    const key = String(group.objectID)
+    const stableGroupID = `group-obj-${group.objectID}`
+    
+    const existing = byKey.get(key)
     if (existing == null) {
-      byObject.set(group.objectID, { ...group, rows: [...group.rows] })
+      byKey.set(key, { ...group, groupID: stableGroupID, rows: [...group.rows] })
       continue
     }
-    const allRows = [...existing.rows, ...group.rows]
-    const anchor = group.alertLevel > existing.alertLevel ? group.anchorRow : existing.anchorRow
-    byObject.set(group.objectID, {
-      groupID: existing.groupID,
+    
+    const rowMap = new Map<string, JournalRow>()
+    for (const row of [...existing.rows, ...group.rows]) {
+      rowMap.set(row.rowID, row)
+    }
+    const allRows = Array.from(rowMap.values()).sort(sortJournalRowsDesc)
+    const existingPrio = getSeverityPriority(existing.anchorRow.severity)
+    const groupPrio = getSeverityPriority(group.anchorRow.severity)
+    
+    const groupAnchorIsBetter =
+      groupPrio > existingPrio ||
+      (groupPrio === existingPrio && group.latestSortTimestampMs > existing.latestSortTimestampMs)
+      
+    const anchor = groupAnchorIsBetter ? group.anchorRow : existing.anchorRow
+
+    byKey.set(key, {
+      groupID: stableGroupID,
       objectID: existing.objectID,
       alertLevel: Math.max(existing.alertLevel, group.alertLevel),
       anchorRow: anchor,
@@ -162,7 +201,15 @@ export function mergeUnprocessedGroupsByObject(groups: UnprocessedAlarmGroup[]):
       latestSortTimestampMs: Math.max(existing.latestSortTimestampMs, group.latestSortTimestampMs),
     })
   }
-  return Array.from(byObject.values())
+  
+  return Array.from(byKey.values()).sort((left, right) => {
+    const prioLeft = getSeverityPriority(left.anchorRow.severity)
+    const prioRight = getSeverityPriority(right.anchorRow.severity)
+    if (prioLeft !== prioRight) {
+      return prioRight - prioLeft
+    }
+    return right.latestSortTimestampMs - left.latestSortTimestampMs
+  })
 }
 
 export function flattenUnprocessedAlarmGroups(
@@ -223,12 +270,16 @@ export function resolveJournalRowClass(row: JournalRow, isSelected: boolean, for
     classes.push('selected')
   }
 
-  if (forceAlarm || row.alarm || row.severity === 'critical') {
-    classes.push('alarm')
-  } else if (row.severity === 'warning') {
-    classes.push('evt-warning')
-  } else if (row.severity === 'info') {
-    classes.push('evt-info')
+  if (!row.inProgress) {
+    if (row.severity === 'fault') {
+      classes.push('evt-fault')
+    } else if (row.severity === 'warning') {
+      classes.push('evt-warning')
+    } else if (forceAlarm || row.alarm || row.severity === 'critical') {
+      classes.push('alarm')
+    } else if (row.severity === 'info') {
+      classes.push('evt-info')
+    }
   }
 
   return classes.join(' ')
@@ -237,6 +288,9 @@ export function resolveJournalRowClass(row: JournalRow, isSelected: boolean, for
 export function resolveJournalTypeClass(row: JournalRow): string {
   if (row.alarm || row.severity === 'critical') {
     return 'red'
+  }
+  if (row.severity === 'fault') {
+    return 'evt-type-fault'
   }
   if (row.severity === 'warning') {
     return 'evt-type-warning'
@@ -257,6 +311,9 @@ export function resolveJournalStateChipClass(row: JournalRow): string {
   if (row.alarm || row.severity === 'critical') {
     return 'chip-red'
   }
+  if (row.severity === 'fault') {
+    return 'chip-yellow'
+  }
   if (row.severity === 'warning') {
     return 'chip-orange'
   }
@@ -272,6 +329,9 @@ export function resolveJournalStateChipClass(row: JournalRow): string {
 export function resolveJournalIndicatorColor(row: JournalRow): string {
   if (row.alarm || row.severity === 'critical') {
     return 'var(--ac5)'
+  }
+  if (row.severity === 'fault') {
+    return '#facc15'
   }
   if (row.severity === 'warning') {
     return 'var(--ac4)'
@@ -365,33 +425,74 @@ function resolveJournalGroup(details: string, fallbackZoneNumber: number): strin
   return '—'
 }
 
-function isAlarmTypeText(value: string): boolean {
-  const text = value.toLowerCase()
-  return text.includes('трив') || text.includes('пожеж') || text.includes('alarm') || text.includes('fire')
+function isCriticalCode(code: string): boolean {
+  const c = code.toLowerCase()
+  return (
+    c === 'fire' ||
+    c === 'burglary' ||
+    c === 'panic' ||
+    c === 'medical' ||
+    c === 'gas' ||
+    c === 'tamper' ||
+    c === 'fault' ||
+    c === 'offline' ||
+    c === 'alarm_notification' ||
+    c === 'device_blocked'
+  )
 }
 
 function resolveJournalSeverity(
   visualSeverity: VisualSeverity,
-  alarm: boolean,
-  typeText: string,
+  typeCode: string,
 ): VisualSeverity {
   if (visualSeverity !== 'unknown') {
     return visualSeverity
   }
-  if (alarm || isAlarmTypeText(typeText)) {
+  
+  if (isCriticalCode(typeCode)) {
+    // Some critical codes might be visually represented as faults instead of red alarms
+    if (typeCode.toLowerCase() === 'fault') {
+      return 'fault'
+    }
     return 'critical'
   }
 
-  const text = typeText.toLowerCase()
-  if (text.includes('несправ') || text.includes('fault') || text.includes('помил')) {
+  const code = typeCode.toLowerCase()
+  if (
+    code === 'power_fail' ||
+    code === 'batt_low' ||
+    code === 'manager_assigned' ||
+    code === 'manager_canceled' ||
+    code === 'service'
+  ) {
     return 'warning'
   }
-  if (text.includes('інф') || text.includes('info') || text.includes('повідом')) {
+
+  if (
+    code === 'test' ||
+    code === 'notification' ||
+    code === 'operator_action' ||
+    code === 'manager_arrived' ||
+    code === 'alarm_finished' ||
+    code === 'device_unblocked' ||
+    code === 'system'
+  ) {
     return 'info'
   }
 
-  return 'unknown'
+  if (
+    code === 'restore' ||
+    code === 'arm' ||
+    code === 'disarm' ||
+    code === 'power_ok' ||
+    code === 'online'
+  ) {
+    return 'normal'
+  }
+
+  return 'warning'
 }
+
 
 function buildAlarmDetailsText(item: FrontendAlarmItem): string {
   const details = item.details || '—'

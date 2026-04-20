@@ -120,10 +120,12 @@ func BuildAlarmGroups(items []contracts.FrontendAlarmItem) []AlarmGroup {
 func resolveAlarmGroupLevel(item contracts.FrontendAlarmItem) int {
 	switch item.TypeCode {
 	case "panic":
+		return 4
+	case "fire", "FIRE_ALARM":
 		return 3
-	case "fire", "BURGLARY_ALARM", "medical", "gas", "tamper", "ALARM_TYPE_OPERATOR", "ALARM_TYPE_DEVICE", "ALARM_TYPE_MOBILE", "EXIT_ALARM":
+	case "BURGLARY_ALARM", "medical", "gas", "tamper", "ALARM_TYPE_OPERATOR", "ALARM_TYPE_DEVICE", "ALARM_TYPE_MOBILE", "EXIT_ALARM":
 		return 2
-	case "fault", "power_fail", "battery_low", "offline", "AC_TROUBLE", "FIRE_TROUBLE":
+	case "fault", "power_fail", "battery_low", "offline", "AC_TROUBLE", "FIRE_TROUBLE", "system_event":
 		return 1
 	default:
 		switch item.VisualSeverity {

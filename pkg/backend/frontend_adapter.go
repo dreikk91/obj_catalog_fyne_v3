@@ -130,15 +130,47 @@ func (a *FrontendAdapter) ListAlarms(context.Context) ([]contracts.FrontendAlarm
 		return nil, contracts.ErrFrontendBackendUnavailable
 	}
 	alarms := a.dataProvider.GetAlarms()
-	result := make([]contracts.FrontendAlarmItem, 0, len(alarms))
+	var result []contracts.FrontendAlarmItem
 	for _, alarm := range alarms {
-		item := mapFrontendAlarmItem(alarm)
-		if !item.IsOwnedByMe && a.isBridgeAlarmPickedLocally(alarm.ID) {
-			item.IsOwnedByMe = true
-			item.IsInProgress = true
-			item.CanProcess = true
+		isPickedLocally := a.isBridgeAlarmPickedLocally(alarm.ID)
+
+		if len(alarm.SourceMsgs) > 0 {
+			for idx, msg := range alarm.SourceMsgs {
+				item := mapFrontendAlarmItem(alarm)
+				item.ID = item.ID*1000 + idx
+				item.Time = msg.Time
+				item.TypeCode = msg.Code
+				item.TypeText = msg.Code
+				if msg.Details != "" {
+					item.Details = strings.TrimSpace(msg.Details)
+				}
+				if msg.Number > 0 {
+					item.ZoneNumber = msg.Number
+					if alarm.ZoneNumber != msg.Number {
+						item.ZoneName = ""
+					}
+				} else {
+					item.ZoneNumber = 0
+					item.ZoneName = ""
+				}
+				item.VisualSeverity = frontendAlarmSeverityFromMsg(msg)
+
+				if !item.IsOwnedByMe && isPickedLocally {
+					item.IsOwnedByMe = true
+					item.IsInProgress = true
+					item.CanProcess = true
+				}
+				result = append(result, item)
+			}
+		} else {
+			item := mapFrontendAlarmItem(alarm)
+			if !item.IsOwnedByMe && isPickedLocally {
+				item.IsOwnedByMe = true
+				item.IsInProgress = true
+				item.CanProcess = true
+			}
+			result = append(result, item)
 		}
-		result = append(result, item)
 	}
 	return result, nil
 }
@@ -997,6 +1029,20 @@ func frontendAlarmSeverity(alarm models.Alarm) contracts.FrontendVisualSeverity 
 		}
 		return contracts.FrontendVisualSeverityNormal
 	}
+}
+
+func frontendAlarmSeverityFromMsg(msg models.AlarmMsg) contracts.FrontendVisualSeverity {
+	if msg.IsAlarm {
+		return contracts.FrontendVisualSeverityCritical
+	}
+	code := strings.ToLower(msg.Code)
+	if code == "fault" || code == "power_fail" || code == "batt_low" {
+		return contracts.FrontendVisualSeverityWarning
+	}
+	if code == "restore" || code == "online" || strings.HasPrefix(code, "r") {
+		return contracts.FrontendVisualSeverityNormal
+	}
+	return contracts.FrontendVisualSeverityInfo
 }
 
 func frontendEventSeverity(event models.Event) contracts.FrontendVisualSeverity {

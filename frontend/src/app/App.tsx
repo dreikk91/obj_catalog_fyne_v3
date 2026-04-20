@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useShallow } from 'zustand/react/shallow'
 import { resolveFrontendClient } from '../shared/api/client'
@@ -204,7 +204,7 @@ export function App() {
       ? journalStream.alarmGroups
       : journalStream.alarmGroups.filter((g) => !g.primary.isInProgress || g.primary.isOwnedByMe)
     const raw = filtered.map(toUnprocessedAlarmGroup)
-    return mergeUnprocessedGroupsByObject(raw).sort((left, right) => right.latestSortTimestampMs - left.latestSortTimestampMs)
+    return mergeUnprocessedGroupsByObject(raw)
   }, [journalStream.alarmGroups, showAllAlarms])
 
   useEffect(() => {
@@ -213,10 +213,19 @@ export function App() {
       const next: Record<string, boolean> = {}
       let changed = false
 
-      for (const [groupID, isOpen] of Object.entries(prev)) {
-        if (activeGroupIDs.has(groupID)) {
-          next[groupID] = isOpen
+      for (const groupID of activeGroupIDs) {
+        if (prev[groupID] !== undefined) {
+          next[groupID] = prev[groupID]
         } else {
+          // New group - expand by default
+          next[groupID] = true
+          changed = true
+        }
+      }
+      
+      // Also remove old groups
+      for (const groupID of Object.keys(prev)) {
+        if (!activeGroupIDs.has(groupID)) {
           changed = true
         }
       }
@@ -234,6 +243,47 @@ export function App() {
     () => buildUnprocessedRowMeta(unprocessedAlarmGroups, expandedUnprocessedGroups),
     [expandedUnprocessedGroups, unprocessedAlarmGroups],
   )
+
+  const unprocessedFlatRowsRef = useRef(unprocessedFlatRows)
+  useEffect(() => {
+    unprocessedFlatRowsRef.current = unprocessedFlatRows
+  }, [unprocessedFlatRows])
+
+  const [lastSeenAlarmTime, setLastSeenAlarmTime] = useState(0)
+
+  useEffect(() => {
+    let maxT = 0
+    for (const g of journalStream.alarmGroups) {
+      const t = new Date(g.latestTime).getTime()
+      if (t > maxT) maxT = t
+    }
+    if (maxT > lastSeenAlarmTime) {
+      setLastSeenAlarmTime(maxT)
+    }
+  }, [journalStream.alarmGroups, lastSeenAlarmTime])
+
+  useEffect(() => {
+    if (lastSeenAlarmTime === 0) return
+
+    if (mainTab === 'signals' && bottomTab === 'unproc') {
+      return
+    }
+
+    const timerId = window.setTimeout(() => {
+      setMainTab('signals')
+      setBottomTab('unproc')
+      
+      const rows = unprocessedFlatRowsRef.current
+      if (rows.length > 0) {
+        setSelectedSignalRowID(rows[0].rowID)
+        setSelectedObjectID(rows[0].objectID)
+        setIsCardModalOpen(true)
+        setCardModalTab('kartochka')
+      }
+    }, 30000)
+
+    return () => window.clearTimeout(timerId)
+  }, [lastSeenAlarmTime, mainTab, bottomTab, setMainTab, setBottomTab, setSelectedSignalRowID, setSelectedObjectID, setIsCardModalOpen, setCardModalTab])
 
   const journalArchiveRows = useMemo(() => {
     const threshold = Date.now() - RECENT_JOURNAL_WINDOW_MS
@@ -258,14 +308,14 @@ export function App() {
 
   const [localPickedAlarmIDs, setLocalPickedAlarmIDs] = useState<Set<number>>(new Set())
 
-  const eventModalRow = useMemo(() => {
-    const row = journalAlarmRows.find((item) => item.rowID === eventModalRowID) ?? null
-    if (row == null) return null
+  const activeAlarmRow = useMemo(() => {
+    const row = selectedSignalRow
+    if (row == null || !row.alarm) return null
     if (row.alarmID != null && localPickedAlarmIDs.has(row.alarmID)) {
       return { ...row, inProgressByMe: true, canProcess: true }
     }
     return row
-  }, [eventModalRowID, journalAlarmRows, localPickedAlarmIDs])
+  }, [selectedSignalRow, localPickedAlarmIDs])
 
   useEffect(() => {
     if (!isEventModalOpen) {
@@ -348,15 +398,15 @@ export function App() {
   )
 
   const handleOpenAlarmProcessing = useCallback(() => {
-    const alarmID = eventModalRow?.alarmID
+    const alarmID = activeAlarmRow?.alarmID
     if (alarmID == null || alarmID <= 0) {
       setAlarmProcessingError('Для вибраного рядка недоступне відпрацювання тривоги.')
       setIsAlarmProcessingModalOpen(true)
       setAlarmProcessingOptions([])
       return
     }
-    if (eventModalRow?.canProcess === false) {
-      const assignee = eventModalRow.inProgressBy || 'інший оператор'
+    if (activeAlarmRow?.canProcess === false) {
+      const assignee = activeAlarmRow.inProgressBy || 'інший оператор'
       setAlarmWorkflowError(`Тривога вже обробляється: ${assignee}. Спочатку перехопіть її.`)
       return
     }
@@ -382,25 +432,34 @@ export function App() {
           setAlarmProcessingLoading(false)
         })
     }
-  }, [eventModalRow?.alarmID, eventModalRow?.canProcess, cachedProcessingOptions])
+  }, [activeAlarmRow?.alarmID, activeAlarmRow?.canProcess, cachedProcessingOptions])
 
   const handleSubmitAlarmProcessing = useCallback(
     async ({ causeCode, note }: { causeCode: string; note: string }) => {
-      const alarmID = eventModalRow?.alarmID
-      if (alarmID == null || alarmID <= 0) {
+      if (!activeAlarmRow || !activeAlarmRow.alarmID || activeAlarmRow.alarmID <= 0) {
         setAlarmProcessingError('Некоректний ідентифікатор тривоги.')
         return
       }
+      const alarmID = activeAlarmRow.alarmID
 
       setAlarmProcessingBusy(true)
       setAlarmProcessingError('')
       try {
         setAlarmWorkflowError('')
-        await api.processAlarm(alarmID, {
-          user: OPERATOR_NAME,
-          causeCode,
-          note,
-        })
+        
+        const activeObjectID = activeAlarmRow.objectID
+        const alarmsCount = journalAlarmRows.filter((r) => r.objectID === activeObjectID).length
+        
+        if (alarmsCount > 1) {
+          await api.groupProcessAlarm(alarmID, OPERATOR_NAME)
+        } else {
+          await api.processAlarm(alarmID, {
+            user: OPERATOR_NAME,
+            causeCode,
+            note,
+          })
+        }
+        
         setLocalPickedAlarmIDs((prev) => { const next = new Set(prev); next.delete(alarmID); return next })
         setIsAlarmProcessingModalOpen(false)
         setIsEventModalOpen(false)
@@ -411,16 +470,16 @@ export function App() {
         setAlarmProcessingBusy(false)
       }
     },
-    [detailsQuery, eventModalRow?.alarmID, objectsQuery, setIsEventModalOpen],
+    [detailsQuery, activeAlarmRow, objectsQuery, setIsEventModalOpen, journalAlarmRows],
   )
 
   const handlePickAlarm = useCallback(async () => {
-    const alarmID = eventModalRow?.alarmID
+    const alarmID = activeAlarmRow?.alarmID
     if (alarmID == null || alarmID <= 0) {
       setAlarmWorkflowError('Для вибраного рядка недоступне взяття тривоги в роботу.')
       return
     }
-    if (eventModalRow?.inProgressByMe) {
+    if (activeAlarmRow?.inProgressByMe) {
       setAlarmWorkflowError('')
       return
     }
@@ -430,7 +489,7 @@ export function App() {
     try {
       await api.pickAlarm(alarmID, { user: OPERATOR_NAME })
       setLocalPickedAlarmIDs((prev) => new Set([...prev, alarmID]))
-      if (eventModalRow?.source === 'casl') {
+      if (activeAlarmRow?.source === 'casl') {
         setAlarmWorkflowError('Команду перехоплення відправлено. Очікуємо оновлення CASL.')
       }
     } catch (error: unknown) {
@@ -438,17 +497,17 @@ export function App() {
     } finally {
       setAlarmWorkflowBusy(false)
     }
-  }, [eventModalRow?.alarmID, eventModalRow?.inProgressByMe, eventModalRow?.source])
+  }, [activeAlarmRow?.alarmID, activeAlarmRow?.inProgressByMe, activeAlarmRow?.source])
 
   const handleDispatchGroup = useCallback(() => {
-    const alarmID = eventModalRow?.alarmID
+    const alarmID = activeAlarmRow?.alarmID
     if (alarmID == null || alarmID <= 0) return
     setDispatchGroupError('')
     setIsDispatchGroupModalOpen(true)
-  }, [eventModalRow?.alarmID])
+  }, [activeAlarmRow?.alarmID])
 
   const handleConfirmDispatchGroup = useCallback(async (groupID: string) => {
-    const alarmID = eventModalRow?.alarmID
+    const alarmID = activeAlarmRow?.alarmID
     if (alarmID == null || alarmID <= 0) return
     setDispatchGroupBusy(true)
     setDispatchGroupError('')
@@ -461,10 +520,10 @@ export function App() {
     } finally {
       setDispatchGroupBusy(false)
     }
-  }, [eventModalRow?.alarmID])
+  }, [activeAlarmRow?.alarmID])
 
   const handleGroupAction = useCallback(async () => {
-    const alarmID = eventModalRow?.alarmID
+    const alarmID = activeAlarmRow?.alarmID
     if (alarmID == null || alarmID <= 0) return
     const isArrived = groupArrivedAlarmIDs.has(alarmID)
     setAlarmWorkflowBusy(true)
@@ -483,7 +542,35 @@ export function App() {
     } finally {
       setAlarmWorkflowBusy(false)
     }
-  }, [eventModalRow?.alarmID, groupArrivedAlarmIDs])
+  }, [activeAlarmRow?.alarmID, groupArrivedAlarmIDs])
+
+  const handleCancelAlarm = useCallback(async () => {
+    if (!activeAlarmRow || !activeAlarmRow.alarmID || activeAlarmRow.alarmID <= 0) return
+    const alarmID = activeAlarmRow.alarmID
+    setAlarmWorkflowBusy(true)
+    setAlarmWorkflowError('')
+    try {
+      const activeObjectID = activeAlarmRow.objectID
+      const alarmsCount = journalAlarmRows.filter((r) => r.objectID === activeObjectID).length
+      
+      if (alarmsCount > 1) {
+        await api.groupProcessAlarm(alarmID, OPERATOR_NAME)
+      } else {
+        await api.processAlarm(alarmID, { user: OPERATOR_NAME, causeCode: 'FALSE_ALARM', note: 'Скасовано оператором' })
+      }
+      
+      setIsEventModalOpen(false)
+      setLocalPickedAlarmIDs((prev) => {
+        const next = new Set(prev)
+        next.delete(alarmID)
+        return next
+      })
+    } catch (error: unknown) {
+      setAlarmWorkflowError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setAlarmWorkflowBusy(false)
+    }
+  }, [activeAlarmRow, journalAlarmRows])
 
   const handleToggleShowAll = useCallback(() => setShowAllAlarms((v) => !v), [])
 
@@ -546,6 +633,16 @@ export function App() {
               onSelectSignalRow={handleSelectSignalRow}
               onOpenEventModal={handleOpenEventModal}
               onOpenCardModal={handleOpenCardModal}
+              isInWorkflow={activeAlarmRow?.inProgressByMe === true}
+              groupDispatched={activeAlarmRow?.alarmID != null && groupDispatchedAlarmIDs.has(activeAlarmRow.alarmID)}
+              groupArrived={activeAlarmRow?.alarmID != null && groupArrivedAlarmIDs.has(activeAlarmRow.alarmID)}
+              workflowBusy={alarmWorkflowBusy || alarmProcessingBusy}
+              onPickAlarm={() => void handlePickAlarm()}
+              onStandby={() => {}}
+              onCancelAlarm={() => void handleCancelAlarm()}
+              onDispatchGroup={handleDispatchGroup}
+              onGroupAction={() => void handleGroupAction()}
+              onOpenProcessAlarm={handleOpenAlarmProcessing}
             />
           </div>
 
@@ -594,7 +691,7 @@ export function App() {
         tab={eventModalTab}
         onSelectTab={setEventModalTab}
         onClose={() => setIsEventModalOpen(false)}
-        eventModalRow={eventModalRow}
+        eventModalRow={activeAlarmRow}
         selectedObjectRow={selectedObjectRow}
         selectedObjectZones={selectedObjectZones}
         selectedObjectContacts={selectedObjectContacts}
@@ -602,12 +699,12 @@ export function App() {
         objectEventsFeed={objectEventsFeed}
         workflowBusy={alarmWorkflowBusy || alarmProcessingBusy}
         workflowError={alarmWorkflowError}
-        isInWorkflow={eventModalRow?.inProgressByMe === true}
-        groupDispatched={eventModalRow?.alarmID != null && groupDispatchedAlarmIDs.has(eventModalRow.alarmID)}
-        groupArrived={eventModalRow?.alarmID != null && groupArrivedAlarmIDs.has(eventModalRow.alarmID)}
+        isInWorkflow={activeAlarmRow?.inProgressByMe === true}
+        groupDispatched={activeAlarmRow?.alarmID != null && groupDispatchedAlarmIDs.has(activeAlarmRow.alarmID)}
+        groupArrived={activeAlarmRow?.alarmID != null && groupArrivedAlarmIDs.has(activeAlarmRow.alarmID)}
         onPickAlarm={() => void handlePickAlarm()}
         onStandby={() => {}}
-        onCancelAlarm={() => {}}
+        onCancelAlarm={() => void handleCancelAlarm()}
         onDispatchGroup={handleDispatchGroup}
         onGroupAction={() => void handleGroupAction()}
         onOpenProcessAlarm={handleOpenAlarmProcessing}
@@ -637,8 +734,8 @@ export function App() {
 
       <AlarmProcessingModal
         isOpen={isAlarmProcessingModalOpen}
-        objectName={eventModalRow?.objectName ?? '—'}
-        alarmTypeText={eventModalRow?.typeText ?? '—'}
+        objectName={activeAlarmRow?.objectName ?? '—'}
+        alarmTypeText={activeAlarmRow?.typeText ?? '—'}
         options={alarmProcessingOptions}
         loading={alarmProcessingLoading}
         busy={alarmProcessingBusy}

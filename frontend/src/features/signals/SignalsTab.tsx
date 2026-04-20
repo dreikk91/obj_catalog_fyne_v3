@@ -29,6 +29,16 @@ type SignalsTabProps = {
   onSelectSignalRow: (row: JournalRow) => void
   onOpenEventModal: (row: JournalRow) => void
   onOpenCardModal: (row: JournalRow) => void
+  isInWorkflow: boolean
+  groupDispatched: boolean
+  groupArrived: boolean
+  workflowBusy: boolean
+  onPickAlarm: () => void
+  onStandby: () => void
+  onCancelAlarm: () => void
+  onDispatchGroup: () => void
+  onGroupAction: () => void
+  onOpenProcessAlarm: () => void
 }
 
 export function SignalsTab(props: SignalsTabProps) {
@@ -124,6 +134,16 @@ export function SignalsTab(props: SignalsTabProps) {
         onSelectSignalRow={props.onSelectSignalRow}
         onOpenEventModal={props.onOpenEventModal}
         onOpenCardModal={props.onOpenCardModal}
+        isInWorkflow={props.isInWorkflow}
+        groupDispatched={props.groupDispatched}
+        groupArrived={props.groupArrived}
+        workflowBusy={props.workflowBusy}
+        onPickAlarm={props.onPickAlarm}
+        onStandby={props.onStandby}
+        onCancelAlarm={props.onCancelAlarm}
+        onDispatchGroup={props.onDispatchGroup}
+        onGroupAction={props.onGroupAction}
+        onOpenProcessAlarm={props.onOpenProcessAlarm}
       />
     </div>
   )

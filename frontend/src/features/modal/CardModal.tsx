@@ -1,11 +1,41 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { UIEvent } from 'react'
 import type { FrontendContact, FrontendZone } from '../../shared/api/types'
 import type { ModalTab } from '../../shared/state/ui-store'
 import { useVirtualRows } from '../../hooks/useVirtualRows'
+import { useColumnVisibility } from '../../hooks/useColumnVisibility'
+import { ColumnVisibilityButton } from '../../shared/ui/ColumnVisibilityButton'
 import { BASE_GROUP_NAMES, BASE_KEY_OWNERS, CARD_DEVICE_ROWS, MODAL_TABS } from '../operator/constants'
 import type { JournalRow, ObjectRow } from '../operator/types'
-import { pad2 } from '../operator/utils'
+import { pad2, resolveJournalTypeClass } from '../operator/utils'
+
+type GroupedRowHeader = { type: 'header'; groupName: string; groupNumber: number; groupStateText: string; groupID: string; id: string }
+type GroupedRowItem<T> = { type: 'item'; item: T; id: string }
+type GroupedRow<T> = GroupedRowHeader | GroupedRowItem<T>
+
+function useGroupedRows<T extends { groupName: string; groupNumber: number; groupStateText: string; groupID: string; number?: number; name?: string; phone?: string }>(items: T[]): GroupedRow<T>[] {
+  return useMemo(() => {
+    const groups = new Map<string, T[]>()
+    for (const item of items) {
+      const gkey = `${item.groupNumber}:${item.groupName || 'Без групи'}`
+      const arr = groups.get(gkey) || []
+      arr.push(item)
+      groups.set(gkey, arr)
+    }
+    const grouped: GroupedRow<T>[] = []
+    for (const [key, groupItems] of groups.entries()) {
+      if (groupItems.length === 0) continue;
+      const ref = groupItems[0]
+      const gname = ref.groupName || 'Без групи'
+      grouped.push({ type: 'header', groupName: gname, groupNumber: ref.groupNumber, groupStateText: ref.groupStateText, groupID: ref.groupID, id: `header-${key}` })
+      for (let i = 0; i < groupItems.length; i++) {
+        const item = groupItems[i]
+        grouped.push({ type: 'item', item, id: `item-${key}-${i}` })
+      }
+    }
+    return grouped
+  }, [items])
+}
 
 type CardModalProps = {
   isOpen: boolean
@@ -40,10 +70,12 @@ export function CardModal({
   const keyOwners = BASE_KEY_OWNERS
 
   const devicesVirtual = useVirtualRows(CARD_DEVICE_ROWS, { rowHeight: 28, initialCount: 80, step: 80 })
-  const zonesVirtual = useVirtualRows(selectedObjectZones, { rowHeight: 28, initialCount: 120, step: 120 })
+  const groupedZones = useGroupedRows(selectedObjectZones)
+  const zonesVirtual = useVirtualRows(groupedZones, { rowHeight: 28, initialCount: 120, step: 120 })
   const responseVirtual = useVirtualRows(responseRows, { rowHeight: 28, initialCount: 80, step: 80 })
   const keysVirtual = useVirtualRows(keyOwners, { rowHeight: 28, initialCount: 80, step: 80 })
-  const contactsVirtual = useVirtualRows(selectedObjectContacts, { rowHeight: 28, initialCount: 120, step: 120 })
+  const groupedContacts = useGroupedRows(selectedObjectContacts)
+  const contactsVirtual = useVirtualRows(groupedContacts, { rowHeight: 28, initialCount: 120, step: 120 })
 
   // Події використовуються в тому порядку, в якому їх надає бекенд (вже відсортовані)
   const eventsVirtual = useVirtualRows(selectedObjectEvents, { rowHeight: 28, initialCount: 160, step: 160 })
@@ -99,10 +131,10 @@ export function CardModal({
         <div className="modal-content">
           {tab === 'kartochka' && <CardSummaryPane selectedObjectRow={selectedObjectRow} />}
           {tab === 'devices' && <DevicesPane virtualRows={devicesVirtual} />}
-          {tab === 'zones' && <ZonesPane virtualRows={zonesVirtual} rows={selectedObjectZones} emptyText="Дані відсутні" compact />}
+          {tab === 'zones' && <ZonesPane virtualRows={zonesVirtual} rows={groupedZones} contacts={selectedObjectContacts} emptyText="Дані відсутні" compact />}
           {tab === 'response' && <ResponsePane virtualRows={responseVirtual} phone={selectedObjectRow?.phone ?? '—'} />}
           {tab === 'keys' && <KeysPane virtualRows={keysVirtual} phone={selectedObjectRow?.phone ?? '—'} />}
-          {tab === 'resp' && <ContactsPane virtualRows={contactsVirtual} rows={selectedObjectContacts} />}
+          {tab === 'resp' && <ContactsPane virtualRows={contactsVirtual} rows={groupedContacts} />}
           {tab === 'photo' && <PhotoPane />}
           {tab === 'events_tab' && (
             <ObjectEventsPane virtualRows={eventsVirtual} rows={selectedObjectEvents} feed={objectEventsFeed} onScroll={handleEventsScroll} />
@@ -193,11 +225,13 @@ function DevicesPane({
 function ZonesPane({
   virtualRows,
   rows,
+  contacts,
   emptyText,
   compact = false,
 }: {
-  virtualRows: ReturnType<typeof useVirtualRows<FrontendZone>>
-  rows: FrontendZone[]
+  virtualRows: ReturnType<typeof useVirtualRows<GroupedRow<FrontendZone>>>
+  rows: GroupedRow<FrontendZone>[]
+  contacts: FrontendContact[]
   emptyText: string
   compact?: boolean
 }) {
@@ -209,48 +243,92 @@ function ZonesPane({
           <thead>
             {compact ? (
               <tr>
-                <th>№</th>
+                <th style={{ width: 44 }}>№</th>
                 <th>Назва зони</th>
                 <th>Тип датчика</th>
                 <th>Стан</th>
               </tr>
             ) : (
               <tr>
-                <th style={{ width: 36 }}>№</th>
+                <th style={{ width: 56 }}>№</th>
                 <th style={{ width: 40 }}>Прил.</th>
                 <th>Назва зони</th>
                 <th style={{ width: 130 }}>Тип датчика</th>
                 <th style={{ width: 110 }}>Стан</th>
-                <th style={{ width: 70 }}>Обхід</th>
+                <th>Обхід</th>
               </tr>
             )}
           </thead>
           <tbody>
             <SpacerRow colSpan={colSpan} height={virtualRows.topPaddingPx} />
-            {virtualRows.visibleRows.map((zone) => (
-              <tr key={`${zone.number}-${zone.name}`}>
-                <td className={compact ? undefined : 'mono bright'} style={compact ? undefined : { textAlign: 'center' }}>
-                  {zone.number}
-                </td>
-                {!compact && <td className="dim" style={{ textAlign: 'center' }}>1</td>}
-                <td>{zone.name || '—'}</td>
-                <td>{zone.sensorType || '—'}</td>
-                <td>
-                  <span
-                    className={
-                      zone.status.toLowerCase().includes('трив')
-                        ? 'chip chip-red'
-                        : zone.status.toLowerCase().includes('несправ')
-                          ? 'chip chip-orange'
-                          : 'chip chip-green'
-                    }
-                  >
-                    {zone.status || 'НОРМА'}
-                  </span>
-                </td>
-                {!compact && <td className="dim">—</td>}
-              </tr>
-            ))}
+            {virtualRows.visibleRows.map((row) => {
+              if (row.type === 'header') {
+                const header = row as GroupedRowHeader
+                const groupContacts = contacts.filter((c) => c.groupID === header.groupID)
+                return (
+                  <tr key={header.id}>
+                    <td colSpan={colSpan} className="bright" style={{ background: 'var(--bg3)', padding: '6px 8px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ color: 'var(--tx3)', fontSize: 13 }}>▾</span>
+                          <span>
+                            {header.groupNumber > 0 ? `Група ${header.groupNumber}: ` : ''}
+                            {header.groupName}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                          {groupContacts.length > 0 && (
+                            <div style={{ display: 'flex', gap: 6, fontSize: 11, color: 'var(--tx2)' }}>
+                              <span style={{ opacity: 0.7 }}>Відп:</span>
+                              {groupContacts.map((c, idx) => (
+                                <span key={c.name} style={{ color: 'var(--ac2)' }}>
+                                  {c.name}
+                                  {idx < groupContacts.length - 1 ? ',' : ''}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {header.groupStateText && (
+                            <span className={header.groupStateText.toLowerCase().includes('трив') || header.groupStateText.toLowerCase().includes('відключ') ? 'chip chip-red' : 'bright'}>
+                              {header.groupStateText}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              }
+
+              const zone = row.item
+              return (
+                <tr key={row.id}>
+                  <td className={compact ? undefined : 'mono bright'}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 10 }}>
+                      <span style={{ color: 'var(--bd)' }}>└</span>
+                      <span>{zone.number}</span>
+                    </div>
+                  </td>
+                  {!compact && <td className="dim" style={{ textAlign: 'center' }}>1</td>}
+                  <td>{zone.name || '—'}</td>
+                  <td>{zone.sensorType || '—'}</td>
+                  <td>
+                    <span
+                      className={
+                        zone.status.toLowerCase().includes('трив')
+                          ? 'chip chip-red'
+                          : zone.status.toLowerCase().includes('несправ')
+                            ? 'chip chip-orange'
+                            : 'chip chip-green'
+                      }
+                    >
+                      {zone.status || 'НОРМА'}
+                    </span>
+                  </td>
+                  {!compact && <td className="dim">—</td>}
+                </tr>
+              )
+            })}
             <SpacerRow colSpan={colSpan} height={virtualRows.bottomPaddingPx} />
             {rows.length === 0 && (
               <tr>
@@ -361,8 +439,8 @@ function ContactsPane({
   virtualRows,
   rows,
 }: {
-  virtualRows: ReturnType<typeof useVirtualRows<FrontendContact>>
-  rows: FrontendContact[]
+  virtualRows: ReturnType<typeof useVirtualRows<GroupedRow<FrontendContact>>>
+  rows: GroupedRow<FrontendContact>[]
 }) {
   return (
     <div className="modal-pane active">
@@ -370,22 +448,53 @@ function ContactsPane({
         <table className="mtable">
           <thead>
             <tr>
-              <th>Пріор.</th>
-              <th>ПІБ</th>
-              <th>Телефон</th>
+              <th style={{ width: 64 }}>Пріор.</th>
+              <th style={{ width: 260 }}>ПІБ</th>
+              <th style={{ width: 140 }}>Телефон</th>
               <th>Посада</th>
             </tr>
           </thead>
           <tbody>
             <SpacerRow colSpan={4} height={virtualRows.topPaddingPx} />
-            {virtualRows.visibleRows.map((contact) => (
-              <tr key={`${contact.name}-${contact.phone}`}>
-                <td>{contact.priority}</td>
-                <td>{contact.name}</td>
-                <td>{contact.phone || '—'}</td>
-                <td>{contact.position || '—'}</td>
-              </tr>
-            ))}
+            {virtualRows.visibleRows.map((row) => {
+              if (row.type === 'header') {
+                return (
+                  <tr key={row.id}>
+                    <td colSpan={4} className="bright" style={{ background: 'var(--bg3)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingLeft: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ color: 'var(--tx3)', fontSize: 13 }}>▾</span>
+                          <span>
+                            {row.groupNumber > 0 ? `Група ${row.groupNumber}: ` : ''}
+                            {row.groupName}
+                          </span>
+                        </div>
+                        {row.groupStateText && (
+                          <span className={row.groupStateText.toLowerCase().includes('трив') || row.groupStateText.toLowerCase().includes('відключ') ? 'dim' : 'bright'}>
+                           [{row.groupStateText}]
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              }
+
+              const contact = row.item
+              return (
+                <tr key={row.id}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 10 }}>
+                      <span style={{ color: 'var(--border)' }}>└</span>
+                      <span>{contact.priority}</span>
+                    </div>
+                  </td>
+                  <td>{contact.name}</td>
+                  <td>{contact.phone || '—'}</td>
+                  <td>{contact.position || '—'}</td>
+                </tr>
+              )
+            })}
             <SpacerRow colSpan={4} height={virtualRows.bottomPaddingPx} />
             {rows.length === 0 && (
               <tr>
@@ -411,41 +520,98 @@ function ObjectEventsPane({
   feed: CardModalProps['objectEventsFeed']
   onScroll: (event: UIEvent<HTMLDivElement>) => void
 }) {
+  const { columnVisibility, toggleColumn, resetAll } = useColumnVisibility('obj-events')
+
+  const allColumns = useMemo(() => [
+    { id: 'date', label: 'Дата' },
+    { id: 'time', label: 'Час' },
+    { id: 'typeText', label: 'Тип події' },
+    { id: 'line', label: 'Лінія' },
+    { id: 'code', label: 'Код' },
+    { id: 'details', label: 'Опис' },
+  ], [])
+
+  const toggleableColumns = useMemo(() =>
+    allColumns.map((col) => ({ ...col, isVisible: columnVisibility[col.id] !== false })),
+    [allColumns, columnVisibility],
+  )
+
+  const visibleSet = useMemo(() => {
+    const set = new Set<string>()
+    for (const col of allColumns) {
+      if (columnVisibility[col.id] !== false) set.add(col.id)
+    }
+    return set
+  }, [allColumns, columnVisibility])
+
+  const visibleColCount = visibleSet.size
+
   return (
     <div className="modal-pane active">
       <div className="mtable-wrap" ref={virtualRows.containerRef} onScroll={onScroll}>
         <table className="mtable">
           <thead>
             <tr>
-              <th style={{ width: 80 }}>Дата</th>
-              <th style={{ width: 64 }}>Час</th>
-              <th style={{ width: 160 }}>Тип події</th>
-              <th style={{ width: 52 }}>Лінія</th>
-              <th style={{ width: 68 }}>Код</th>
-              <th>Опис</th>
+              {visibleSet.has('date') && (
+                <th style={{ width: 80 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetAll} />
+                    Дата
+                  </div>
+                </th>
+              )}
+              {visibleSet.has('time') && (
+                <th style={{ width: 64 }}>
+                  {!visibleSet.has('date') && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetAll} />
+                      Час
+                    </div>
+                  )}
+                  {visibleSet.has('date') && 'Час'}
+                </th>
+              )}
+              {visibleSet.has('typeText') && (
+                <th style={{ width: 160 }}>
+                  {!visibleSet.has('date') && !visibleSet.has('time') && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetAll} />
+                      Тип події
+                    </div>
+                  )}
+                  {(visibleSet.has('date') || visibleSet.has('time')) && 'Тип події'}
+                </th>
+              )}
+              {visibleSet.has('line') && <th style={{ width: 52 }}>Лінія</th>}
+              {visibleSet.has('code') && (
+                <th style={visibleSet.has('details') ? { width: 68 } : undefined}>
+                  Код
+                </th>
+              )}
+              {visibleSet.has('details') && <th>Опис</th>}
             </tr>
           </thead>
           <tbody>
-            <SpacerRow colSpan={6} height={virtualRows.topPaddingPx} />
+            <SpacerRow colSpan={visibleColCount} height={virtualRows.topPaddingPx} />
             {virtualRows.visibleRows.map((item) => (
               <tr key={item.rowID}>
-                <td>{item.date}</td>
-                <td>{item.time}</td>
-                <td className={item.alarm ? 'red' : ''}>{item.typeText}</td>
-                <td>{item.line}</td>
-                <td>{item.code}</td>
-                <td>{item.details}</td>
+                {visibleSet.has('date') && <td>{item.date}</td>}
+                {visibleSet.has('time') && <td>{item.time}</td>}
+                {visibleSet.has('typeText') && <td className={resolveJournalTypeClass(item)}>{item.typeText}</td>}
+                {visibleSet.has('line') && <td>{item.line}</td>}
+                {visibleSet.has('code') && <td>{item.code}</td>}
+                {visibleSet.has('details') && <td>{item.details}</td>}
               </tr>
             ))}
-            <SpacerRow colSpan={6} height={virtualRows.bottomPaddingPx} />
+            <SpacerRow colSpan={visibleColCount} height={virtualRows.bottomPaddingPx} />
             {feed.isInitialLoading && virtualRows.totalCount === 0 && (
               <tr>
-                <td colSpan={6}>Завантаження подій...</td>
+                <td colSpan={visibleColCount}>Завантаження подій...</td>
               </tr>
             )}
             {!feed.isInitialLoading && rows.length === 0 && (
               <tr>
-                <td colSpan={6}>Подій для об'єкта не знайдено</td>
+                <td colSpan={visibleColCount}>Подій для об'єкта не знайдено</td>
               </tr>
             )}
           </tbody>

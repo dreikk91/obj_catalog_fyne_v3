@@ -5,6 +5,8 @@ import { OBJECT_FILTER_TABS } from '../operator/constants'
 import type { ObjectRow, TableColumnMeta } from '../operator/types'
 import { resolveObjectIndicatorColor } from '../operator/utils'
 import { useVirtualRows } from '../../hooks/useVirtualRows'
+import { useColumnVisibility } from '../../hooks/useColumnVisibility'
+import { ColumnVisibilityButton } from '../../shared/ui/ColumnVisibilityButton'
 
 type ObjectsTabProps = {
   rows: ObjectRow[]
@@ -145,12 +147,29 @@ export function ObjectsTab({
     ]
   }, [])
 
+  const { columnVisibility, toggleColumn, resetAll: resetColumnVisibility } = useColumnVisibility('objects')
+
+  const toggleableColumns = useMemo(() => {
+    return columns
+      .filter((col) => {
+        const id = 'accessorKey' in col ? String(col.accessorKey) : col.id
+        return id !== 'indicator'
+      })
+      .map((col) => {
+        const id = 'accessorKey' in col ? String(col.accessorKey) : col.id ?? ''
+        const label = typeof col.header === 'string' ? col.header : id
+        const isVisible = columnVisibility[id] !== false
+        return { id, label, isVisible }
+      })
+  }, [columns, columnVisibility])
+
   const table = useReactTable({
     data: filteredRows,
     columns,
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
     getCoreRowModel: getCoreRowModel(),
+    state: { columnVisibility },
   })
 
   const tableRows = table.getRowModel().rows
@@ -205,20 +224,24 @@ export function ObjectsTab({
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
+                {headerGroup.headers.map((header, idx, allHeaders) => {
                   const meta = header.column.columnDef.meta as TableColumnMeta | undefined
-                  const isFluid = meta?.fluid === true
+                  const isIndicator = header.column.id === 'indicator'
+                  const isLast = idx === allHeaders.length - 1
+                  const isFluid = meta?.fluid === true || isLast
                   return (
                     <th
                       key={header.id}
                       className={isFluid ? 'col-fluid' : undefined}
                       style={
                         isFluid
-                          ? { minWidth: meta?.minWidth }
+                          ? { width: '100%', minWidth: meta?.minWidth ?? (isIndicator ? undefined : 60) }
                           : { width: header.getSize(), minWidth: header.column.columnDef.minSize }
                       }
                     >
-                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                      {isIndicator
+                        ? <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetColumnVisibility} />
+                        : header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                       {header.column.getCanResize() && (
                         <div
                           className={`col-resizer ${header.column.getIsResizing() ? 'is-resizing' : ''}`}
@@ -245,19 +268,24 @@ export function ObjectsTab({
                 className={selectedObjectID === tableRow.original.id ? 'selected' : ''}
                 onClick={() => onSelectObject(tableRow.original.id)}
               >
-                {tableRow.getVisibleCells().map((cell) => (
-                  <td
-                    key={cell.id}
-                    className={(cell.column.columnDef.meta as TableColumnMeta | undefined)?.fluid ? 'col-fluid' : undefined}
-                    style={
-                      (cell.column.columnDef.meta as TableColumnMeta | undefined)?.fluid
-                        ? { minWidth: (cell.column.columnDef.meta as TableColumnMeta | undefined)?.minWidth }
-                        : { width: cell.column.getSize(), minWidth: cell.column.columnDef.minSize }
-                    }
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
+                {tableRow.getVisibleCells().map((cell, idx, allCells) => {
+                  const meta = cell.column.columnDef.meta as TableColumnMeta | undefined
+                  const isLast = idx === allCells.length - 1
+                  const isFluid = meta?.fluid === true || isLast
+                  return (
+                    <td
+                      key={cell.id}
+                      className={isFluid ? 'col-fluid' : undefined}
+                      style={
+                        isFluid
+                          ? { width: '100%', minWidth: meta?.minWidth ?? 60 }
+                          : { width: cell.column.getSize(), minWidth: cell.column.columnDef.minSize }
+                      }
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  )
+                })}
               </tr>
             ))}
             {virtualRows.bottomPaddingPx > 0 && (

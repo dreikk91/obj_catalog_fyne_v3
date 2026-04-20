@@ -129,6 +129,19 @@ html,body{height:100%;overflow:hidden;font-family:'Exo 2',sans-serif;background:
 .bot-pane{display:none;flex:1;overflow:auto}
 .bot-pane.active{display:flex;flex-direction:column}
 
+/* column visibility dropdown */
+.col-vis-th{display:flex;align-items:center;justify-content:center;position:relative}
+.col-vis-th-btn{width:20px;height:20px;border:none;background:transparent;color:var(--tx2);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;border-radius:3px;transition:background .12s,color .12s}
+.col-vis-th-btn:hover,.col-vis-th-btn.active{background:rgba(26,127,196,.2);color:var(--ac2)}
+.col-vis-menu{position:absolute;top:100%;left:0;z-index:50;min-width:200px;background:var(--bg2);border:1px solid var(--bd2);border-radius:4px;box-shadow:0 8px 24px rgba(0,0,0,.45);padding:4px 0;margin-top:4px;animation:colMenuIn .12s ease-out}
+@keyframes colMenuIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.col-vis-header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid var(--bd);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--tx2)}
+.col-vis-reset{background:transparent;border:1px solid var(--bd2);border-radius:2px;color:var(--ac2);font-size:10px;font-family:'Exo 2',sans-serif;cursor:pointer;padding:1px 6px;transition:background .12s}
+.col-vis-reset:hover{background:rgba(26,127,196,.15)}
+.col-vis-item{display:flex;align-items:center;gap:8px;padding:5px 10px;font-size:12px;color:var(--tx);cursor:pointer;transition:background .08s;white-space:nowrap}
+.col-vis-item:hover{background:var(--rowh)}
+.col-vis-item input[type="checkbox"]{accent-color:var(--ac);width:14px;height:14px;cursor:pointer;flex-shrink:0}
+
 /* main events table */
 .evt-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
 .evt-table thead{position:sticky;top:0;z-index:2}
@@ -140,6 +153,8 @@ html,body{height:100%;overflow:hidden;font-family:'Exo 2',sans-serif;background:
 .evt-table tbody tr.selected{background:rgba(26,127,196,.22)!important;outline:1px solid var(--ac2)}
 .evt-table tbody tr.alarm td:first-child{border-left:3px solid var(--ac5)}
 .evt-table tbody tr.alarm{background:rgba(200,50,50,.08)}
+.evt-table tbody tr.evt-fault td:first-child{border-left:3px solid #facc15}
+.evt-table tbody tr.evt-fault{background:rgba(250,204,21,.1)}
 .evt-table tbody tr.evt-warning td:first-child{border-left:3px solid var(--ac4)}
 .evt-table tbody tr.evt-warning{background:rgba(212,138,32,.08)}
 .evt-table tbody tr.evt-info td:first-child{border-left:3px solid var(--ac2)}
@@ -149,10 +164,19 @@ html,body{height:100%;overflow:hidden;font-family:'Exo 2',sans-serif;background:
 .dim{color:var(--tx2)}
 .bright{color:var(--tx3);font-weight:600}
 .red{color:#e05050;font-weight:600}
+.evt-type-fault{color:#facc15;font-weight:600}
 .evt-type-warning{color:#e2a24f;font-weight:600}
 .evt-type-info{color:#7fb6e6;font-weight:600}
 .evt-type-normal{color:#8ccda8;font-weight:600}
 .evt-dot{width:8px;height:8px}
+
+.chip{display:inline-flex;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:700;color:var(--bg);text-transform:uppercase;letter-spacing:.5px}
+.chip-green{background:var(--ac)}
+.chip-red{background:var(--ac5);color:#fff}
+.chip-orange{background:var(--ac4)}
+.chip-yellow{background:#facc15;color:#000}
+.chip-info{background:var(--ac2);color:#fff}
+.chip-gray{background:var(--tx2);color:var(--bg2)}
 
 /* ════════════════════
    ОБ'ЄКТИ TAB
@@ -195,6 +219,23 @@ th:hover>.col-resizer::after{opacity:.55}
 .vt-spacer{pointer-events:none}
 .vt-spacer td{padding:0!important;border:none!important;background:transparent!important}
 .table-load-status{padding:4px 8px;border-top:1px solid var(--bd);font-size:11px;color:var(--tx2);background:rgba(7,16,26,.65)}
+
+.tree-branch-symbol {
+  font-family: monospace;
+  color: var(--tx2);
+  margin-right: 4px;
+}
+.badge-small {
+  background: rgba(255,255,255,0.1);
+  color: var(--tx3);
+}
+.evt-table tbody tr.unproc-child-row td:nth-child(3) {
+  padding-left: 20px;
+}
+.evt-table tbody tr.unproc-child-row td {
+  background: rgba(255,255,255,0.02);
+  opacity: 0.9;
+}
 
 /* chips */
 .chip{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:2px;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap}

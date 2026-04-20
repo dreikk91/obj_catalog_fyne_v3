@@ -208,6 +208,10 @@ function normalizeZone(input: unknown): FrontendZone {
     name: asString(value.name ?? value.Name),
     sensorType: asString(value.sensorType ?? value.SensorType),
     status: asString(value.status ?? value.Status),
+    groupID: asString(value.groupID ?? value.GroupID),
+    groupNumber: asNumber(value.groupNumber ?? value.GroupNumber),
+    groupName: asString(value.groupName ?? value.GroupName),
+    groupStateText: asString(value.groupStateText ?? value.GroupStateText),
   }
 }
 
@@ -218,6 +222,10 @@ function normalizeContact(input: unknown): FrontendContact {
     position: asString(value.position ?? value.Position),
     phone: asString(value.phone ?? value.Phone),
     priority: asNumber(value.priority ?? value.Priority),
+    groupID: asString(value.groupID ?? value.GroupID),
+    groupNumber: asNumber(value.groupNumber ?? value.GroupNumber),
+    groupName: asString(value.groupName ?? value.GroupName),
+    groupStateText: asString(value.groupStateText ?? value.GroupStateText),
   }
 }
 

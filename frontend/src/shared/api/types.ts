@@ -2,7 +2,7 @@ export type FrontendSource = 'unknown' | 'bridge' | 'phoenix' | 'casl'
 export type GuardStatus = 'unknown' | 'guarded' | 'disarmed'
 export type ConnectionStatus = 'unknown' | 'online' | 'offline'
 export type MonitoringStatus = 'unknown' | 'active' | 'blocked' | 'debug'
-export type VisualSeverity = 'unknown' | 'normal' | 'info' | 'warning' | 'critical'
+export type VisualSeverity = 'unknown' | 'normal' | 'info' | 'warning' | 'fault' | 'critical'
 
 export type FrontendObjectSummary = {
   id: number
@@ -33,6 +33,10 @@ export type FrontendZone = {
   name: string
   sensorType: string
   status: string
+  groupID: string
+  groupNumber: number
+  groupName: string
+  groupStateText: string
 }
 
 export type FrontendContact = {
@@ -40,6 +44,10 @@ export type FrontendContact = {
   position: string
   phone: string
   priority: number
+  groupID: string
+  groupNumber: number
+  groupName: string
+  groupStateText: string
 }
 
 export type FrontendEventItem = {

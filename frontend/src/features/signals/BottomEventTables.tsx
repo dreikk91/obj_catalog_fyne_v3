@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import { flexRender, getCoreRowModel, useReactTable, type Cell, type ColumnDef, type Row, type Table } from '@tanstack/react-table'
 import type { BottomTab } from '../../shared/state/ui-store'
 import { useVirtualRows } from '../../hooks/useVirtualRows'
+import { useColumnVisibility } from '../../hooks/useColumnVisibility'
+import { ColumnVisibilityButton, type ColumnToggleItem } from '../../shared/ui/ColumnVisibilityButton'
 import type { JournalRow, TableColumnMeta, UnprocessedAlarmGroup, UnprocessedRowMeta } from '../operator/types'
 import {
   resolveJournalIndicatorColor,
@@ -27,6 +29,16 @@ type BottomEventTablesProps = {
   onSelectSignalRow: (row: JournalRow) => void
   onOpenEventModal: (row: JournalRow) => void
   onOpenCardModal: (row: JournalRow) => void
+  isInWorkflow: boolean
+  groupDispatched: boolean
+  groupArrived: boolean
+  workflowBusy: boolean
+  onPickAlarm: () => void
+  onStandby: () => void
+  onCancelAlarm: () => void
+  onDispatchGroup: () => void
+  onGroupAction: () => void
+  onOpenProcessAlarm: () => void
 }
 
 export function BottomEventTables({
@@ -46,6 +58,16 @@ export function BottomEventTables({
   onSelectSignalRow,
   onOpenEventModal,
   onOpenCardModal,
+  isInWorkflow,
+  groupDispatched,
+  groupArrived,
+  workflowBusy,
+  onPickAlarm,
+  onStandby,
+  onCancelAlarm,
+  onDispatchGroup,
+  onGroupAction,
+  onOpenProcessAlarm,
 }: BottomEventTablesProps) {
   const selectedUnprocessedRow = useMemo(
     () => unprocessedFlatRows.find((row) => row.rowID === selectedSignalRowID) ?? null,
@@ -83,7 +105,13 @@ export function BottomEventTables({
         header: "Об'єкт",
         size: 74,
         minSize: 56,
-        cell: ({ getValue }) => <span className="mono bright">{String(getValue())}</span>,
+        cell: ({ row, getValue }) => {
+          const rowMeta = unprocessedRowMetaByID.get(row.original.rowID)
+          if (rowMeta?.isChild) {
+            return <span className="mono bright"></span>
+          }
+          return <span className="mono bright">{String(getValue())}</span>
+        },
       },
       {
         accessorKey: 'code',
@@ -118,13 +146,36 @@ export function BottomEventTables({
                     onToggleGroup(rowMeta.groupID)
                   }}
                   title={isExpanded ? 'Згорнути події' : 'Розгорнути події'}
+                  style={{ width: 16, height: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid currentColor', borderRadius: 2, marginRight: 6, cursor: 'pointer', background: 'transparent', color: 'inherit', padding: 0, fontSize: 14, lineHeight: 1 }}
                 >
-                  {isExpanded ? '▾' : '▸'}
+                                    <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    style={{
+                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(90deg)',
+                      transition: 'transform 0.15s ease',
+                      flexShrink: 0
+                    }}
+                  >
+                    <path d="M18 15l-6-6-6 6" />
+                  </svg>
                 </button>
               )}
-              {rowMeta.isChild && <span className="group-row-indent" />}
-              <span className={typeClass}>{value}</span>
-              {isExpandableParent && <span className="dim group-size-label">+{rowMeta.groupSize - 1}</span>}
+                            {rowMeta.isChild && (
+                <span className="tree-branch-symbol" style={{ color: 'var(--tx2)', opacity: 0.5, marginRight: 8, fontSize: 14 }}>
+                  └─
+                </span>
+              )}
+                            <span className={typeClass} style={rowMeta.isChild ? { fontSize: '0.95em' } : undefined}>{value}</span>
+              {isExpandableParent && (
+                <span className="badge-small" style={{ marginLeft: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: '1px 5px', fontSize: 9 }}>
+                  {rowMeta.groupSize}
+                </span>
+              )}
             </span>
           )
         },
@@ -181,12 +232,15 @@ export function BottomEventTables({
     ]
   }, [expandedUnprocessedGroups, onToggleGroup, unprocessedRowMetaByID])
 
+  const { columnVisibility, toggleColumn, resetAll: resetColumnVisibility } = useColumnVisibility('journal')
+
   const unprocessedTable = useReactTable({
     data: unprocessedFlatRows,
     columns: journalColumns,
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
     getCoreRowModel: getCoreRowModel(),
+    state: { columnVisibility },
   })
 
   const archiveTable = useReactTable({
@@ -195,10 +249,25 @@ export function BottomEventTables({
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
     getCoreRowModel: getCoreRowModel(),
+    state: { columnVisibility },
   })
 
   const unprocessedVirtual = useVirtualRows(unprocessedTable.getRowModel().rows, { rowHeight: 28, initialCount: 220, step: 220 })
   const archiveVirtual = useVirtualRows(archiveTable.getRowModel().rows, { rowHeight: 28, initialCount: 220, step: 220 })
+
+  const toggleableColumns: ColumnToggleItem[] = useMemo(() => {
+    return journalColumns
+      .filter((col) => {
+        const id = 'accessorKey' in col ? String(col.accessorKey) : col.id
+        return id !== 'indicator'
+      })
+      .map((col) => {
+        const id = 'accessorKey' in col ? String(col.accessorKey) : col.id ?? ''
+        const label = typeof col.header === 'string' ? col.header : id
+        const isVisible = columnVisibility[id] !== false
+        return { id, label, isVisible }
+      })
+  }, [journalColumns, columnVisibility])
   const columnCount = unprocessedTable.getAllLeafColumns().length
 
   return (
@@ -219,22 +288,73 @@ export function BottomEventTables({
           Архів <span className="badge">{journalArchiveRows.length}</span>
         </button>
         {bottomTab === 'unproc' && (
-          <div className="bot-toolbar">
-            <button
-              className="btn btn-violet"
-              style={{ height: 24, fontSize: 11 }}
-              disabled={selectedUnprocessedRow == null}
-              onClick={() => selectedUnprocessedRow != null && onOpenEventModal(selectedUnprocessedRow)}
-            >
-              Взяти в роботу
-            </button>
-            <button
-              className={showAllAlarms ? 'btn btn-blue' : 'btn btn-gray'}
-              style={{ height: 24, fontSize: 11 }}
-              onClick={onToggleShowAll}
-            >
-              {showAllAlarms ? '● Всі оператори' : 'Показати всі'}
-            </button>
+          <div className="bot-toolbar" style={{ border: '1px solid var(--bd)', padding: '4px', borderRadius: '4px', position: 'relative' }}>
+            <span style={{ position: 'absolute', top: -8, left: 8, background: 'var(--bg)', padding: '0 4px', fontSize: 10, color: 'var(--tx2)' }}>Оброблення події</span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
+              {!isInWorkflow ? (
+                <button
+                  className="btn btn-violet"
+                  style={{ height: 24, fontSize: 11 }}
+                  disabled={selectedUnprocessedRow == null || workflowBusy}
+                  onClick={onPickAlarm}
+                >
+                  Обробити
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="btn btn-green"
+                    style={{ height: 24, fontSize: 11 }}
+                    disabled={workflowBusy}
+                    onClick={onOpenProcessAlarm}
+                  >
+                    Закінчити оброблення
+                  </button>
+                  {groupDispatched && (
+                    <button
+                      className="btn btn-gray"
+                      style={{ height: 24, fontSize: 11 }}
+                      disabled={workflowBusy}
+                      onClick={onGroupAction}
+                    >
+                      {groupArrived ? 'Скасувати групи' : 'Групи прибули'}
+                    </button>
+                  )}
+                  {!groupDispatched && (
+                    <button
+                      className="btn btn-violet"
+                      style={{ height: 24, fontSize: 11 }}
+                      disabled={workflowBusy}
+                      onClick={onDispatchGroup}
+                    >
+                      Вислати групи
+                    </button>
+                  )}
+                  <button
+                    className="btn btn-gray"
+                    style={{ height: 24, fontSize: 11 }}
+                    disabled={workflowBusy}
+                    onClick={onStandby}
+                  >
+                    До стендів
+                  </button>
+                  <button
+                    className="btn btn-gray"
+                    style={{ height: 24, fontSize: 11 }}
+                    disabled={workflowBusy}
+                    onClick={onCancelAlarm}
+                  >
+                    Скасувати тривогу
+                  </button>
+                </>
+              )}
+              
+              <div style={{ marginLeft: 'auto' }} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, cursor: 'pointer' }}>
+                <input type="checkbox" checked={showAllAlarms} onChange={onToggleShowAll} />
+                Показати всі
+              </label>
+            </div>
           </div>
         )}
       </div>
@@ -247,6 +367,9 @@ export function BottomEventTables({
         selectedSignalRowID={selectedSignalRowID}
         onSelectSignalRow={onSelectSignalRow}
         onDoubleClickRow={onOpenEventModal}
+        colVisColumns={toggleableColumns}
+        onColVisToggle={toggleColumn}
+        onColVisReset={resetColumnVisibility}
         rowClassName={(row) => {
           const rowMeta = unprocessedRowMetaByID.get(row.rowID)
           const isSelected =
@@ -271,6 +394,9 @@ export function BottomEventTables({
         selectedSignalRowID={selectedSignalRowID}
         onSelectSignalRow={onSelectSignalRow}
         onDoubleClickRow={onOpenCardModal}
+        colVisColumns={toggleableColumns}
+        onColVisToggle={toggleColumn}
+        onColVisReset={resetColumnVisibility}
         rowClassName={(row) => resolveJournalRowClass(row, selectedSignalRowID === row.rowID)}
       />
     </div>
@@ -285,6 +411,9 @@ function JournalPane({
   selectedSignalRowID,
   onSelectSignalRow,
   onDoubleClickRow,
+  colVisColumns,
+  onColVisToggle,
+  onColVisReset,
   rowClassName,
 }: {
   active: boolean
@@ -294,6 +423,9 @@ function JournalPane({
   selectedSignalRowID: string | null
   onSelectSignalRow: (row: JournalRow) => void
   onDoubleClickRow: (row: JournalRow) => void
+  colVisColumns: ColumnToggleItem[]
+  onColVisToggle: (id: string) => void
+  onColVisReset: () => void
   rowClassName: (row: JournalRow) => string
 }) {
   return (
@@ -303,20 +435,24 @@ function JournalPane({
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
+                {headerGroup.headers.map((header, idx, allHeaders) => {
                   const meta = header.column.columnDef.meta as TableColumnMeta | undefined
-                  const isFluid = meta?.fluid === true
+                  const isIndicator = header.column.id === 'indicator'
+                  const isLast = idx === allHeaders.length - 1
+                  const isFluid = meta?.fluid === true || isLast
                   return (
                     <th
                       key={header.id}
                       className={isFluid ? 'col-fluid' : undefined}
                       style={
                         isFluid
-                          ? { minWidth: meta?.minWidth }
+                          ? { width: '100%', minWidth: meta?.minWidth ?? (isIndicator ? undefined : 60) }
                           : { width: header.getSize(), minWidth: header.column.columnDef.minSize }
                       }
                     >
-                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                      {isIndicator
+                        ? <ColumnVisibilityButton columns={colVisColumns} onToggle={onColVisToggle} onReset={onColVisReset} />
+                        : header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                       {header.column.getCanResize() && (
                         <div
                           className={`col-resizer ${header.column.getIsResizing() ? 'is-resizing' : ''}`}
@@ -346,19 +482,24 @@ function JournalPane({
                 title="Двічі клацніть для відкриття"
                 data-selected={selectedSignalRowID === tableRow.original.rowID}
               >
-                {tableRow.getVisibleCells().map((cell: Cell<JournalRow, unknown>) => (
-                  <td
-                    key={cell.id}
-                    className={(cell.column.columnDef.meta as TableColumnMeta | undefined)?.fluid ? 'col-fluid' : undefined}
-                    style={
-                      (cell.column.columnDef.meta as TableColumnMeta | undefined)?.fluid
-                        ? { minWidth: (cell.column.columnDef.meta as TableColumnMeta | undefined)?.minWidth }
-                        : { width: cell.column.getSize(), minWidth: cell.column.columnDef.minSize }
-                    }
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
+                {tableRow.getVisibleCells().map((cell, idx, allCells) => {
+                  const meta = cell.column.columnDef.meta as TableColumnMeta | undefined
+                  const isLast = idx === allCells.length - 1
+                  const isFluid = meta?.fluid === true || isLast
+                  return (
+                    <td
+                      key={cell.id}
+                      className={isFluid ? 'col-fluid' : undefined}
+                      style={
+                        isFluid
+                          ? { width: '100%', minWidth: meta?.minWidth ?? 60 }
+                          : { width: cell.column.getSize(), minWidth: cell.column.columnDef.minSize }
+                      }
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  )
+                })}
               </tr>
             ))}
             {virtualRows.bottomPaddingPx > 0 && (

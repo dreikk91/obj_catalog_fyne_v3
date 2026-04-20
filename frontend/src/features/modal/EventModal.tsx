@@ -3,9 +3,11 @@ import type { UIEvent } from 'react'
 import type { FrontendContact, FrontendZone } from '../../shared/api/types'
 import type { ModalTab } from '../../shared/state/ui-store'
 import { useVirtualRows } from '../../hooks/useVirtualRows'
+import { useColumnVisibility } from '../../hooks/useColumnVisibility'
+import { ColumnVisibilityButton } from '../../shared/ui/ColumnVisibilityButton'
 import { BASE_GROUP_NAMES, BASE_KEY_OWNERS, CARD_DEVICE_ROWS, MODAL_TABS } from '../operator/constants'
 import type { JournalRow, ObjectRow } from '../operator/types'
-import { pad2 } from '../operator/utils'
+import { pad2, resolveJournalTypeClass } from '../operator/utils'
 
 type EventModalProps = {
   isOpen: boolean
@@ -453,41 +455,94 @@ function EventsPane({
   feed: EventModalProps['objectEventsFeed']
   onScroll: (event: UIEvent<HTMLDivElement>) => void
 }) {
+  const { columnVisibility, toggleColumn, resetAll } = useColumnVisibility('obj-events')
+
+  const allColumns = useMemo(() => [
+    { id: 'date', label: 'Дата' },
+    { id: 'time', label: 'Час' },
+    { id: 'typeText', label: 'Тип події' },
+    { id: 'line', label: 'Лінія' },
+    { id: 'code', label: 'Код' },
+    { id: 'details', label: 'Опис' },
+  ], [])
+
+  const toggleableColumns = useMemo(() =>
+    allColumns.map((col) => ({ ...col, isVisible: columnVisibility[col.id] !== false })),
+    [allColumns, columnVisibility],
+  )
+
+  const visibleSet = useMemo(() => {
+    const set = new Set<string>()
+    for (const col of allColumns) {
+      if (columnVisibility[col.id] !== false) set.add(col.id)
+    }
+    return set
+  }, [allColumns, columnVisibility])
+
+  const visibleColCount = visibleSet.size
+
   return (
     <div className="modal-pane active">
       <div className="mtable-wrap" ref={virtualRows.containerRef} onScroll={onScroll}>
         <table className="mtable">
           <thead>
             <tr>
-              <th style={{ width: 80 }}>Дата</th>
-              <th style={{ width: 64 }}>Час</th>
-              <th style={{ width: 160 }}>Тип події</th>
-              <th style={{ width: 52 }}>Лінія</th>
-              <th style={{ width: 68 }}>Код</th>
-              <th>Опис</th>
+              {visibleSet.has('date') && (
+                <th style={{ width: 80 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetAll} />
+                    Дата
+                  </div>
+                </th>
+              )}
+              {visibleSet.has('time') && (
+                <th style={{ width: 64 }}>
+                  {!visibleSet.has('date') && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetAll} />
+                      Час
+                    </div>
+                  )}
+                  {visibleSet.has('date') && 'Час'}
+                </th>
+              )}
+              {visibleSet.has('typeText') && (
+                <th style={{ width: 160 }}>
+                  {!visibleSet.has('date') && !visibleSet.has('time') && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetAll} />
+                      Тип події
+                    </div>
+                  )}
+                  {(visibleSet.has('date') || visibleSet.has('time')) && 'Тип події'}
+                </th>
+              )}
+              {visibleSet.has('line') && <th style={{ width: 52 }}>Лінія</th>}
+              {visibleSet.has('code') && <th style={{ width: 68 }}>Код</th>}
+              {visibleSet.has('details') && <th>Опис</th>}
             </tr>
           </thead>
           <tbody>
-            <SpacerRow colSpan={6} height={virtualRows.topPaddingPx} />
+            <SpacerRow colSpan={visibleColCount} height={virtualRows.topPaddingPx} />
             {virtualRows.visibleRows.map((item) => (
               <tr key={`event-modal-${item.rowID}`}>
-                <td>{item.date}</td>
-                <td>{item.time}</td>
-                <td className={item.alarm ? 'red' : ''}>{item.typeText}</td>
-                <td>{item.line}</td>
-                <td>{item.code}</td>
-                <td>{item.details}</td>
+                {visibleSet.has('date') && <td>{item.date}</td>}
+                {visibleSet.has('time') && <td>{item.time}</td>}
+                {visibleSet.has('typeText') && <td className={resolveJournalTypeClass(item)}>{item.typeText}</td>}
+                {visibleSet.has('line') && <td>{item.line}</td>}
+                {visibleSet.has('code') && <td>{item.code}</td>}
+                {visibleSet.has('details') && <td>{item.details}</td>}
               </tr>
             ))}
-            <SpacerRow colSpan={6} height={virtualRows.bottomPaddingPx} />
+            <SpacerRow colSpan={visibleColCount} height={virtualRows.bottomPaddingPx} />
             {feed.isInitialLoading && virtualRows.totalCount === 0 && (
               <tr>
-                <td colSpan={6}>Завантаження подій...</td>
+                <td colSpan={visibleColCount}>Завантаження подій...</td>
               </tr>
             )}
             {!feed.isInitialLoading && rows.length === 0 && (
               <tr>
-                <td colSpan={6}>Подій для об'єкта не знайдено</td>
+                <td colSpan={visibleColCount}>Подій для об'єкта не знайдено</td>
               </tr>
             )}
           </tbody>

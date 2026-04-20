@@ -19,6 +19,7 @@ import {
   buildUnprocessedRowMeta,
   flattenUnprocessedAlarmGroups,
   formatClock,
+  mergeUnprocessedGroupsByObject,
   sortJournalRowsDesc,
   toAlarmRow,
   toArchiveRow,
@@ -202,7 +203,8 @@ export function App() {
     const filtered = showAllAlarms
       ? journalStream.alarmGroups
       : journalStream.alarmGroups.filter((g) => !g.primary.isInProgress || g.primary.isOwnedByMe)
-    return filtered.map(toUnprocessedAlarmGroup).sort((left, right) => right.latestSortTimestampMs - left.latestSortTimestampMs)
+    const raw = filtered.map(toUnprocessedAlarmGroup)
+    return mergeUnprocessedGroupsByObject(raw).sort((left, right) => right.latestSortTimestampMs - left.latestSortTimestampMs)
   }, [journalStream.alarmGroups, showAllAlarms])
 
   useEffect(() => {
@@ -254,16 +256,16 @@ export function App() {
     [effectiveSelectedObjectID, objectRows],
   )
 
-  const [localPickedBridgeIDs, setLocalPickedBridgeIDs] = useState<Set<number>>(new Set())
+  const [localPickedAlarmIDs, setLocalPickedAlarmIDs] = useState<Set<number>>(new Set())
 
   const eventModalRow = useMemo(() => {
     const row = journalAlarmRows.find((item) => item.rowID === eventModalRowID) ?? null
     if (row == null) return null
-    if (row.source === 'bridge' && row.alarmID != null && localPickedBridgeIDs.has(row.alarmID)) {
+    if (row.alarmID != null && localPickedAlarmIDs.has(row.alarmID)) {
       return { ...row, inProgressByMe: true, canProcess: true }
     }
     return row
-  }, [eventModalRowID, journalAlarmRows, localPickedBridgeIDs])
+  }, [eventModalRowID, journalAlarmRows, localPickedAlarmIDs])
 
   useEffect(() => {
     if (!isEventModalOpen) {
@@ -399,7 +401,7 @@ export function App() {
           causeCode,
           note,
         })
-        setLocalPickedBridgeIDs((prev) => { const next = new Set(prev); next.delete(alarmID); return next })
+        setLocalPickedAlarmIDs((prev) => { const next = new Set(prev); next.delete(alarmID); return next })
         setIsAlarmProcessingModalOpen(false)
         setIsEventModalOpen(false)
         await Promise.all([objectsQuery.refetch(), detailsQuery.refetch()])
@@ -427,9 +429,8 @@ export function App() {
     setAlarmWorkflowError('')
     try {
       await api.pickAlarm(alarmID, { user: OPERATOR_NAME })
-      if (eventModalRow?.source === 'bridge') {
-        setLocalPickedBridgeIDs((prev) => new Set([...prev, alarmID]))
-      } else {
+      setLocalPickedAlarmIDs((prev) => new Set([...prev, alarmID]))
+      if (eventModalRow?.source === 'casl') {
         setAlarmWorkflowError('Команду перехоплення відправлено. Очікуємо оновлення CASL.')
       }
     } catch (error: unknown) {
@@ -483,22 +484,6 @@ export function App() {
       setAlarmWorkflowBusy(false)
     }
   }, [eventModalRow?.alarmID, groupArrivedAlarmIDs])
-
-  const handleGroupProcessAlarm = useCallback(async () => {
-    const alarmID = eventModalRow?.alarmID
-    if (alarmID == null || alarmID <= 0) return
-    setAlarmWorkflowBusy(true)
-    setAlarmWorkflowError('')
-    try {
-      await api.groupProcessAlarm(alarmID, OPERATOR_NAME)
-      setLocalPickedBridgeIDs((prev) => { const next = new Set(prev); next.delete(alarmID); return next })
-      setIsEventModalOpen(false)
-    } catch (error: unknown) {
-      setAlarmWorkflowError(error instanceof Error ? error.message : String(error))
-    } finally {
-      setAlarmWorkflowBusy(false)
-    }
-  }, [eventModalRow?.alarmID, setIsEventModalOpen])
 
   const handleToggleShowAll = useCallback(() => setShowAllAlarms((v) => !v), [])
 
@@ -617,6 +602,7 @@ export function App() {
         objectEventsFeed={objectEventsFeed}
         workflowBusy={alarmWorkflowBusy || alarmProcessingBusy}
         workflowError={alarmWorkflowError}
+        isInWorkflow={eventModalRow?.inProgressByMe === true}
         groupDispatched={eventModalRow?.alarmID != null && groupDispatchedAlarmIDs.has(eventModalRow.alarmID)}
         groupArrived={eventModalRow?.alarmID != null && groupArrivedAlarmIDs.has(eventModalRow.alarmID)}
         onPickAlarm={() => void handlePickAlarm()}
@@ -624,7 +610,6 @@ export function App() {
         onCancelAlarm={() => {}}
         onDispatchGroup={handleDispatchGroup}
         onGroupAction={() => void handleGroupAction()}
-        onGroupProcess={() => void handleGroupProcessAlarm()}
         onOpenProcessAlarm={handleOpenAlarmProcessing}
       />
 

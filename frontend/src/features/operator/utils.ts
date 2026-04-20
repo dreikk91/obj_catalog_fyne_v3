@@ -143,6 +143,28 @@ export function toUnprocessedAlarmGroup(group: FrontendAlarmGroup): UnprocessedA
   }
 }
 
+export function mergeUnprocessedGroupsByObject(groups: UnprocessedAlarmGroup[]): UnprocessedAlarmGroup[] {
+  const byObject = new Map<number, UnprocessedAlarmGroup>()
+  for (const group of groups) {
+    const existing = byObject.get(group.objectID)
+    if (existing == null) {
+      byObject.set(group.objectID, { ...group, rows: [...group.rows] })
+      continue
+    }
+    const allRows = [...existing.rows, ...group.rows]
+    const anchor = group.alertLevel > existing.alertLevel ? group.anchorRow : existing.anchorRow
+    byObject.set(group.objectID, {
+      groupID: existing.groupID,
+      objectID: existing.objectID,
+      alertLevel: Math.max(existing.alertLevel, group.alertLevel),
+      anchorRow: anchor,
+      rows: allRows,
+      latestSortTimestampMs: Math.max(existing.latestSortTimestampMs, group.latestSortTimestampMs),
+    })
+  }
+  return Array.from(byObject.values())
+}
+
 export function flattenUnprocessedAlarmGroups(
   groups: UnprocessedAlarmGroup[],
   expandedGroups: Record<string, boolean>,

@@ -44,6 +44,8 @@ export function CardModal({
   const responseVirtual = useVirtualRows(responseRows, { rowHeight: 28, initialCount: 80, step: 80 })
   const keysVirtual = useVirtualRows(keyOwners, { rowHeight: 28, initialCount: 80, step: 80 })
   const contactsVirtual = useVirtualRows(selectedObjectContacts, { rowHeight: 28, initialCount: 120, step: 120 })
+
+  // Події використовуються в тому порядку, в якому їх надає бекенд (вже відсортовані)
   const eventsVirtual = useVirtualRows(selectedObjectEvents, { rowHeight: 28, initialCount: 160, step: 160 })
 
   const handleEventsScroll = useCallback(
@@ -415,11 +417,11 @@ function ObjectEventsPane({
         <table className="mtable">
           <thead>
             <tr>
-              <th>Дата</th>
-              <th>Час</th>
-              <th>Тип події</th>
-              <th>Лінія</th>
-              <th>Код</th>
+              <th style={{ width: 80 }}>Дата</th>
+              <th style={{ width: 64 }}>Час</th>
+              <th style={{ width: 160 }}>Тип події</th>
+              <th style={{ width: 52 }}>Лінія</th>
+              <th style={{ width: 68 }}>Код</th>
               <th>Опис</th>
             </tr>
           </thead>

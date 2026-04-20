@@ -16,33 +16,33 @@ export function useVirtualRows<T>(rows: T[], options: VirtualRowsOptions): Virtu
   const [viewportHeight, setViewportHeight] = useState(0)
   const [loadedCount, setLoadedCount] = useState(() => Math.min(rows.length, initialCount))
 
+  // Автоматично збільшуємо loadedCount при появі нових рядків (loadMore)
   useEffect(() => {
-    setLoadedCount((current) => Math.min(rows.length, Math.max(initialCount, current)))
-  }, [rows.length, initialCount])
+    setLoadedCount((prev) => {
+      if (rows.length <= prev) return prev
+      // Збільшуємо на крок, але не більше реальної довжини
+      return Math.min(rows.length, prev + step)
+    })
+  }, [rows.length, step])
 
+  // Ініціалізація при першому завантаженні
   useEffect(() => {
     if (rows.length === 0) {
       setLoadedCount(0)
-      setScrollTop(0)
       return
     }
-
-    const container = containerRef.current
-    if (container != null && container.scrollTop === 0) {
-      setScrollTop(0)
-    }
-  }, [rows.length])
+    setLoadedCount((prev) => Math.min(rows.length, Math.max(initialCount, prev)))
+  }, [rows.length, initialCount])
 
   const loadMoreIfNeeded = useCallback(
     (currentScrollTop: number, currentViewportHeight: number) => {
-      if (rows.length === 0) {
-        return
-      }
+      if (rows.length === 0 || loadedCount >= rows.length) return
 
-      const thresholdPx = rowHeight * 6
+      const thresholdPx = rowHeight * 8 // трохи більший поріг для стабільності
       const currentLoadedHeight = loadedCount * rowHeight
-      if (currentScrollTop + currentViewportHeight >= currentLoadedHeight - thresholdPx && loadedCount < rows.length) {
-        setLoadedCount((current) => Math.min(rows.length, current + step))
+
+      if (currentScrollTop + currentViewportHeight >= currentLoadedHeight - thresholdPx) {
+        setLoadedCount((prev) => Math.min(rows.length, prev + step))
       }
     },
     [loadedCount, rowHeight, rows.length, step],
@@ -58,29 +58,29 @@ export function useVirtualRows<T>(rows: T[], options: VirtualRowsOptions): Virtu
     [loadMoreIfNeeded],
   )
 
+  // Початкова ініціалізація viewport і loadedCount
   useEffect(() => {
     const container = containerRef.current
-    if (container == null) {
-      return
-    }
+    if (!container) return
+
     setViewportHeight(container.clientHeight)
     loadMoreIfNeeded(container.scrollTop, container.clientHeight)
-  }, [loadMoreIfNeeded, rows.length])
+  }, [loadMoreIfNeeded])
 
   const effectiveLoadedCount = Math.min(rows.length, loadedCount)
+
   const virtualStart = Math.max(0, Math.floor(scrollTop / rowHeight) - overscanRows)
   const virtualEnd = Math.min(
     effectiveLoadedCount,
     Math.ceil((scrollTop + Math.max(viewportHeight, rowHeight)) / rowHeight) + overscanRows,
   )
-  const startIndex = Math.min(virtualStart, virtualEnd)
 
   return {
     containerRef,
     onScroll,
-    visibleRows: rows.slice(startIndex, virtualEnd),
-    startIndex,
-    topPaddingPx: startIndex * rowHeight,
+    visibleRows: rows.slice(virtualStart, virtualEnd),
+    startIndex: virtualStart,
+    topPaddingPx: virtualStart * rowHeight,
     bottomPaddingPx: Math.max(0, (effectiveLoadedCount - virtualEnd) * rowHeight),
     loadedCount: effectiveLoadedCount,
     totalCount: rows.length,

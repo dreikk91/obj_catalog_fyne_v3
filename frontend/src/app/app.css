@@ -125,11 +125,12 @@ html,body{height:100%;overflow:hidden;font-family:'Exo 2',sans-serif;background:
 .bttab.unproc.active{background:rgba(228,171,26,.12);color:var(--ac4);border-bottom:2px solid var(--ac4)}
 .bttab .badge{background:var(--ac4);color:#fff;border-radius:3px;font-size:10px;font-weight:700;padding:1px 6px;min-width:18px;text-align:center}
 .bttab.archive .badge{background:var(--ac2)}
+.bot-toolbar{display:flex;align-items:center;gap:6px;margin-left:auto;padding-bottom:4px}
 .bot-pane{display:none;flex:1;overflow:auto}
 .bot-pane.active{display:flex;flex-direction:column}
 
 /* main events table */
-.evt-table{width:100%;border-collapse:collapse;font-size:12px}
+.evt-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
 .evt-table thead{position:sticky;top:0;z-index:2}
 .evt-table thead th{background:#0d1f30;color:var(--tx2);padding:4px 7px;border-right:1px solid var(--bd);border-bottom:2px solid var(--ac2);text-align:left;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;user-select:none;font-weight:600;position:relative}
 .evt-table thead th:hover{color:var(--tx3)}
@@ -143,7 +144,7 @@ html,body{height:100%;overflow:hidden;font-family:'Exo 2',sans-serif;background:
 .evt-table tbody tr.evt-warning{background:rgba(212,138,32,.08)}
 .evt-table tbody tr.evt-info td:first-child{border-left:3px solid var(--ac2)}
 .evt-table tbody tr.evt-info{background:rgba(26,127,196,.08)}
-.evt-table td{padding:3px 7px;border-right:1px solid rgba(30,48,72,.4);color:var(--tx);vertical-align:middle}
+.evt-table td{padding:3px 7px;border-right:1px solid rgba(30,48,72,.4);color:var(--tx);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mono{font-family:'Share Tech Mono',monospace}
 .dim{color:var(--tx2)}
 .bright{color:var(--tx3);font-weight:600}
@@ -168,7 +169,7 @@ html,body{height:100%;overflow:hidden;font-family:'Exo 2',sans-serif;background:
 .oft:hover{color:var(--tx)}
 .oft.active{color:var(--tx3);background:var(--bg2);border-color:var(--bd2);font-weight:700;border-bottom:1px solid var(--bg2)}
 .obj-table-wrap{flex:1;overflow:auto}
-.obj-table{width:100%;border-collapse:collapse;font-size:12px}
+.obj-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
 .obj-table thead{position:sticky;top:0;z-index:2}
 .obj-table thead th{background:#0d1f30;color:var(--tx2);padding:5px 8px;border-right:1px solid var(--bd);border-bottom:2px solid var(--ac2);text-align:left;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;user-select:none;font-weight:600;position:relative}
 .obj-table thead th:hover{color:var(--tx3)}
@@ -176,7 +177,7 @@ html,body{height:100%;overflow:hidden;font-family:'Exo 2',sans-serif;background:
 .obj-table tbody tr:nth-child(even){background:var(--row)}
 .obj-table tbody tr:hover{background:var(--rowh)}
 .obj-table tbody tr.selected{background:rgba(26,127,196,.22)!important}
-.obj-table td{padding:5px 8px;border-right:1px solid rgba(30,48,72,.4);color:var(--tx);vertical-align:middle}
+.obj-table td{padding:5px 8px;border-right:1px solid rgba(30,48,72,.4);color:var(--tx);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .evt-table th.col-fluid,.evt-table td.col-fluid,
 .obj-table th.col-fluid,.obj-table td.col-fluid{width:auto}
@@ -271,7 +272,7 @@ th:hover>.col-resizer::after{opacity:.55}
 
 /* table inside modal */
 .mtable-wrap{flex:1;overflow:auto}
-.mtable{width:100%;border-collapse:collapse;font-size:12px}
+.mtable{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
 .mtable thead{position:sticky;top:0;z-index:2}
 .mtable thead th{background:#0d1f30;color:var(--tx2);padding:4px 7px;border-right:1px solid var(--bd);border-bottom:2px solid var(--ac2);text-align:left;white-space:nowrap;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;user-select:none;font-weight:600}
 .mtable thead th:hover{color:var(--tx3)}
@@ -279,7 +280,7 @@ th:hover>.col-resizer::after{opacity:.55}
 .mtable tbody tr:nth-child(even){background:var(--row)}
 .mtable tbody tr:hover{background:var(--rowh)}
 .mtable tbody tr.selected{background:rgba(26,127,196,.2)!important}
-.mtable td{padding:3px 7px;border-right:1px solid rgba(30,48,72,.4);color:var(--tx);vertical-align:middle}
+.mtable td{padding:3px 7px;border-right:1px solid rgba(30,48,72,.4);color:var(--tx);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mtable-toolbar{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-bottom:1px solid var(--bd);flex-shrink:0}
 
 /* modal proc box (events only) */

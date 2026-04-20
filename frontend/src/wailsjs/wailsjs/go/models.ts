@@ -163,6 +163,18 @@ export namespace v1 {
 		    return a;
 		}
 	}
+	export class AlarmGroupActionRequest {
+	    GroupID: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AlarmGroupActionRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.GroupID = source["GroupID"];
+	    }
+	}
 	
 	export class AlarmPickRequest {
 	    User: string;
@@ -511,6 +523,24 @@ export namespace v1 {
 		}
 	}
 	
+	export class ResponseGroup {
+	    ID: string;
+	    Name: string;
+	    Callsign: string;
+	    Phone: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ResponseGroup(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ID = source["ID"];
+	        this.Name = source["Name"];
+	        this.Callsign = source["Callsign"];
+	        this.Phone = source["Phone"];
+	    }
+	}
 	
 
 }

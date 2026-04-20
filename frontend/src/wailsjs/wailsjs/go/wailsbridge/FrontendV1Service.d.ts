@@ -3,15 +3,23 @@
 import {v1} from '../models';
 import {contracts} from '../models';
 
+export function AssignResponseGroup(arg1:number,arg2:v1.AlarmGroupActionRequest):Promise<void>;
+
+export function CancelResponseGroup(arg1:number):Promise<void>;
+
 export function Capabilities():Promise<v1.Capabilities>;
 
 export function GetAlarmProcessingOptions(arg1:number):Promise<Array<v1.AlarmProcessingOption>>;
 
 export function GetObjectDetails(arg1:number):Promise<v1.ObjectDetails>;
 
+export function GroupProcessAlarm(arg1:number,arg2:string):Promise<void>;
+
 export function IsReady():Promise<boolean>;
 
 export function ListAlarmGroups():Promise<Array<v1.AlarmGroup>>;
+
+export function ListAlarmProcessingOptionsCached():Promise<Array<v1.AlarmProcessingOption>>;
 
 export function ListAlarms():Promise<Array<v1.AlarmItem>>;
 
@@ -20,6 +28,10 @@ export function ListEvents():Promise<Array<v1.EventItem>>;
 export function ListObjectEvents(arg1:number,arg2:number,arg3:number):Promise<v1.EventPageResponse>;
 
 export function ListObjects():Promise<Array<v1.ObjectSummary>>;
+
+export function ListResponseGroups():Promise<Array<v1.ResponseGroup>>;
+
+export function NotifyGroupArrived(arg1:number):Promise<void>;
 
 export function PickAlarm(arg1:number,arg2:v1.AlarmPickRequest):Promise<void>;
 

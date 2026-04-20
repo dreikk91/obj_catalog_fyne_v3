@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useShallow } from 'zustand/react/shallow'
 import { resolveFrontendClient } from '../shared/api/client'
-import type { FrontendDBSettings } from '../shared/api/types'
-import type { FrontendAlarmProcessingOption } from '../shared/api/types'
+import type { FrontendDBSettings, FrontendAlarmProcessingOption, FrontendResponseGroup } from '../shared/api/types'
 import { useOperatorUIStore } from '../shared/state/ui-store'
 import { useThemeStore } from '../shared/state/theme-store'
 import { useJournalStream } from '../hooks/useJournalStream'
@@ -11,6 +10,7 @@ import { useObjectEventsFeed } from '../hooks/useObjectEventsFeed'
 import { CardModal } from '../features/modal/CardModal'
 import { EventModal } from '../features/modal/EventModal'
 import { AlarmProcessingModal } from '../features/modal/AlarmProcessingModal'
+import { DispatchGroupModal } from '../features/modal/DispatchGroupModal'
 import { SettingsModal } from '../features/modal/SettingsModal'
 import { ObjectsTab } from '../features/objects/ObjectsTab'
 import { SignalsTab } from '../features/signals/SignalsTab'
@@ -104,12 +104,22 @@ export function App() {
   const [showAllAlarms, setShowAllAlarms] = useState(false)
   const [groupDispatchedAlarmIDs, setGroupDispatchedAlarmIDs] = useState<Set<number>>(new Set())
   const [groupArrivedAlarmIDs, setGroupArrivedAlarmIDs] = useState<Set<number>>(new Set())
+  const [isDispatchGroupModalOpen, setIsDispatchGroupModalOpen] = useState(false)
+  const [dispatchGroupBusy, setDispatchGroupBusy] = useState(false)
+  const [dispatchGroupError, setDispatchGroupError] = useState('')
+  const [responseGroups, setResponseGroups] = useState<FrontendResponseGroup[]>([])
+  const [cachedProcessingOptions, setCachedProcessingOptions] = useState<FrontendAlarmProcessingOption[]>([])
 
   const objectsQuery = useQuery({
     queryKey: ['frontend', 'objects'],
     queryFn: () => api.listObjects(),
     refetchInterval: 30_000,
   })
+
+  useEffect(() => {
+    void api.listResponseGroups().then(setResponseGroups).catch(() => {})
+    void api.listAlarmProcessingOptionsCached().then(setCachedProcessingOptions).catch(() => {})
+  }, [])
 
   const journalStream = useJournalStream(api)
 
@@ -244,10 +254,16 @@ export function App() {
     [effectiveSelectedObjectID, objectRows],
   )
 
-  const eventModalRow = useMemo(
-    () => journalAlarmRows.find((item) => item.rowID === eventModalRowID) ?? null,
-    [eventModalRowID, journalAlarmRows],
-  )
+  const [localPickedBridgeIDs, setLocalPickedBridgeIDs] = useState<Set<number>>(new Set())
+
+  const eventModalRow = useMemo(() => {
+    const row = journalAlarmRows.find((item) => item.rowID === eventModalRowID) ?? null
+    if (row == null) return null
+    if (row.source === 'bridge' && row.alarmID != null && localPickedBridgeIDs.has(row.alarmID)) {
+      return { ...row, inProgressByMe: true, canProcess: true }
+    }
+    return row
+  }, [eventModalRowID, journalAlarmRows, localPickedBridgeIDs])
 
   useEffect(() => {
     if (!isEventModalOpen) {
@@ -344,22 +360,27 @@ export function App() {
     }
 
     setIsAlarmProcessingModalOpen(true)
-    setAlarmProcessingLoading(true)
     setAlarmProcessingBusy(false)
     setAlarmProcessingError('')
-    void api
-      .getAlarmProcessingOptions(alarmID)
-      .then((items) => {
-        setAlarmProcessingOptions(items)
-      })
-      .catch((error: unknown) => {
-        setAlarmProcessingOptions([])
-        setAlarmProcessingError(error instanceof Error ? error.message : String(error))
-      })
-      .finally(() => {
-        setAlarmProcessingLoading(false)
-      })
-  }, [eventModalRow?.alarmID])
+    if (cachedProcessingOptions.length > 0) {
+      setAlarmProcessingOptions(cachedProcessingOptions)
+      setAlarmProcessingLoading(false)
+    } else {
+      setAlarmProcessingLoading(true)
+      void api
+        .getAlarmProcessingOptions(alarmID)
+        .then((items) => {
+          setAlarmProcessingOptions(items)
+        })
+        .catch((error: unknown) => {
+          setAlarmProcessingOptions([])
+          setAlarmProcessingError(error instanceof Error ? error.message : String(error))
+        })
+        .finally(() => {
+          setAlarmProcessingLoading(false)
+        })
+    }
+  }, [eventModalRow?.alarmID, eventModalRow?.canProcess, cachedProcessingOptions])
 
   const handleSubmitAlarmProcessing = useCallback(
     async ({ causeCode, note }: { causeCode: string; note: string }) => {
@@ -378,6 +399,7 @@ export function App() {
           causeCode,
           note,
         })
+        setLocalPickedBridgeIDs((prev) => { const next = new Set(prev); next.delete(alarmID); return next })
         setIsAlarmProcessingModalOpen(false)
         setIsEventModalOpen(false)
         await Promise.all([objectsQuery.refetch(), detailsQuery.refetch()])
@@ -396,10 +418,6 @@ export function App() {
       setAlarmWorkflowError('Для вибраного рядка недоступне взяття тривоги в роботу.')
       return
     }
-    if (eventModalRow?.source !== 'casl') {
-      setAlarmWorkflowError('Перехоплення доступне лише для тривог CASL.')
-      return
-    }
     if (eventModalRow?.inProgressByMe) {
       setAlarmWorkflowError('')
       return
@@ -409,7 +427,11 @@ export function App() {
     setAlarmWorkflowError('')
     try {
       await api.pickAlarm(alarmID, { user: OPERATOR_NAME })
-      setAlarmWorkflowError('Команду перехоплення відправлено. Очікуємо оновлення CASL.')
+      if (eventModalRow?.source === 'bridge') {
+        setLocalPickedBridgeIDs((prev) => new Set([...prev, alarmID]))
+      } else {
+        setAlarmWorkflowError('Команду перехоплення відправлено. Очікуємо оновлення CASL.')
+      }
     } catch (error: unknown) {
       setAlarmWorkflowError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -420,23 +442,63 @@ export function App() {
   const handleDispatchGroup = useCallback(() => {
     const alarmID = eventModalRow?.alarmID
     if (alarmID == null || alarmID <= 0) return
-    setGroupDispatchedAlarmIDs((prev) => new Set(prev).add(alarmID))
+    setDispatchGroupError('')
+    setIsDispatchGroupModalOpen(true)
   }, [eventModalRow?.alarmID])
 
-  const handleGroupAction = useCallback(() => {
+  const handleConfirmDispatchGroup = useCallback(async (groupID: string) => {
     const alarmID = eventModalRow?.alarmID
     if (alarmID == null || alarmID <= 0) return
-    setGroupArrivedAlarmIDs((prev) => {
-      const next = new Set(prev)
-      if (next.has(alarmID)) {
-        next.delete(alarmID)
-        setGroupDispatchedAlarmIDs((d) => { const nd = new Set(d); nd.delete(alarmID); return nd })
-      } else {
-        next.add(alarmID)
-      }
-      return next
-    })
+    setDispatchGroupBusy(true)
+    setDispatchGroupError('')
+    try {
+      await api.assignResponseGroup(alarmID, { groupID })
+      setGroupDispatchedAlarmIDs((prev) => new Set(prev).add(alarmID))
+      setIsDispatchGroupModalOpen(false)
+    } catch (error: unknown) {
+      setDispatchGroupError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setDispatchGroupBusy(false)
+    }
   }, [eventModalRow?.alarmID])
+
+  const handleGroupAction = useCallback(async () => {
+    const alarmID = eventModalRow?.alarmID
+    if (alarmID == null || alarmID <= 0) return
+    const isArrived = groupArrivedAlarmIDs.has(alarmID)
+    setAlarmWorkflowBusy(true)
+    setAlarmWorkflowError('')
+    try {
+      if (isArrived) {
+        await api.cancelResponseGroup(alarmID)
+        setGroupArrivedAlarmIDs((prev) => { const next = new Set(prev); next.delete(alarmID); return next })
+        setGroupDispatchedAlarmIDs((prev) => { const next = new Set(prev); next.delete(alarmID); return next })
+      } else {
+        await api.notifyGroupArrived(alarmID)
+        setGroupArrivedAlarmIDs((prev) => new Set(prev).add(alarmID))
+      }
+    } catch (error: unknown) {
+      setAlarmWorkflowError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setAlarmWorkflowBusy(false)
+    }
+  }, [eventModalRow?.alarmID, groupArrivedAlarmIDs])
+
+  const handleGroupProcessAlarm = useCallback(async () => {
+    const alarmID = eventModalRow?.alarmID
+    if (alarmID == null || alarmID <= 0) return
+    setAlarmWorkflowBusy(true)
+    setAlarmWorkflowError('')
+    try {
+      await api.groupProcessAlarm(alarmID, OPERATOR_NAME)
+      setLocalPickedBridgeIDs((prev) => { const next = new Set(prev); next.delete(alarmID); return next })
+      setIsEventModalOpen(false)
+    } catch (error: unknown) {
+      setAlarmWorkflowError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setAlarmWorkflowBusy(false)
+    }
+  }, [eventModalRow?.alarmID, setIsEventModalOpen])
 
   const handleToggleShowAll = useCallback(() => setShowAllAlarms((v) => !v), [])
 
@@ -561,7 +623,8 @@ export function App() {
         onStandby={() => {}}
         onCancelAlarm={() => {}}
         onDispatchGroup={handleDispatchGroup}
-        onGroupAction={handleGroupAction}
+        onGroupAction={() => void handleGroupAction()}
+        onGroupProcess={() => void handleGroupProcessAlarm()}
         onOpenProcessAlarm={handleOpenAlarmProcessing}
       />
 
@@ -576,6 +639,15 @@ export function App() {
         onSave={() => void handleSaveSettings()}
         onUpdateDraft={updateSettingsDraft}
         onThemeChange={setThemeMode}
+      />
+
+      <DispatchGroupModal
+        isOpen={isDispatchGroupModalOpen}
+        groups={responseGroups}
+        busy={dispatchGroupBusy}
+        error={dispatchGroupError}
+        onClose={() => setIsDispatchGroupModalOpen(false)}
+        onConfirm={(groupID) => void handleConfirmDispatchGroup(groupID)}
       />
 
       <AlarmProcessingModal

@@ -1,5 +1,6 @@
 import type { FrontendClient } from './frontend-client'
 import type {
+  FrontendAlarmGroupActionRequest,
   FrontendAlarmItem,
   FrontendAlarmGroup,
   FrontendAlarmPickRequest,
@@ -10,6 +11,7 @@ import type {
   FrontendEventItem,
   FrontendObjectDetails,
   FrontendObjectSummary,
+  FrontendResponseGroup,
 } from './types'
 import {
   normalizeAlarmItem,
@@ -20,6 +22,7 @@ import {
   normalizeEventItem,
   normalizeObjectDetails,
   normalizeObjectSummary,
+  normalizeResponseGroup,
 } from './normalize'
 
 type WailsMethod<T extends unknown[] = unknown[], R = unknown> = (...args: T) => Promise<R>
@@ -29,9 +32,15 @@ type WailsFrontendBridge = {
   ListEvents?: WailsMethod<[], FrontendEventItem[]>
   ListAlarms?: WailsMethod<[], FrontendAlarmItem[]>
   ListAlarmGroups?: WailsMethod<[], FrontendAlarmGroup[]>
+  ListAlarmProcessingOptionsCached?: WailsMethod<[], FrontendAlarmProcessingOption[]>
+  ListResponseGroups?: WailsMethod<[], FrontendResponseGroup[]>
   GetAlarmProcessingOptions?: WailsMethod<[number], FrontendAlarmProcessingOption[]>
   PickAlarm?: WailsMethod<[number, FrontendAlarmPickRequest], void>
   ProcessAlarm?: WailsMethod<[number, FrontendAlarmProcessRequest], void>
+  GroupProcessAlarm?: WailsMethod<[number, string], void>
+  AssignResponseGroup?: WailsMethod<[number, FrontendAlarmGroupActionRequest], void>
+  NotifyGroupArrived?: WailsMethod<[number], void>
+  CancelResponseGroup?: WailsMethod<[number], void>
   ListObjectEvents?: WailsMethod<[number, number, number], FrontendEventPage>
   GetObjectDetails?: WailsMethod<[number], FrontendObjectDetails>
 }
@@ -96,6 +105,18 @@ export function createWailsFrontendClient(): FrontendClient | null {
       const items = await listAlarmGroups()
       return items.map(normalizeAlarmGroup)
     },
+    async listAlarmProcessingOptionsCached() {
+      const fn = frontendBridge.ListAlarmProcessingOptionsCached
+      if (!fn) return []
+      const items = await fn()
+      return items.map(normalizeAlarmProcessingOption)
+    },
+    async listResponseGroups() {
+      const fn = frontendBridge.ListResponseGroups
+      if (!fn) return []
+      const items = await fn()
+      return items.map(normalizeResponseGroup)
+    },
     async getAlarmProcessingOptions(alarmID) {
       const items = await getAlarmProcessingOptions(alarmID)
       return items.map(normalizeAlarmProcessingOption)
@@ -105,6 +126,26 @@ export function createWailsFrontendClient(): FrontendClient | null {
     },
     async processAlarm(alarmID, request) {
       await processAlarm(alarmID, request)
+    },
+    async groupProcessAlarm(alarmID, user) {
+      const fn = frontendBridge.GroupProcessAlarm
+      if (!fn) throw new Error('GroupProcessAlarm не підтримується')
+      await fn(alarmID, user)
+    },
+    async assignResponseGroup(alarmID, request) {
+      const fn = frontendBridge.AssignResponseGroup
+      if (!fn) throw new Error('AssignResponseGroup не підтримується')
+      await fn(alarmID, request)
+    },
+    async notifyGroupArrived(alarmID) {
+      const fn = frontendBridge.NotifyGroupArrived
+      if (!fn) throw new Error('NotifyGroupArrived не підтримується')
+      await fn(alarmID)
+    },
+    async cancelResponseGroup(alarmID) {
+      const fn = frontendBridge.CancelResponseGroup
+      if (!fn) throw new Error('CancelResponseGroup не підтримується')
+      await fn(alarmID)
     },
     async listObjectEvents(objectID, offset, limit) {
       const page = await listObjectEvents(objectID, offset, limit)

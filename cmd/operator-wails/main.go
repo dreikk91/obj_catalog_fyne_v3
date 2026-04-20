@@ -36,7 +36,7 @@ func main() {
 	err = wails.Run(&options.App{
 		Title:            "АРМ Пожежної Безпеки — Operator",
 		Width:            1280,
-		Height:           920,
+		Height:           768,
 		MinWidth:         1180,
 		MinHeight:        720,
 		BackgroundColour: options.NewRGBA(9, 13, 22, 1),

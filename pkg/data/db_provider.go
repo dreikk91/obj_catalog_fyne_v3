@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"obj_catalog_fyne_v3/pkg/config"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/models"
 	"sort"
@@ -650,6 +651,156 @@ var ErrAlarmProcessingNotImplemented = fmt.Errorf("обробка тривог �
 func (p *DBDataProvider) ProcessAlarm(id string, user string, note string) error {
 	log.Warn().Str("alarmID", id).Str("user", user).Str("note", note).Msg("Обробка тривоги для DBDataProvider ще не реалізована")
 	return ErrAlarmProcessingNotImplemented
+}
+
+// GetAlarmProcessingOptions implements contracts.AlarmProcessingProvider by reading ALARMREAS.
+func (p *DBDataProvider) GetAlarmProcessingOptions(ctx context.Context, _ models.Alarm) ([]contracts.AlarmProcessingOption, error) {
+	if p.db == nil {
+		return nil, fmt.Errorf("database connection is unavailable")
+	}
+
+	const q = `SELECT ID, REASON1 FROM ALARMREAS ORDER BY ID`
+	type row struct {
+		ID      int64   `db:"ID"`
+		Reason1 *string `db:"REASON1"`
+	}
+
+	var rows []row
+	qCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if err := p.db.SelectContext(qCtx, &rows, p.db.Rebind(q)); err != nil {
+		return nil, fmt.Errorf("failed to query ALARMREAS: %w", err)
+	}
+
+	options := make([]contracts.AlarmProcessingOption, 0, len(rows))
+	for _, r := range rows {
+		label := strings.TrimSpace(ptrToString(r.Reason1))
+		if label == "" || label == "-" || strings.HasPrefix(label, "- ") {
+			continue
+		}
+		options = append(options, contracts.AlarmProcessingOption{
+			Code:  strconv.FormatInt(r.ID, 10),
+			Label: label,
+		})
+	}
+	return options, nil
+}
+
+// ProcessAlarmWithRequest implements contracts.AlarmProcessingProvider for single Bridge alarm finish.
+// SQL flow: INSERT EvLog reason (EvUIN=16) + INSERT EvLog operator (EvUIN=18) + DELETE ACTALARMS row.
+func (p *DBDataProvider) ProcessAlarmWithRequest(ctx context.Context, alarm models.Alarm, user string, request contracts.AlarmProcessingRequest) error {
+	if p.db == nil {
+		return fmt.Errorf("database connection is unavailable")
+	}
+
+	qCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	rows, err := database.GetActAlarmsForProcess(qCtx, p.db, int64(alarm.ID))
+	if err != nil {
+		return fmt.Errorf("bridge alarm process lookup: %w", err)
+	}
+	if len(rows) == 0 {
+		return fmt.Errorf("bridge alarm #%d not found in ACTALARMS", alarm.ID)
+	}
+
+	first := rows[0]
+
+	// Resolve reason label from ALARMREAS if a numeric code is provided.
+	reasonLabel := strings.TrimSpace(request.CauseCode)
+	if code, parseErr := strconv.ParseInt(request.CauseCode, 10, 64); parseErr == nil && code > 0 {
+		if label, lookupErr := p.lookupAlarmReasonLabel(qCtx, code); lookupErr == nil && label != "" {
+			reasonLabel = label
+		}
+	}
+
+	tx, err := p.db.BeginTxx(qCtx, nil)
+	if err != nil {
+		return fmt.Errorf("bridge alarm process begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	insertReason := p.db.Rebind(`INSERT INTO EVLOG (EVTIME1, OBJUIN, GRPN, ZONEN, EVUIN, INFO1) VALUES (CURRENT_TIMESTAMP, ?, 1, 0, 16, ?)`)
+	if _, err = tx.ExecContext(qCtx, insertReason, first.ObjUIN, reasonLabel); err != nil {
+		return fmt.Errorf("bridge alarm process insert reason: %w", err)
+	}
+
+	operatorLabel := strings.TrimSpace(user)
+	if operatorLabel == "" {
+		operatorLabel = "Оператор"
+	}
+	insertCompletion := p.db.Rebind(`INSERT INTO EVLOG (EVTIME1, OBJUIN, GRPN, ZONEN, EVUIN, INFO1, RESBIGINT2) VALUES (CURRENT_TIMESTAMP, ?, 1, 0, 18, ?, ?)`)
+	if _, err = tx.ExecContext(qCtx, insertCompletion, first.ObjUIN, operatorLabel, first.ID); err != nil {
+		return fmt.Errorf("bridge alarm process insert completion: %w", err)
+	}
+
+	deleteAlarm := p.db.Rebind(`DELETE FROM ACTALARMS WHERE ID = ?`)
+	if _, err = tx.ExecContext(qCtx, deleteAlarm, first.ID); err != nil {
+		return fmt.Errorf("bridge alarm process delete: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// GroupProcessAlarm implements contracts.AlarmGroupProcessProvider for Bridge group finish.
+// Inserts one EvLog row (EvUIN=19) and deletes ALL ACTALARMS rows for that object.
+func (p *DBDataProvider) GroupProcessAlarm(ctx context.Context, alarm models.Alarm, user string) error {
+	if p.db == nil {
+		return fmt.Errorf("database connection is unavailable")
+	}
+
+	qCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	rows, err := database.GetActAlarmsForProcess(qCtx, p.db, int64(alarm.ID))
+	if err != nil {
+		return fmt.Errorf("bridge group alarm process lookup: %w", err)
+	}
+	if len(rows) == 0 {
+		return fmt.Errorf("bridge alarm #%d not found in ACTALARMS", alarm.ID)
+	}
+
+	first := rows[0]
+
+	operatorLabel := strings.TrimSpace(user)
+	if operatorLabel == "" {
+		operatorLabel = "Оператор"
+	}
+
+	tx, err := p.db.BeginTxx(qCtx, nil)
+	if err != nil {
+		return fmt.Errorf("bridge group alarm process begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	insertGroup := p.db.Rebind(`INSERT INTO EVLOG (EVTIME1, OBJUIN, GRPN, ZONEN, EVUIN, INFO1, RESBIGINT2) VALUES (CURRENT_TIMESTAMP, ?, 1, 0, 19, ?, ?)`)
+	if _, err = tx.ExecContext(qCtx, insertGroup, first.ObjUIN, operatorLabel, first.ID); err != nil {
+		return fmt.Errorf("bridge group alarm process insert: %w", err)
+	}
+
+	deleteAll := p.db.Rebind(`DELETE FROM ACTALARMS WHERE OBJN = ?`)
+	if _, err = tx.ExecContext(qCtx, deleteAll, int64(alarm.ID)); err != nil {
+		return fmt.Errorf("bridge group alarm process delete: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// PickAlarm implements contracts.AlarmTakeoverProvider as a no-op for Bridge (no DB state needed).
+func (p *DBDataProvider) PickAlarm(_ context.Context, _ models.Alarm, _ string) error {
+	return nil
+}
+
+func (p *DBDataProvider) lookupAlarmReasonLabel(ctx context.Context, id int64) (string, error) {
+	type row struct {
+		Reason1 *string `db:"REASON1"`
+	}
+	var r row
+	if err := p.db.GetContext(ctx, &r, p.db.Rebind(`SELECT REASON1 FROM ALARMREAS WHERE ID = ?`), id); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(ptrToString(r.Reason1)), nil
 }
 
 func (p *DBDataProvider) GetExternalData(objectID string) (signal string, lastTestMsg string, lastTest time.Time, lastMsg time.Time) {

@@ -2177,3 +2177,52 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 
 	return result
 }
+
+// ListResponseGroups implements contracts.ResponseGroupProvider.
+func (p *CASLCloudProvider) ListResponseGroups(ctx context.Context) ([]contracts.ResponseGroup, error) {
+	rows, err := p.ReadManagers(ctx, 0, 500)
+	if err != nil {
+		return nil, fmt.Errorf("casl: read_mgr: %w", err)
+	}
+	result := make([]contracts.ResponseGroup, 0, len(rows))
+	for _, row := range rows {
+		id := strings.TrimSpace(asString(row["mgr_id"]))
+		name := strings.TrimSpace(asString(row["name"]))
+		if id == "" {
+			continue
+		}
+		result = append(result, contracts.ResponseGroup{
+			ID:    id,
+			Name:  name,
+			Phone: strings.TrimSpace(asString(row["phone_number"])),
+		})
+	}
+	return result, nil
+}
+
+// AssignResponseGroup implements contracts.ResponseGroupProvider.
+func (p *CASLCloudProvider) AssignResponseGroup(ctx context.Context, alarm models.Alarm, groupID string) error {
+	target, err := p.resolveCASLAlarmTarget(ctx, alarm)
+	if err != nil {
+		return err
+	}
+	return p.AssignMGRToAlarm(ctx, target.CASLObjectID, groupID)
+}
+
+// NotifyGroupArrived implements contracts.ResponseGroupProvider.
+func (p *CASLCloudProvider) NotifyGroupArrived(ctx context.Context, alarm models.Alarm) error {
+	target, err := p.resolveCASLAlarmTarget(ctx, alarm)
+	if err != nil {
+		return err
+	}
+	return p.NotifyMGRArrived(ctx, target.CASLObjectID)
+}
+
+// CancelResponseGroup implements contracts.ResponseGroupProvider.
+func (p *CASLCloudProvider) CancelResponseGroup(ctx context.Context, alarm models.Alarm) error {
+	target, err := p.resolveCASLAlarmTarget(ctx, alarm)
+	if err != nil {
+		return err
+	}
+	return p.CancelMGRFromAlarm(ctx, target.CASLObjectID)
+}

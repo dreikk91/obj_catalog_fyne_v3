@@ -288,3 +288,18 @@ type EventPageResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+type ResponseGroup struct {
+	ID       string `json:"ID"`
+	Name     string `json:"Name"`
+	Callsign string `json:"Callsign"`
+	Phone    string `json:"Phone"`
+}
+
+type ResponseGroupListResponse struct {
+	Items []ResponseGroup `json:"items"`
+}
+
+type AlarmGroupActionRequest struct {
+	GroupID string `json:"GroupID"`
+}

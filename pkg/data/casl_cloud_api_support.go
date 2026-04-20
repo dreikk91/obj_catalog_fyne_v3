@@ -797,46 +797,87 @@ func (p *CASLCloudProvider) UpdateGuardObject(ctx context.Context, object map[st
 	return p.ExecuteCASLCommand(ctx, payload, true)
 }
 
-// PickGuardObject executes grd_obj_pick action command.
-func (p *CASLCloudProvider) PickGuardObject(ctx context.Context, objID string, eventID string) error {
-	payload := map[string]any{"type": "grd_obj_pick"}
-	if strings.TrimSpace(objID) != "" {
-		payload["obj_id"] = strings.TrimSpace(objID)
+// PickGuardObject executes GRD_OBJ_PICK action via grd_object_action command.
+func (p *CASLCloudProvider) PickGuardObject(ctx context.Context, objID string, _ string) error {
+	objID = strings.TrimSpace(objID)
+	if objID == "" {
+		return fmt.Errorf("casl GRD_OBJ_PICK: obj_id is required")
 	}
-	if strings.TrimSpace(eventID) != "" {
-		payload["event_id"] = strings.TrimSpace(eventID)
+	_, err := p.ExecuteCASLCommand(ctx, map[string]any{
+		"type":   "grd_object_action",
+		"action": "GRD_OBJ_PICK",
+		"obj_id": objID,
+	}, true)
+	return err
+}
+
+// FinishGuardObject executes GRD_OBJ_FINISH action via grd_object_action command.
+func (p *CASLCloudProvider) FinishGuardObject(ctx context.Context, objID string, _ string, cause string, note string) error {
+	objID = strings.TrimSpace(objID)
+	if objID == "" {
+		return fmt.Errorf("casl GRD_OBJ_FINISH: obj_id is required")
 	}
-	if len(payload) == 1 {
-		return fmt.Errorf("casl grd_obj_pick: objID or eventID is required")
+	cause = strings.TrimSpace(cause)
+	if cause == "" {
+		cause = "CAUSES_FALSE_ALARM"
+	}
+	payload := map[string]any{
+		"type":   "grd_object_action",
+		"action": "GRD_OBJ_FINISH",
+		"obj_id": objID,
+		"cause":  cause,
+	}
+	if note = strings.TrimSpace(note); note != "" {
+		payload["note"] = note
 	}
 	_, err := p.ExecuteCASLCommand(ctx, payload, true)
 	return err
 }
 
-// FinishGuardObject executes grd_obj_finish action command.
-func (p *CASLCloudProvider) FinishGuardObject(ctx context.Context, objID string, eventID string, cause string, note string) error {
-	payload := map[string]any{"type": "grd_obj_finish"}
-	if strings.TrimSpace(objID) != "" {
-		payload["obj_id"] = strings.TrimSpace(objID)
+// AssignMGRToAlarm executes GRD_OBJ_ASS_MGR action via grd_object_action command.
+func (p *CASLCloudProvider) AssignMGRToAlarm(ctx context.Context, objID string, mgrID string) error {
+	objID = strings.TrimSpace(objID)
+	mgrID = strings.TrimSpace(mgrID)
+	if objID == "" {
+		return fmt.Errorf("casl GRD_OBJ_ASS_MGR: obj_id is required")
 	}
-	if strings.TrimSpace(eventID) != "" {
-		payload["event_id"] = strings.TrimSpace(eventID)
+	if mgrID == "" {
+		return fmt.Errorf("casl GRD_OBJ_ASS_MGR: mgr_id is required")
 	}
-	if len(payload) == 1 {
-		return fmt.Errorf("casl grd_obj_finish: objID or eventID is required")
-	}
+	_, err := p.ExecuteCASLCommand(ctx, map[string]any{
+		"type":   "grd_object_action",
+		"action": "GRD_OBJ_ASS_MGR",
+		"obj_id": objID,
+		"mgr_id": mgrID,
+	}, true)
+	return err
+}
 
-	if strings.TrimSpace(cause) != "" {
-		payload["cause"] = strings.TrimSpace(cause)
-	} else {
-		payload["cause"] = "CAUSES_FALSE_ALARM"
+// NotifyMGRArrived executes GRD_OBJ_MGR_ARRIVE action via grd_object_action command.
+func (p *CASLCloudProvider) NotifyMGRArrived(ctx context.Context, objID string) error {
+	objID = strings.TrimSpace(objID)
+	if objID == "" {
+		return fmt.Errorf("casl GRD_OBJ_MGR_ARRIVE: obj_id is required")
 	}
+	_, err := p.ExecuteCASLCommand(ctx, map[string]any{
+		"type":   "grd_object_action",
+		"action": "GRD_OBJ_MGR_ARRIVE",
+		"obj_id": objID,
+	}, true)
+	return err
+}
 
-	if strings.TrimSpace(note) != "" {
-		payload["note"] = strings.TrimSpace(note)
+// CancelMGRFromAlarm executes GRD_OBJ_MGR_CANCEL action via grd_object_action command.
+func (p *CASLCloudProvider) CancelMGRFromAlarm(ctx context.Context, objID string) error {
+	objID = strings.TrimSpace(objID)
+	if objID == "" {
+		return fmt.Errorf("casl GRD_OBJ_MGR_CANCEL: obj_id is required")
 	}
-
-	_, err := p.ExecuteCASLCommand(ctx, payload, true)
+	_, err := p.ExecuteCASLCommand(ctx, map[string]any{
+		"type":   "grd_object_action",
+		"action": "GRD_OBJ_MGR_CANCEL",
+		"obj_id": objID,
+	}, true)
 	return err
 }
 

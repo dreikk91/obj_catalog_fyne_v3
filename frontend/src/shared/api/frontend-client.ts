@@ -1,4 +1,5 @@
 import type {
+  FrontendAlarmGroupActionRequest,
   FrontendAlarmItem,
   FrontendAlarmGroup,
   FrontendAlarmPickRequest,
@@ -9,6 +10,7 @@ import type {
   FrontendEventItem,
   FrontendObjectDetails,
   FrontendObjectSummary,
+  FrontendResponseGroup,
 } from './types'
 
 export interface FrontendClient {
@@ -16,9 +18,15 @@ export interface FrontendClient {
   listEvents(): Promise<FrontendEventItem[]>
   listAlarms(): Promise<FrontendAlarmItem[]>
   listAlarmGroups(): Promise<FrontendAlarmGroup[]>
+  listAlarmProcessingOptionsCached(): Promise<FrontendAlarmProcessingOption[]>
+  listResponseGroups(): Promise<FrontendResponseGroup[]>
   getAlarmProcessingOptions(alarmID: number): Promise<FrontendAlarmProcessingOption[]>
   pickAlarm(alarmID: number, request: FrontendAlarmPickRequest): Promise<void>
   processAlarm(alarmID: number, request: FrontendAlarmProcessRequest): Promise<void>
+  groupProcessAlarm(alarmID: number, user: string): Promise<void>
+  assignResponseGroup(alarmID: number, request: FrontendAlarmGroupActionRequest): Promise<void>
+  notifyGroupArrived(alarmID: number): Promise<void>
+  cancelResponseGroup(alarmID: number): Promise<void>
   listObjectEvents(objectID: number, offset: number, limit: number): Promise<FrontendEventPage>
   getObjectDetails(objectID: number): Promise<FrontendObjectDetails>
   getDBSettings(): Promise<FrontendDBSettings>

@@ -33,6 +33,7 @@ type EventModalProps = {
   onCancelAlarm: () => void
   onDispatchGroup: () => void
   onGroupAction: () => void
+  onGroupProcess: () => void
   onOpenProcessAlarm: () => void
 }
 
@@ -56,6 +57,7 @@ export function EventModal({
   onCancelAlarm,
   onDispatchGroup,
   onGroupAction,
+  onGroupProcess,
   onOpenProcessAlarm,
 }: EventModalProps) {
   const eventDeviceRows = useMemo(
@@ -145,54 +147,85 @@ export function EventModal({
           <div className="proc-hdr">Обробка події</div>
           {workflowError !== '' && <div className="proc-error">{workflowError}</div>}
           <div className="proc-btns">
-            <button
-              className="btn btn-violet"
-              style={{ height: 30 }}
-              onClick={onPickAlarm}
-              disabled={workflowBusy || eventModalRow?.alarmID == null || eventModalRow?.source !== 'casl' || eventModalRow?.inProgressByMe === true}
-            >
-              {eventModalRow?.canTakeOver ? 'Перехопити тривогу' : eventModalRow?.inProgressByMe ? 'У вас в роботі' : 'Взяти на обробку'}
-            </button>
-            <button
-              className="btn btn-gray"
-              style={{ height: 30 }}
-              onClick={onStandby}
-              disabled={workflowBusy || !eventModalRow?.inProgressByMe}
-            >
-              В стенди
-            </button>
-            <button
-              className="btn btn-gray"
-              style={{ height: 30 }}
-              onClick={onCancelAlarm}
-              disabled={workflowBusy || !eventModalRow?.inProgressByMe}
-            >
-              Відміна тривоги
-            </button>
-            <button
-              className="btn btn-green"
-              style={{ height: 30 }}
-              onClick={onDispatchGroup}
-              disabled={workflowBusy || !eventModalRow?.inProgressByMe}
-            >
-              Вислати групу
-            </button>
-            <button
-              className="btn btn-gray"
-              style={{ height: 30 }}
-              onClick={onGroupAction}
-              disabled={workflowBusy || !groupDispatched}
-            >
-              {groupArrived ? 'Зняти групу з тривоги' : 'Група прибула'}
-            </button>
-            <button
-              className="btn btn-green"
-              style={{ height: 30 }}
-              onClick={onOpenProcessAlarm}
-              disabled={workflowBusy || eventModalRow?.alarmID == null || eventModalRow?.canProcess === false}
-            >
-              Завершення обробки
-            </button>
+            {eventModalRow?.source === 'bridge' ? (
+              <>
+                <button
+                  className="btn btn-violet"
+                  style={{ height: 30 }}
+                  onClick={onPickAlarm}
+                  disabled={workflowBusy || eventModalRow?.alarmID == null || eventModalRow?.inProgressByMe === true}
+                >
+                  {eventModalRow?.inProgressByMe ? 'У вас в роботі' : 'Взяти в роботу'}
+                </button>
+                <button
+                  className="btn btn-green"
+                  style={{ height: 30 }}
+                  onClick={onOpenProcessAlarm}
+                  disabled={workflowBusy || !eventModalRow?.inProgressByMe}
+                >
+                  Завершити з причиною
+                </button>
+                <button
+                  className="btn btn-blue"
+                  style={{ height: 30 }}
+                  onClick={onGroupProcess}
+                  disabled={workflowBusy || !eventModalRow?.inProgressByMe}
+                >
+                  Групове завершення
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="btn btn-violet"
+                  style={{ height: 30 }}
+                  onClick={onPickAlarm}
+                  disabled={workflowBusy || eventModalRow?.alarmID == null || eventModalRow?.source !== 'casl' || eventModalRow?.inProgressByMe === true}
+                >
+                  {eventModalRow?.canTakeOver ? 'Перехопити тривогу' : eventModalRow?.inProgressByMe ? 'У вас в роботі' : 'Взяти на обробку'}
+                </button>
+                <button
+                  className="btn btn-gray"
+                  style={{ height: 30 }}
+                  onClick={onStandby}
+                  disabled={workflowBusy || !eventModalRow?.inProgressByMe}
+                >
+                  В стенди
+                </button>
+                <button
+                  className="btn btn-gray"
+                  style={{ height: 30 }}
+                  onClick={onCancelAlarm}
+                  disabled={workflowBusy || !eventModalRow?.inProgressByMe}
+                >
+                  Відміна тривоги
+                </button>
+                <button
+                  className="btn btn-green"
+                  style={{ height: 30 }}
+                  onClick={onDispatchGroup}
+                  disabled={workflowBusy || !eventModalRow?.inProgressByMe}
+                >
+                  Вислати групу
+                </button>
+                <button
+                  className="btn btn-gray"
+                  style={{ height: 30 }}
+                  onClick={onGroupAction}
+                  disabled={workflowBusy || !groupDispatched}
+                >
+                  {groupArrived ? 'Зняти групу з тривоги' : 'Група прибула'}
+                </button>
+                <button
+                  className="btn btn-green"
+                  style={{ height: 30 }}
+                  onClick={onOpenProcessAlarm}
+                  disabled={workflowBusy || eventModalRow?.alarmID == null || eventModalRow?.canProcess === false}
+                >
+                  Завершення обробки
+                </button>
+              </>
+            )}
           </div>
         </div>
         <div className="modal-footer">

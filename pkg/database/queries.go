@@ -32,6 +32,24 @@ func GetObjectsList(ctx context.Context, db *sqlx.DB) ([]ObjectInfoRow, error) {
 	return results, nil
 }
 
+// GetActAlarmsForProcess returns the ACTALARMS rows for a given OBJN needed to write EvLog and perform cleanup.
+func GetActAlarmsForProcess(ctx context.Context, db *sqlx.DB, objN int64) ([]ActAlarmForProcessRow, error) {
+	var results []ActAlarmForProcessRow
+
+	query := `
+		SELECT a.ID, oi.OBJUIN
+		FROM ACTALARMS a
+		JOIN OBJECTS_INFO oi ON oi.OBJN = a.OBJN
+		WHERE a.OBJN = ?
+		ORDER BY a.EVTIME1 DESC
+	`
+
+	if err := db.SelectContext(ctx, &results, db.Rebind(query), objN); err != nil {
+		return nil, fmt.Errorf("failed to select actalarms for process: %w", err)
+	}
+	return results, nil
+}
+
 // GetAlarmsList отримує тільки ті об'єкти, які знаходяться в стані тривоги
 func GetAlarmsList(ctx context.Context, db *sqlx.DB) ([]ActAlarmsRow, error) {
 	var results []ActAlarmsRow

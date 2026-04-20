@@ -128,6 +128,17 @@ export type FrontendEventPage = {
   hasMore: boolean
 }
 
+export type FrontendResponseGroup = {
+  id: string
+  name: string
+  callsign: string
+  phone: string
+}
+
+export type FrontendAlarmGroupActionRequest = {
+  groupID: string
+}
+
 export type FrontendDBSettings = {
   firebirdEnabled: boolean
   firebirdUser: string

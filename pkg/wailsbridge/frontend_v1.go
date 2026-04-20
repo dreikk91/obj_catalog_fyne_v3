@@ -120,6 +120,78 @@ func (s *FrontendV1Service) ProcessAlarm(alarmID int, request frontendv1.AlarmPr
 	return backend.ProcessAlarm(context.Background(), alarmID, frontendv1.FromAlarmProcessRequest(request))
 }
 
+func (s *FrontendV1Service) GroupProcessAlarm(alarmID int, user string) error {
+	backend, err := s.backendOrErr()
+	if err != nil {
+		return err
+	}
+
+	return backend.GroupProcessAlarm(context.Background(), alarmID, user)
+}
+
+func (s *FrontendV1Service) ListAlarmProcessingOptionsCached() ([]frontendv1.AlarmProcessingOption, error) {
+	backend, err := s.backendOrErr()
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := backend.ListAlarmProcessingOptionsCached(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]frontendv1.AlarmProcessingOption, 0, len(result))
+	for _, item := range result {
+		items = append(items, frontendv1.AlarmProcessingOption{Code: item.Code, Label: item.Label})
+	}
+	return items, nil
+}
+
+func (s *FrontendV1Service) ListResponseGroups() ([]frontendv1.ResponseGroup, error) {
+	backend, err := s.backendOrErr()
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := backend.ListResponseGroups(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]frontendv1.ResponseGroup, 0, len(result))
+	for _, item := range result {
+		items = append(items, frontendv1.ToResponseGroup(item))
+	}
+	return items, nil
+}
+
+func (s *FrontendV1Service) AssignResponseGroup(alarmID int, request frontendv1.AlarmGroupActionRequest) error {
+	backend, err := s.backendOrErr()
+	if err != nil {
+		return err
+	}
+
+	return backend.AssignResponseGroup(context.Background(), alarmID, frontendv1.FromAlarmGroupActionRequest(request))
+}
+
+func (s *FrontendV1Service) NotifyGroupArrived(alarmID int) error {
+	backend, err := s.backendOrErr()
+	if err != nil {
+		return err
+	}
+
+	return backend.NotifyGroupArrived(context.Background(), alarmID)
+}
+
+func (s *FrontendV1Service) CancelResponseGroup(alarmID int) error {
+	backend, err := s.backendOrErr()
+	if err != nil {
+		return err
+	}
+
+	return backend.CancelResponseGroup(context.Background(), alarmID)
+}
+
 func (s *FrontendV1Service) ListAlarmGroups() ([]frontendv1.AlarmGroup, error) {
 	backend, err := s.backendOrErr()
 	if err != nil {

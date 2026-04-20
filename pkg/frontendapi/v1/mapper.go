@@ -381,3 +381,20 @@ func formatTimestamp(value time.Time) string {
 	}
 	return value.UTC().Format(time.RFC3339)
 }
+
+func ToResponseGroupListResponse(items []contracts.FrontendResponseGroup) ResponseGroupListResponse {
+	result := make([]ResponseGroup, 0, len(items))
+	for _, item := range items {
+		result = append(result, ResponseGroup{
+			ID:       item.ID,
+			Name:     item.Name,
+			Callsign: item.Callsign,
+			Phone:    item.Phone,
+		})
+	}
+	return ResponseGroupListResponse{Items: result}
+}
+
+func FromAlarmGroupActionRequest(request AlarmGroupActionRequest) contracts.FrontendAlarmGroupActionRequest {
+	return contracts.FrontendAlarmGroupActionRequest{GroupID: request.GroupID}
+}

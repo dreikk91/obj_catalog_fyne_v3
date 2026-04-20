@@ -9,6 +9,7 @@ import type {
   FrontendEventItem,
   FrontendObjectDetails,
   FrontendObjectSummary,
+  FrontendResponseGroup,
 } from './types'
 import {
   normalizeAlarmItem,
@@ -18,6 +19,7 @@ import {
   normalizeEventPage,
   normalizeObjectDetails,
   normalizeObjectSummary,
+  normalizeResponseGroup,
 } from './normalize'
 
 const FRONTEND_API_BASE = import.meta.env.VITE_FRONTEND_API_BASE ?? '/api/frontend/v1'
@@ -26,6 +28,7 @@ type ObjectListResponse = { items: FrontendObjectSummary[] }
 type AlarmListResponse = { items: FrontendAlarmItem[] }
 type AlarmGroupListResponse = { items: FrontendAlarmGroup[] }
 type AlarmProcessingOptionsResponse = { items: FrontendAlarmProcessingOption[] }
+type ResponseGroupListResponse = { items: FrontendResponseGroup[] }
 type EventListResponse = { items: FrontendEventItem[] }
 type EventPageResponse = FrontendEventPage
 
@@ -47,6 +50,14 @@ export function createHTTPFrontendClient(): FrontendClient {
       const body = await fetchJSON<AlarmGroupListResponse>(`${FRONTEND_API_BASE}/alarm-groups`)
       return body.items.map(normalizeAlarmGroup)
     },
+    async listAlarmProcessingOptionsCached() {
+      const body = await fetchJSON<AlarmProcessingOptionsResponse>(`${FRONTEND_API_BASE}/alarm-processing-options`)
+      return body.items.map(normalizeAlarmProcessingOption)
+    },
+    async listResponseGroups() {
+      const body = await fetchJSON<ResponseGroupListResponse>(`${FRONTEND_API_BASE}/response-groups`)
+      return body.items.map(normalizeResponseGroup)
+    },
     async getAlarmProcessingOptions(alarmID) {
       const body = await fetchJSON<AlarmProcessingOptionsResponse>(`${FRONTEND_API_BASE}/alarms/${alarmID}/processing-options`)
       return body.items.map(normalizeAlarmProcessingOption)
@@ -61,6 +72,28 @@ export function createHTTPFrontendClient(): FrontendClient {
       await fetchJSON<void>(`${FRONTEND_API_BASE}/alarms/${alarmID}/process`, {
         method: 'POST',
         body: JSON.stringify(request),
+      })
+    },
+    async groupProcessAlarm(alarmID, user) {
+      await fetchJSON<void>(`${FRONTEND_API_BASE}/alarms/${alarmID}/group-process`, {
+        method: 'POST',
+        body: JSON.stringify({ User: user }),
+      })
+    },
+    async assignResponseGroup(alarmID, request) {
+      await fetchJSON<void>(`${FRONTEND_API_BASE}/alarms/${alarmID}/assign-group`, {
+        method: 'POST',
+        body: JSON.stringify(request),
+      })
+    },
+    async notifyGroupArrived(alarmID) {
+      await fetchJSON<void>(`${FRONTEND_API_BASE}/alarms/${alarmID}/group-arrived`, {
+        method: 'POST',
+      })
+    },
+    async cancelResponseGroup(alarmID) {
+      await fetchJSON<void>(`${FRONTEND_API_BASE}/alarms/${alarmID}/cancel-group`, {
+        method: 'POST',
       })
     },
     async listObjectEvents(objectID, offset, limit) {

@@ -459,3 +459,27 @@ func (emptyFrontendBackend) CreateObject(context.Context, contracts.FrontendObje
 func (emptyFrontendBackend) UpdateObject(context.Context, contracts.FrontendObjectUpsertRequest) (contracts.FrontendObjectMutationResult, error) {
 	return contracts.FrontendObjectMutationResult{}, fmt.Errorf("update object is unavailable in shell-only mode")
 }
+
+func (emptyFrontendBackend) GroupProcessAlarm(context.Context, int, string) error {
+	return fmt.Errorf("unavailable in shell-only mode")
+}
+
+func (emptyFrontendBackend) ListAlarmProcessingOptionsCached(context.Context) ([]contracts.FrontendAlarmProcessingOption, error) {
+	return nil, fmt.Errorf("unavailable in shell-only mode")
+}
+
+func (emptyFrontendBackend) ListResponseGroups(context.Context) ([]contracts.FrontendResponseGroup, error) {
+	return nil, fmt.Errorf("unavailable in shell-only mode")
+}
+
+func (emptyFrontendBackend) AssignResponseGroup(context.Context, int, contracts.FrontendAlarmGroupActionRequest) error {
+	return fmt.Errorf("unavailable in shell-only mode")
+}
+
+func (emptyFrontendBackend) NotifyGroupArrived(context.Context, int) error {
+	return fmt.Errorf("unavailable in shell-only mode")
+}
+
+func (emptyFrontendBackend) CancelResponseGroup(context.Context, int) error {
+	return fmt.Errorf("unavailable in shell-only mode")
+}

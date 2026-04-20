@@ -121,6 +121,54 @@ func (b applicationFrontendBackend) UpdateObject(ctx context.Context, request co
 	return backend.UpdateObject(ctx, request)
 }
 
+func (b applicationFrontendBackend) GroupProcessAlarm(ctx context.Context, alarmID int, user string) error {
+	backend, err := b.current()
+	if err != nil {
+		return err
+	}
+	return backend.GroupProcessAlarm(ctx, alarmID, user)
+}
+
+func (b applicationFrontendBackend) ListAlarmProcessingOptionsCached(ctx context.Context) ([]contracts.FrontendAlarmProcessingOption, error) {
+	backend, err := b.current()
+	if err != nil {
+		return nil, err
+	}
+	return backend.ListAlarmProcessingOptionsCached(ctx)
+}
+
+func (b applicationFrontendBackend) ListResponseGroups(ctx context.Context) ([]contracts.FrontendResponseGroup, error) {
+	backend, err := b.current()
+	if err != nil {
+		return nil, err
+	}
+	return backend.ListResponseGroups(ctx)
+}
+
+func (b applicationFrontendBackend) AssignResponseGroup(ctx context.Context, alarmID int, request contracts.FrontendAlarmGroupActionRequest) error {
+	backend, err := b.current()
+	if err != nil {
+		return err
+	}
+	return backend.AssignResponseGroup(ctx, alarmID, request)
+}
+
+func (b applicationFrontendBackend) NotifyGroupArrived(ctx context.Context, alarmID int) error {
+	backend, err := b.current()
+	if err != nil {
+		return err
+	}
+	return backend.NotifyGroupArrived(ctx, alarmID)
+}
+
+func (b applicationFrontendBackend) CancelResponseGroup(ctx context.Context, alarmID int) error {
+	backend, err := b.current()
+	if err != nil {
+		return err
+	}
+	return backend.CancelResponseGroup(ctx, alarmID)
+}
+
 func (a *Application) startWebFrontendServer() {
 	if _, err := a.ensureWebFrontendServer(); err != nil {
 		log.Warn().Err(err).Msg("Не вдалося запустити web frontend server")

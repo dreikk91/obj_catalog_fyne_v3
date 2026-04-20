@@ -44,6 +44,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleAlarmItem(w, r, strings.TrimPrefix(path, APIV1BasePath+"/alarms/"))
 	case path == APIV1BasePath+"/alarm-groups":
 		h.handleAlarmGroups(w, r)
+	case path == APIV1BasePath+"/alarm-processing-options":
+		h.handleAlarmProcessingOptionsCached(w, r)
+	case path == APIV1BasePath+"/response-groups":
+		h.handleResponseGroups(w, r)
 	case path == APIV1BasePath+"/events":
 		h.handleEvents(w, r)
 	default:
@@ -211,9 +215,45 @@ func (h *Handler) handleAlarmItem(w http.ResponseWriter, r *http.Request, rawID 
 		h.handleAlarmPick(w, r, alarmID)
 	case "process":
 		h.handleAlarmProcess(w, r, alarmID)
+	case "assign-group":
+		h.handleAlarmAssignGroup(w, r, alarmID)
+	case "group-arrived":
+		h.handleAlarmGroupArrived(w, r, alarmID)
+	case "cancel-group":
+		h.handleAlarmCancelGroup(w, r, alarmID)
+	case "group-process":
+		h.handleAlarmGroupProcess(w, r, alarmID)
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
 	}
+}
+
+func (h *Handler) handleAlarmProcessingOptionsCached(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	items, err := h.backend.ListAlarmProcessingOptionsCached(r.Context())
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, frontendv1.ToAlarmProcessingOptionsResponse(items))
+}
+
+func (h *Handler) handleResponseGroups(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	items, err := h.backend.ListResponseGroups(r.Context())
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, frontendv1.ToResponseGroupListResponse(items))
 }
 
 func (h *Handler) handleAlarmProcessingOptions(w http.ResponseWriter, r *http.Request, alarmID int) {
@@ -228,6 +268,28 @@ func (h *Handler) handleAlarmProcessingOptions(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, http.StatusOK, frontendv1.ToAlarmProcessingOptionsResponse(items))
+}
+
+func (h *Handler) handleAlarmGroupProcess(w http.ResponseWriter, r *http.Request, alarmID int) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	type groupProcessRequest struct {
+		User string `json:"User"`
+	}
+	var req groupProcessRequest
+	if r.Body != nil {
+		defer r.Body.Close()
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	if err := h.backend.GroupProcessAlarm(r.Context(), alarmID, req.User); err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) handleAlarmPick(w http.ResponseWriter, r *http.Request, alarmID int) {
@@ -264,6 +326,71 @@ func (h *Handler) handleAlarmProcess(w http.ResponseWriter, r *http.Request, ala
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleAlarmAssignGroup(w http.ResponseWriter, r *http.Request, alarmID int) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	request, ok := decodeAlarmGroupActionRequest(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.backend.AssignResponseGroup(r.Context(), alarmID, frontendv1.FromAlarmGroupActionRequest(request)); err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleAlarmGroupArrived(w http.ResponseWriter, r *http.Request, alarmID int) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	if err := h.backend.NotifyGroupArrived(r.Context(), alarmID); err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleAlarmCancelGroup(w http.ResponseWriter, r *http.Request, alarmID int) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	if err := h.backend.CancelResponseGroup(r.Context(), alarmID); err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func decodeAlarmGroupActionRequest(w http.ResponseWriter, r *http.Request) (frontendv1.AlarmGroupActionRequest, bool) {
+	if r.Body == nil {
+		writeError(w, http.StatusBadRequest, "request body is required")
+		return frontendv1.AlarmGroupActionRequest{}, false
+	}
+	defer r.Body.Close()
+
+	var request frontendv1.AlarmGroupActionRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return frontendv1.AlarmGroupActionRequest{}, false
+	}
+	if decoder.More() {
+		writeError(w, http.StatusBadRequest, "request body must contain a single json object")
+		return frontendv1.AlarmGroupActionRequest{}, false
+	}
+	return request, true
 }
 
 func decodeAlarmPickRequest(w http.ResponseWriter, r *http.Request) (frontendv1.AlarmPickRequest, bool) {

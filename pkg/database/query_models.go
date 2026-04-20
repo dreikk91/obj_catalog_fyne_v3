@@ -101,3 +101,9 @@ type ActAlarmsRow struct {
 	Ukr1          *string    `db:"UKR1"`
 	Sc1           *int       `db:"SC1"`
 }
+
+// ActAlarmForProcessRow contains fields needed to write EvLog entries and delete from ACTALARMS.
+type ActAlarmForProcessRow struct {
+	ID     int64 `db:"ID"`
+	ObjUIN int64 `db:"OBJUIN"`
+}

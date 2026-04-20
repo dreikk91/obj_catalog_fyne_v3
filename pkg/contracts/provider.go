@@ -86,6 +86,27 @@ type AlarmTakeoverProvider interface {
 	PickAlarm(ctx context.Context, alarm models.Alarm, user string) error
 }
 
+// ResponseGroup описує групу реагування (МГР).
+type ResponseGroup struct {
+	ID       string
+	Name     string
+	Callsign string
+	Phone    string
+}
+
+// AlarmGroupProcessProvider описує групове завершення тривог (МІСТ).
+type AlarmGroupProcessProvider interface {
+	GroupProcessAlarm(ctx context.Context, alarm models.Alarm, user string) error
+}
+
+// ResponseGroupProvider описує отримання та дії з групами реагування.
+type ResponseGroupProvider interface {
+	ListResponseGroups(ctx context.Context) ([]ResponseGroup, error)
+	AssignResponseGroup(ctx context.Context, alarm models.Alarm, groupID string) error
+	NotifyGroupArrived(ctx context.Context, alarm models.Alarm) error
+	CancelResponseGroup(ctx context.Context, alarm models.Alarm) error
+}
+
 // DataProvider об'єднує всі інтерфейси даних
 type DataProvider interface {
 	ObjectProvider

@@ -11,6 +11,7 @@ import type {
   FrontendEventItem,
   FrontendObjectDetails,
   FrontendObjectSummary,
+  FrontendResponseGroup,
   FrontendSource,
   FrontendZone,
   GuardStatus,
@@ -187,6 +188,16 @@ export function normalizeDBSettings(input: unknown): FrontendDBSettings {
     caslPultID: asNumber(value.caslPultID ?? value.CASLPultID),
 
     mode: asString(value.mode ?? value.Mode),
+  }
+}
+
+export function normalizeResponseGroup(input: unknown): FrontendResponseGroup {
+  const value = asRecord(input)
+  return {
+    id: asString(value.id ?? value.ID),
+    name: asString(value.name ?? value.Name),
+    callsign: asString(value.callsign ?? value.Callsign),
+    phone: asString(value.phone ?? value.Phone),
   }
 }
 

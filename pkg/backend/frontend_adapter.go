@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
@@ -43,6 +44,10 @@ type FrontendAdapter struct {
 	adminMutator       FrontendAdminObjectMutator
 	caslMutator        FrontendCASLObjectMutator
 	capabilityProvider FrontendSourceCapabilityProvider
+
+	// pickedAlarmsMu guards pickedAlarmIDs for Bridge alarms picked locally (no DB state).
+	pickedAlarmsMu sync.Mutex
+	pickedAlarmIDs map[int]bool
 }
 
 func WithFrontendAdminObjectMutator(mutator FrontendAdminObjectMutator) FrontendAdapterOption {
@@ -127,9 +132,40 @@ func (a *FrontendAdapter) ListAlarms(context.Context) ([]contracts.FrontendAlarm
 	alarms := a.dataProvider.GetAlarms()
 	result := make([]contracts.FrontendAlarmItem, 0, len(alarms))
 	for _, alarm := range alarms {
-		result = append(result, mapFrontendAlarmItem(alarm))
+		item := mapFrontendAlarmItem(alarm)
+		if !item.IsOwnedByMe && a.isBridgeAlarmPickedLocally(alarm.ID) {
+			item.IsOwnedByMe = true
+			item.IsInProgress = true
+			item.CanProcess = true
+		}
+		result = append(result, item)
 	}
 	return result, nil
+}
+
+func (a *FrontendAdapter) isBridgeAlarmPickedLocally(alarmID int) bool {
+	if a == nil {
+		return false
+	}
+	a.pickedAlarmsMu.Lock()
+	defer a.pickedAlarmsMu.Unlock()
+	return a.pickedAlarmIDs[alarmID]
+}
+
+func (a *FrontendAdapter) setBridgeAlarmPicked(alarmID int, picked bool) {
+	if a == nil {
+		return
+	}
+	a.pickedAlarmsMu.Lock()
+	defer a.pickedAlarmsMu.Unlock()
+	if picked {
+		if a.pickedAlarmIDs == nil {
+			a.pickedAlarmIDs = make(map[int]bool)
+		}
+		a.pickedAlarmIDs[alarmID] = true
+	} else {
+		delete(a.pickedAlarmIDs, alarmID)
+	}
 }
 
 func (a *FrontendAdapter) GetAlarmProcessingOptions(ctx context.Context, alarmID int) ([]contracts.FrontendAlarmProcessingOption, error) {
@@ -170,10 +206,17 @@ func (a *FrontendAdapter) PickAlarm(ctx context.Context, alarmID int, request co
 		return err
 	}
 
+	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
 	if advanced, ok := a.dataProvider.(contracts.AlarmTakeoverProvider); ok {
-		return advanced.PickAlarm(ctx, alarm, strings.TrimSpace(request.User))
+		if err := advanced.PickAlarm(ctx, alarm, strings.TrimSpace(request.User)); err != nil {
+			return err
+		}
+		if source == contracts.FrontendSourceBridge {
+			a.setBridgeAlarmPicked(alarmID, true)
+		}
+		return nil
 	}
-	return fmt.Errorf("alarm pick is not supported for source %s", contracts.DetectFrontendSourceByObjectID(alarm.ObjectID))
+	return fmt.Errorf("alarm pick is not supported for source %s", source)
 }
 
 func (a *FrontendAdapter) ProcessAlarm(ctx context.Context, alarmID int, request contracts.FrontendAlarmProcessRequest) error {
@@ -188,13 +231,124 @@ func (a *FrontendAdapter) ProcessAlarm(ctx context.Context, alarmID int, request
 	user := strings.TrimSpace(request.User)
 	note := strings.TrimSpace(request.Note)
 	if advanced, ok := a.dataProvider.(contracts.AlarmProcessingProvider); ok {
-		return advanced.ProcessAlarmWithRequest(ctx, alarm, user, contracts.AlarmProcessingRequest{
+		if err := advanced.ProcessAlarmWithRequest(ctx, alarm, user, contracts.AlarmProcessingRequest{
 			CauseCode: strings.TrimSpace(request.CauseCode),
 			Note:      note,
-		})
+		}); err != nil {
+			return err
+		}
+		a.setBridgeAlarmPicked(alarmID, false)
+		return nil
 	}
 
 	return a.dataProvider.ProcessAlarm(strconv.Itoa(alarm.ID), user, note)
+}
+
+func (a *FrontendAdapter) GroupProcessAlarm(ctx context.Context, alarmID int, user string) error {
+	if a == nil || a.dataProvider == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	alarm, err := a.resolveAlarmByID(alarmID)
+	if err != nil {
+		return err
+	}
+
+	if provider, ok := a.dataProvider.(contracts.AlarmGroupProcessProvider); ok {
+		if err := provider.GroupProcessAlarm(ctx, alarm, strings.TrimSpace(user)); err != nil {
+			return err
+		}
+		a.setBridgeAlarmPicked(alarmID, false)
+		return nil
+	}
+	return fmt.Errorf("групове завершення не підтримується для джерела %s", contracts.DetectFrontendSourceByObjectID(alarm.ObjectID))
+}
+
+func (a *FrontendAdapter) ListAlarmProcessingOptionsCached(ctx context.Context) ([]contracts.FrontendAlarmProcessingOption, error) {
+	if a == nil || a.dataProvider == nil {
+		return nil, contracts.ErrFrontendBackendUnavailable
+	}
+	if advanced, ok := a.dataProvider.(contracts.AlarmProcessingProvider); ok {
+		options, err := advanced.GetAlarmProcessingOptions(ctx, models.Alarm{})
+		if err != nil {
+			return nil, err
+		}
+		result := make([]contracts.FrontendAlarmProcessingOption, 0, len(options))
+		for _, item := range options {
+			result = append(result, contracts.FrontendAlarmProcessingOption{
+				Code:  strings.TrimSpace(item.Code),
+				Label: strings.TrimSpace(item.Label),
+			})
+		}
+		if len(result) > 0 {
+			return result, nil
+		}
+	}
+	return append([]contracts.FrontendAlarmProcessingOption(nil), legacyFrontendAlarmProcessingOptions...), nil
+}
+
+func (a *FrontendAdapter) ListResponseGroups(ctx context.Context) ([]contracts.FrontendResponseGroup, error) {
+	if a == nil || a.dataProvider == nil {
+		return nil, contracts.ErrFrontendBackendUnavailable
+	}
+	if provider, ok := a.dataProvider.(contracts.ResponseGroupProvider); ok {
+		groups, err := provider.ListResponseGroups(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]contracts.FrontendResponseGroup, 0, len(groups))
+		for _, g := range groups {
+			result = append(result, contracts.FrontendResponseGroup{
+				ID:       strings.TrimSpace(g.ID),
+				Name:     strings.TrimSpace(g.Name),
+				Callsign: strings.TrimSpace(g.Callsign),
+				Phone:    strings.TrimSpace(g.Phone),
+			})
+		}
+		return result, nil
+	}
+	return []contracts.FrontendResponseGroup{}, nil
+}
+
+func (a *FrontendAdapter) AssignResponseGroup(ctx context.Context, alarmID int, request contracts.FrontendAlarmGroupActionRequest) error {
+	if a == nil || a.dataProvider == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	alarm, err := a.resolveAlarmByID(alarmID)
+	if err != nil {
+		return err
+	}
+	if provider, ok := a.dataProvider.(contracts.ResponseGroupProvider); ok {
+		return provider.AssignResponseGroup(ctx, alarm, strings.TrimSpace(request.GroupID))
+	}
+	return fmt.Errorf("assign response group is not supported for source %s", contracts.DetectFrontendSourceByObjectID(alarm.ObjectID))
+}
+
+func (a *FrontendAdapter) NotifyGroupArrived(ctx context.Context, alarmID int) error {
+	if a == nil || a.dataProvider == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	alarm, err := a.resolveAlarmByID(alarmID)
+	if err != nil {
+		return err
+	}
+	if provider, ok := a.dataProvider.(contracts.ResponseGroupProvider); ok {
+		return provider.NotifyGroupArrived(ctx, alarm)
+	}
+	return fmt.Errorf("notify group arrived is not supported for source %s", contracts.DetectFrontendSourceByObjectID(alarm.ObjectID))
+}
+
+func (a *FrontendAdapter) CancelResponseGroup(ctx context.Context, alarmID int) error {
+	if a == nil || a.dataProvider == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	alarm, err := a.resolveAlarmByID(alarmID)
+	if err != nil {
+		return err
+	}
+	if provider, ok := a.dataProvider.(contracts.ResponseGroupProvider); ok {
+		return provider.CancelResponseGroup(ctx, alarm)
+	}
+	return fmt.Errorf("cancel response group is not supported for source %s", contracts.DetectFrontendSourceByObjectID(alarm.ObjectID))
 }
 
 func (a *FrontendAdapter) ListEvents(context.Context) ([]contracts.FrontendEventItem, error) {

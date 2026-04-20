@@ -176,6 +176,13 @@ type FrontendAlarmProcessingOption struct {
 	Label string
 }
 
+type FrontendResponseGroup struct {
+	ID       string
+	Name     string
+	Callsign string
+	Phone    string
+}
+
 type FrontendAlarmProcessRequest struct {
 	User      string
 	CauseCode string
@@ -291,13 +298,23 @@ type FrontendObjectMutationResult struct {
 	NativeID string
 }
 
+type FrontendAlarmGroupActionRequest struct {
+	GroupID string
+}
+
 type FrontendBackend interface {
 	Capabilities(ctx context.Context) (FrontendCapabilities, error)
 	ListObjects(ctx context.Context) ([]FrontendObjectSummary, error)
 	ListAlarms(ctx context.Context) ([]FrontendAlarmItem, error)
 	GetAlarmProcessingOptions(ctx context.Context, alarmID int) ([]FrontendAlarmProcessingOption, error)
+	ListAlarmProcessingOptionsCached(ctx context.Context) ([]FrontendAlarmProcessingOption, error)
 	PickAlarm(ctx context.Context, alarmID int, request FrontendAlarmPickRequest) error
 	ProcessAlarm(ctx context.Context, alarmID int, request FrontendAlarmProcessRequest) error
+	GroupProcessAlarm(ctx context.Context, alarmID int, user string) error
+	ListResponseGroups(ctx context.Context) ([]FrontendResponseGroup, error)
+	AssignResponseGroup(ctx context.Context, alarmID int, request FrontendAlarmGroupActionRequest) error
+	NotifyGroupArrived(ctx context.Context, alarmID int) error
+	CancelResponseGroup(ctx context.Context, alarmID int) error
 	ListEvents(ctx context.Context) ([]FrontendEventItem, error)
 	ListObjectEvents(ctx context.Context, objectID int, offset int, limit int) (FrontendEventPage, error)
 	GetObjectDetails(ctx context.Context, objectID int) (FrontendObjectDetails, error)

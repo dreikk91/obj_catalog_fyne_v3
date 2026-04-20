@@ -1,0 +1,61 @@
+.panel--events {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.journal-table-wrap {
+  overflow: auto;
+  min-height: 0;
+  border-top: 1px solid #254259;
+}
+
+.journal-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.journal-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  background: #10273a;
+  color: #7fa5c4;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.34rem 0.4rem;
+  border-bottom: 1px solid #2b4b66;
+}
+
+.journal-table td {
+  border-bottom: 1px solid #223a4e;
+  color: #d1e6f8;
+  font-size: 0.72rem;
+  padding: 0.34rem 0.4rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.journal-table tbody tr:nth-child(even) td {
+  background: #101b29;
+}
+
+.journal-table tbody tr:hover td {
+  background: #15293d;
+}
+
+.journal-table td strong {
+  display: block;
+  font-family: 'Share Tech Mono', 'IBM Plex Sans', monospace;
+  color: #e4f4ff;
+}
+
+.journal-table td span {
+  display: block;
+  color: #7f9db8;
+  font-size: 0.66rem;
+}

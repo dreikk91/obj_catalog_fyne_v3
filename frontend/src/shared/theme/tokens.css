@@ -1,0 +1,10 @@
+:root {
+  --text-primary: #e8f0ff;
+  --text-secondary: #c2d5f4;
+  --text-muted: #8ea6c8;
+  --accent-warning: #ffb454;
+  --accent-alert: #df4a3c;
+
+  --font-head: 'Exo 2', 'Segoe UI', sans-serif;
+  --font-body: 'Exo 2', 'Segoe UI', sans-serif;
+}

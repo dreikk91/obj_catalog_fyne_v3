@@ -12,10 +12,11 @@ import (
 )
 
 type frontendTestDataProvider struct {
-	objectByID map[string]models.Object
-	objects    []models.Object
-	events     []models.Event
-	alarms     []models.Alarm
+	objectByID       map[string]models.Object
+	objects          []models.Object
+	events           []models.Event
+	objectEventsByID map[string][]models.Event
+	alarms           []models.Alarm
 }
 
 func (p *frontendTestDataProvider) GetObjects() []models.Object {
@@ -50,8 +51,12 @@ func (p *frontendTestDataProvider) GetEvents() []models.Event {
 	return append([]models.Event(nil), p.events...)
 }
 
-func (p *frontendTestDataProvider) GetObjectEvents(string) []models.Event {
-	return nil
+func (p *frontendTestDataProvider) GetObjectEvents(objectID string) []models.Event {
+	if p.objectEventsByID == nil {
+		return nil
+	}
+	items := p.objectEventsByID[objectID]
+	return append([]models.Event(nil), items...)
 }
 
 func (p *frontendTestDataProvider) GetAlarms() []models.Alarm {
@@ -431,6 +436,49 @@ func TestFrontendAdapterListEventsAndAlarmsNormalizesVisualSeverity(t *testing.T
 	}
 	if alarms[1].VisualSeverity != contracts.FrontendVisualSeverityInfo {
 		t.Fatalf("alarm severity = %q, want info", alarms[1].VisualSeverity)
+	}
+}
+
+func TestFrontendAdapterListObjectEventsReturnsSortedPage(t *testing.T) {
+	adapter := NewFrontendAdapter(&frontendTestDataProvider{
+		objectByID: map[string]models.Object{
+			"10": {ID: 10, Name: "Об'єкт"},
+		},
+		objectEventsByID: map[string][]models.Event{
+			"10": {
+				{ID: 1, ObjectID: 10, ObjectNumber: "10", ObjectName: "Об'єкт", Time: time.Date(2026, time.April, 19, 10, 0, 0, 0, time.UTC), Type: models.EventTest},
+				{ID: 3, ObjectID: 10, ObjectNumber: "10", ObjectName: "Об'єкт", Time: time.Date(2026, time.April, 19, 12, 0, 0, 0, time.UTC), Type: models.EventPanic},
+				{ID: 2, ObjectID: 10, ObjectNumber: "10", ObjectName: "Об'єкт", Time: time.Date(2026, time.April, 19, 11, 0, 0, 0, time.UTC), Type: models.EventFault},
+			},
+		},
+	})
+
+	page, err := adapter.ListObjectEvents(context.Background(), 10, 0, 2)
+	if err != nil {
+		t.Fatalf("ListObjectEvents() error = %v", err)
+	}
+	if page.TotalCount != 3 {
+		t.Fatalf("ListObjectEvents() TotalCount = %d, want 3", page.TotalCount)
+	}
+	if !page.HasMore {
+		t.Fatal("ListObjectEvents() HasMore = false, want true")
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("ListObjectEvents() len = %d, want 2", len(page.Items))
+	}
+	if page.Items[0].ID != 3 || page.Items[1].ID != 2 {
+		t.Fatalf("ListObjectEvents() order = %+v, want ids [3 2]", page.Items)
+	}
+
+	nextPage, err := adapter.ListObjectEvents(context.Background(), 10, 2, 2)
+	if err != nil {
+		t.Fatalf("ListObjectEvents() second page error = %v", err)
+	}
+	if nextPage.HasMore {
+		t.Fatal("ListObjectEvents() second page HasMore = true, want false")
+	}
+	if len(nextPage.Items) != 1 || nextPage.Items[0].ID != 1 {
+		t.Fatalf("ListObjectEvents() second page = %+v, want id 1", nextPage.Items)
 	}
 }
 

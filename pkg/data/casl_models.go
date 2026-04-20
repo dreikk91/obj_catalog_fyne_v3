@@ -71,6 +71,7 @@ type caslTapeItem struct {
 	AlarmType       string
 	PultID          string
 	UserID          string
+	UserFIO         string
 	LastAct         string
 	Msg             string
 	ReasonAlarm     string

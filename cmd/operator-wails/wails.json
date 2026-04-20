@@ -1,0 +1,15 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "operator-wails",
+  "outputfilename": "operator-wails.exe",
+  "frontend:dir": "../../frontend",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "../../frontend/src/wailsjs",
+  "author": {
+    "name": "obj_catalog_fyne_v3",
+    "email": "noreply@example.local"
+  }
+}

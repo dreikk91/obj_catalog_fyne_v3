@@ -22,6 +22,7 @@ type combinedStubProvider struct {
 	latestID     int64
 	latestErr    error
 	processCalls []contracts.AlarmProcessingRequest
+	pickUsers    []string
 	processErr   error
 	processOpts  []contracts.AlarmProcessingOption
 }
@@ -71,6 +72,11 @@ func (s *combinedStubProvider) GetAlarmProcessingOptions(ctx context.Context, al
 
 func (s *combinedStubProvider) ProcessAlarmWithRequest(ctx context.Context, alarm models.Alarm, user string, request contracts.AlarmProcessingRequest) error {
 	s.processCalls = append(s.processCalls, request)
+	return s.processErr
+}
+
+func (s *combinedStubProvider) PickAlarm(ctx context.Context, alarm models.Alarm, user string) error {
+	s.pickUsers = append(s.pickUsers, user)
 	return s.processErr
 }
 
@@ -277,5 +283,25 @@ func TestCombinedDataProvider_ProcessAlarmWithRequest_RoutesToCASLSource(t *test
 	}
 	if len(primary.processCalls) != 0 {
 		t.Fatalf("primary provider must not receive advanced CASL request")
+	}
+}
+
+func TestCombinedDataProvider_PickAlarm_RoutesToCASLSource(t *testing.T) {
+	t.Parallel()
+
+	caslObjID := ids.CASLObjectIDNamespaceStart + 52
+	primary := &combinedStubProvider{}
+	secondary := &combinedStubProvider{}
+
+	provider := NewCombinedDataProvider(primary, secondary)
+	err := provider.PickAlarm(context.Background(), models.Alarm{ID: caslObjID, ObjectID: caslObjID}, "Оператор")
+	if err != nil {
+		t.Fatalf("PickAlarm error: %v", err)
+	}
+	if len(secondary.pickUsers) != 1 || secondary.pickUsers[0] != "Оператор" {
+		t.Fatalf("unexpected pick calls: %+v", secondary.pickUsers)
+	}
+	if len(primary.pickUsers) != 0 {
+		t.Fatalf("primary provider must not receive CASL pick request")
 	}
 }

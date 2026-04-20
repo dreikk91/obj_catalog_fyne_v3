@@ -32,15 +32,17 @@ type providerBuildResult struct {
 func buildDataProviderFromConfig(cfg config.DBConfig, pref fyne.Preferences, verifyConnectivity bool) (providerBuildResult, error) {
 	firebirdEnabled := cfg.FirebirdEnabled
 	phoenixEnabled := cfg.PhoenixEnabled
-	caslEnabled := cfg.CASLEnabled || cfg.NormalizedMode() == config.BackendModeCASLCloud
+	caslEnabled := cfg.CASLEnabled
 
-	if !firebirdEnabled && !phoenixEnabled {
-		switch cfg.NormalizedMode() {
-		case config.BackendModePhoenix:
-			phoenixEnabled = true
-		default:
-			firebirdEnabled = true
-		}
+	switch cfg.NormalizedMode() {
+	case config.BackendModePhoenix:
+		phoenixEnabled = true
+	case config.BackendModeCASLCloud:
+		caslEnabled = true
+	}
+
+	if !firebirdEnabled && !phoenixEnabled && !caslEnabled {
+		firebirdEnabled = true
 	}
 
 	result := providerBuildResult{

@@ -52,6 +52,10 @@ type Alarm struct {
 	IsProcessed    bool   // Чи оброблена тривога
 	ProcessedBy    string // Ким оброблена
 	ProcessNote    string // Примітка при обробці
+	IsInProgress   bool   // Чи взята тривога в роботу
+	InProgressBy   string // Хто зараз обробляє
+	InProgressUser string // Ідентифікатор оператора, що взяв у роботу
+	IsOwnedByMe    bool   // Чи поточний оператор володіє тривогою
 	SourceMsgs     []AlarmMsg
 }
 

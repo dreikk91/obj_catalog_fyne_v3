@@ -30,8 +30,24 @@ func (s *frontendUIBackendStub) ListAlarms(context.Context) ([]contracts.Fronten
 	return s.alarms, nil
 }
 
+func (s *frontendUIBackendStub) GetAlarmProcessingOptions(context.Context, int) ([]contracts.FrontendAlarmProcessingOption, error) {
+	return nil, nil
+}
+
+func (s *frontendUIBackendStub) PickAlarm(context.Context, int, contracts.FrontendAlarmPickRequest) error {
+	return nil
+}
+
+func (s *frontendUIBackendStub) ProcessAlarm(context.Context, int, contracts.FrontendAlarmProcessRequest) error {
+	return nil
+}
+
 func (s *frontendUIBackendStub) ListEvents(context.Context) ([]contracts.FrontendEventItem, error) {
 	return s.events, nil
+}
+
+func (s *frontendUIBackendStub) ListObjectEvents(context.Context, int, int, int) (contracts.FrontendEventPage, error) {
+	return contracts.FrontendEventPage{}, nil
 }
 
 func (s *frontendUIBackendStub) GetObjectDetails(context.Context, int) (contracts.FrontendObjectDetails, error) {

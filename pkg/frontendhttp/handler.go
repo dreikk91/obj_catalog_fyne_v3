@@ -40,6 +40,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleObjectItem(w, r, strings.TrimPrefix(path, APIV1BasePath+"/objects/"))
 	case path == APIV1BasePath+"/alarms":
 		h.handleAlarms(w, r)
+	case strings.HasPrefix(path, APIV1BasePath+"/alarms/"):
+		h.handleAlarmItem(w, r, strings.TrimPrefix(path, APIV1BasePath+"/alarms/"))
+	case path == APIV1BasePath+"/alarm-groups":
+		h.handleAlarmGroups(w, r)
 	case path == APIV1BasePath+"/events":
 		h.handleEvents(w, r)
 	default:
@@ -87,9 +91,25 @@ func (h *Handler) handleObjectsCollection(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) handleObjectItem(w http.ResponseWriter, r *http.Request, rawID string) {
-	objectID, ok := parseObjectID(rawID)
+	path := strings.Trim(strings.TrimSpace(rawID), "/")
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "invalid object id")
+		return
+	}
+
+	parts := strings.Split(path, "/")
+	objectID, ok := parseObjectID(parts[0])
 	if !ok {
 		writeError(w, http.StatusBadRequest, "invalid object id")
+		return
+	}
+
+	if len(parts) > 1 {
+		if len(parts) == 2 && parts[1] == "events" {
+			h.handleObjectEvents(w, r, objectID)
+			return
+		}
+		writeError(w, http.StatusNotFound, "route not found")
 		return
 	}
 
@@ -118,6 +138,39 @@ func (h *Handler) handleObjectItem(w http.ResponseWriter, r *http.Request, rawID
 	}
 }
 
+func (h *Handler) handleObjectEvents(w http.ResponseWriter, r *http.Request, objectID int) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	offset, err := parseQueryInt(r, "offset", 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	limit, err := parseQueryInt(r, "limit", 100)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if offset < 0 {
+		writeError(w, http.StatusBadRequest, "offset must be non-negative")
+		return
+	}
+	if limit <= 0 {
+		writeError(w, http.StatusBadRequest, "limit must be positive")
+		return
+	}
+
+	page, err := h.backend.ListObjectEvents(r.Context(), objectID, offset, limit)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, frontendv1.ToEventPageResponse(page))
+}
+
 func (h *Handler) handleAlarms(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w, http.MethodGet)
@@ -130,6 +183,122 @@ func (h *Handler) handleAlarms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, frontendv1.ToAlarmListResponse(items))
+}
+
+func (h *Handler) handleAlarmItem(w http.ResponseWriter, r *http.Request, rawID string) {
+	path := strings.Trim(strings.TrimSpace(rawID), "/")
+	if path == "" {
+		writeError(w, http.StatusBadRequest, "invalid alarm id")
+		return
+	}
+
+	parts := strings.Split(path, "/")
+	alarmID, ok := parseObjectID(parts[0])
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid alarm id")
+		return
+	}
+
+	if len(parts) != 2 {
+		writeError(w, http.StatusNotFound, "route not found")
+		return
+	}
+
+	switch parts[1] {
+	case "processing-options":
+		h.handleAlarmProcessingOptions(w, r, alarmID)
+	case "pick":
+		h.handleAlarmPick(w, r, alarmID)
+	case "process":
+		h.handleAlarmProcess(w, r, alarmID)
+	default:
+		writeError(w, http.StatusNotFound, "route not found")
+	}
+}
+
+func (h *Handler) handleAlarmProcessingOptions(w http.ResponseWriter, r *http.Request, alarmID int) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	items, err := h.backend.GetAlarmProcessingOptions(r.Context(), alarmID)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, frontendv1.ToAlarmProcessingOptionsResponse(items))
+}
+
+func (h *Handler) handleAlarmPick(w http.ResponseWriter, r *http.Request, alarmID int) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	request, ok := decodeAlarmPickRequest(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.backend.PickAlarm(r.Context(), alarmID, frontendv1.FromAlarmPickRequest(request)); err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleAlarmProcess(w http.ResponseWriter, r *http.Request, alarmID int) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	request, ok := decodeAlarmProcessRequest(w, r)
+	if !ok {
+		return
+	}
+
+	if err := h.backend.ProcessAlarm(r.Context(), alarmID, frontendv1.FromAlarmProcessRequest(request)); err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func decodeAlarmPickRequest(w http.ResponseWriter, r *http.Request) (frontendv1.AlarmPickRequest, bool) {
+	if r.Body == nil {
+		writeError(w, http.StatusBadRequest, "request body is required")
+		return frontendv1.AlarmPickRequest{}, false
+	}
+	defer r.Body.Close()
+
+	var request frontendv1.AlarmPickRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return frontendv1.AlarmPickRequest{}, false
+	}
+	if decoder.More() {
+		writeError(w, http.StatusBadRequest, "request body must contain a single json object")
+		return frontendv1.AlarmPickRequest{}, false
+	}
+	return request, true
+}
+
+func (h *Handler) handleAlarmGroups(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	items, err := h.backend.ListAlarms(r.Context())
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, frontendv1.ToAlarmGroupListResponse(items))
 }
 
 func (h *Handler) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +336,27 @@ func decodeUpsertRequest(w http.ResponseWriter, r *http.Request) (frontendv1.Obj
 	return request, true
 }
 
+func decodeAlarmProcessRequest(w http.ResponseWriter, r *http.Request) (frontendv1.AlarmProcessRequest, bool) {
+	if r.Body == nil {
+		writeError(w, http.StatusBadRequest, "request body is required")
+		return frontendv1.AlarmProcessRequest{}, false
+	}
+	defer r.Body.Close()
+
+	var request frontendv1.AlarmProcessRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json body")
+		return frontendv1.AlarmProcessRequest{}, false
+	}
+	if decoder.More() {
+		writeError(w, http.StatusBadRequest, "request body must contain a single json object")
+		return frontendv1.AlarmProcessRequest{}, false
+	}
+	return request, true
+}
+
 func parseObjectID(raw string) (int, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -177,6 +367,23 @@ func parseObjectID(raw string) (int, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+func parseQueryInt(r *http.Request, key string, defaultValue int) (int, error) {
+	if r == nil || r.URL == nil {
+		return defaultValue, nil
+	}
+
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return defaultValue, nil
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, errors.New("invalid " + key)
+	}
+	return value, nil
 }
 
 func writeBackendError(w http.ResponseWriter, err error) {

@@ -10,7 +10,7 @@ SELECT
 	G.disabled AS group_disabled,
 	C.CompanyName AS company_name,
 	C.Address AS company_address,
-	C.Telephones AS telephones,
+	COALESCE(PrimaryPhone.phone_number, C.Telephones) AS telephones,
 	CAST(NULL AS nvarchar(255)) AS type_name,
 	P.Disabled AS panel_disabled,
 	P.TestPanel AS test_panel,
@@ -29,6 +29,22 @@ LEFT JOIN (
 	GROUP BY Panel_id, Group_
 ) T ON T.Panel_id = G.Panel_id AND T.Group_ = G.Group_
 INNER JOIN vwRealPanel P WITH (NOLOCK) ON P.Panel_id = G.Panel_id
+OUTER APPLY (
+	SELECT TOP (1)
+		LTRIM(RTRIM(ISNULL(RT.PhoneNo, ''))) AS phone_number
+	FROM Responsibles R WITH (NOLOCK)
+	INNER JOIN ResponsibleTel RT WITH (NOLOCK) ON RT.ResponsiblesList_id = R.ResponsiblesList_id
+	LEFT JOIN ResponsibleTelDescription RTD WITH (NOLOCK) ON
+		RTD.Responsible_id = R.Responsible_id
+		AND RTD.ResponsibleTel_id = RT.ResponsibleTel_id
+	WHERE
+		R.panel_id = G.Panel_id
+		AND LTRIM(RTRIM(ISNULL(RT.PhoneNo, ''))) <> ''
+	ORDER BY
+		ISNULL(RTD.CallOrder, R.Responsible_Number),
+		R.Responsible_Number,
+		RT.ResponsibleTel_id
+) AS PrimaryPhone
 OUTER APPLY (
 	SELECT TOP (1)
 		COALESCE(NULLIF(LTRIM(RTRIM(S.SimNumber)), ''), NULLIF(LTRIM(RTRIM(S.RealSimNumber)), '')) AS sim_number
@@ -74,7 +90,7 @@ SELECT
 	G.disabled AS group_disabled,
 	C.CompanyName AS company_name,
 	C.Address AS company_address,
-	C.Telephones AS telephones,
+	COALESCE(PrimaryPhone.phone_number, C.Telephones) AS telephones,
 	CT.Name AS type_name,
 	P.Disabled AS panel_disabled,
 	P.TestPanel AS test_panel,
@@ -93,6 +109,22 @@ LEFT JOIN (
 ) T ON T.Panel_id = G.Panel_id AND T.Group_ = G.Group_
 INNER JOIN vwRealPanel P WITH (NOLOCK) ON P.Panel_id = G.Panel_id
 LEFT JOIN Engineers E WITH (NOLOCK) ON E.Work_Panel_id = G.Panel_id
+OUTER APPLY (
+	SELECT TOP (1)
+		LTRIM(RTRIM(ISNULL(RT.PhoneNo, ''))) AS phone_number
+	FROM Responsibles R WITH (NOLOCK)
+	INNER JOIN ResponsibleTel RT WITH (NOLOCK) ON RT.ResponsiblesList_id = R.ResponsiblesList_id
+	LEFT JOIN ResponsibleTelDescription RTD WITH (NOLOCK) ON
+		RTD.Responsible_id = R.Responsible_id
+		AND RTD.ResponsibleTel_id = RT.ResponsibleTel_id
+	WHERE
+		R.panel_id = G.Panel_id
+		AND LTRIM(RTRIM(ISNULL(RT.PhoneNo, ''))) <> ''
+	ORDER BY
+		ISNULL(RTD.CallOrder, R.Responsible_Number),
+		R.Responsible_Number,
+		RT.ResponsibleTel_id
+) AS PrimaryPhone
 WHERE G.Panel_id = @p1
 ORDER BY G.Group_
 `

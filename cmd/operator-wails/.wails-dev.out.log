@@ -1,0 +1,256 @@
+Wails CLI v2.11.0
+
+  • Generating bindings:  INFO  Converting type v1.AlarmItem
+       - simple field AlarmItem.ID
+       - simple field AlarmItem.Source
+       - simple field AlarmItem.ObjectID
+       - simple field AlarmItem.ObjectNativeID
+       - simple field AlarmItem.ObjectNumber
+       - simple field AlarmItem.ObjectName
+       - simple field AlarmItem.Address
+       - simple field AlarmItem.Time
+       - simple field AlarmItem.Details
+       - simple field AlarmItem.TypeCode
+       - simple field AlarmItem.TypeText
+       - simple field AlarmItem.ZoneNumber
+       - simple field AlarmItem.ZoneName
+       - simple field AlarmItem.IsProcessed
+       - simple field AlarmItem.ProcessedBy
+       - simple field AlarmItem.ProcessNote
+       - simple field AlarmItem.VisualSeverity
+       Converting type v1.Capabilities
+       - struct slice Capabilities.Sources ([]v1.SourceCapability)
+          Converting type v1.SourceCapability
+          - simple field SourceCapability.Source
+          - simple field SourceCapability.DisplayName
+          - simple field SourceCapability.ReadObjects
+          - simple field SourceCapability.ReadObjectDetails
+          - simple field SourceCapability.ReadEvents
+          - simple field SourceCapability.ReadAlarms
+          - simple field SourceCapability.CreateObject
+          - simple field SourceCapability.UpdateObject
+       Converting type v1.Contact
+       - simple field Contact.Name
+       - simple field Contact.Position
+       - simple field Contact.Phone
+       - simple field Contact.Priority
+       - simple field Contact.CodeWord
+       - simple field Contact.GroupID
+       - simple field Contact.GroupNumber
+       - simple field Contact.GroupName
+       - simple field Contact.GroupStateText
+       Converting type v1.EventItem
+       - simple field EventItem.ID
+       - simple field EventItem.Source
+       - simple field EventItem.ObjectID
+       - simple field EventItem.ObjectNativeID
+       - simple field EventItem.ObjectNumber
+       - simple field EventItem.ObjectName
+       - simple field EventItem.Time
+       - simple field EventItem.TypeCode
+       - simple field EventItem.TypeText
+       - simple field EventItem.ZoneNumber
+       - simple field EventItem.Details
+       - simple field EventItem.UserName
+       - simple field EventItem.VisualSeverity
+       Converting type v1.ObjectDetails
+       - struct ObjectDetails.Summary (v1.ObjectSummary)
+          Converting type v1.ObjectSummary
+          - simple field ObjectSummary.ID
+          - simple field ObjectSummary.Source
+          - simple field ObjectSummary.NativeID
+          - simple field ObjectSummary.DisplayNumber
+          - simple field ObjectSummary.Name
+          - simple field ObjectSummary.Address
+          - simple field ObjectSummary.ContractNumber
+          - simple field ObjectSummary.Phone
+          - simple field ObjectSummary.StatusCode
+          - simple field ObjectSummary.StatusText
+          - simple field ObjectSummary.DeviceType
+          - simple field ObjectSummary.PanelMark
+          - simple field ObjectSummary.SignalStrength
+          - simple field ObjectSummary.SIM1
+          - simple field ObjectSummary.SIM2
+          - simple field ObjectSummary.LastTestTime
+          - simple field ObjectSummary.LastMessageTime
+          - simple field ObjectSummary.GuardStatus
+          - simple field ObjectSummary.ConnectionStatus
+          - simple field ObjectSummary.MonitoringStatus
+          - simple field ObjectSummary.HasAssignment
+       - simple field ObjectDetails.GSMLevel
+       - simple field ObjectDetails.PowerSource
+       - simple field ObjectDetails.AutoTestHours
+       - simple field ObjectDetails.SubServerA
+       - simple field ObjectDetails.SubServerB
+       - simple field ObjectDetails.ChannelCode
+       - simple field ObjectDetails.AKBState
+       - simple field ObjectDetails.PowerFault
+       - simple field ObjectDetails.TestControl
+       - simple field ObjectDetails.TestIntervalMin
+       - simple field ObjectDetails.Phones
+       - simple field ObjectDetails.Notes
+       - simple field ObjectDetails.Location
+       - simple field ObjectDetails.LaunchDate
+       - simple field ObjectDetails.ExternalSignal
+       - simple field ObjectDetails.ExternalTestMessage
+       - simple field ObjectDetails.ExternalLastTest
+       - simple field ObjectDetails.ExternalLastMessage
+       - struct slice ObjectDetails.Zones ([]v1.Zone)
+          Converting type v1.Zone
+          - simple field Zone.Number
+          - simple field Zone.Name
+          - simple field Zone.SensorType
+          - simple field Zone.Status
+          - simple field Zone.GroupID
+          - simple field Zone.GroupNumber
+          - simple field Zone.GroupName
+          - simple field Zone.GroupStateText
+       - struct slice ObjectDetails.Contacts ([]v1.Contact)
+       - struct slice ObjectDetails.Events ([]v1.EventItem)
+Done.
+  • Installing frontend dependencies: 
+ INFO  Install command: 'npm install'
+Skipping npm install
+Done.
+  • Compiling frontend: 
+ INFO  Build command: 'npm run build'
+    
+    > frontend@0.0.0 build
+    > tsc -b && vite build
+    
+    [36mvite v8.0.8 [32mbuilding client environment for production...[36m[39m
+    [2Ktransforming...✓ 85 modules transformed.
+    rendering chunks...
+    computing gzip size...
+    dist/index.html                   0.45 kB │ gzip:   0.29 kB
+    dist/assets/index-B4vKSpFr.css   19.44 kB │ gzip:   3.93 kB
+    dist/assets/index-DF2vuaCo.js   373.45 kB │ gzip: 106.64 kB
+    
+    [32m✓ built in 303ms[39m
+    
+    
+Done.
+
+> frontend@0.0.0 dev
+> vite
+
+Port 5173 is in use, trying another one...
+Port 5174 is in use, trying another one...
+
+  [32m[1mVITE[22m v8.0.8[39m  [2mready in [0m[1m295[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5175[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+Building application for development...
+  • Generating bindings:  INFO  Converting type v1.AlarmItem
+       - simple field AlarmItem.ID
+       - simple field AlarmItem.Source
+       - simple field AlarmItem.ObjectID
+       - simple field AlarmItem.ObjectNativeID
+       - simple field AlarmItem.ObjectNumber
+       - simple field AlarmItem.ObjectName
+       - simple field AlarmItem.Address
+       - simple field AlarmItem.Time
+       - simple field AlarmItem.Details
+       - simple field AlarmItem.TypeCode
+       - simple field AlarmItem.TypeText
+       - simple field AlarmItem.ZoneNumber
+       - simple field AlarmItem.ZoneName
+       - simple field AlarmItem.IsProcessed
+       - simple field AlarmItem.ProcessedBy
+       - simple field AlarmItem.ProcessNote
+       - simple field AlarmItem.VisualSeverity
+       Converting type v1.Capabilities
+       - struct slice Capabilities.Sources ([]v1.SourceCapability)
+          Converting type v1.SourceCapability
+          - simple field SourceCapability.Source
+          - simple field SourceCapability.DisplayName
+          - simple field SourceCapability.ReadObjects
+          - simple field SourceCapability.ReadObjectDetails
+          - simple field SourceCapability.ReadEvents
+          - simple field SourceCapability.ReadAlarms
+          - simple field SourceCapability.CreateObject
+          - simple field SourceCapability.UpdateObject
+       Converting type v1.Contact
+       - simple field Contact.Name
+       - simple field Contact.Position
+       - simple field Contact.Phone
+       - simple field Contact.Priority
+       - simple field Contact.CodeWord
+       - simple field Contact.GroupID
+       - simple field Contact.GroupNumber
+       - simple field Contact.GroupName
+       - simple field Contact.GroupStateText
+       Converting type v1.EventItem
+       - simple field EventItem.ID
+       - simple field EventItem.Source
+       - simple field EventItem.ObjectID
+       - simple field EventItem.ObjectNativeID
+       - simple field EventItem.ObjectNumber
+       - simple field EventItem.ObjectName
+       - simple field EventItem.Time
+       - simple field EventItem.TypeCode
+       - simple field EventItem.TypeText
+       - simple field EventItem.ZoneNumber
+       - simple field EventItem.Details
+       - simple field EventItem.UserName
+       - simple field EventItem.VisualSeverity
+       Converting type v1.ObjectDetails
+       - struct ObjectDetails.Summary (v1.ObjectSummary)
+          Converting type v1.ObjectSummary
+          - simple field ObjectSummary.ID
+          - simple field ObjectSummary.Source
+          - simple field ObjectSummary.NativeID
+          - simple field ObjectSummary.DisplayNumber
+          - simple field ObjectSummary.Name
+          - simple field ObjectSummary.Address
+          - simple field ObjectSummary.ContractNumber
+          - simple field ObjectSummary.Phone
+          - simple field ObjectSummary.StatusCode
+          - simple field ObjectSummary.StatusText
+          - simple field ObjectSummary.DeviceType
+          - simple field ObjectSummary.PanelMark
+          - simple field ObjectSummary.SignalStrength
+          - simple field ObjectSummary.SIM1
+          - simple field ObjectSummary.SIM2
+          - simple field ObjectSummary.LastTestTime
+          - simple field ObjectSummary.LastMessageTime
+          - simple field ObjectSummary.GuardStatus
+          - simple field ObjectSummary.ConnectionStatus
+          - simple field ObjectSummary.MonitoringStatus
+          - simple field ObjectSummary.HasAssignment
+       - simple field ObjectDetails.GSMLevel
+       - simple field ObjectDetails.PowerSource
+       - simple field ObjectDetails.AutoTestHours
+       - simple field ObjectDetails.SubServerA
+       - simple field ObjectDetails.SubServerB
+       - simple field ObjectDetails.ChannelCode
+       - simple field ObjectDetails.AKBState
+       - simple field ObjectDetails.PowerFault
+       - simple field ObjectDetails.TestControl
+       - simple field ObjectDetails.TestIntervalMin
+       - simple field ObjectDetails.Phones
+       - simple field ObjectDetails.Notes
+       - simple field ObjectDetails.Location
+       - simple field ObjectDetails.LaunchDate
+       - simple field ObjectDetails.ExternalSignal
+       - simple field ObjectDetails.ExternalTestMessage
+       - simple field ObjectDetails.ExternalLastTest
+       - simple field ObjectDetails.ExternalLastMessage
+       - struct slice ObjectDetails.Zones ([]v1.Zone)
+          Converting type v1.Zone
+          - simple field Zone.Number
+          - simple field Zone.Name
+          - simple field Zone.SensorType
+          - simple field Zone.Status
+          - simple field Zone.GroupID
+          - simple field Zone.GroupNumber
+          - simple field Zone.GroupName
+          - simple field Zone.GroupStateText
+       - struct slice ObjectDetails.Contacts ([]v1.Contact)
+       - struct slice ObjectDetails.Events ([]v1.EventItem)
+Done.
+  • Generating application assets: Done.
+  • Compiling application:  INFO  Build command: go build -buildvcs=false -gcflags "all=-N -l" -tags dev,devtools -o D:\goproject\obj_catalog_fyne_v3\cmd\operator-wails\build\bin\operator-wails-dev.exe
+  • Environment:%!(EXTRA string=ALLUSERSPROFILE=C:\ProgramData APPDATA=C:\Users\apidlypnyi\AppData\Roaming ChocolateyInstall=C:\ProgramData\chocolatey ChocolateyLastPathUpdate=134200195758993569 CHROME_CRASHPAD_PIPE_NAME=\\.\pipe\crashpad_14296_OCTLSDCKXCRTMYMN CLIENTNAME=DESKTOP-7KPO7TC CODEX_INTERNAL_ORIGINATOR_OVERRIDE=codex_vscode CODEX_THREAD_ID=019da295-b178-7181-9be4-b0f73d706921 CommonProgramFiles=C:\Program Files\Common Files CommonProgramFiles(x86)=C:\Program Files (x86)\Common Files CommonProgramW6432=C:\Program Files\Common Files COMPUTERNAME=W11WS2V3 ComSpec=C:\WINDOWS\system32\cmd.exe DEBUG=release DriverData=C:\Windows\System32\Drivers\DriverData EFC_7916_1592913036=1 ELECTRON_RUN_AS_NODE=1 GOPATH=C:\Users\apidlypnyi\go HOMEDRIVE=C: HOMEPATH=\Users\apidlypnyi LOCALAPPDATA=C:\Users\apidlypnyi\AppData\Local LOGONSERVER=\\W11WS2V3 NUMBER_OF_PROCESSORS=6 NVM_HOME=C:\Users\apidlypnyi\AppData\Local\nvm NVM_SYMLINK=d:\nvm4w\nodejs OS=Windows_NT PATH=C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.0.0_x64__8wekyb3d8bbwe;C:\Users\apidlypnyi\.codex\tmp\arg0\codex-arg0NVwSUz;C:\Users\apidlypnyi\AppData\Local\Programs\Microsoft VS Code;D:\Python314\Scripts\;D:\Python314\;C:\Program Files\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Go\bin;d:\Program Files\Git\cmd;C:\Program Files\dotnet\;D:\Program Files\PuTTY\;C:\ProgramData\chocolatey\bin;C:\Program Files\Graphviz\bin;C:\ProgramData\mingw64\mingw32\bin;C:\ProgramData\mingw64\mingw64\bin;%NVM_HOME%;%NVM_SYMLINK%;C:\Program Files\nodejs\;C:\Users\apidlypnyi\.cargo\bin;C:\Users\apidlypnyi\AppData\Local\Microsoft\WindowsApps;C:\Users\apidlypnyi\go\bin;C:\Users\apidlypnyi\AppData\Local\Programs\Antigravity\bin;D:\msys64\mingw64\bin;D:\flutter\flutter\bin;C:\Users\apidlypnyi\AppData\Local\reflex\bun\bin;C:\Users\apidlypnyi\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\apidlypnyi\.dotnet\tools;D:\msys64\mingw64\bin;C:\Users\apidlypnyi\AppData\Local\Programs\upx\upx-5.1.1-win64;C:\Users\apidlypnyi\AppData\Local\Programs\upx\upx-5.1.1-win64\upx.exe;C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw32\bin;C:\Users\apidlypnyi\AppData\Local\nvm;d:\nvm4w\nodejs;C:\Users\apidlypnyi\AppData\Roaming\npm;c:\Users\apidlypnyi\.vscode\extensions\openai.chatgpt-26.415.20818-win32-x64\bin\windows-x86_64 PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PY;.PYW;.CPL PROCESSOR_ARCHITECTURE=AMD64 PROCESSOR_IDENTIFIER=Intel64 Family 15 Model 107 Stepping 1, GenuineIntel PROCESSOR_LEVEL=15 PROCESSOR_REVISION=6b01 ProgramData=C:\ProgramData ProgramFiles=C:\Program Files ProgramFiles(x86)=C:\Program Files (x86) ProgramW6432=C:\Program Files PSModulePath=D:\user\Documents\PowerShell\Modules;C:\Program Files\PowerShell\Modules;c:\program files\windowsapps\microsoft.powershell_7.6.0.0_x64__8wekyb3d8bbwe\Modules;C:\Program Files\WindowsPowerShell\Modules;C:\WINDOWS\system32\WindowsPowerShell\v1.0\Modules PUBLIC=C:\Users\Public RUST_LOG=warn SESSIONNAME=RDP-Tcp#0 SystemDrive=C: SystemRoot=C:\WINDOWS TEMP=C:\Users\APIDLY~1\AppData\Local\Temp TMP=C:\Users\APIDLY~1\AppData\Local\Temp USERDOMAIN=W11WS2V3 USERDOMAIN_ROAMINGPROFILE=W11WS2V3 USERNAME=apidlypnyi USERPROFILE=C:\Users\apidlypnyi VSCODE_CODE_CACHE_PATH=C:\Users\apidlypnyi\AppData\Roaming\Code\CachedData\560a9dba96f961efea7b1612916f89e5d5d4d679 VSCODE_CRASH_REPORTER_PROCESS_TYPE=extensionHost VSCODE_CWD=C:\Users\apidlypnyi\AppData\Local\Programs\Microsoft VS Code VSCODE_ESM_ENTRYPOINT=vs/workbench/api/node/extensionHostProcess VSCODE_HANDLES_UNCAUGHT_ERRORS=true VSCODE_IPC_HOOK=\\.\pipe\5e99a827-1.116.0-main-sock VSCODE_NLS_CONFIG={"userLocale":"en-us","osLocale":"uk","resolvedLanguage":"en","defaultMessagesFile":"C:\\Users\\apidlypnyi\\AppData\\Local\\Programs\\Microsoft VS Code\\560a9dba96\\resources\\app\\out\\nls.messages.json","locale":"en-us","availableLanguages":{}} VSCODE_PID=14296 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS= WEBVIEW2_BROWSER_EXECUTABLE_FOLDER= WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER= WEBVIEW2_RELEASE_CHANNEL_PREFERENCE=0 WEBVIEW2_USER_DATA_FOLDER= windir=C:\WINDOWS GOOS=windows GOARCH=amd64)Done.
+ INFO  Wails is now using the new Go WebView2Loader. If you encounter any issues with it, please report them to https://github.com/wailsapp/wails/issues/2004. You could also use the old legacy loader with `-tags native_webview2loader`, but keep in mind this will be deprecated in the near future.

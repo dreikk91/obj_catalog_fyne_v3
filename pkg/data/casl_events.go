@@ -1246,6 +1246,16 @@ func (p *CASLCloudProvider) readGeneralTapeAsAlarms(ctx context.Context, byObjec
 		}
 	}
 
+	currentUserID := p.currentCASLUserID()
+	users := map[string]caslUser(nil)
+	if shouldLoadCASLGeneralTapeUsers(rows) {
+		if loadedUsers, err := p.loadUsers(ctx); err == nil {
+			users = loadedUsers
+		} else {
+			log.Debug().Err(err).Msg("CASL: не вдалося завантажити користувачів для стану обробки тривог")
+		}
+	}
+
 	items := make([]caslTapeItem, 0, len(rows))
 	for idx, rawRow := range rows {
 		row := normalizeCASLGeneralTapeRow(rawRow)
@@ -1302,6 +1312,7 @@ func (p *CASLCloudProvider) readGeneralTapeAsAlarms(ctx context.Context, byObjec
 			AlarmType:       strings.TrimSpace(row.AlarmType),
 			PultID:          strings.TrimSpace(asString(rawRow["pult_id"])),
 			UserID:          firstCASLValue(strings.TrimSpace(row.UserID), strings.TrimSpace(asString(rawRow["user_id"]))),
+			UserFIO:         firstCASLValue(strings.TrimSpace(row.UserFIO), strings.TrimSpace(asString(rawRow["user_fio"]))),
 			LastAct:         firstCASLValue(strings.TrimSpace(asString(rawRow["last_act"])), strings.TrimSpace(row.Action)),
 			Msg:             stringifyCASLTapeItemMsg(rawRow["msg"]),
 			ReasonAlarm:     strings.TrimSpace(asString(rawRow["reasonAlarm"])),
@@ -1363,18 +1374,25 @@ func (p *CASLCloudProvider) readGeneralTapeAsAlarms(ctx context.Context, byObjec
 			continue
 		}
 
+		inProgressBy, isOwnedByMe := p.resolveCASLAlarmAssignee(item, users, currentUserID)
+		isInProgress := strings.EqualFold(strings.TrimSpace(item.LastAct), "GRD_OBJ_PICK")
+
 		alarms = append(alarms, models.Alarm{
-			ID:           item.ID,
-			ObjectID:     item.ObjectID,
-			ObjectNumber: item.ObjectNum,
-			ObjectName:   item.ObjectName,
-			Address:      item.ObjAddr,
-			Time:         time.UnixMilli(item.Time).Local(),
-			Details:      details,
-			Type:         alarmType,
-			ZoneNumber:   item.ZoneNumber,
-			SC1:          mapCASLEventSC1(eventType),
-			SourceMsgs:   mapCASLTapeMessagesToAlarmMsgs(item.PPKMsgs),
+			ID:             item.ID,
+			ObjectID:       item.ObjectID,
+			ObjectNumber:   item.ObjectNum,
+			ObjectName:     item.ObjectName,
+			Address:        item.ObjAddr,
+			Time:           time.UnixMilli(item.Time).Local(),
+			Details:        details,
+			Type:           alarmType,
+			ZoneNumber:     item.ZoneNumber,
+			SC1:            mapCASLEventSC1(eventType),
+			IsInProgress:   isInProgress,
+			InProgressBy:   inProgressBy,
+			InProgressUser: strings.TrimSpace(item.UserID),
+			IsOwnedByMe:    isInProgress && isOwnedByMe,
+			SourceMsgs:     mapCASLTapeMessagesToAlarmMsgs(item.PPKMsgs),
 		})
 	}
 
@@ -1652,6 +1670,27 @@ func (p *CASLCloudProvider) GetAlarmProcessingOptions(ctx context.Context, _ mod
 	return options, nil
 }
 
+func (p *CASLCloudProvider) PickAlarm(ctx context.Context, alarm models.Alarm, _ string) error {
+	if p == nil {
+		return errors.New("casl provider is nil")
+	}
+
+	target, err := p.resolveCASLAlarmTarget(ctx, alarm)
+	if err != nil {
+		return err
+	}
+	if target.Alarm.IsInProgress && target.Alarm.IsOwnedByMe {
+		return nil
+	}
+
+	if err := p.PickGuardObject(ctx, target.CASLObjectID, ""); err != nil {
+		return fmt.Errorf("casl alarm pick: %w", err)
+	}
+
+	p.markCASLAlarmPicked(target.CacheKey, target.Alarm, target.Record, time.Now())
+	return nil
+}
+
 func (p *CASLCloudProvider) ProcessAlarmWithRequest(ctx context.Context, alarm models.Alarm, _ string, request contracts.AlarmProcessingRequest) error {
 	if p == nil {
 		return errors.New("casl provider is nil")
@@ -1676,12 +1715,52 @@ func (p *CASLCloudProvider) ProcessAlarmWithRequest(ctx context.Context, alarm m
 		causeCode = "CAUSES_FALSE_ALARM"
 	}
 
+	target, err := p.resolveCASLAlarmTarget(ctx, alarm)
+	if err != nil {
+		return err
+	}
+	if target.Alarm.IsInProgress && !target.Alarm.IsOwnedByMe {
+		assignee := strings.TrimSpace(target.Alarm.InProgressBy)
+		if assignee == "" {
+			assignee = "інший оператор"
+		}
+		return fmt.Errorf("casl alarm processing: alarm %d is already handled by %s; pick it first", alarmID, assignee)
+	}
+
+	if !target.Alarm.IsInProgress || !target.Alarm.IsOwnedByMe {
+		if err := p.PickGuardObject(ctx, target.CASLObjectID, ""); err != nil {
+			return fmt.Errorf("casl alarm processing pick: %w", err)
+		}
+	}
+	if err := p.FinishGuardObject(ctx, target.CASLObjectID, "", causeCode, strings.TrimSpace(request.Note)); err != nil {
+		return fmt.Errorf("casl alarm processing finish: %w", err)
+	}
+
+	if target.CacheKey != "" {
+		p.mu.Lock()
+		delete(p.realtimeAlarmByObjID, target.CacheKey)
+		p.mu.Unlock()
+	}
+
+	return nil
+}
+
+type caslAlarmTarget struct {
+	Alarm        models.Alarm
+	CacheKey     string
+	CASLObjectID string
+	Record       caslGrdObject
+}
+
+func (p *CASLCloudProvider) resolveCASLAlarmTarget(ctx context.Context, alarm models.Alarm) (caslAlarmTarget, error) {
+	foundAlarm := alarm
 	foundObjectID := alarm.ObjectID
 	var foundCacheKey string
 
 	p.mu.RLock()
 	for key, cachedAlarm := range p.realtimeAlarmByObjID {
-		if cachedAlarm.ID == alarmID {
+		if cachedAlarm.ID == alarm.ID {
+			foundAlarm = cachedAlarm
 			foundObjectID = cachedAlarm.ObjectID
 			foundCacheKey = key
 			break
@@ -1693,7 +1772,7 @@ func (p *CASLCloudProvider) ProcessAlarmWithRequest(ctx context.Context, alarm m
 	if !hasRecord && foundObjectID > 0 {
 		resolved, found, err := p.resolveObjectRecord(ctx, foundObjectID)
 		if err != nil {
-			return err
+			return caslAlarmTarget{}, err
 		}
 		if found {
 			record = resolved
@@ -1703,23 +1782,94 @@ func (p *CASLCloudProvider) ProcessAlarmWithRequest(ctx context.Context, alarm m
 
 	caslObjID := strings.TrimSpace(record.ObjID)
 	if !hasRecord || caslObjID == "" {
-		return fmt.Errorf("casl alarm processing: object record not found for alarm %d", alarmID)
+		return caslAlarmTarget{}, fmt.Errorf("casl alarm processing: object record not found for alarm %d", alarm.ID)
 	}
 
-	if err := p.PickGuardObject(ctx, caslObjID, ""); err != nil {
-		return fmt.Errorf("casl alarm processing pick: %w", err)
-	}
-	if err := p.FinishGuardObject(ctx, caslObjID, "", causeCode, strings.TrimSpace(request.Note)); err != nil {
-		return fmt.Errorf("casl alarm processing finish: %w", err)
+	return caslAlarmTarget{
+		Alarm:        foundAlarm,
+		CacheKey:     foundCacheKey,
+		CASLObjectID: caslObjID,
+		Record:       record,
+	}, nil
+}
+
+func (p *CASLCloudProvider) markCASLAlarmPicked(cacheKey string, alarm models.Alarm, record caslGrdObject, pickedAt time.Time) {
+	currentUserID := p.currentCASLUserID()
+	inProgressBy := p.resolveCASLUserDisplayName(context.Background(), currentUserID)
+	if inProgressBy == "" {
+		inProgressBy = "Поточний оператор"
 	}
 
-	if foundCacheKey != "" {
-		p.mu.Lock()
-		delete(p.realtimeAlarmByObjID, foundCacheKey)
-		p.mu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	update := alarm
+	update.IsInProgress = true
+	update.InProgressUser = currentUserID
+	update.InProgressBy = inProgressBy
+	update.IsOwnedByMe = true
+	if !pickedAt.IsZero() {
+		update.Time = pickedAt
 	}
 
-	return nil
+	if cacheKey != "" {
+		p.realtimeAlarmByObjID[cacheKey] = update
+		return
+	}
+
+	objectKey := canonicalCASLRealtimeObjectKey(strings.TrimSpace(record.ObjID), update.ObjectNumber, update.ObjectID)
+	seed := stableCASLAlarmSeed(string(update.Type), "", update.ZoneNumber)
+	p.realtimeAlarmByObjID[objectKey+"|"+seed] = update
+}
+
+func (p *CASLCloudProvider) currentCASLUserID() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return strings.TrimSpace(p.userID)
+}
+
+func shouldLoadCASLGeneralTapeUsers(rows []map[string]any) bool {
+	for _, rawRow := range rows {
+		row := normalizeCASLGeneralTapeRow(rawRow)
+		if strings.TrimSpace(row.UserID) != "" || strings.TrimSpace(row.UserFIO) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *CASLCloudProvider) resolveCASLAlarmAssignee(item caslTapeItem, users map[string]caslUser, currentUserID string) (string, bool) {
+	if !strings.EqualFold(strings.TrimSpace(item.LastAct), "GRD_OBJ_PICK") {
+		return "", false
+	}
+
+	userID := strings.TrimSpace(item.UserID)
+	displayName := strings.TrimSpace(item.UserFIO)
+	if displayName == "" && userID != "" {
+		if user, ok := users[userID]; ok {
+			displayName = strings.TrimSpace(user.FullName())
+		}
+	}
+	if displayName == "" && userID != "" {
+		displayName = "Оператор #" + userID
+	}
+	return displayName, userID != "" && userID == strings.TrimSpace(currentUserID)
+}
+
+func (p *CASLCloudProvider) resolveCASLUserDisplayName(ctx context.Context, userID string) string {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ""
+	}
+	users, err := p.loadUsers(ctx)
+	if err != nil {
+		return ""
+	}
+	user, ok := users[userID]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(user.FullName())
 }
 
 func extractCASLAlarmCauseCodes(dict map[string]any) []string {

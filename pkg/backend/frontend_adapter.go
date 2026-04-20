@@ -11,6 +11,15 @@ import (
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
+var legacyFrontendAlarmProcessingOptions = []contracts.FrontendAlarmProcessingOption{
+	{Code: "false_alarm", Label: "Помилкова тривога"},
+	{Code: "firefighters", Label: "Виклик пожежників"},
+	{Code: "response_team", Label: "Виклик ГШР"},
+	{Code: "technical_fault", Label: "Технічна несправність"},
+	{Code: "control_check", Label: "Контрольна перевірка"},
+	{Code: "other", Label: "Інше"},
+}
+
 type FrontendAdminObjectMutator interface {
 	GetObjectCard(objn int64) (contracts.AdminObjectCard, error)
 	CreateObject(card contracts.AdminObjectCard) error
@@ -123,6 +132,71 @@ func (a *FrontendAdapter) ListAlarms(context.Context) ([]contracts.FrontendAlarm
 	return result, nil
 }
 
+func (a *FrontendAdapter) GetAlarmProcessingOptions(ctx context.Context, alarmID int) ([]contracts.FrontendAlarmProcessingOption, error) {
+	if a == nil || a.dataProvider == nil {
+		return nil, contracts.ErrFrontendBackendUnavailable
+	}
+	alarm, err := a.resolveAlarmByID(alarmID)
+	if err != nil {
+		return nil, err
+	}
+
+	if advanced, ok := a.dataProvider.(contracts.AlarmProcessingProvider); ok {
+		options, err := advanced.GetAlarmProcessingOptions(ctx, alarm)
+		if err != nil {
+			return nil, err
+		}
+		if len(options) > 0 {
+			result := make([]contracts.FrontendAlarmProcessingOption, 0, len(options))
+			for _, item := range options {
+				result = append(result, contracts.FrontendAlarmProcessingOption{
+					Code:  strings.TrimSpace(item.Code),
+					Label: strings.TrimSpace(item.Label),
+				})
+			}
+			return result, nil
+		}
+	}
+
+	return append([]contracts.FrontendAlarmProcessingOption(nil), legacyFrontendAlarmProcessingOptions...), nil
+}
+
+func (a *FrontendAdapter) PickAlarm(ctx context.Context, alarmID int, request contracts.FrontendAlarmPickRequest) error {
+	if a == nil || a.dataProvider == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	alarm, err := a.resolveAlarmByID(alarmID)
+	if err != nil {
+		return err
+	}
+
+	if advanced, ok := a.dataProvider.(contracts.AlarmTakeoverProvider); ok {
+		return advanced.PickAlarm(ctx, alarm, strings.TrimSpace(request.User))
+	}
+	return fmt.Errorf("alarm pick is not supported for source %s", contracts.DetectFrontendSourceByObjectID(alarm.ObjectID))
+}
+
+func (a *FrontendAdapter) ProcessAlarm(ctx context.Context, alarmID int, request contracts.FrontendAlarmProcessRequest) error {
+	if a == nil || a.dataProvider == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	alarm, err := a.resolveAlarmByID(alarmID)
+	if err != nil {
+		return err
+	}
+
+	user := strings.TrimSpace(request.User)
+	note := strings.TrimSpace(request.Note)
+	if advanced, ok := a.dataProvider.(contracts.AlarmProcessingProvider); ok {
+		return advanced.ProcessAlarmWithRequest(ctx, alarm, user, contracts.AlarmProcessingRequest{
+			CauseCode: strings.TrimSpace(request.CauseCode),
+			Note:      note,
+		})
+	}
+
+	return a.dataProvider.ProcessAlarm(strconv.Itoa(alarm.ID), user, note)
+}
+
 func (a *FrontendAdapter) ListEvents(context.Context) ([]contracts.FrontendEventItem, error) {
 	if a == nil || a.dataProvider == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
@@ -133,6 +207,66 @@ func (a *FrontendAdapter) ListEvents(context.Context) ([]contracts.FrontendEvent
 		result = append(result, mapFrontendEventItem(event))
 	}
 	return result, nil
+}
+
+func (a *FrontendAdapter) resolveAlarmByID(alarmID int) (models.Alarm, error) {
+	if alarmID <= 0 {
+		return models.Alarm{}, fmt.Errorf("invalid alarm id")
+	}
+
+	alarms := a.dataProvider.GetAlarms()
+	for _, alarm := range alarms {
+		if alarm.ID == alarmID {
+			return alarm, nil
+		}
+	}
+	return models.Alarm{}, fmt.Errorf("alarm #%d not found", alarmID)
+}
+
+func (a *FrontendAdapter) ListObjectEvents(ctx context.Context, objectID int, offset int, limit int) (contracts.FrontendEventPage, error) {
+	if a == nil || a.dataProvider == nil {
+		return contracts.FrontendEventPage{}, contracts.ErrFrontendBackendUnavailable
+	}
+	if objectID <= 0 {
+		return contracts.FrontendEventPage{}, fmt.Errorf("invalid object id")
+	}
+	if offset < 0 {
+		return contracts.FrontendEventPage{}, fmt.Errorf("invalid object events offset")
+	}
+	if limit <= 0 {
+		return contracts.FrontendEventPage{}, fmt.Errorf("invalid object events limit")
+	}
+
+	rawID := strconv.Itoa(objectID)
+	object := a.dataProvider.GetObjectByID(rawID)
+	if object == nil {
+		return contracts.FrontendEventPage{}, fmt.Errorf("object #%d not found", objectID)
+	}
+
+	_ = ctx
+	items := mapFrontendEvents(a.dataProvider.GetObjectEvents(rawID))
+	sortFrontendEventsDesc(items)
+
+	totalCount := len(items)
+	if offset >= totalCount {
+		return contracts.FrontendEventPage{
+			Items:      []contracts.FrontendEventItem{},
+			TotalCount: totalCount,
+			HasMore:    false,
+		}, nil
+	}
+
+	end := offset + limit
+	if end > totalCount {
+		end = totalCount
+	}
+
+	pageItems := append([]contracts.FrontendEventItem(nil), items[offset:end]...)
+	return contracts.FrontendEventPage{
+		Items:      pageItems,
+		TotalCount: totalCount,
+		HasMore:    end < totalCount,
+	}, nil
 }
 
 func (a *FrontendAdapter) GetObjectDetails(ctx context.Context, objectID int) (contracts.FrontendObjectDetails, error) {
@@ -178,10 +312,26 @@ func (a *FrontendAdapter) GetObjectDetails(ctx context.Context, objectID int) (c
 		ExternalLastMessage: lastMessage,
 		Zones:               mapFrontendZones(a.dataProvider.GetZones(rawID)),
 		Contacts:            mapFrontendContacts(a.dataProvider.GetEmployees(rawID)),
-		Events:              mapFrontendEvents(a.dataProvider.GetObjectEvents(rawID)),
 	}
 
 	return details, nil
+}
+
+func sortFrontendEventsDesc(items []contracts.FrontendEventItem) {
+	slices.SortStableFunc(items, func(left, right contracts.FrontendEventItem) int {
+		switch {
+		case left.Time.After(right.Time):
+			return -1
+		case left.Time.Before(right.Time):
+			return 1
+		case left.ID > right.ID:
+			return -1
+		case left.ID < right.ID:
+			return 1
+		default:
+			return 0
+		}
+	})
 }
 
 func (a *FrontendAdapter) CreateObject(ctx context.Context, request contracts.FrontendObjectUpsertRequest) (contracts.FrontendObjectMutationResult, error) {
@@ -555,9 +705,10 @@ func mapFrontendEvents(events []models.Event) []contracts.FrontendEventItem {
 }
 
 func mapFrontendAlarmItem(alarm models.Alarm) contracts.FrontendAlarmItem {
+	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
 	return contracts.FrontendAlarmItem{
 		ID:             alarm.ID,
-		Source:         contracts.DetectFrontendSourceByObjectID(alarm.ObjectID),
+		Source:         source,
 		ObjectID:       alarm.ObjectID,
 		ObjectNumber:   alarm.GetObjectNumberDisplay(),
 		ObjectName:     strings.TrimSpace(alarm.ObjectName),
@@ -571,6 +722,11 @@ func mapFrontendAlarmItem(alarm models.Alarm) contracts.FrontendAlarmItem {
 		IsProcessed:    alarm.IsProcessed,
 		ProcessedBy:    strings.TrimSpace(alarm.ProcessedBy),
 		ProcessNote:    strings.TrimSpace(alarm.ProcessNote),
+		IsInProgress:   alarm.IsInProgress,
+		InProgressBy:   strings.TrimSpace(alarm.InProgressBy),
+		IsOwnedByMe:    alarm.IsOwnedByMe,
+		CanTakeOver:    source == contracts.FrontendSourceCASL && alarm.IsInProgress && !alarm.IsOwnedByMe,
+		CanProcess:     source != contracts.FrontendSourceCASL || !alarm.IsInProgress || alarm.IsOwnedByMe,
 		ObjectNativeID: alarm.GetObjectNumberDisplay(),
 		VisualSeverity: frontendAlarmSeverity(alarm),
 	}

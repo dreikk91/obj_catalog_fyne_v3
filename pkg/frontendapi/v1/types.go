@@ -1,7 +1,5 @@
 package v1
 
-import "time"
-
 type Source string
 
 const (
@@ -77,8 +75,8 @@ type ObjectSummary struct {
 	SignalStrength   string           `json:"SignalStrength"`
 	SIM1             string           `json:"SIM1"`
 	SIM2             string           `json:"SIM2"`
-	LastTestTime     time.Time        `json:"LastTestTime"`
-	LastMessageTime  time.Time        `json:"LastMessageTime"`
+	LastTestTime     string           `json:"LastTestTime"`
+	LastMessageTime  string           `json:"LastMessageTime"`
 	GuardStatus      GuardStatus      `json:"GuardStatus"`
 	ConnectionStatus ConnectionStatus `json:"ConnectionStatus"`
 	MonitoringStatus MonitoringStatus `json:"MonitoringStatus"`
@@ -116,7 +114,7 @@ type AlarmItem struct {
 	ObjectNumber   string         `json:"ObjectNumber"`
 	ObjectName     string         `json:"ObjectName"`
 	Address        string         `json:"Address"`
-	Time           time.Time      `json:"Time"`
+	Time           string         `json:"Time"`
 	Details        string         `json:"Details"`
 	TypeCode       string         `json:"TypeCode"`
 	TypeText       string         `json:"TypeText"`
@@ -125,7 +123,41 @@ type AlarmItem struct {
 	IsProcessed    bool           `json:"IsProcessed"`
 	ProcessedBy    string         `json:"ProcessedBy"`
 	ProcessNote    string         `json:"ProcessNote"`
+	IsInProgress   bool           `json:"IsInProgress"`
+	InProgressBy   string         `json:"InProgressBy"`
+	IsOwnedByMe    bool           `json:"IsOwnedByMe"`
+	CanTakeOver    bool           `json:"CanTakeOver"`
+	CanProcess     bool           `json:"CanProcess"`
 	VisualSeverity VisualSeverity `json:"VisualSeverity"`
+}
+
+type AlarmProcessingOption struct {
+	Code  string `json:"Code"`
+	Label string `json:"Label"`
+}
+
+type AlarmProcessRequest struct {
+	User      string `json:"User"`
+	CauseCode string `json:"CauseCode"`
+	Note      string `json:"Note"`
+}
+
+type AlarmPickRequest struct {
+	User string `json:"User"`
+}
+
+type AlarmGroup struct {
+	GroupID        string      `json:"GroupID"`
+	Source         Source      `json:"Source"`
+	ObjectID       int         `json:"ObjectID"`
+	ObjectNativeID string      `json:"ObjectNativeID"`
+	ObjectNumber   string      `json:"ObjectNumber"`
+	ObjectName     string      `json:"ObjectName"`
+	Address        string      `json:"Address"`
+	AlertLevel     int         `json:"AlertLevel"`
+	LatestTime     string      `json:"LatestTime"`
+	Primary        AlarmItem   `json:"Primary"`
+	Items          []AlarmItem `json:"Items"`
 }
 
 type EventItem struct {
@@ -135,7 +167,7 @@ type EventItem struct {
 	ObjectNativeID string         `json:"ObjectNativeID"`
 	ObjectNumber   string         `json:"ObjectNumber"`
 	ObjectName     string         `json:"ObjectName"`
-	Time           time.Time      `json:"Time"`
+	Time           string         `json:"Time"`
 	TypeCode       string         `json:"TypeCode"`
 	TypeText       string         `json:"TypeText"`
 	ZoneNumber     int            `json:"ZoneNumber"`
@@ -162,8 +194,8 @@ type ObjectDetails struct {
 	LaunchDate          string        `json:"LaunchDate"`
 	ExternalSignal      string        `json:"ExternalSignal"`
 	ExternalTestMessage string        `json:"ExternalTestMessage"`
-	ExternalLastTest    time.Time     `json:"ExternalLastTest"`
-	ExternalLastMessage time.Time     `json:"ExternalLastMessage"`
+	ExternalLastTest    string        `json:"ExternalLastTest"`
+	ExternalLastMessage string        `json:"ExternalLastMessage"`
 	Zones               []Zone        `json:"Zones"`
 	Contacts            []Contact     `json:"Contacts"`
 	Events              []EventItem   `json:"Events"`
@@ -235,8 +267,22 @@ type AlarmListResponse struct {
 	Items []AlarmItem `json:"items"`
 }
 
+type AlarmProcessingOptionsResponse struct {
+	Items []AlarmProcessingOption `json:"items"`
+}
+
+type AlarmGroupListResponse struct {
+	Items []AlarmGroup `json:"items"`
+}
+
 type EventListResponse struct {
 	Items []EventItem `json:"items"`
+}
+
+type EventPageResponse struct {
+	Items      []EventItem `json:"items"`
+	TotalCount int         `json:"totalCount"`
+	HasMore    bool        `json:"hasMore"`
 }
 
 type ErrorResponse struct {

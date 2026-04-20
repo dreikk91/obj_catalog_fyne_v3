@@ -546,6 +546,18 @@ func (p *CombinedDataProvider) GetAlarmProcessingOptions(ctx context.Context, al
 	return nil, nil
 }
 
+func (p *CombinedDataProvider) PickAlarm(ctx context.Context, alarm models.Alarm, user string) error {
+	if p == nil {
+		return errors.New("combined provider is nil")
+	}
+
+	provider := p.providerForAlarmID(strconv.Itoa(alarm.ID))
+	if advanced, ok := provider.(contracts.AlarmTakeoverProvider); ok {
+		return advanced.PickAlarm(ctx, alarm, user)
+	}
+	return errors.New("alarm takeover provider is not configured")
+}
+
 func (p *CombinedDataProvider) ProcessAlarmWithRequest(ctx context.Context, alarm models.Alarm, user string, request contracts.AlarmProcessingRequest) error {
 	if p == nil {
 		return errors.New("combined provider is nil")

@@ -20,6 +20,9 @@ import (
 // Event cache limit to prevent excessive memory usage.
 const maxCachedEvents = 100000
 
+// Number of recent global events to preload on the first GetEvents call.
+const initialGlobalEventsWindow = int64(5000)
+
 // DBDataProvider реалізує інтерфейс DataProvider для реальної БД
 type DBDataProvider struct {
 	db *sqlx.DB
@@ -240,8 +243,16 @@ func (p *DBDataProvider) GetEvents() []models.Event {
 		log.Debug().Msg("Перший запуск GetEvents - отримання останнього ID...")
 		lastID, err := database.GetLastEventID(ctx, p.db)
 		if err == nil {
-			p.lastEventID = lastID
-			log.Debug().Int64("lastEventID", lastID).Msg("Останній ID подій встановлено")
+			if lastID > initialGlobalEventsWindow {
+				p.lastEventID = lastID - initialGlobalEventsWindow
+			} else {
+				p.lastEventID = 0
+			}
+			log.Debug().
+				Int64("lastEventID", p.lastEventID).
+				Int64("lastSeenID", lastID).
+				Int64("initialWindow", initialGlobalEventsWindow).
+				Msg("Встановлено стартовий курсор подій")
 		} else {
 			log.Warn().Err(err).Msg("Помилка отримання останнього ID подій")
 		}

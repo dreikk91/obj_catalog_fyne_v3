@@ -1,0 +1,61 @@
+.panel--alarms {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.alarm-table-wrap {
+  overflow: auto;
+  min-height: 0;
+  border-top: 1px solid #4a3131;
+}
+
+.alarm-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.alarm-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  background: #3c1c1f;
+  color: #f3b8b4;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.34rem 0.4rem;
+  border-bottom: 1px solid #6e3333;
+}
+
+.alarm-table td {
+  border-bottom: 1px solid #4d2c31;
+  color: #ffd8d3;
+  font-size: 0.72rem;
+  padding: 0.34rem 0.4rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alarm-table tbody tr:nth-child(even) td {
+  background: #2a1418;
+}
+
+.alarm-table tbody tr:hover td {
+  background: #3b1d23;
+}
+
+.alarm-table td strong {
+  display: block;
+  font-family: 'Share Tech Mono', 'IBM Plex Sans', monospace;
+  color: #ffe8e2;
+}
+
+.alarm-table td span {
+  display: block;
+  color: #efb1aa;
+  font-size: 0.66rem;
+}

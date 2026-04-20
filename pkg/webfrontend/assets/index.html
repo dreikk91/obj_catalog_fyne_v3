@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Каталог об'єктів Web</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <script>
+    window.APP_CONFIG = { apiBasePath: "{{ .APIBasePath }}" };
+  </script>
+
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Навігація">
+      <div class="sidebar-top">
+        <button class="sb-btn active" type="button" data-tip="Об'єкти">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="13" y2="13"/></svg>
+        </button>
+        <button class="sb-btn" type="button" data-tip="Журнал подій">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </button>
+        <button class="sb-btn" type="button" data-tip="Тривоги">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
+        <button class="sb-btn" type="button" data-tip="Оновити все" id="refreshAllButtonSidebar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.13-3.36L23 10"/><path d="M20.49 15a9 9 0 01-14.13 3.36L1 14"/></svg>
+        </button>
+      </div>
+      <div class="sidebar-bottom">
+        <button class="sb-btn" type="button" data-tip="Web frontend">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <div class="main-area">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">MOST Monitoring</p>
+          <h1>Дежурний оператор</h1>
+          <p class="title-subline">Список об'єктів, картка, зони, відповідальні, події та тривоги</p>
+        </div>
+        <div class="topbar-actions">
+          <button id="refreshAllButton" class="btn btn-violet btn-tall" type="button">Оновити все</button>
+          <span id="connectionHint" class="connection-hint">API: {{ .APIBasePath }}</span>
+        </div>
+      </header>
+
+      <nav class="tab-bar" aria-label="Основні розділи">
+        <button class="tab active main-tab" type="button" data-main-tab="object">Об'єкт</button>
+        <button class="tab main-tab" type="button" data-main-tab="events">Загальний журнал подій</button>
+        <button class="tab main-tab" type="button" data-main-tab="alarms">Журнал тривог</button>
+      </nav>
+
+      <div class="workspace">
+        <section class="browser-panel">
+          <div class="pane-header">Об'єкти</div>
+          <div class="browser-toolbar">
+            <div class="search-box">
+              <span class="search-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </span>
+              <input id="objectSearchInput" type="search" placeholder="Пошук по №, назві або адресі">
+            </div>
+            <button id="refreshObjectsButton" class="btn btn-blue" type="button">Оновити</button>
+          </div>
+          <div class="browser-meta">
+            <span id="objectsMeta">Завантаження...</span>
+          </div>
+          <div class="browser-table-wrap">
+            <table class="vt">
+              <thead>
+                <tr>
+                  <th style="width:34px"></th>
+                  <th style="width:88px">Об'єкт</th>
+                  <th>Назва</th>
+                  <th style="width:150px">Стан</th>
+                </tr>
+              </thead>
+              <tbody id="objectListBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="content-panel">
+          <section id="main-panel-object" class="main-panel active">
+            <div class="obj-header">
+              <div class="obj-badge" id="currentObjectNumber">—</div>
+              <div class="obj-field">
+                <label>Назва:</label>
+                <span class="val" id="currentObjectName">Оберіть об'єкт</span>
+              </div>
+              <div class="obj-field">
+                <label>Адреса:</label>
+                <span class="val" id="currentObjectAddress">—</span>
+              </div>
+              <div class="obj-field">
+                <label>Джерело:</label>
+                <span class="val" id="currentObjectSource">—</span>
+              </div>
+              <div class="obj-status" id="currentObjectStatusBadge">
+                <div class="status-dot"></div>
+                <span id="currentObjectStatusText">Не вибрано</span>
+              </div>
+            </div>
+
+            <div class="object-toolbar">
+              <button class="tb-btn active object-tab-btn" type="button" data-object-tab="info">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="13" y2="13"/></svg>
+                Картка
+              </button>
+              <button class="tb-btn object-tab-btn" type="button" data-object-tab="zones">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                Зони
+              </button>
+              <button class="tb-btn object-tab-btn" type="button" data-object-tab="contacts">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                Відповідальні
+              </button>
+              <button class="tb-btn object-tab-btn" type="button" data-object-tab="object-events">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Події
+              </button>
+              <div class="toolbar-spacer"></div>
+              <button id="refreshObjectButton" class="btn btn-blue" type="button">Оновити об'єкт</button>
+            </div>
+
+            <div id="objectEmptyState" class="empty-state">
+              Для перегляду картки, зон, відповідальних і подій оберіть об'єкт зі списку.
+            </div>
+
+            <div id="objectWorkspace" class="object-workspace hidden">
+              <section id="object-panel-info" class="object-panel active">
+                <div class="info-grid-panel" id="objectInfoGrid"></div>
+              </section>
+
+              <section id="object-panel-zones" class="object-panel">
+                <div class="panel-inline-header">
+                  <span>Зони об'єкта</span>
+                  <span id="zonesCount" class="count-badge">0</span>
+                </div>
+                <div id="zonesTableContainer" class="table-panel-wrap"></div>
+              </section>
+
+              <section id="object-panel-contacts" class="object-panel">
+                <div class="panel-inline-header">
+                  <span>Відповідальні</span>
+                  <span id="contactsCount" class="count-badge">0</span>
+                </div>
+                <div id="contactsTableContainer" class="table-panel-wrap"></div>
+              </section>
+
+              <section id="object-panel-object-events" class="object-panel">
+                <div class="panel-inline-header">
+                  <span>Журнал подій об'єкта</span>
+                  <span id="objectEventsCount" class="count-badge">0</span>
+                </div>
+                <div id="objectEventsTableContainer" class="table-panel-wrap"></div>
+              </section>
+            </div>
+          </section>
+
+          <section id="main-panel-events" class="main-panel">
+            <div class="pane-header">Загальний журнал подій</div>
+            <div class="journal-toolbar">
+              <div class="journal-meta" id="eventsMeta">Завантаження...</div>
+              <button id="refreshEventsButton" class="btn btn-violet" type="button">Оновити</button>
+            </div>
+            <div id="eventsTableContainer" class="journal-table-wrap"></div>
+          </section>
+
+          <section id="main-panel-alarms" class="main-panel">
+            <div class="pane-header pane-header-alarm">Журнал тривог</div>
+            <div class="journal-toolbar">
+              <div class="journal-meta" id="alarmsMeta">Завантаження...</div>
+              <button id="refreshAlarmsButton" class="btn btn-red" type="button">Оновити</button>
+            </div>
+            <div id="alarmsTableContainer" class="journal-table-wrap"></div>
+          </section>
+        </section>
+      </div>
+
+      <footer class="status-bar">
+        <div class="status-panel">
+          <div class="status-indicator"></div>
+          <span id="statusSourceText">Web frontend активний</span>
+        </div>
+        <div class="status-panel">
+          <span>Поточний об'єкт:</span>
+          <strong id="statusSelectedObject">—</strong>
+        </div>
+        <div class="status-panel">
+          <span>Подій:</span>
+          <strong id="statusEventsCount">0</strong>
+        </div>
+        <div class="status-panel">
+          <span>Тривог:</span>
+          <strong id="statusAlarmsCount">0</strong>
+        </div>
+        <div class="status-panel clock" id="clock">00:00:00</div>
+      </footer>
+    </div>
+  </div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

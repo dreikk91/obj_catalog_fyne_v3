@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phoenix HD. Черговий оператор. 1.0.59.3</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--bg2:#111820;--bg3:#151f2b;--bg4:#0e1a26;--bg5:#0a1520;
+  --bd:#1e3048;--bd2:#253d58;
+  --ac:#0e9e78;--ac2:#1a7fc4;--ac3:#7b3fe4;--ac4:#e07b1a;--ac5:#c83232;
+  --tx:#c8daea;--tx2:#6a8aaa;--tx3:#e8f4ff;
+  --row:#131d28;--rowh:#192a3c;
+  --sidebar-w:52px;
+}
+html,body{height:100%;overflow:hidden;font-family:'Exo 2',sans-serif;background:var(--bg);color:var(--tx);font-size:13px}
+
+/* ── TITLEBAR ── */
+.titlebar{height:36px;background:#07101a;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid var(--bd);flex-shrink:0}
+.titlebar-logo{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--ac),var(--ac2));display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.titlebar-logo svg{width:14px;height:14px}
+.titlebar-title{font-size:13px;color:var(--tx2);letter-spacing:.2px}
+.titlebar-controls{margin-left:auto;display:flex;gap:4px}
+.tbc{width:22px;height:22px;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--tx2);border:none;background:transparent;font-size:14px;transition:background .12s}
+.tbc:hover{background:rgba(255,255,255,.1)}
+.tbc.close:hover{background:var(--ac5);color:#fff}
+
+/* ── SHELL ── */
+.shell{display:flex;height:calc(100vh - 36px);overflow:hidden}
+
+/* ── SIDEBAR ── */
+.sidebar{width:var(--sidebar-w);background:var(--bg5);border-right:1px solid var(--bd);display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+.sb-top{display:flex;flex-direction:column;width:100%;flex:1}
+.sb-bot{display:flex;flex-direction:column;width:100%}
+.sb-btn{width:100%;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;background:transparent;color:var(--tx2);transition:background .12s,color .12s;border-bottom:1px solid rgba(255,255,255,.04);position:relative}
+.sb-btn:hover{background:rgba(14,158,120,.15);color:var(--ac)}
+.sb-btn.active{background:rgba(14,158,120,.2);color:var(--ac);border-left:2px solid var(--ac)}
+.sb-btn svg{width:20px;height:20px}
+.sb-tip{position:absolute;left:58px;top:50%;transform:translateY(-50%);background:#1a3050;color:var(--tx3);padding:3px 9px;border-radius:3px;white-space:nowrap;font-size:11px;pointer-events:none;opacity:0;transition:opacity .12s;z-index:200;border:1px solid var(--bd2)}
+.sb-btn:hover .sb-tip{opacity:1}
+
+/* ── MAIN ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── MAIN TABS ── */
+.main-tabs{height:38px;background:var(--bg4);border-bottom:1px solid var(--bd);display:flex;align-items:flex-end;padding:0 8px;gap:2px;flex-shrink:0}
+.mtab{height:32px;padding:0 26px;display:flex;align-items:center;cursor:pointer;font-size:13px;font-weight:400;color:var(--tx2);background:var(--bg4);border:1px solid transparent;border-bottom:none;border-radius:4px 4px 0 0;white-space:nowrap;transition:all .12s;position:relative;bottom:-1px}
+.mtab:hover{color:var(--tx);background:#162030}
+.mtab.active{color:var(--tx3);background:var(--bg2);border-color:var(--bd2);border-bottom:1px solid var(--bg2);font-weight:700}
+
+/* ── TAB CONTENT ── */
+.tpane{display:none;flex:1;overflow:hidden;flex-direction:column}
+.tpane.active{display:flex}
+
+/* ════════════════════
+   ПРИЙОМ СИГНАЛІВ
+════════════════════ */
+.ps-layout{display:flex;flex-direction:column;flex:1;overflow:hidden}
+
+/* Object info header */
+.obj-info-bar{background:var(--bg3);border-bottom:1px solid var(--bd);padding:8px 10px;flex-shrink:0}
+.oib-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px 10px}
+.oib-row{display:flex;align-items:center;gap:6px;height:26px}
+.oib-icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center;color:var(--tx2);flex-shrink:0}
+.oib-icon svg{width:14px;height:14px}
+.oib-inp{flex:1;height:22px;background:var(--bg);border:1px solid var(--bd2);border-radius:2px;color:var(--tx);font-family:'Exo 2',sans-serif;font-size:12px;padding:0 6px;outline:none}
+.oib-inp:focus{border-color:var(--ac)}
+.oib-right{display:flex;flex-direction:column;gap:6px;padding-left:10px;border-left:1px solid var(--bd)}
+.oib-right-row{display:flex;gap:4px}
+.oib-right-inp{width:80px;height:22px;background:var(--bg);border:1px solid var(--bd2);border-radius:2px;color:var(--tx);font-family:'Exo 2',sans-serif;font-size:12px;padding:0 6px;outline:none}
+.oib-bottom{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-top:4px;padding-top:4px;border-top:1px solid var(--bd)}
+.status-unknown{background:var(--ac);color:#fff;font-weight:700;font-size:12px;padding:2px 14px;border-radius:2px;text-align:center;letter-spacing:.5px}
+.workreg-lbl{font-size:11px;color:var(--tx2);margin-right:4px}
+.redirect-btn{background:var(--bg);border:1px solid var(--bd2);border-radius:2px;color:var(--tx);font-family:'Exo 2',sans-serif;font-size:11px;padding:3px 10px;cursor:pointer;white-space:nowrap;transition:background .12s}
+.redirect-btn:hover{background:var(--bg4)}
+
+/* middle section */
+.ps-mid{display:flex;flex:1;overflow:hidden;border-bottom:1px solid var(--bd)}
+.ps-groups{width:280px;flex-shrink:0;border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}
+.ps-groups-title{font-size:12px;font-weight:600;padding:6px 10px;background:var(--bg4);border-bottom:1px solid var(--bd);color:var(--tx2);text-transform:uppercase;letter-spacing:.5px}
+.mini-table{width:100%;border-collapse:collapse;font-size:12px}
+.mini-table th{background:#0d1f30;color:var(--tx2);padding:4px 8px;border:1px solid var(--bd);font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+.mini-table td{padding:4px 8px;border-bottom:1px solid var(--bd);color:var(--tx)}
+.mini-table tbody tr:nth-child(even){background:var(--row)}
+.mini-table tbody tr:hover{background:var(--rowh)}
+
+.ps-tabs-right{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.inner-tabs{display:flex;background:var(--bg4);border-bottom:1px solid var(--bd);gap:2px;padding:0 6px;flex-shrink:0;height:32px;align-items:flex-end}
+.itab{height:26px;padding:0 16px;display:flex;align-items:center;cursor:pointer;font-size:12px;color:var(--tx2);background:transparent;border:1px solid transparent;border-bottom:none;border-radius:3px 3px 0 0;white-space:nowrap;transition:all .12s;position:relative;bottom:-1px}
+.itab:hover{color:var(--tx)}
+.itab.active{color:var(--tx3);background:var(--bg2);border-color:var(--bd2);font-weight:700;border-bottom:1px solid var(--bg2)}
+.inner-pane{display:none;flex:1;overflow:auto;padding:10px}
+.inner-pane.active{display:flex;flex-direction:column;gap:8px}
+.note-area{width:100%;min-height:80px;background:var(--bg);border:1px solid var(--bd2);border-radius:2px;color:var(--tx);font-family:'Exo 2',sans-serif;font-size:12px;padding:6px 8px;resize:vertical;outline:none}
+
+/* filter bar */
+.filter-bar{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-bottom:1px solid var(--bd);flex-shrink:0;flex-wrap:wrap}
+.fb-label{font-size:11px;color:var(--tx2);white-space:nowrap}
+.fb-inp{height:24px;background:var(--bg);border:1px solid var(--bd2);border-radius:2px;color:var(--tx);font-family:'Exo 2',sans-serif;font-size:12px;padding:0 6px;outline:none;width:70px}
+.fb-inp:focus{border-color:var(--ac)}
+.fb-inp.wide{width:110px}
+.fb-sep{width:1px;height:20px;background:var(--bd);margin:0 2px}
+.btn{height:26px;padding:0 12px;border:none;border-radius:2px;cursor:pointer;font-family:'Exo 2',sans-serif;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;transition:filter .12s,transform .08s}
+.btn:hover{filter:brightness(1.15)}
+.btn:active{transform:scale(.97)}
+.btn-green{background:var(--ac);color:#fff}
+.btn-blue{background:var(--ac2);color:#fff}
+.btn-gray{background:#243448;color:var(--tx)}
+.btn-red{background:var(--ac5);color:#fff}
+.btn-violet{background:var(--ac3);color:#fff}
+.btn-orange{background:var(--ac4);color:#fff}
+.cbx{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--tx2);cursor:pointer;white-space:nowrap}
+.cbx input{accent-color:var(--ac);width:13px;height:13px;cursor:pointer}
+
+/* bottom events */
+.ps-bottom{flex-shrink:0;display:flex;flex-direction:column;height:260px}
+.bot-tabs{display:flex;background:var(--bg4);border-top:2px solid var(--bd);gap:2px;padding:0 6px;flex-shrink:0;height:34px;align-items:flex-end}
+.bttab{height:28px;padding:0 14px;display:flex;align-items:center;cursor:pointer;font-size:12px;color:var(--tx2);background:transparent;border:none;gap:6px;white-space:nowrap;border-radius:3px 3px 0 0;transition:all .12s;font-family:'Exo 2',sans-serif;position:relative;bottom:-1px}
+.bttab.active{background:rgba(14,158,120,.18);color:var(--ac);border-bottom:2px solid var(--ac)}
+.bttab.unproc.active{background:rgba(228,171,26,.12);color:var(--ac4);border-bottom:2px solid var(--ac4)}
+.bttab .badge{background:var(--ac4);color:#fff;border-radius:3px;font-size:10px;font-weight:700;padding:1px 6px;min-width:18px;text-align:center}
+.bttab.archive .badge{background:var(--ac2)}
+.bot-pane{display:none;flex:1;overflow:auto}
+.bot-pane.active{display:flex;flex-direction:column}
+
+/* main events table */
+.evt-table{width:100%;border-collapse:collapse;font-size:12px}
+.evt-table thead{position:sticky;top:0;z-index:2}
+.evt-table thead th{background:#0d1f30;color:var(--tx2);padding:4px 7px;border-right:1px solid var(--bd);border-bottom:2px solid var(--ac2);text-align:left;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;user-select:none;font-weight:600}
+.evt-table thead th:hover{color:var(--tx3)}
+.evt-table tbody tr{border-bottom:1px solid var(--bd);transition:background .07s;cursor:pointer}
+.evt-table tbody tr:nth-child(even){background:var(--row)}
+.evt-table tbody tr:hover{background:var(--rowh)}
+.evt-table tbody tr.selected{background:rgba(26,127,196,.22)!important;outline:1px solid var(--ac2)}
+.evt-table tbody tr.alarm td:first-child{border-left:3px solid var(--ac5)}
+.evt-table tbody tr.alarm{background:rgba(200,50,50,.08)}
+.evt-table td{padding:3px 7px;border-right:1px solid rgba(30,48,72,.4);color:var(--tx);vertical-align:middle}
+.mono{font-family:'Share Tech Mono',monospace}
+.dim{color:var(--tx2)}
+.bright{color:var(--tx3);font-weight:600}
+.red{color:#e05050;font-weight:600}
+
+/* ════════════════════
+   ОБ'ЄКТИ TAB
+════════════════════ */
+.obj-layout{display:flex;flex-direction:column;flex:1;overflow:hidden}
+.obj-toolbar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--bg3);border-bottom:1px solid var(--bd);flex-shrink:0;flex-wrap:wrap}
+.search-box{display:flex;align-items:center;background:var(--bg);border:1px solid var(--bd2);border-radius:2px;overflow:hidden;height:26px}
+.search-box input{background:transparent;border:none;outline:none;color:var(--tx);font-family:'Exo 2',sans-serif;font-size:12px;width:260px;padding:0 8px}
+.search-box input::placeholder{color:var(--tx2);font-style:italic}
+.search-box span{padding:0 7px;color:var(--tx2);cursor:pointer;font-size:13px}
+.obj-filter-tabs{display:flex;gap:2px;padding:0 8px;background:var(--bg4);border-bottom:1px solid var(--bd);flex-shrink:0;height:30px;align-items:flex-end}
+.oft{height:25px;padding:0 14px;display:flex;align-items:center;cursor:pointer;font-size:11px;color:var(--tx2);background:transparent;border:1px solid transparent;border-bottom:none;border-radius:2px 2px 0 0;white-space:nowrap;transition:all .1s;position:relative;bottom:-1px}
+.oft:hover{color:var(--tx)}
+.oft.active{color:var(--tx3);background:var(--bg2);border-color:var(--bd2);font-weight:700;border-bottom:1px solid var(--bg2)}
+.obj-table-wrap{flex:1;overflow:auto}
+.obj-table{width:100%;border-collapse:collapse;font-size:12px}
+.obj-table thead{position:sticky;top:0;z-index:2}
+.obj-table thead th{background:#0d1f30;color:var(--tx2);padding:5px 8px;border-right:1px solid var(--bd);border-bottom:2px solid var(--ac2);text-align:left;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;user-select:none;font-weight:600}
+.obj-table thead th:hover{color:var(--tx3)}
+.obj-table tbody tr{border-bottom:1px solid var(--bd);transition:background .07s;cursor:pointer}
+.obj-table tbody tr:nth-child(even){background:var(--row)}
+.obj-table tbody tr:hover{background:var(--rowh)}
+.obj-table tbody tr.selected{background:rgba(26,127,196,.22)!important}
+.obj-table td{padding:5px 8px;border-right:1px solid rgba(30,48,72,.4);color:var(--tx);vertical-align:middle}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:2px;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap}
+.chip-green{background:rgba(14,158,120,.15);color:#0e9e78;border:1px solid rgba(14,158,120,.3)}
+.chip-red{background:rgba(200,50,50,.15);color:#d05050;border:1px solid rgba(200,50,50,.3)}
+.chip-gray{background:rgba(80,100,130,.15);color:#7a9abb;border:1px solid rgba(80,100,130,.3)}
+.chip-orange{background:rgba(212,138,32,.15);color:#d48a20;border:1px solid rgba(212,138,32,.3)}
+.chip-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* statusbar */
+.statusbar{height:30px;background:#07101a;border-top:1px solid var(--bd);display:flex;align-items:center;padding:0 12px;gap:16px;flex-shrink:0}
+.sb-field{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx2)}
+.sb-dot{width:8px;height:8px;border-radius:50%;background:var(--ac);box-shadow:0 0 5px var(--ac);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.sb-clock{margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:17px;color:var(--ac2)}
+
+/* scrollbars */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#253d58;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#3a5a7a}
+
+/* ════════════════════════════════
+   MODAL OVERLAY
+════════════════════════════════ */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{width:1200px;max-width:97vw;height:85vh;background:var(--bg2);border:1px solid var(--bd2);border-radius:5px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.7)}
+.modal.wide{width:1350px;height:90vh}
+
+/* modal titlebar */
+.modal-tb{height:34px;background:#07101a;display:flex;align-items:center;padding:0 12px;gap:8px;border-bottom:1px solid var(--bd);flex-shrink:0}
+.modal-tb-icon{width:18px;height:18px;border-radius:50%;background:var(--ac2);opacity:.7;display:flex;align-items:center;justify-content:center}
+.modal-tb-title{font-size:12px;color:var(--tx2)}
+.modal-tb-obj{font-weight:700;color:var(--tx3);font-size:13px}
+.modal-tb-close{margin-left:auto;width:20px;height:20px;border-radius:50%;background:rgba(200,50,50,.25);border:1px solid rgba(200,50,50,.4);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;color:#e08080;transition:background .12s}
+.modal-tb-close:hover{background:var(--ac5);color:#fff}
+
+/* modal toolbar */
+.modal-toolbar{height:60px;background:#0a1724;border-bottom:2px solid var(--bd);display:flex;align-items:stretch;flex-shrink:0;padding-left:16px;overflow-x:auto;overflow-y:hidden}
+.mtb-btn{min-width:90px;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;border:none;background:transparent;color:var(--tx2);font-family:'Exo 2',sans-serif;font-size:10px;font-weight:600;letter-spacing:.3px;transition:background .12s,color .12s;border-right:1px solid rgba(255,255,255,.04);margin:0 1px;border-bottom:2px solid transparent;padding-bottom:2px}
+.mtb-btn:hover{background:rgba(26,127,196,.12);color:var(--tx3)}
+.mtb-btn.active{background:rgba(26,127,196,.2);color:var(--ac2);border-bottom-color:var(--ac2)}
+.mtb-btn svg{width:22px;height:22px}
+
+/* modal obj header */
+.modal-obj-hdr{background:#091824;border-bottom:1px solid var(--bd);padding:0 14px;display:flex;align-items:center;gap:16px;height:40px;flex-shrink:0}
+.obj-num-badge{background:var(--ac2);color:#fff;font-family:'Share Tech Mono',monospace;font-size:16px;font-weight:700;padding:3px 12px;border-radius:3px;min-width:72px;text-align:center}
+.hdr-field{display:flex;align-items:center;gap:5px;font-size:12px}
+.hdr-field label{color:var(--tx2);font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+.hdr-field .v{color:var(--tx3);font-weight:600;white-space:nowrap}
+.obj-hdr-status{margin-left:auto;display:flex;align-items:center;gap:6px;background:rgba(14,158,120,.1);border:1px solid rgba(14,158,120,.3);border-radius:3px;padding:3px 10px;font-size:12px;color:var(--ac);font-weight:700}
+
+/* modal content */
+.modal-content{flex:1;overflow:hidden}
+.modal-pane{display:none;height:100%;overflow:auto;flex-direction:column}
+.modal-pane.active{display:flex}
+
+/* info grid */
+.igrid{display:grid;grid-template-columns:1fr 1fr;gap:0;flex:1}
+.isection{border-right:1px solid var(--bd);border-bottom:1px solid var(--bd)}
+.isection:nth-child(even){border-right:none}
+.isect-title{background:var(--bg4);padding:5px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--tx2);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:5px}
+.isect-title::before{content:'';width:3px;height:10px;background:var(--ac2);border-radius:1px;flex-shrink:0}
+.irow{display:flex;align-items:center;padding:3px 12px;gap:8px;border-bottom:1px solid rgba(30,48,72,.35);min-height:28px}
+.irow:last-child{border-bottom:none}
+.irow label{width:180px;flex-shrink:0;color:var(--tx2);font-size:11px}
+.irow .v{color:var(--tx3);font-size:12px}
+.irow input,.irow select{flex:1;height:22px;background:var(--bg);border:1px solid var(--bd2);border-radius:2px;color:var(--tx);font-family:'Exo 2',sans-serif;font-size:11px;padding:0 6px;outline:none}
+.irow input:focus,.irow select:focus{border-color:var(--ac2)}
+
+/* table inside modal */
+.mtable-wrap{flex:1;overflow:auto}
+.mtable{width:100%;border-collapse:collapse;font-size:12px}
+.mtable thead{position:sticky;top:0;z-index:2}
+.mtable thead th{background:#0d1f30;color:var(--tx2);padding:4px 7px;border-right:1px solid var(--bd);border-bottom:2px solid var(--ac2);text-align:left;white-space:nowrap;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;user-select:none;font-weight:600}
+.mtable thead th:hover{color:var(--tx3)}
+.mtable tbody tr{border-bottom:1px solid var(--bd);transition:background .07s;cursor:pointer}
+.mtable tbody tr:nth-child(even){background:var(--row)}
+.mtable tbody tr:hover{background:var(--rowh)}
+.mtable tbody tr.selected{background:rgba(26,127,196,.2)!important}
+.mtable td{padding:3px 7px;border-right:1px solid rgba(30,48,72,.4);color:var(--tx);vertical-align:middle}
+.mtable-toolbar{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg3);border-bottom:1px solid var(--bd);flex-shrink:0}
+
+/* modal proc box (events only) */
+.proc-box{background:var(--bg3);border-top:2px solid var(--bd);flex-shrink:0}
+.proc-hdr{padding:5px 12px 0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--tx2)}
+.proc-btns{display:flex;align-items:center;gap:5px;padding:5px 12px 8px;flex-wrap:wrap}
+
+/* modal footer */
+.modal-footer{height:44px;background:#07101a;border-top:1px solid var(--bd);display:flex;align-items:center;padding:0 12px;gap:8px;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<!-- TITLEBAR -->
+<div class="titlebar">
+  <div class="titlebar-logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M12 2l3 7h7l-6 4 2 7-6-4-6 4 2-7-6-4h7z"/></svg>
+  </div>
+  <span class="titlebar-title">Phoenix HD. Черговий оператор. 1.0.59.3</span>
+  <div class="titlebar-controls">
+    <button class="tbc">─</button>
+    <button class="tbc">□</button>
+    <button class="tbc close">✕</button>
+  </div>
+</div>
+
+<div class="shell">
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sb-top">
+    <div style="height:2px"></div>
+    <button class="sb-btn active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span class="sb-tip">Інформація</span>
+    </button>
+    <button class="sb-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <span class="sb-tip">Статус</span>
+    </button>
+    <button class="sb-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span class="sb-tip">Схема</span>
+    </button>
+    <button class="sb-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <span class="sb-tip">Фото</span>
+    </button>
+    <button class="sb-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      <span class="sb-tip">Стенди</span>
+    </button>
+    <button class="sb-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      <span class="sb-tip">Групи реагування</span>
+    </button>
+    <button class="sb-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+      <span class="sb-tip">Стоп-лист</span>
+    </button>
+    <button class="sb-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span class="sb-tip">Журнал</span>
+    </button>
+    <button class="sb-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      <span class="sb-tip">Дистанційне керування</span>
+    </button>
+  </div>
+  <div class="sb-bot">
+    <button class="sb-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      <span class="sb-tip">Друк</span>
+    </button>
+    <button class="sb-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span class="sb-tip">Налаштування</span>
+    </button>
+    <button class="sb-btn" style="background:rgba(14,158,120,.1)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--ac)"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      <span class="sb-tip">Зв'язок</span>
+    </button>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- MAIN TABS -->
+  <div class="main-tabs">
+    <div class="mtab" onclick="switchMain('objects',this)" id="mtab-objects">Об'єкти</div>
+    <div class="mtab active" onclick="switchMain('signals',this)" id="mtab-signals">Прийом сигналів</div>
+  </div>
+
+  <!-- ════════════════════════════ ПРИЙОМ СИГНАЛІВ ════════════════════════════ -->
+  <div class="tpane active" id="tpane-signals">
+    <div class="ps-layout">
+
+      <!-- Object info fields -->
+      <div class="obj-info-bar">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <div class="oib-grid">
+              <div class="oib-row"><div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="13" y2="13"/></svg></div><input class="oib-inp" id="si-num" placeholder="Номер об'єкта"></div>
+              <div class="oib-row"><div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div><input class="oib-inp" id="si-code" placeholder="Код взяття/здачі"></div>
+              <div class="oib-row"><div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></div><input class="oib-inp" id="si-addr" placeholder="Адреса"></div>
+              <div class="oib-row"><div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div><input class="oib-inp" id="si-alarm" placeholder="Тривога"></div>
+
+              <div class="oib-row"><div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><input class="oib-inp" id="si-resp" placeholder="Відповідальний"></div>
+              <div class="oib-row"><div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/></svg></div><input class="oib-inp" id="si-group" placeholder="Група реагування"></div>
+              <div class="oib-row"><div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/></svg></div><input class="oib-inp" id="si-duty" placeholder="Черговий"></div>
+              <div class="oib-row"><div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div><input class="oib-inp" id="si-tel" placeholder="Телефон моб."></div>
+            </div>
+            <div class="oib-bottom">
+              <div class="oib-row"><div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><input class="oib-inp" style="flex:1" placeholder="Договір / Примітка"></div>
+              <div class="oib-row"><div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5"/></svg></div><input class="oib-inp" style="flex:1" placeholder="Ключ"></div>
+              <div class="oib-row">
+                <div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3h-8v4h8V3z"/></svg></div>
+                <input class="oib-inp" style="flex:1" id="si-device" placeholder="Прилад">
+              </div>
+              <div class="oib-row">
+                <div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+                <input class="oib-inp" style="flex:1" id="si-person" placeholder="Особа, що здала/взяла">
+              </div>
+              <div class="oib-row">
+                <div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+                <input class="oib-inp" style="flex:1" id="si-time" placeholder="Час останньої активності">
+              </div>
+              <div class="oib-row">
+                <div class="oib-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013 7.82a2 2 0 012-2.18h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L9.91 13a16 16 0 006 6l.27-.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 20.89z"/></svg></div>
+                <div class="status-unknown" id="si-status">НЕВІДОМО</div>
+              </div>
+            </div>
+          </div>
+          <div class="oib-right" style="width:220px;justify-content:center">
+            <div class="oib-right-row"><input class="oib-right-inp" placeholder="Тип реагув."><input class="oib-right-inp" placeholder="Пріор."></div>
+            <div class="oib-right-row"><input class="oib-right-inp" placeholder="Зона"></div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span class="workreg-lbl">Режим роботи</span><input class="oib-right-inp" style="width:50px" placeholder=""><input class="oib-right-inp" style="width:50px" placeholder=""></div>
+            <button class="redirect-btn" style="margin-top:6px">Переадресація ContactID</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- middle: groups + tabs -->
+      <div class="ps-mid">
+        <div class="ps-groups">
+          <div class="ps-groups-title">Групи реагування</div>
+          <div style="overflow:auto;flex:1">
+            <table class="mini-table">
+              <thead><tr><th style="width:30px">№</th><th>Опис</th><th style="width:80px">Тип</th></tr></thead>
+              <tbody id="groups-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="ps-tabs-right">
+          <div class="inner-tabs">
+            <div class="itab active" onclick="switchInner('notes',this)">Примітки</div>
+            <div class="itab" onclick="switchInner('extra',this)">Додатково</div>
+            <div class="itab" onclick="switchInner('subs',this)">Заміни</div>
+            <div class="itab" onclick="switchInner('rent',this)">Обладнання в оренді</div>
+          </div>
+          <div class="inner-pane active" id="ipane-notes">
+            <div style="display:flex;gap:8px;padding:4px 0 6px;font-size:11px;color:var(--tx2)"><span style="font-weight:700;color:var(--tx3)">Примітка</span><span style="margin-left:auto">Дата</span></div>
+            <textarea class="note-area" placeholder="Натисніть + для додавання примітки..."></textarea>
+          </div>
+          <div class="inner-pane" id="ipane-extra"><div style="padding:10px;color:var(--tx2);font-size:12px">Додаткові відомості про об'єкт</div></div>
+          <div class="inner-pane" id="ipane-subs"><div style="padding:10px;color:var(--tx2);font-size:12px">Заміни охоронців</div></div>
+          <div class="inner-pane" id="ipane-rent"><div style="padding:10px;color:var(--tx2);font-size:12px">Перелік орендованого обладнання</div></div>
+        </div>
+      </div>
+
+      <!-- filter bar -->
+      <div class="filter-bar">
+        <span class="fb-label">Об'єкт</span><input class="fb-inp" id="fb-obj" placeholder="">
+        <span class="fb-label">Гр.</span><input class="fb-inp" style="width:44px" id="fb-gr" placeholder="">
+        <span class="fb-label">Шл.</span><input class="fb-inp" style="width:44px" id="fb-shl" placeholder="">
+        <div class="fb-sep"></div>
+        <span class="fb-label">Дата з</span><input class="fb-inp wide" id="fb-from" value="16.04.2026">
+        <span class="fb-label">до</span><input class="fb-inp wide" id="fb-to" value="18.04.2026">
+        <span class="fb-label">Час</span><input class="fb-inp" style="width:56px" id="fb-tFrom" value="00:00">
+        <input class="fb-inp" style="width:56px" id="fb-tTo" value="23:59">
+        <span class="fb-label">Код</span><input class="fb-inp" style="width:56px" id="fb-code" placeholder="">
+        <span class="fb-label">Лінія</span><input class="fb-inp" style="width:56px" id="fb-line" placeholder="">
+        <button class="btn btn-green" style="height:26px" onclick="applyFilter()">Застосувати</button>
+        <label class="cbx"><input type="checkbox" checked id="cb-autoscroll"> Прокручувати до нового</label>
+      </div>
+
+      <!-- bottom events panes -->
+      <div class="ps-bottom">
+        <div class="bot-tabs">
+          <button class="bttab unproc active" onclick="switchBot('unproc',this)" id="bttab-unproc">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+            Необроблені <span class="badge" id="unproc-badge">0</span>
+          </button>
+          <button class="bttab archive" onclick="switchBot('archive',this)" id="bttab-archive">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            Архів <span class="badge" id="archive-badge">50</span>
+          </button>
+        </div>
+        <div class="bot-pane active" id="botpane-unproc">
+          <div class="evt-table-wrap" style="flex:1;overflow:auto">
+            <table class="evt-table">
+              <thead><tr>
+                <th style="width:28px"></th>
+                <th style="width:56px">Лінія</th>
+                <th style="width:74px">Об'єкт</th>
+                <th style="width:50px">Код</th>
+                <th style="width:160px">Тип коду</th>
+                <th style="width:76px">Дата</th>
+                <th style="width:76px">Час</th>
+                <th style="width:38px">Гр.</th>
+                <th style="width:38px">Шл.</th>
+                <th style="width:80px">Назва</th>
+                <th style="width:100px">Стан</th>
+                <th>Опис події</th>
+              </tr></thead>
+              <tbody id="unproc-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="bot-pane" id="botpane-archive">
+          <div style="flex:1;overflow:auto">
+            <table class="evt-table">
+              <thead><tr>
+                <th style="width:28px"></th>
+                <th style="width:56px">Лінія</th>
+                <th style="width:74px">Об'єкт</th>
+                <th style="width:50px">Код</th>
+                <th style="width:160px">Тип коду</th>
+                <th style="width:76px">Дата</th>
+                <th style="width:76px">Час</th>
+                <th style="width:38px">Гр.</th>
+                <th style="width:38px">Шл.</th>
+                <th style="width:80px">Назва</th>
+                <th style="width:100px">Стан</th>
+                <th>Опис події</th>
+              </tr></thead>
+              <tbody id="archive-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ════════════════════════════ ОБ'ЄКТИ ════════════════════════════ -->
+  <div class="tpane" id="tpane-objects">
+    <div class="obj-layout">
+      <div class="obj-toolbar">
+        <div class="search-box">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tx2)" stroke-width="2" style="margin-left:7px;flex-shrink:0"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Пошук за номером, назвою або адресою" id="obj-search" oninput="filterObjects()">
+          <span onclick="document.getElementById('obj-search').value='';filterObjects()">✕</span>
+        </div>
+        <button class="btn btn-blue" style="height:26px">Оновити</button>
+        <div style="margin-left:auto;background:var(--bg);border:1px solid var(--bd2);border-radius:2px;padding:2px 10px;font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--ac2)">
+          Об'єктів: <span id="obj-count">0</span>
+        </div>
+      </div>
+      <div class="obj-filter-tabs">
+        <div class="oft active" onclick="filterByStatus('all',this)">Всі</div>
+        <div class="oft" onclick="filterByStatus('guarded',this)">ПІД ОХОРОНОЮ</div>
+        <div class="oft" onclick="filterByStatus('unguarded',this)">БЕЗ ОХОРОНИ</div>
+        <div class="oft" onclick="filterByStatus('late',this)">Вчасно не під охороною</div>
+        <div class="oft" onclick="filterByStatus('call',this)">На прозвон</div>
+        <div class="oft" onclick="filterByStatus('alarm',this)">Тривожні</div>
+        <div class="oft" onclick="filterByStatus('banned',this)">Діє заборона</div>
+      </div>
+      <div class="obj-table-wrap">
+        <table class="obj-table">
+          <thead><tr>
+            <th style="width:28px"></th>
+            <th style="width:70px">Об'єкт</th>
+            <th style="width:60px">Група</th>
+            <th style="width:260px">Назва</th>
+            <th style="width:180px">Адреса</th>
+            <th style="width:120px">Стан</th>
+            <th style="width:130px">Час взяття</th>
+            <th style="width:130px">Час здачі</th>
+            <th style="width:110px">Телефон</th>
+            <th>Примітка</th>
+          </tr></thead>
+          <tbody id="obj-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="statusbar">
+    <div class="sb-field"><div class="sb-dot"></div><span>Оператор: <strong>Підлипний А.М</strong></span></div>
+    <div class="sb-field" style="color:var(--ac);font-size:11px">● Зв'язок із ПЦС: є</div>
+    <div class="sb-clock" id="clock">21:31</div>
+  </div>
+
+</div><!-- /main -->
+</div><!-- /shell -->
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL — КАРТКА ОБ'ЄКТА (без обробки подій)
+══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-card">
+  <div class="modal" id="modal-card-inner">
+    <div class="modal-tb">
+      <div class="modal-tb-icon"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <span class="modal-tb-title">Картка об'єкта —</span>
+      <span class="modal-tb-obj" id="mc-title">…</span>
+      <div class="modal-tb-close" onclick="closeModal('modal-card')">✕</div>
+    </div>
+    <div class="modal-toolbar" id="mc-toolbar"></div>
+    <div class="modal-obj-hdr">
+      <div class="obj-num-badge" id="mc-num">—</div>
+      <div class="hdr-field"><label>Назва:</label><span class="v" id="mc-name">—</span></div>
+      <div class="hdr-field"><label>Адреса:</label><span class="v" id="mc-addr">—</span></div>
+      <div class="hdr-field"><label>Група:</label><span class="v mono" id="mc-gr">—</span></div>
+      <div class="obj-hdr-status" id="mc-status"><div class="chip-dot"></div><span>ПІД ОХОРОНОЮ</span></div>
+    </div>
+    <div class="modal-content" id="mc-content"></div>
+    <div class="modal-footer">
+      <div style="margin-left:auto"></div>
+      <button class="btn btn-red" style="width:140px;height:28px" onclick="closeModal('modal-card')">ЗАКРИТИ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL — НЕОБРОБЛЕНА ПОДІЯ (з обробкою)
+══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-event">
+  <div class="modal wide" id="modal-event-inner">
+    <div class="modal-tb">
+      <div class="modal-tb-icon" style="background:var(--ac4)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg></div>
+      <span class="modal-tb-title">Обробка події —</span>
+      <span class="modal-tb-obj" id="me-title">…</span>
+      <div class="modal-tb-close" onclick="closeModal('modal-event')">✕</div>
+    </div>
+    <div class="modal-toolbar" id="me-toolbar"></div>
+    <div class="modal-obj-hdr">
+      <div class="obj-num-badge" style="background:var(--ac4)" id="me-num">—</div>
+      <div class="hdr-field"><label>Назва:</label><span class="v" id="me-name">—</span></div>
+      <div class="hdr-field"><label>Адреса:</label><span class="v" id="me-addr">—</span></div>
+      <div class="hdr-field"><label>Подія:</label><span class="v" id="me-event" style="color:var(--ac4)">—</span></div>
+      <div class="obj-hdr-status" style="background:rgba(200,50,50,.1);border-color:rgba(200,50,50,.3);color:var(--ac5);animation:blink 1.2s infinite" id="me-status">
+        <div class="chip-dot"></div><span>ТРИВОГА</span>
+      </div>
+    </div>
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:.5}}
+    <div class="modal-content" id="me-content"></div>
+    <div class="proc-box">
+      <div class="proc-hdr">Обробка події</div>
+      <div class="proc-btns">
+        <button class="btn btn-violet" style="height:30px">Взяти на обробку</button>
+        <button class="btn btn-gray" style="height:30px">В стенди</button>
+        <button class="btn btn-gray" style="height:30px">Відміна тривоги</button>
+        <button class="btn btn-green" style="height:30px">Вислати групи</button>
+        <button class="btn btn-gray" style="height:30px">Прибуття групи</button>
+        <button class="btn btn-gray" style="height:30px">Обробити додатково</button>
+        <button class="btn btn-gray" style="height:30px">Перезапуск Орлан-GPRS</button>
+        <button class="btn btn-gray" style="height:30px">Завершення обробки</button>
+        <div style="margin-left:auto"><button class="btn btn-gray" style="height:30px">Переслати по Contact-ID</button></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div style="margin-left:auto"></div>
+      <button class="btn btn-red" style="width:140px;height:28px" onclick="closeModal('modal-event')">ЗАКРИТИ</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════
+// HELPERS
+// ══════════════════════════
+const P=n=>String(n).padStart(2,'0');
+function fmtDate(d){return `${P(d.getDate())}.${P(d.getMonth()+1)}.${d.getFullYear()}`}
+function fmtTime(d){return `${P(d.getHours())}:${P(d.getMinutes())}:${P(d.getSeconds())}`}
+function rnd(a){return a[Math.floor(Math.random()*a.length)]}
+function rndInt(a,b){return Math.floor(Math.random()*(b-a+1))+a}
+
+// CLOCK
+function tick(){const n=new Date();document.getElementById('clock').textContent=`${P(n.getHours())}:${P(n.getMinutes())}`}
+setInterval(tick,1000);tick();
+
+// ══════════════════════════
+// DATA SOURCES
+// ══════════════════════════
+const OBJ_NAMES=['ТОВ «Меркурій»','АТ «Стройтрест»','ІП Петров А.А.','Магазин «Уют»','Банк «Альфа»','Склад №4','Офіс «БізнесПлюс»','Ресторан «Якір»','ЖК «Оазис»','АЗС №12','Аптека «Здоров\'я»','Готель «Континент»','Супермаркет «Фреш»','Завод «Промінь»','Кафе «Уголок»'];
+const ADDRS=['вул. Лесі Українки, 23а','пр. Перемоги, 5а','вул. Садова, 33','вул. Центральна, 1','пр. Миру, 88','вул. Гагаріна, 17','б-р Шевченка, 44','вул. Академіка Сахарова, 9','вул. Хрещатик, 2','пр. Науки, 55'];
+const EVT_TYPES=['Взяття під охорону','Здача з охорони','Тривога','Несправність','Відновлення зв\'язку','Втрата зв\'язку зі...','Зміна SIM карти','Нормa зв\'язку з...','Тест','Система'];
+const CHANNELS=['GI1','GI2','IP','GSM'];
+const STATUSES=[
+  {l:'ПІД ОХОРОНОЮ',  c:'chip-green', key:'guarded'},
+  {l:'БЕЗ ОХОРОНИ',   c:'chip-gray',  key:'unguarded'},
+  {l:'ТРИВОГА',       c:'chip-red',   key:'alarm'},
+  {l:'НА ПРОЗВОНІ',   c:'chip-orange',key:'call'},
+];
+
+let allObjects=[];
+let unprocEvents=[];
+let archiveEvents=[];
+let bridgeService=null;
+let refreshInProgress=false;
+const objectByID=new Map();
+const objectByNumber=new Map();
+
+function pick(v,...keys){
+  if(v==null||typeof v!=='object')return undefined;
+  for(const k of keys){
+    if(v[k]!==undefined&&v[k]!==null)return v[k];
+  }
+  return undefined;
+}
+function asText(v){return v==null?'':String(v)}
+function asNum(v){const n=Number(v);return Number.isFinite(n)?n:0}
+function asBool(v){return v===true||v==='true'||v===1}
+function asArray(v){return Array.isArray(v)?v:[]}
+function asDate(v){
+  if(v instanceof Date)return v;
+  if(typeof v==='number'&&Number.isFinite(v))return new Date(v);
+  if(typeof v==='string'&&v.trim()){
+    const d=new Date(v);
+    if(!Number.isNaN(d.getTime()))return d;
+  }
+  return null;
+}
+function fmtDateTime(value){
+  const d=asDate(value);
+  if(!d)return '—';
+  return `${fmtDate(d)} ${fmtTime(d)}`;
+}
+function fmtDateOnly(value){
+  const d=asDate(value);
+  return d?fmtDate(d):'—';
+}
+function fmtTimeOnly(value){
+  const d=asDate(value);
+  return d?fmtTime(d):'—';
+}
+function esc(v){
+  return asText(v)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;');
+}
+
+function resolveBridgeService(){
+  const goRef=window.go||(window.parent&&window.parent.go);
+  if(!goRef)return null;
+  return goRef.wailsbridge?.FrontendV1Service||goRef.main?.FrontendV1Service||null;
+}
+
+function statusFromSummary(raw,hasUnprocessedAlarm){
+  if(hasUnprocessedAlarm)return STATUSES[2];
+  const guard=asText(pick(raw,'GuardStatus','guardStatus')).toLowerCase();
+  const conn=asText(pick(raw,'ConnectionStatus','connectionStatus')).toLowerCase();
+  const mon=asText(pick(raw,'MonitoringStatus','monitoringStatus')).toLowerCase();
+  if(guard==='disarmed')return STATUSES[1];
+  if(conn==='offline'||mon==='blocked')return STATUSES[3];
+  return STATUSES[0];
+}
+
+function normalizeObjectSummary(raw,unprocessedCount){
+  const id=asNum(pick(raw,'ID','id'));
+  const displayNumber=asText(pick(raw,'DisplayNumber','displayNumber'))||asText(pick(raw,'NativeID','nativeID'))||`#${id}`;
+  const source=asText(pick(raw,'Source','source')).toUpperCase()||'—';
+  const phone=asText(pick(raw,'Phone','phone'));
+  return{
+    id,
+    num:displayNumber,
+    group:source,
+    name:asText(pick(raw,'Name','name'))||'—',
+    addr:asText(pick(raw,'Address','address'))||'—',
+    status:statusFromSummary(raw,unprocessedCount>0),
+    taken:fmtDateTime(pick(raw,'LastMessageTime','lastMessageTime')),
+    given:fmtDateTime(pick(raw,'LastTestTime','lastTestTime')),
+    tel:phone||'—',
+    note:asText(pick(raw,'StatusText','statusText'))||'',
+    source:asText(pick(raw,'Source','source')),
+    nativeID:asText(pick(raw,'NativeID','nativeID')),
+    contractNumber:asText(pick(raw,'ContractNumber','contractNumber')),
+    summaryRaw:raw,
+    details:null,
+  };
+}
+
+function buildEventRowBase(raw,alarmMode){
+  const objectID=asNum(pick(raw,'ObjectID','objectID'));
+  const objectNumber=asText(pick(raw,'ObjectNumber','objectNumber'));
+  const eventTime=pick(raw,'Time','time');
+  const typeText=asText(pick(raw,'TypeText','typeText'))||(alarmMode?'Тривога':'Подія');
+  const severity=asText(pick(raw,'VisualSeverity','visualSeverity')).toLowerCase();
+  const alarm=alarmMode||severity==='critical'||typeText.toLowerCase().includes('трив');
+  return{
+    line:asText(pick(raw,'Source','source'))||'—',
+    obj:objectNumber||`#${objectID||'—'}`,
+    code:asText(pick(raw,'TypeCode','typeCode'))||'—',
+    type:typeText,
+    date:fmtDateOnly(eventTime),
+    time:fmtTimeOnly(eventTime),
+    gr:asNum(pick(raw,'ZoneNumber','zoneNumber'))||'—',
+    shl:'—',
+    name:asText(pick(raw,'ObjectName','objectName'))||'—',
+    state:alarmMode?(asBool(pick(raw,'IsProcessed','isProcessed'))?'Оброблено':'Нова'):'Подія',
+    desc:asText(pick(raw,'Details','details'))||'—',
+    alarm,
+    objectID,
+    objectNumber,
+    objectName:asText(pick(raw,'ObjectName','objectName')),
+    moment:asDate(eventTime)?.getTime()||0,
+    objRef:null,
+  };
+}
+
+function rebuildObjectIndexes(){
+  objectByID.clear();
+  objectByNumber.clear();
+  allObjects.forEach(o=>{
+    objectByID.set(o.id,o);
+    objectByNumber.set(o.num,o);
+  });
+}
+
+function attachObjectRef(row){
+  row.objRef=objectByID.get(row.objectID)||objectByNumber.get(row.objectNumber)||{
+    id:row.objectID,
+    num:row.objectNumber||`#${row.objectID||'—'}`,
+    group:'—',
+    name:row.objectName||'—',
+    addr:'—',
+    status:row.alarm?STATUSES[2]:STATUSES[1],
+    taken:row.date+' '+row.time,
+    given:'—',
+    tel:'—',
+    note:'',
+    details:null,
+  };
+}
+
+async function loadLiveData(){
+  bridgeService=resolveBridgeService();
+  if(!bridgeService)return false;
+  try{
+    const [objectsRaw,eventsRaw,alarmsRaw]=await Promise.all([
+      bridgeService.ListObjects(),
+      bridgeService.ListEvents(),
+      bridgeService.ListAlarms(),
+    ]);
+
+    const unprocessedByObject=new Map();
+    asArray(alarmsRaw).forEach(a=>{
+      if(!asBool(pick(a,'IsProcessed','isProcessed'))){
+        const id=asNum(pick(a,'ObjectID','objectID'));
+        unprocessedByObject.set(id,(unprocessedByObject.get(id)||0)+1);
+      }
+    });
+
+    allObjects=asArray(objectsRaw).map(o=>normalizeObjectSummary(o,unprocessedByObject.get(asNum(pick(o,'ID','id')))||0));
+    rebuildObjectIndexes();
+
+    archiveEvents=asArray(eventsRaw).map(e=>buildEventRowBase(e,false)).sort((a,b)=>b.moment-a.moment);
+    archiveEvents.forEach(attachObjectRef);
+
+    unprocEvents=asArray(alarmsRaw)
+      .filter(a=>!asBool(pick(a,'IsProcessed','isProcessed')))
+      .map(a=>buildEventRowBase(a,true))
+      .sort((a,b)=>b.moment-a.moment);
+    unprocEvents.forEach(attachObjectRef);
+    return true;
+  }catch(err){
+    console.error('Live load failed, fallback to demo data:',err);
+    return false;
+  }
+}
+
+function loadDemoData(){
+  allObjects=Array.from({length:50},(_,i)=>{
+    const st=i%15===2?STATUSES[2]:i%7===0?STATUSES[1]:i%11===0?STATUSES[3]:STATUSES[0];
+    const taken=new Date(Date.now()-rndInt(0,28800000));
+    return{
+      id:i+1,
+      num:`L${String(10000+i+1).slice(1)}`,
+      group:rndInt(1,20),
+      name:OBJ_NAMES[i%OBJ_NAMES.length],
+      addr:ADDRS[i%ADDRS.length],
+      status:st,
+      taken:fmtDate(taken)+' '+fmtTime(taken),
+      given:'—',
+      tel:`+380 ${rndInt(63,99)} ${rndInt(100,999)}-${rndInt(10,99)}-${rndInt(10,99)}`,
+      note:'',
+      details:null,
+    };
+  });
+  rebuildObjectIndexes();
+  unprocEvents=Array.from({length:8},(_,i)=>{
+    const d=new Date(Date.now()-rndInt(0,3600000));
+    const isAlarm=i<4;
+    const obj=allObjects[rndInt(0,allObjects.length-1)];
+    return{line:rnd(CHANNELS),obj:obj.num,code:rndInt(100,999),type:isAlarm?'Тривога':rnd(EVT_TYPES),date:fmtDate(d),time:fmtTime(d),gr:rndInt(0,8),shl:rndInt(0,32),name:obj.name,state:'Нова',desc:isAlarm?'Спрацювання датчика зони '+rndInt(1,16):'Зміна активної SIM карти',alarm:isAlarm,objRef:obj,moment:d.getTime(),objectID:obj.id,objectNumber:obj.num};
+  });
+  archiveEvents=Array.from({length:50},(_,i)=>{
+    const d=new Date(Date.now()-rndInt(0,86400000*7));
+    const obj=allObjects[i%allObjects.length];
+    const type=rnd(EVT_TYPES);
+    return{line:rnd(CHANNELS),obj:obj.num,code:rndInt(100,999),type,date:fmtDate(d),time:fmtTime(d),gr:rndInt(0,8),shl:rndInt(0,32),name:obj.name,state:type==='Тривога'?'Оброблено':'Подія',desc:'Зміна активної SIM карти',alarm:type==='Тривога',objRef:obj,moment:d.getTime(),objectID:obj.id,objectNumber:obj.num};
+  });
+}
+
+// ══════════════════════════
+// RENDER HELPERS
+// ══════════════════════════
+function chip(st){return`<span class="chip ${st.c}"><span class="chip-dot"></span>${st.l}</span>`}
+
+function renderEventRows(tbody,events,isUnproc){
+  tbody.innerHTML='';
+  events.forEach(r=>{
+    const tr=document.createElement('tr');
+    if(r.alarm)tr.classList.add('alarm');
+    tr.innerHTML=`
+      <td style="text-align:center"><span class="${r.alarm?'chip-dot':'chip-dot'}" style="width:8px;height:8px;border-radius:50%;display:inline-block;background:${r.alarm?'var(--ac5)':'var(--tx2)'};${r.alarm?'box-shadow:0 0 5px var(--ac5)':''}"></span></td>
+      <td class="dim">${r.line}</td>
+      <td class="mono bright">${r.obj}</td>
+      <td class="mono dim">${r.code}</td>
+      <td class="${r.alarm?'red':''}">${r.type}</td>
+      <td class="mono dim">${r.date}</td>
+      <td class="mono">${r.time}</td>
+      <td class="dim" style="text-align:center">${r.gr}</td>
+      <td class="dim" style="text-align:center">${r.shl||''}</td>
+      <td class="dim">${asText(r.name).slice(0,8)}…</td>
+      <td><span class="${r.alarm?'chip chip-red':'chip chip-gray'}">${r.state}</span></td>
+      <td class="dim" style="font-size:11px">${r.desc}</td>`;
+    tr.onclick=()=>{
+      tbody.querySelectorAll('tr').forEach(x=>x.classList.remove('selected'));
+      tr.classList.add('selected');
+      if(isUnproc) openEventModal(r);
+      else fillSignalInfo(r);
+    };
+    if(!isUnproc){
+      tr.ondblclick=()=>openCardModal(r.objRef);
+      tr.title='Двічі клацніть для відкриття картки об\'єкта';
+    }
+    tbody.appendChild(tr);
+  });
+}
+
+function renderGroups(){
+  const tb=document.getElementById('groups-tbody');
+  tb.innerHTML='';
+  ['Альфа','Бета','Гамма'].forEach((g,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td class="mono bright">${i+1}</td><td>${g}</td><td class="dim">Виїзд</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function renderDataViews(){
+  renderEventRows(document.getElementById('unproc-tbody'),unprocEvents,true);
+  renderEventRows(document.getElementById('archive-tbody'),archiveEvents,false);
+  document.getElementById('unproc-badge').textContent=String(unprocEvents.length);
+  document.getElementById('archive-badge').textContent=String(archiveEvents.length);
+  renderObjects();
+  if(unprocEvents[0])fillSignalInfo(unprocEvents[0]);
+}
+
+// objects table
+let currentStatusFilter='all';
+let currentSearch='';
+
+function renderObjects(){
+  const tb=document.getElementById('obj-tbody');
+  tb.innerHTML='';
+  const q=currentSearch.toLowerCase();
+  const filtered=allObjects.filter(o=>{
+    const matchSearch=!q||o.num.toLowerCase().includes(q)||o.name.toLowerCase().includes(q)||o.addr.toLowerCase().includes(q);
+    const matchStatus=currentStatusFilter==='all'||o.status.key===currentStatusFilter;
+    return matchSearch&&matchStatus;
+  });
+  document.getElementById('obj-count').textContent=filtered.length;
+  filtered.forEach(o=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td style="text-align:center"><span style="width:8px;height:8px;border-radius:50%;display:inline-block;background:${o.status.key==='guarded'?'var(--ac)':o.status.key==='alarm'?'var(--ac5)':o.status.key==='call'?'var(--ac4)':'var(--tx2)'};${o.status.key==='alarm'?'box-shadow:0 0 5px var(--ac5)':''}"></span></td>
+      <td class="mono bright">${o.num}</td>
+      <td class="dim" style="text-align:center">${o.group}</td>
+      <td>${o.name}</td>
+      <td class="dim">${o.addr}</td>
+      <td>${chip(o.status)}</td>
+      <td class="mono dim">${o.taken}</td>
+      <td class="mono dim">${o.given}</td>
+      <td class="mono dim" style="font-size:11px">${o.tel}</td>
+      <td class="dim" style="font-size:11px">${o.note}</td>`;
+    tr.onclick=()=>{
+      tb.querySelectorAll('tr').forEach(x=>x.classList.remove('selected'));
+      tr.classList.add('selected');
+      openCardModal(o);
+    };
+    tb.appendChild(tr);
+  });
+}
+
+function filterObjects(){currentSearch=document.getElementById('obj-search').value;renderObjects()}
+function filterByStatus(k,el){
+  currentStatusFilter=k;
+  document.querySelectorAll('.oft').forEach(x=>x.classList.remove('active'));
+  el.classList.add('active');
+  renderObjects();
+}
+
+async function initializeData(){
+  renderGroups();
+  const liveLoaded=await loadLiveData();
+  if(!liveLoaded)loadDemoData();
+  renderDataViews();
+}
+
+// ══════════════════════════
+// SIGNAL INFO fill
+// ══════════════════════════
+function fillSignalInfo(r){
+  const o=r.objRef||{};
+  document.getElementById('si-num').value=o.num||'—';
+  document.getElementById('si-addr').value=o.addr||'—';
+  document.getElementById('si-resp').value=o.name||'—';
+  document.getElementById('si-tel').value=o.tel||'—';
+  document.getElementById('si-device').value=o.details?.deviceType||'—';
+  document.getElementById('si-time').value=r.date+' '+r.time;
+  const s=document.getElementById('si-status');
+  if(r.alarm){s.textContent='ТРИВОГА';s.style.background='var(--ac5)'}
+  else{s.textContent=o.status?.l||'—';s.style.background='var(--ac)'}
+}
+
+// ══════════════════════════
+// TAB SWITCHING
+// ══════════════════════════
+function switchMain(id,el){
+  document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tpane').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tpane-'+id).classList.add('active');
+}
+function switchInner(id,el){
+  document.querySelectorAll('.itab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.inner-pane').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('ipane-'+id).classList.add('active');
+}
+function switchBot(id,el){
+  document.querySelectorAll('.bttab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.bot-pane').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('botpane-'+id).classList.add('active');
+}
+function applyFilter(){/* filter logic */}
+
+// ══════════════════════════
+// MODAL HELPERS
+// ══════════════════════════
+const MODAL_TABS=[
+  {id:'kartochka',label:'Картка',icon:'<rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="13" y2="13"/>'},
+  {id:'devices',  label:'Прилади',icon:'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3h-8v4h8V3z"/>'},
+  {id:'zones',    label:'Зони',icon:'<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>'},
+  {id:'response', label:'Реагування',icon:'<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/>'},
+  {id:'keys',     label:'Ключі',icon:'<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5"/>'},
+  {id:'resp',     label:'Відповідальні',icon:'<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
+  {id:'photo',    label:'Фото',icon:'<path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>'},
+  {id:'events_tab',label:'Події',icon:'<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>'},
+];
+
+function buildToolbar(containerId,contentId,obj,withEvents){
+  const tabs=withEvents?MODAL_TABS:MODAL_TABS;
+  const tb=document.getElementById(containerId);
+  const ct=document.getElementById(contentId);
+  tb.innerHTML='';ct.innerHTML='';
+  tabs.forEach((t,i)=>{
+    const btn=document.createElement('button');
+    btn.className='mtb-btn'+(i===0?' active':'');
+    btn.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">${t.icon}</svg>${t.label}`;
+    btn.onclick=()=>{
+      tb.querySelectorAll('.mtb-btn').forEach(b=>b.classList.remove('active'));
+      ct.querySelectorAll('.modal-pane').forEach(p=>p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(contentId+'-'+t.id)?.classList.add('active');
+    };
+    tb.appendChild(btn);
+    const pane=document.createElement('div');
+    pane.className='modal-pane'+(i===0?' active':'');
+    pane.id=contentId+'-'+t.id;
+    pane.appendChild(buildPane(t.id,obj));
+    ct.appendChild(pane);
+  });
+}
+
+function zoneStatusChip(statusText){
+  const status=asText(statusText);
+  const low=status.toLowerCase();
+  if(low.includes('трив'))return '<span class="chip chip-red">ТРИВОГА</span>';
+  if(low.includes('несправ')||low.includes('fault'))return '<span class="chip chip-orange">НЕСПР.</span>';
+  if(!status)return '<span class="chip chip-gray">—</span>';
+  return `<span class="chip chip-green">${esc(status)}</span>`;
+}
+
+function normalizeObjectDetails(raw){
+  const summary=pick(raw,'Summary','summary')||{};
+  const zones=asArray(pick(raw,'Zones','zones')).map(z=>({
+    number:asNum(pick(z,'Number','number')),
+    name:asText(pick(z,'Name','name'))||'—',
+    sensorType:asText(pick(z,'SensorType','sensorType'))||'—',
+    status:asText(pick(z,'Status','status'))||'—',
+    groupName:asText(pick(z,'GroupName','groupName'))||'—',
+  }));
+  const contacts=asArray(pick(raw,'Contacts','contacts')).map(c=>({
+    name:asText(pick(c,'Name','name'))||'—',
+    position:asText(pick(c,'Position','position'))||'—',
+    phone:asText(pick(c,'Phone','phone'))||'—',
+    priority:asNum(pick(c,'Priority','priority'))||0,
+  }));
+  const events=asArray(pick(raw,'Events','events')).map(e=>buildEventRowBase(e,false)).sort((a,b)=>b.moment-a.moment);
+  return{
+    summary,
+    summaryRaw:summary,
+    phones:asText(pick(raw,'Phones','phones')),
+    notes:asText(pick(raw,'Notes','notes')),
+    location:asText(pick(raw,'Location','location')),
+    launchDate:asText(pick(raw,'LaunchDate','launchDate')),
+    externalSignal:asText(pick(raw,'ExternalSignal','externalSignal')),
+    externalTestMessage:asText(pick(raw,'ExternalTestMessage','externalTestMessage')),
+    externalLastTest:asText(pick(raw,'ExternalLastTest','externalLastTest')),
+    externalLastMessage:asText(pick(raw,'ExternalLastMessage','externalLastMessage')),
+    deviceType:asText(pick(summary,'DeviceType','deviceType'))||'—',
+    panelMark:asText(pick(summary,'PanelMark','panelMark'))||'—',
+    sim1:asText(pick(summary,'SIM1','sim1'))||'—',
+    sim2:asText(pick(summary,'SIM2','sim2'))||'—',
+    zones,
+    contacts,
+    events,
+  };
+}
+
+async function ensureObjectDetails(obj){
+  if(!obj||obj.details||!bridgeService||!obj.id)return;
+  try{
+    const detailsRaw=await bridgeService.GetObjectDetails(obj.id);
+    obj.details=normalizeObjectDetails(detailsRaw);
+    const summary=obj.details.summaryRaw;
+    if(summary){
+      obj.name=asText(pick(summary,'Name','name'))||obj.name;
+      obj.addr=asText(pick(summary,'Address','address'))||obj.addr;
+      obj.tel=asText(pick(summary,'Phone','phone'))||obj.tel;
+      obj.group=asText(pick(summary,'Source','source')).toUpperCase()||obj.group;
+      obj.note=asText(pick(summary,'StatusText','statusText'))||obj.note;
+      obj.taken=fmtDateTime(pick(summary,'LastMessageTime','lastMessageTime'))||obj.taken;
+      obj.given=fmtDateTime(pick(summary,'LastTestTime','lastTestTime'))||obj.given;
+      obj.status=statusFromSummary(summary,obj.status.key==='alarm');
+    }
+  }catch(err){
+    console.error('Failed to load object details',obj.id,err);
+  }
+}
+
+function buildPane(id,obj){
+  const wrap=document.createElement('div');
+  wrap.style.cssText='display:flex;flex-direction:column;height:100%;overflow:auto';
+  const details=obj.details||{};
+  if(id==='kartochka'){
+    const primaryContact=(details.contacts&&details.contacts[0])||{};
+    wrap.innerHTML=`<div class="igrid">
+      <div class="isection"><div class="isect-title">Загальні відомості</div>
+        <div class="irow"><label>Номер об'єкта</label><input value="${esc(obj.num)}"></div>
+        <div class="irow"><label>Повна назва</label><input value="${esc(obj.name)}"></div>
+        <div class="irow"><label>Адреса</label><input value="${esc(obj.addr)}"></div>
+        <div class="irow"><label>Локація</label><input value="${esc(details.location||'—')}"></div>
+        <div class="irow"><label>Договір</label><input value="${esc(obj.contractNumber||'—')}"></div>
+        <div class="irow"><label>Примітка</label><input value="${esc(details.notes||obj.note||'')}"></div>
+      </div>
+      <div class="isection"><div class="isect-title">Параметри охорони</div>
+        <div class="irow"><label>Джерело</label><input value="${esc(obj.group)}" style="width:80px;flex:none"></div>
+        <div class="irow"><label>Остання подія</label><input value="${esc(obj.taken)}"></div>
+        <div class="irow"><label>Останній тест</label><input value="${esc(obj.given)}"></div>
+        <div class="irow"><label>Режим моніторингу</label><input value="${esc(obj.note||'—')}"></div>
+        <div class="irow"><label>Дата запуску</label><input value="${esc(details.launchDate||'—')}"></div>
+      </div>
+      <div class="isection"><div class="isect-title">Контакти</div>
+        <div class="irow"><label>Телефон</label><input value="${esc(details.phones||obj.tel||'—')}"></div>
+        <div class="irow"><label>Відповідальна особа</label><input value="${esc(primaryContact.name||'—')}"></div>
+        <div class="irow"><label>Посада</label><input value="${esc(primaryContact.position||'—')}"></div>
+        <div class="irow"><label>Телефон особи</label><input value="${esc(primaryContact.phone||'—')}"></div>
+      </div>
+      <div class="isection"><div class="isect-title">Технічні дані</div>
+        <div class="irow"><label>Прилад</label><input value="${esc(details.deviceType||'—')}"></div>
+        <div class="irow"><label>Панель</label><input class="mono" value="${esc(details.panelMark||'—')}"></div>
+        <div class="irow"><label>SIM 1</label><input class="mono" value="${esc(details.sim1||'—')}"></div>
+        <div class="irow"><label>SIM 2</label><input class="mono" value="${esc(details.sim2||'—')}"></div>
+        <div class="irow"><label>Зовнішній сигнал</label><span class="v mono dim" style="font-size:11px">${esc(details.externalSignal||'—')}</span></div>
+      </div>
+    </div>`;
+  } else if(id==='zones'){
+    const rows=(details.zones&&details.zones.length?details.zones:[{number:'—',name:'Немає даних',sensorType:'—',status:'—'}])
+      .map(z=>[
+        z.number,
+        '1',
+        esc(z.name),
+        esc(z.sensorType),
+        zoneStatusChip(z.status),
+        esc(z.groupName||'—')
+      ]);
+    wrap.innerHTML=`<div class="mtable-toolbar"><button class="btn btn-blue" style="height:24px;font-size:11px">+ Додати</button></div><div class="mtable-wrap"><table class="mtable"><thead><tr><th style="width:36px">№</th><th style="width:40px">Прил.</th><th>Назва зони</th><th style="width:130px">Тип датчика</th><th style="width:110px">Стан</th><th style="width:70px">Обхід</th></tr></thead><tbody>${rows.map(r=>`<tr>${r.map((c,ci)=>`<td style="font-size:11px;color:${ci<2?'var(--tx2)':'var(--tx)'}">${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  } else if(id==='devices'){
+    wrap.innerHTML=`<div class="mtable-toolbar"><button class="btn btn-blue" style="height:24px;font-size:11px">+ Додати</button></div><div class="mtable-wrap"><table class="mtable"><thead><tr><th>Тип</th><th>Модель</th><th>Серійний №</th><th>Версія ПЗ</th><th>Канал</th><th>Стан</th></tr></thead><tbody><tr><td class="bright">ГПО</td><td>Орлан-GPRS v3</td><td class="mono dim">ORL-2023-00451</td><td class="mono dim">3.14.2</td><td>GPRS</td><td><span class="chip chip-green">НОРМА</span></td></tr><tr><td class="bright">РПД</td><td>Кварц-10A</td><td class="mono dim">KVR-2021-07813</td><td class="mono dim">2.8.1</td><td>ТФ</td><td><span class="chip chip-green">НОРМА</span></td></tr></tbody></table></div>`;
+  } else if(id==='keys'){
+    const rows=Array.from({length:4},(_,i)=>[`10${P(i+1)}`,rnd(['Іваненко О.П.','Петренко В.М.','Сидоренко Л.І.','Коваль Т.О.']),obj.tel,'Взяття/здача','<span class="chip chip-green">НОРМА</span>']);
+    wrap.innerHTML=`<div class="mtable-toolbar"><button class="btn btn-blue" style="height:24px;font-size:11px">+ Додати</button></div><div class="mtable-wrap"><table class="mtable"><thead><tr><th>Код</th><th>Власник</th><th>Телефон</th><th>Тип доступу</th><th>Стан</th></tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td style="font-size:11px">${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  } else if(id==='response'){
+    wrap.innerHTML=`<div class="mtable-toolbar"><button class="btn btn-blue" style="height:24px;font-size:11px">+ Додати</button></div><div class="mtable-wrap"><table class="mtable"><thead><tr><th>Пріор.</th><th>Назва групи</th><th>Позивний</th><th>Телефон</th><th>Тип виїзду</th></tr></thead><tbody>${['Альфа','Бета','Гамма'].map((g,i)=>`<tr><td class="bright">${i+1}</td><td>${g}</td><td class="dim">${g}-01</td><td class="mono dim">${obj.tel}</td><td class="dim">Виїзд</td></tr>`).join('')}</tbody></table></div>`;
+  } else if(id==='resp'){
+    const contacts=(details.contacts&&details.contacts.length?details.contacts:[{priority:0,name:'Немає даних',phone:'—',position:'—'}]).sort((a,b)=>(a.priority||0)-(b.priority||0));
+    wrap.innerHTML=`<div class="mtable-toolbar"><button class="btn btn-blue" style="height:24px;font-size:11px">+ Додати</button></div><div class="mtable-wrap"><table class="mtable"><thead><tr><th>Пріор.</th><th>ПІБ</th><th>Телефон</th><th>Посада</th></tr></thead><tbody>${contacts.map((c,i)=>`<tr><td class="bright">${c.priority||i+1}</td><td>${esc(c.name)}</td><td class="mono dim">${esc(c.phone)}</td><td class="dim">${esc(c.position)}</td></tr>`).join('')}</tbody></table></div>`;
+  } else if(id==='events_tab'){
+    const evts=(details.events&&details.events.length?details.events:archiveEvents.filter(e=>e.objectID===obj.id||e.obj===obj.num)).slice(0,80);
+    wrap.innerHTML=`<div class="mtable-wrap"><table class="mtable"><thead><tr><th>Дата</th><th>Час</th><th>Тип події</th><th>Гр.</th><th>Шл.</th><th>Лінія</th><th>Код</th><th>Опис</th></tr></thead><tbody>${evts.map(e=>`<tr><td class="mono dim">${esc(e.date)}</td><td class="mono">${esc(e.time)}</td><td class="${e.alarm?'red':''}">${esc(e.type)}</td><td class="dim">${esc(e.gr)}</td><td class="dim">${esc(e.shl)}</td><td class="dim">${esc(e.line)}</td><td class="mono dim">${esc(e.code)}</td><td class="dim" style="font-size:11px">${esc(e.desc)}</td></tr>`).join('')}</tbody></table></div>`;
+  } else if(id==='photo'){
+    wrap.innerHTML=`<div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--tx2)"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity=".3"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><span style="font-size:12px">Фото відсутні</span><button class="btn btn-blue" style="height:24px;font-size:11px">+ Додати</button></div>`;
+  } else {
+    wrap.innerHTML=`<div style="padding:14px;color:var(--tx2);font-size:12px">Немає даних для відображення</div>`;
+  }
+  return wrap;
+}
+
+// ══════════════════════════
+// OPEN MODALS
+// ══════════════════════════
+async function openCardModal(obj){
+  await ensureObjectDetails(obj);
+  document.getElementById('mc-title').textContent=`№ ${obj.num} · ${obj.name}`;
+  document.getElementById('mc-num').textContent=obj.num;
+  document.getElementById('mc-name').textContent=obj.name;
+  document.getElementById('mc-addr').textContent=obj.addr;
+  document.getElementById('mc-gr').textContent=obj.group;
+  const st=document.getElementById('mc-status');
+  st.className=`obj-hdr-status${obj.status.key==='alarm'?' alarm':''}`;
+  st.innerHTML=`<div class="chip-dot"></div><span>${obj.status.l}</span>`;
+  if(obj.status.key==='alarm'){st.style.cssText='margin-left:auto;display:flex;align-items:center;gap:6px;background:rgba(200,50,50,.1);border:1px solid rgba(200,50,50,.3);border-radius:3px;padding:3px 10px;font-size:12px;color:var(--ac5);font-weight:700'}
+  else{st.style.cssText='margin-left:auto;display:flex;align-items:center;gap:6px;background:rgba(14,158,120,.1);border:1px solid rgba(14,158,120,.3);border-radius:3px;padding:3px 10px;font-size:12px;color:var(--ac);font-weight:700'}
+  buildToolbar('mc-toolbar','mc-content',obj,false);
+  document.getElementById('modal-card').classList.add('open');
+}
+
+function openEventModal(r){
+  const obj=r.objRef||{};
+  document.getElementById('me-title').textContent=`${r.type} — ${obj.name||'—'} (${obj.num||'—'})`;
+  document.getElementById('me-num').textContent=obj.num||'—';
+  document.getElementById('me-name').textContent=obj.name||'—';
+  document.getElementById('me-addr').textContent=obj.addr||'—';
+  document.getElementById('me-event').textContent=r.type+' — '+r.desc;
+  buildToolbar('me-toolbar','me-content',obj,true);
+  document.getElementById('modal-event').classList.add('open');
+}
+
+async function refreshLiveData(){
+  if(refreshInProgress)return;
+  if(!bridgeService)return;
+  refreshInProgress=true;
+  try{
+    const loaded=await loadLiveData();
+    if(loaded)renderDataViews();
+  }finally{
+    refreshInProgress=false;
+  }
+}
+
+initializeData();
+setInterval(refreshLiveData,30000);
+
+function closeModal(id){document.getElementById(id).classList.remove('open')}
+
+// Close on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o=>{
+  o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')});
+});
+
+// ESC key
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape')document.querySelectorAll('.modal-overlay.open').forEach(o=>o.classList.remove('open'));
+});
+</script>
+</body>
+</html>

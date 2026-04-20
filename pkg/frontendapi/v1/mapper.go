@@ -1,6 +1,10 @@
 package v1
 
-import "obj_catalog_fyne_v3/pkg/contracts"
+import (
+	"time"
+
+	"obj_catalog_fyne_v3/pkg/contracts"
+)
 
 func FromObjectUpsertRequest(request ObjectUpsertRequest) contracts.FrontendObjectUpsertRequest {
 	return contracts.FrontendObjectUpsertRequest{
@@ -53,12 +57,53 @@ func ToAlarmListResponse(items []contracts.FrontendAlarmItem) AlarmListResponse 
 	return AlarmListResponse{Items: responseItems}
 }
 
+func ToAlarmProcessingOptionsResponse(items []contracts.FrontendAlarmProcessingOption) AlarmProcessingOptionsResponse {
+	responseItems := make([]AlarmProcessingOption, 0, len(items))
+	for _, item := range items {
+		responseItems = append(responseItems, AlarmProcessingOption{
+			Code:  item.Code,
+			Label: item.Label,
+		})
+	}
+	return AlarmProcessingOptionsResponse{Items: responseItems}
+}
+
+func FromAlarmProcessRequest(request AlarmProcessRequest) contracts.FrontendAlarmProcessRequest {
+	return contracts.FrontendAlarmProcessRequest{
+		User:      request.User,
+		CauseCode: request.CauseCode,
+		Note:      request.Note,
+	}
+}
+
+func FromAlarmPickRequest(request AlarmPickRequest) contracts.FrontendAlarmPickRequest {
+	return contracts.FrontendAlarmPickRequest{
+		User: request.User,
+	}
+}
+
+func ToAlarmGroupListResponse(items []contracts.FrontendAlarmItem) AlarmGroupListResponse {
+	return AlarmGroupListResponse{Items: BuildAlarmGroups(items)}
+}
+
 func ToEventListResponse(items []contracts.FrontendEventItem) EventListResponse {
 	responseItems := make([]EventItem, 0, len(items))
 	for _, item := range items {
 		responseItems = append(responseItems, ToEventItem(item))
 	}
 	return EventListResponse{Items: responseItems}
+}
+
+func ToEventPageResponse(page contracts.FrontendEventPage) EventPageResponse {
+	responseItems := make([]EventItem, 0, len(page.Items))
+	for _, item := range page.Items {
+		responseItems = append(responseItems, ToEventItem(item))
+	}
+	return EventPageResponse{
+		Items:      responseItems,
+		TotalCount: page.TotalCount,
+		HasMore:    page.HasMore,
+	}
 }
 
 func ToObjectSummary(item contracts.FrontendObjectSummary) ObjectSummary {
@@ -78,8 +123,8 @@ func ToObjectSummary(item contracts.FrontendObjectSummary) ObjectSummary {
 		SignalStrength:   item.SignalStrength,
 		SIM1:             item.SIM1,
 		SIM2:             item.SIM2,
-		LastTestTime:     item.LastTestTime,
-		LastMessageTime:  item.LastMessageTime,
+		LastTestTime:     formatTimestamp(item.LastTestTime),
+		LastMessageTime:  formatTimestamp(item.LastMessageTime),
 		GuardStatus:      toGuardStatus(item.GuardStatus),
 		ConnectionStatus: toConnectionStatus(item.ConnectionStatus),
 		MonitoringStatus: toMonitoringStatus(item.MonitoringStatus),
@@ -96,7 +141,7 @@ func ToAlarmItem(item contracts.FrontendAlarmItem) AlarmItem {
 		ObjectNumber:   item.ObjectNumber,
 		ObjectName:     item.ObjectName,
 		Address:        item.Address,
-		Time:           item.Time,
+		Time:           formatTimestamp(item.Time),
 		Details:        item.Details,
 		TypeCode:       item.TypeCode,
 		TypeText:       item.TypeText,
@@ -105,6 +150,11 @@ func ToAlarmItem(item contracts.FrontendAlarmItem) AlarmItem {
 		IsProcessed:    item.IsProcessed,
 		ProcessedBy:    item.ProcessedBy,
 		ProcessNote:    item.ProcessNote,
+		IsInProgress:   item.IsInProgress,
+		InProgressBy:   item.InProgressBy,
+		IsOwnedByMe:    item.IsOwnedByMe,
+		CanTakeOver:    item.CanTakeOver,
+		CanProcess:     item.CanProcess,
 		VisualSeverity: toVisualSeverity(item.VisualSeverity),
 	}
 }
@@ -117,7 +167,7 @@ func ToEventItem(item contracts.FrontendEventItem) EventItem {
 		ObjectNativeID: item.ObjectNativeID,
 		ObjectNumber:   item.ObjectNumber,
 		ObjectName:     item.ObjectName,
-		Time:           item.Time,
+		Time:           formatTimestamp(item.Time),
 		TypeCode:       item.TypeCode,
 		TypeText:       item.TypeText,
 		ZoneNumber:     item.ZoneNumber,
@@ -146,8 +196,8 @@ func ToObjectDetails(item contracts.FrontendObjectDetails) ObjectDetails {
 		LaunchDate:          item.LaunchDate,
 		ExternalSignal:      item.ExternalSignal,
 		ExternalTestMessage: item.ExternalTestMessage,
-		ExternalLastTest:    item.ExternalLastTest,
-		ExternalLastMessage: item.ExternalLastMessage,
+		ExternalLastTest:    formatTimestamp(item.ExternalLastTest),
+		ExternalLastMessage: formatTimestamp(item.ExternalLastMessage),
 		Zones:               toZones(item.Zones),
 		Contacts:            toContacts(item.Contacts),
 		Events:              toEvents(item.Events),
@@ -323,4 +373,11 @@ func toVisualSeverity(status contracts.FrontendVisualSeverity) VisualSeverity {
 	default:
 		return VisualSeverityUnknown
 	}
+}
+
+func formatTimestamp(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
 }

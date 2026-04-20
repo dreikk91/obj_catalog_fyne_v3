@@ -163,7 +163,27 @@ type FrontendAlarmItem struct {
 	IsProcessed    bool
 	ProcessedBy    string
 	ProcessNote    string
+	IsInProgress   bool
+	InProgressBy   string
+	IsOwnedByMe    bool
+	CanTakeOver    bool
+	CanProcess     bool
 	VisualSeverity FrontendVisualSeverity
+}
+
+type FrontendAlarmProcessingOption struct {
+	Code  string
+	Label string
+}
+
+type FrontendAlarmProcessRequest struct {
+	User      string
+	CauseCode string
+	Note      string
+}
+
+type FrontendAlarmPickRequest struct {
+	User string
 }
 
 type FrontendEventItem struct {
@@ -205,6 +225,12 @@ type FrontendObjectDetails struct {
 	Zones               []FrontendZone
 	Contacts            []FrontendContact
 	Events              []FrontendEventItem
+}
+
+type FrontendEventPage struct {
+	Items      []FrontendEventItem
+	TotalCount int
+	HasMore    bool
 }
 
 type FrontendObjectCoreFields struct {
@@ -269,7 +295,11 @@ type FrontendBackend interface {
 	Capabilities(ctx context.Context) (FrontendCapabilities, error)
 	ListObjects(ctx context.Context) ([]FrontendObjectSummary, error)
 	ListAlarms(ctx context.Context) ([]FrontendAlarmItem, error)
+	GetAlarmProcessingOptions(ctx context.Context, alarmID int) ([]FrontendAlarmProcessingOption, error)
+	PickAlarm(ctx context.Context, alarmID int, request FrontendAlarmPickRequest) error
+	ProcessAlarm(ctx context.Context, alarmID int, request FrontendAlarmProcessRequest) error
 	ListEvents(ctx context.Context) ([]FrontendEventItem, error)
+	ListObjectEvents(ctx context.Context, objectID int, offset int, limit int) (FrontendEventPage, error)
 	GetObjectDetails(ctx context.Context, objectID int) (FrontendObjectDetails, error)
 	CreateObject(ctx context.Context, request FrontendObjectUpsertRequest) (FrontendObjectMutationResult, error)
 	UpdateObject(ctx context.Context, request FrontendObjectUpsertRequest) (FrontendObjectMutationResult, error)

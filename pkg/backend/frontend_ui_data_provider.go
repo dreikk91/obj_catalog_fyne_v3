@@ -211,6 +211,14 @@ func (p *FrontendUIDataProvider) ProcessAlarmWithRequest(ctx context.Context, al
 	return provider.ProcessAlarmWithRequest(ctx, alarm, user, request)
 }
 
+func (p *FrontendUIDataProvider) PickAlarm(ctx context.Context, alarm models.Alarm, user string) error {
+	provider, ok := p.fallback.(contracts.AlarmTakeoverProvider)
+	if !ok {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	return provider.PickAlarm(ctx, alarm, user)
+}
+
 func (p *FrontendUIDataProvider) listObjects() ([]contracts.FrontendObjectSummary, error) {
 	if p == nil || p.frontend == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
@@ -371,6 +379,9 @@ func mergeFrontendAlarm(alarm *models.Alarm, item contracts.FrontendAlarmItem) {
 	alarm.IsProcessed = item.IsProcessed
 	alarm.ProcessedBy = strings.TrimSpace(item.ProcessedBy)
 	alarm.ProcessNote = strings.TrimSpace(item.ProcessNote)
+	alarm.IsInProgress = item.IsInProgress
+	alarm.InProgressBy = strings.TrimSpace(item.InProgressBy)
+	alarm.IsOwnedByMe = item.IsOwnedByMe
 	alarm.VisualSeverity = modelVisualSeverity(item.VisualSeverity)
 	if alarm.SC1 == 0 {
 		alarm.SC1 = modelSC1FromSeverity(item.VisualSeverity)

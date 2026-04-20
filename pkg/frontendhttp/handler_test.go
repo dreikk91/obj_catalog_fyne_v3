@@ -21,11 +21,25 @@ type frontendBackendStub struct {
 	objectsResult []contracts.FrontendObjectSummary
 	objectsErr    error
 
-	alarmsResult []contracts.FrontendAlarmItem
-	alarmsErr    error
+	alarmsResult                 []contracts.FrontendAlarmItem
+	alarmsErr                    error
+	alarmProcessingOptionsResult []contracts.FrontendAlarmProcessingOption
+	alarmProcessingOptionsErr    error
+	alarmProcessingOptionsID     int
+	pickAlarmInput               contracts.FrontendAlarmPickRequest
+	pickAlarmErr                 error
+	pickAlarmID                  int
+	processAlarmInput            contracts.FrontendAlarmProcessRequest
+	processAlarmErr              error
+	processAlarmID               int
 
-	eventsResult []contracts.FrontendEventItem
-	eventsErr    error
+	eventsResult         []contracts.FrontendEventItem
+	eventsErr            error
+	objectEventsResult   contracts.FrontendEventPage
+	objectEventsErr      error
+	objectEventsObjectID int
+	objectEventsOffset   int
+	objectEventsLimit    int
 
 	detailsResult contracts.FrontendObjectDetails
 	detailsErr    error
@@ -52,8 +66,32 @@ func (s *frontendBackendStub) ListAlarms(context.Context) ([]contracts.FrontendA
 	return s.alarmsResult, s.alarmsErr
 }
 
+func (s *frontendBackendStub) GetAlarmProcessingOptions(_ context.Context, alarmID int) ([]contracts.FrontendAlarmProcessingOption, error) {
+	s.alarmProcessingOptionsID = alarmID
+	return s.alarmProcessingOptionsResult, s.alarmProcessingOptionsErr
+}
+
+func (s *frontendBackendStub) PickAlarm(_ context.Context, alarmID int, request contracts.FrontendAlarmPickRequest) error {
+	s.pickAlarmID = alarmID
+	s.pickAlarmInput = request
+	return s.pickAlarmErr
+}
+
+func (s *frontendBackendStub) ProcessAlarm(_ context.Context, alarmID int, request contracts.FrontendAlarmProcessRequest) error {
+	s.processAlarmID = alarmID
+	s.processAlarmInput = request
+	return s.processAlarmErr
+}
+
 func (s *frontendBackendStub) ListEvents(context.Context) ([]contracts.FrontendEventItem, error) {
 	return s.eventsResult, s.eventsErr
+}
+
+func (s *frontendBackendStub) ListObjectEvents(_ context.Context, objectID int, offset int, limit int) (contracts.FrontendEventPage, error) {
+	s.objectEventsObjectID = objectID
+	s.objectEventsOffset = offset
+	s.objectEventsLimit = limit
+	return s.objectEventsResult, s.objectEventsErr
 }
 
 func (s *frontendBackendStub) GetObjectDetails(_ context.Context, objectID int) (contracts.FrontendObjectDetails, error) {
@@ -326,6 +364,94 @@ func TestHandlerListEventsAndAlarms(t *testing.T) {
 	NewHandler(stub).ServeHTTP(recAlarms, reqAlarms)
 	if recAlarms.Code != http.StatusOK {
 		t.Fatalf("alarms status = %d, want %d", recAlarms.Code, http.StatusOK)
+	}
+}
+
+func TestHandlerListObjectEventsPage(t *testing.T) {
+	stub := &frontendBackendStub{
+		objectEventsResult: contracts.FrontendEventPage{
+			Items: []contracts.FrontendEventItem{
+				{
+					ID:         7,
+					ObjectID:   55,
+					ObjectName: "Об'єкт",
+					Time:       time.Now(),
+				},
+			},
+			TotalCount: 140,
+			HasMore:    true,
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, APIV1BasePath+"/objects/55/events?offset=100&limit=100", nil)
+	rec := httptest.NewRecorder()
+
+	NewHandler(stub).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if stub.objectEventsObjectID != 55 || stub.objectEventsOffset != 100 || stub.objectEventsLimit != 100 {
+		t.Fatalf("object events args = %d/%d/%d, want 55/100/100", stub.objectEventsObjectID, stub.objectEventsOffset, stub.objectEventsLimit)
+	}
+
+	var payload frontendv1.EventPageResponse
+	decodeJSON(t, rec, &payload)
+	if payload.TotalCount != 140 || !payload.HasMore || len(payload.Items) != 1 {
+		t.Fatalf("payload = %+v, want 1 item and total=140 hasMore=true", payload)
+	}
+}
+
+func TestHandlerAlarmProcessingOptions(t *testing.T) {
+	stub := &frontendBackendStub{
+		alarmProcessingOptionsResult: []contracts.FrontendAlarmProcessingOption{
+			{Code: "CAUSES_FALSE_ALARM", Label: "Хибна тривога"},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, APIV1BasePath+"/alarms/77/processing-options", nil)
+	rec := httptest.NewRecorder()
+
+	NewHandler(stub).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if stub.alarmProcessingOptionsID != 77 {
+		t.Fatalf("alarm id = %d, want 77", stub.alarmProcessingOptionsID)
+	}
+
+	var payload frontendv1.AlarmProcessingOptionsResponse
+	decodeJSON(t, rec, &payload)
+	if len(payload.Items) != 1 || payload.Items[0].Code != "CAUSES_FALSE_ALARM" {
+		t.Fatalf("payload = %+v", payload)
+	}
+}
+
+func TestHandlerProcessAlarm(t *testing.T) {
+	stub := &frontendBackendStub{}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		APIV1BasePath+"/alarms/88/process",
+		encodeJSONBody(t, frontendv1.AlarmProcessRequest{
+			User:      "Підлипний А.М",
+			CauseCode: "CAUSES_FALSE_ALARM",
+			Note:      "Перевірено",
+		}),
+	)
+	rec := httptest.NewRecorder()
+
+	NewHandler(stub).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+	if stub.processAlarmID != 88 {
+		t.Fatalf("alarm id = %d, want 88", stub.processAlarmID)
+	}
+	if stub.processAlarmInput.CauseCode != "CAUSES_FALSE_ALARM" || stub.processAlarmInput.Note != "Перевірено" {
+		t.Fatalf("process input = %+v", stub.processAlarmInput)
 	}
 }
 

@@ -1,0 +1,23 @@
+.status-pill {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.16rem 0.56rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.status-pill--ok {
+  border-color: rgba(81, 178, 113, 0.6);
+  color: #d5f4df;
+}
+
+.status-pill--warn {
+  border-color: rgba(224, 152, 63, 0.65);
+  color: #ffe7c4;
+}
+
+.status-pill--info {
+  border-color: rgba(113, 165, 230, 0.63);
+  color: #dbeaff;
+}

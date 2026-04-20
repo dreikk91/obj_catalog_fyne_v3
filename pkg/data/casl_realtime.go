@@ -1105,21 +1105,32 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		if action == "GRD_OBJ_NOTIF" {
 			seed := stableCASLAlarmSeed(action, strings.TrimSpace(row.AlarmType), zoneNumber)
 			p.realtimeAlarmByObjID[cacheKey] = models.Alarm{
-				ID:           stableCASLAlarmID(objectKey, alarmTime.UnixMilli(), seed),
-				ObjectID:     objectID,
-				ObjectNumber: objectNum,
-				ObjectName:   objectName,
-				Address:      strings.TrimSpace(row.ObjAddr),
-				Time:         alarmTime,
-				Details:      details,
-				Type:         alarmType,
-				ZoneNumber:   int(row.Number),
-				SC1:          mapCASLEventSC1(eventType),
+				ID:             stableCASLAlarmID(objectKey, alarmTime.UnixMilli(), seed),
+				ObjectID:       objectID,
+				ObjectNumber:   objectNum,
+				ObjectName:     objectName,
+				Address:        strings.TrimSpace(row.ObjAddr),
+				Time:           alarmTime,
+				Details:        details,
+				Type:           alarmType,
+				ZoneNumber:     int(row.Number),
+				SC1:            mapCASLEventSC1(eventType),
+				InProgressUser: "",
+				InProgressBy:   "",
 			}
 			continue
 		}
 
 		if action == "GRD_OBJ_PICK" || action == "GRD_OBJ_ASS_MGR" {
+			isInProgress := action == "GRD_OBJ_PICK"
+			isOwnedByMe := strings.TrimSpace(row.UserID) != "" && strings.TrimSpace(row.UserID) == p.currentCASLUserID()
+			inProgressBy := strings.TrimSpace(row.UserFIO)
+			if inProgressBy == "" && strings.TrimSpace(row.UserID) != "" {
+				inProgressBy = p.resolveCASLUserDisplayName(context.Background(), strings.TrimSpace(row.UserID))
+			}
+			if inProgressBy == "" && strings.TrimSpace(row.UserID) != "" {
+				inProgressBy = "Оператор #" + strings.TrimSpace(row.UserID)
+			}
 
 			for key, existing := range p.realtimeAlarmByObjID {
 				if !strings.HasPrefix(key, objectKey+"|") {
@@ -1134,6 +1145,10 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 				if details != "" {
 					existing.Details = details
 				}
+				existing.IsInProgress = isInProgress
+				existing.InProgressUser = strings.TrimSpace(row.UserID)
+				existing.InProgressBy = inProgressBy
+				existing.IsOwnedByMe = isInProgress && isOwnedByMe
 				p.realtimeAlarmByObjID[key] = existing
 			}
 			continue
@@ -1157,16 +1172,18 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 
 		seed := stableCASLAlarmSeed(row.Code, row.ContactID, zoneNumber)
 		p.realtimeAlarmByObjID[cacheKey] = models.Alarm{
-			ID:           stableCASLAlarmID(objectKey, alarmTime.UnixMilli(), seed),
-			ObjectID:     objectID,
-			ObjectNumber: objectNum,
-			ObjectName:   objectName,
-			Address:      strings.TrimSpace(row.ObjAddr),
-			Time:         alarmTime,
-			Details:      details,
-			Type:         alarmType,
-			ZoneNumber:   zoneNumber,
-			SC1:          mapCASLEventSC1(eventType),
+			ID:             stableCASLAlarmID(objectKey, alarmTime.UnixMilli(), seed),
+			ObjectID:       objectID,
+			ObjectNumber:   objectNum,
+			ObjectName:     objectName,
+			Address:        strings.TrimSpace(row.ObjAddr),
+			Time:           alarmTime,
+			Details:        details,
+			Type:           alarmType,
+			ZoneNumber:     zoneNumber,
+			SC1:            mapCASLEventSC1(eventType),
+			InProgressUser: "",
+			InProgressBy:   "",
 		}
 	}
 }

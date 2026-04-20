@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	// "math/rand"
 	"strings"
@@ -48,6 +49,9 @@ type Application struct {
 	frontendAPI  contracts.FrontendBackend
 	uiData       *backend.FrontendUIDataProvider
 	providerMu   sync.RWMutex
+	webServerMu  sync.Mutex
+	webServer    *http.Server
+	webServerURL string
 	// Внутрішня шина подій для розв'язування UI-компонентів.
 	eventBus *eventbus.Bus
 	// Коротке вікно для об'єднання частих refresh-подій в одну.
@@ -239,6 +243,7 @@ func NewApplication() *Application {
 	log.Info().Msg("Побудова UI компонентів...")
 	application.buildUI()
 	log.Info().Msg("UI побудовано успішно")
+	application.startWebFrontendServer()
 
 	// Показуємо вікно ЯКНАЙШВИДШЕ
 	// А дані будуть підтягуватись у фоні (вже запущено в конструкторах панелей)
@@ -578,6 +583,7 @@ func (a *Application) installCloseIntercept() {
 			a.refreshLoopCancel()
 			a.refreshLoopCancel = nil
 		}
+		a.stopWebFrontendServer()
 		if provider := a.getDataProvider(); provider != nil {
 			if shutdowner, ok := provider.(contracts.ShutdownProvider); ok {
 				shutdowner.Shutdown()
@@ -694,6 +700,10 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	adminMenu.Items[len(adminMenu.Items)-1].ChildMenu = adminDirectories
 
 	helpMenu := fyne.NewMenu("Довідка",
+		fyne.NewMenuItem("Відкрити web frontend", func() {
+			a.openWebFrontend()
+		}),
+		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Про версію", func() {
 			dialogs.ShowInfoDialog(a.mainWindow, "Про версію", a.versionInfo.FullText())
 		}),

@@ -24,8 +24,24 @@ func (s *frontendAdminBridgeBackendStub) ListAlarms(context.Context) ([]contract
 	return nil, nil
 }
 
+func (s *frontendAdminBridgeBackendStub) GetAlarmProcessingOptions(context.Context, int) ([]contracts.FrontendAlarmProcessingOption, error) {
+	return nil, nil
+}
+
+func (s *frontendAdminBridgeBackendStub) PickAlarm(context.Context, int, contracts.FrontendAlarmPickRequest) error {
+	return nil
+}
+
+func (s *frontendAdminBridgeBackendStub) ProcessAlarm(context.Context, int, contracts.FrontendAlarmProcessRequest) error {
+	return nil
+}
+
 func (s *frontendAdminBridgeBackendStub) ListEvents(context.Context) ([]contracts.FrontendEventItem, error) {
 	return nil, nil
+}
+
+func (s *frontendAdminBridgeBackendStub) ListObjectEvents(context.Context, int, int, int) (contracts.FrontendEventPage, error) {
+	return contracts.FrontendEventPage{}, nil
 }
 
 func (s *frontendAdminBridgeBackendStub) GetObjectDetails(context.Context, int) (contracts.FrontendObjectDetails, error) {

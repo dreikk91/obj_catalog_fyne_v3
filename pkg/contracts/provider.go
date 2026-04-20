@@ -81,6 +81,11 @@ type AlarmProcessingProvider interface {
 	ProcessAlarmWithRequest(ctx context.Context, alarm models.Alarm, user string, request AlarmProcessingRequest) error
 }
 
+// AlarmTakeoverProvider описує взяття/перехоплення тривоги в роботу.
+type AlarmTakeoverProvider interface {
+	PickAlarm(ctx context.Context, alarm models.Alarm, user string) error
+}
+
 // DataProvider об'єднує всі інтерфейси даних
 type DataProvider interface {
 	ObjectProvider

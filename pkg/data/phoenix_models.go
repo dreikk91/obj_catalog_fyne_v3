@@ -108,6 +108,17 @@ type phoenixEventRow struct {
 	Address       sql.NullString `db:"company_address"`
 }
 
+type phoenixAvailableStateRow struct {
+	StateID   int64  `db:"available_state_id"`
+	StateName string `db:"state_name"`
+}
+
+type phoenixResponseGroupRow struct {
+	GroupID     int64          `db:"group_id"`
+	Description string         `db:"description"`
+	Callsign    sql.NullString `db:"callsign"`
+}
+
 type phoenixActiveAlarmRow struct {
 	EventID       sql.NullInt64  `db:"event_id"`
 	PanelID       string         `db:"panel_id"`

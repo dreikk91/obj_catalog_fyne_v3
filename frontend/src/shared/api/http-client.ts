@@ -96,6 +96,9 @@ export function createHTTPFrontendClient(): FrontendClient {
         method: 'POST',
       })
     },
+    async standbyObject(objectID) {
+      await fetchJSON<void>(`${FRONTEND_API_BASE}/objects/${objectID}/standby`, { method: 'POST' })
+    },
     async listObjectEvents(objectID, offset, limit) {
       const params = new URLSearchParams({
         offset: String(offset),

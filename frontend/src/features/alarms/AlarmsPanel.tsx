@@ -20,10 +20,10 @@ export function AlarmsPanel({ alarms, loading }: Props) {
         <table className="alarm-table">
           <thead>
             <tr>
-              <th>Лінія</th>
-              <th>Об'єкт</th>
-              <th>Тривога</th>
-              <th>Час</th>
+              <th style={{ width: 48 }}>Лінія</th>
+              <th style={{ width: 140 }}>Об'єкт</th>
+              <th style={{ width: 150 }}>Тривога</th>
+              <th style={{ width: 80 }}>Час</th>
               <th>Опис</th>
             </tr>
           </thead>

@@ -140,7 +140,11 @@ func (a *FrontendAdapter) ListAlarms(context.Context) ([]contracts.FrontendAlarm
 				item.ID = item.ID*1000 + idx
 				item.Time = msg.Time
 				item.TypeCode = msg.Code
-				item.TypeText = msg.Code
+				typeText := strings.TrimSpace(msg.Details)
+				if typeText == "" {
+					typeText = msg.Code
+				}
+				item.TypeText = typeText
 				if msg.Details != "" {
 					item.Details = strings.TrimSpace(msg.Details)
 				}
@@ -318,6 +322,20 @@ func (a *FrontendAdapter) ListAlarmProcessingOptionsCached(ctx context.Context) 
 	return append([]contracts.FrontendAlarmProcessingOption(nil), legacyFrontendAlarmProcessingOptions...), nil
 }
 
+func (a *FrontendAdapter) StandbyObject(ctx context.Context, objectID int) error {
+	if a == nil || a.dataProvider == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	if objectID <= 0 {
+		return fmt.Errorf("невірний ID об'єкта")
+	}
+	source := contracts.DetectFrontendSourceByObjectID(objectID)
+	if admin, ok := a.dataProvider.(contracts.AdminProvider); ok && source == contracts.FrontendSourceBridge {
+		return admin.SetDisplayBlockMode(int64(objectID), contracts.DisplayBlockDebug)
+	}
+	return fmt.Errorf("переведення в стенди не підтримується для джерела %s", source)
+}
+
 func (a *FrontendAdapter) ListResponseGroups(ctx context.Context) ([]contracts.FrontendResponseGroup, error) {
 	if a == nil || a.dataProvider == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
@@ -404,6 +422,16 @@ func (a *FrontendAdapter) resolveAlarmByID(alarmID int) (models.Alarm, error) {
 	for _, alarm := range alarms {
 		if alarm.ID == alarmID {
 			return alarm, nil
+		}
+	}
+	// Compound ID: frontend encodes source-message sub-items as alarmID*1000+idx.
+	// Try the base alarm ID if exact match was not found.
+	if alarmID >= 1000 {
+		baseID := alarmID / 1000
+		for _, alarm := range alarms {
+			if alarm.ID == baseID {
+				return alarm, nil
+			}
 		}
 	}
 	return models.Alarm{}, fmt.Errorf("alarm #%d not found", alarmID)

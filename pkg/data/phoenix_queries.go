@@ -444,6 +444,21 @@ WHERE A.Event_id > @p1
 ORDER BY A.Event_id ASC
 `
 
+const phoenixAvailableStatesQuery = `
+SELECT A.AvailableState_id AS available_state_id, S.StateName AS state_name
+FROM AvailableStates A WITH (NOLOCK)
+INNER JOIN States S WITH (NOLOCK) ON S.State_id = A.AvailableState_id
+WHERE A.State_id = @p1 AND (A.idTCode = 1 OR A.idTCode IS NULL)
+ORDER BY A.AvailableState_id
+`
+
+const phoenixResponseGroupsQuery = `
+SELECT gr.Group_id AS group_id, gr.Description AS description, gr.callsign AS callsign
+FROM GroupResponse gr WITH (NOLOCK)
+WHERE COALESCE(gr.Disabled, 0) = 0
+ORDER BY gr.Group_id
+`
+
 const phoenixObjectEventsQuery = `
 SELECT TOP (500)
 	A.Event_id AS event_id,

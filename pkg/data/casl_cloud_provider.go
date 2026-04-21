@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"obj_catalog_fyne_v3/pkg/models"
@@ -104,6 +105,8 @@ type CASLCloudProvider struct {
 	realtimeSubscribed bool
 
 	realtimeAlarmByObjID map[string]models.Alarm
+
+	alarmsRefreshing atomic.Bool
 }
 
 func NewCASLCloudProvider(baseURL string, token string, pultID int64, credentials ...string) *CASLCloudProvider {
@@ -118,7 +121,7 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 	}
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 
-	return &CASLCloudProvider{
+	p := &CASLCloudProvider{
 		baseURL: normalizeCASLBaseURL(baseURL),
 		pultID:  pultID,
 		email:   email,
@@ -146,6 +149,8 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 		eventsCursorMs:         nowMS,
 		realtimeAlarmByObjID:   make(map[string]models.Alarm),
 	}
+	go p.loadDictionaryMap(lifecycleCtx)
+	return p
 }
 
 func (p *CASLCloudProvider) Shutdown() {

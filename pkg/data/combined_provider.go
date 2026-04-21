@@ -12,7 +12,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 type latestEventIDProvider interface {
@@ -433,12 +436,38 @@ func (p *CombinedDataProvider) GetEmployees(objectID string) []models.Contact {
 }
 
 func (p *CombinedDataProvider) GetEvents() []models.Event {
-	events := make([]models.Event, 0, defaultEventsCapacity)
-	if p != nil {
-		for _, source := range p.sources {
-			events = append(events, source.Provider.GetEvents()...)
-		}
+	if p == nil || len(p.sources) == 0 {
+		return nil
 	}
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	events := make([]models.Event, 0, defaultEventsCapacity)
+
+	for i := range p.sources {
+		wg.Add(1)
+		go func(src *ProviderSource) {
+			defer wg.Done()
+			
+			resChan := make(chan []models.Event, 1)
+			go func() {
+				resChan <- src.Provider.GetEvents()
+			}()
+
+			select {
+			case sourceEvents := <-resChan:
+				if len(sourceEvents) > 0 {
+					mu.Lock()
+					events = append(events, sourceEvents...)
+					mu.Unlock()
+				}
+			case <-time.After(2 * time.Second): // Individual provider timeout
+				log.Debug().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout")
+			}
+		}(&p.sources[i])
+	}
+	wg.Wait()
+
 	sortEvents(events)
 	return events
 }
@@ -500,12 +529,38 @@ func (p *CombinedDataProvider) GetActiveAlarmSourceMessages(alarm models.Alarm) 
 }
 
 func (p *CombinedDataProvider) GetAlarms() []models.Alarm {
-	alarms := make([]models.Alarm, 0, defaultAlarmsCapacity)
-	if p != nil {
-		for _, source := range p.sources {
-			alarms = append(alarms, source.Provider.GetAlarms()...)
-		}
+	if p == nil || len(p.sources) == 0 {
+		return nil
 	}
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	alarms := make([]models.Alarm, 0, defaultAlarmsCapacity)
+
+	for i := range p.sources {
+		wg.Add(1)
+		go func(src *ProviderSource) {
+			defer wg.Done()
+			
+			resChan := make(chan []models.Alarm, 1)
+			go func() {
+				resChan <- src.Provider.GetAlarms()
+			}()
+
+			select {
+			case sourceAlarms := <-resChan:
+				if len(sourceAlarms) > 0 {
+					mu.Lock()
+					alarms = append(alarms, sourceAlarms...)
+					mu.Unlock()
+				}
+			case <-time.After(3 * time.Second): // Individual provider timeout
+				log.Debug().Str("provider", src.Name).Msg("CombinedDataProvider: GetAlarms timeout")
+			}
+		}(&p.sources[i])
+	}
+	wg.Wait()
+
 	sort.SliceStable(alarms, func(i, j int) bool {
 		left := alarms[i].Time
 		right := alarms[j].Time
@@ -663,6 +718,81 @@ func (p *CombinedDataProvider) sourceForObjectID(objectID int) *ProviderSource {
 		}
 	}
 	return &p.sources[0]
+}
+
+// ListResponseGroups implements contracts.ResponseGroupProvider.
+// Aggregates response groups from all sources that support the interface.
+func (p *CombinedDataProvider) ListResponseGroups(ctx context.Context) ([]contracts.ResponseGroup, error) {
+	if p == nil {
+		return nil, errors.New("combined provider is nil")
+	}
+	var result []contracts.ResponseGroup
+	for _, source := range p.sources {
+		rgp, ok := source.Provider.(contracts.ResponseGroupProvider)
+		if !ok {
+			continue
+		}
+		groups, err := rgp.ListResponseGroups(ctx)
+		if err != nil {
+			log.Warn().Err(err).Str("source", source.Name).Msg("ListResponseGroups failed")
+			continue
+		}
+		result = append(result, groups...)
+	}
+	return result, nil
+}
+
+// AssignResponseGroup implements contracts.ResponseGroupProvider.
+func (p *CombinedDataProvider) AssignResponseGroup(ctx context.Context, alarm models.Alarm, groupID string) error {
+	src := p.sourceForObjectID(alarm.ObjectID)
+	if src == nil {
+		return errors.New("no source available for alarm")
+	}
+	rgp, ok := src.Provider.(contracts.ResponseGroupProvider)
+	if !ok {
+		return fmt.Errorf("assign response group not supported for source %s", src.Name)
+	}
+	return rgp.AssignResponseGroup(ctx, alarm, groupID)
+}
+
+// NotifyGroupArrived implements contracts.ResponseGroupProvider.
+func (p *CombinedDataProvider) NotifyGroupArrived(ctx context.Context, alarm models.Alarm) error {
+	src := p.sourceForObjectID(alarm.ObjectID)
+	if src == nil {
+		return errors.New("no source available for alarm")
+	}
+	rgp, ok := src.Provider.(contracts.ResponseGroupProvider)
+	if !ok {
+		return fmt.Errorf("notify group arrived not supported for source %s", src.Name)
+	}
+	return rgp.NotifyGroupArrived(ctx, alarm)
+}
+
+// CancelResponseGroup implements contracts.ResponseGroupProvider.
+func (p *CombinedDataProvider) CancelResponseGroup(ctx context.Context, alarm models.Alarm) error {
+	src := p.sourceForObjectID(alarm.ObjectID)
+	if src == nil {
+		return errors.New("no source available for alarm")
+	}
+	rgp, ok := src.Provider.(contracts.ResponseGroupProvider)
+	if !ok {
+		return fmt.Errorf("cancel response group not supported for source %s", src.Name)
+	}
+	return rgp.CancelResponseGroup(ctx, alarm)
+}
+
+// GroupProcessAlarm implements contracts.AlarmGroupProcessProvider.
+// Routes to the source that owns the alarm by objectID.
+func (p *CombinedDataProvider) GroupProcessAlarm(ctx context.Context, alarm models.Alarm, user string) error {
+	src := p.sourceForObjectID(alarm.ObjectID)
+	if src == nil {
+		return errors.New("no source available for alarm")
+	}
+	agp, ok := src.Provider.(contracts.AlarmGroupProcessProvider)
+	if !ok {
+		return fmt.Errorf("group process alarm not supported for source %s", src.Name)
+	}
+	return agp.GroupProcessAlarm(ctx, alarm, user)
 }
 
 func parseObjectID(raw string) (int, bool) {

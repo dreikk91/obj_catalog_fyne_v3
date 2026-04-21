@@ -202,7 +202,7 @@ export function App() {
   const unprocessedAlarmGroups = useMemo(() => {
     const filtered = showAllAlarms
       ? journalStream.alarmGroups
-      : journalStream.alarmGroups.filter((g) => !g.primary.isInProgress || g.primary.isOwnedByMe)
+      : journalStream.alarmGroups.filter((g) => !g.primary.isInProgress || g.primary.isOwnedByMe || g.primary.canTakeOver)
     const raw = filtered.map(toUnprocessedAlarmGroup)
     return mergeUnprocessedGroupsByObject(raw)
   }, [journalStream.alarmGroups, showAllAlarms])
@@ -217,8 +217,8 @@ export function App() {
         if (prev[groupID] !== undefined) {
           next[groupID] = prev[groupID]
         } else {
-          // New group - expand by default
-          next[groupID] = true
+          // New group - collapsed by default
+          next[groupID] = false
           changed = true
         }
       }
@@ -254,6 +254,10 @@ export function App() {
   useEffect(() => {
     let maxT = 0
     for (const g of journalStream.alarmGroups) {
+      const hasCriticalItem = g.items.some(
+        (item) => item.visualSeverity === 'critical' || (item.visualSeverity === 'unknown' && item.typeCode.toLowerCase() !== 'fault'),
+      )
+      if (!hasCriticalItem) continue
       const t = new Date(g.latestTime).getTime()
       if (t > maxT) maxT = t
     }
@@ -272,18 +276,16 @@ export function App() {
     const timerId = window.setTimeout(() => {
       setMainTab('signals')
       setBottomTab('unproc')
-      
+
       const rows = unprocessedFlatRowsRef.current
       if (rows.length > 0) {
         setSelectedSignalRowID(rows[0].rowID)
         setSelectedObjectID(rows[0].objectID)
-        setIsCardModalOpen(true)
-        setCardModalTab('kartochka')
       }
     }, 30000)
 
     return () => window.clearTimeout(timerId)
-  }, [lastSeenAlarmTime, mainTab, bottomTab, setMainTab, setBottomTab, setSelectedSignalRowID, setSelectedObjectID, setIsCardModalOpen, setCardModalTab])
+  }, [lastSeenAlarmTime, mainTab, bottomTab, setMainTab, setBottomTab, setSelectedSignalRowID, setSelectedObjectID])
 
   const journalArchiveRows = useMemo(() => {
     const threshold = Date.now() - RECENT_JOURNAL_WINDOW_MS
@@ -329,6 +331,11 @@ export function App() {
   const selectedObjectEvents = useMemo(
     () => objectEventsFeed.events.map(toArchiveRow).sort(sortJournalRowsDesc),
     [objectEventsFeed.events],
+  )
+
+  const liveObjectEvents = useMemo(
+    () => journalArchiveRows.filter((row) => row.objectID === effectiveSelectedObjectID),
+    [journalArchiveRows, effectiveSelectedObjectID],
   )
 
   const selectedObjectZones = detailsQuery.data?.zones ?? []
@@ -448,9 +455,10 @@ export function App() {
         setAlarmWorkflowError('')
         
         const activeObjectID = activeAlarmRow.objectID
-        const alarmsCount = journalAlarmRows.filter((r) => r.objectID === activeObjectID).length
-        
-        if (alarmsCount > 1) {
+        const source = activeAlarmRow.source
+        const alarmsCount = journalStream.alarmGroups.filter((g) => g.objectID === activeObjectID).length
+
+        if (source !== 'casl' && alarmsCount > 1) {
           await api.groupProcessAlarm(alarmID, OPERATOR_NAME)
         } else {
           await api.processAlarm(alarmID, {
@@ -470,7 +478,7 @@ export function App() {
         setAlarmProcessingBusy(false)
       }
     },
-    [detailsQuery, activeAlarmRow, objectsQuery, setIsEventModalOpen, journalAlarmRows],
+    [detailsQuery, activeAlarmRow, objectsQuery, setIsEventModalOpen, journalStream.alarmGroups],
   )
 
   const handlePickAlarm = useCallback(async () => {
@@ -499,10 +507,25 @@ export function App() {
     }
   }, [activeAlarmRow?.alarmID, activeAlarmRow?.inProgressByMe, activeAlarmRow?.source])
 
+  const handleStandby = useCallback(async () => {
+    const objectID = activeAlarmRow?.objectID
+    if (objectID == null || objectID <= 0) return
+    setAlarmWorkflowBusy(true)
+    setAlarmWorkflowError('')
+    try {
+      await api.standbyObject(objectID)
+    } catch (error: unknown) {
+      setAlarmWorkflowError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setAlarmWorkflowBusy(false)
+    }
+  }, [activeAlarmRow?.objectID])
+
   const handleDispatchGroup = useCallback(() => {
     const alarmID = activeAlarmRow?.alarmID
     if (alarmID == null || alarmID <= 0) return
     setDispatchGroupError('')
+    void api.listResponseGroups().then(setResponseGroups).catch(() => {})
     setIsDispatchGroupModalOpen(true)
   }, [activeAlarmRow?.alarmID])
 
@@ -551,9 +574,10 @@ export function App() {
     setAlarmWorkflowError('')
     try {
       const activeObjectID = activeAlarmRow.objectID
-      const alarmsCount = journalAlarmRows.filter((r) => r.objectID === activeObjectID).length
-      
-      if (alarmsCount > 1) {
+      const source = activeAlarmRow.source
+      const alarmsCount = journalStream.alarmGroups.filter((g) => g.objectID === activeObjectID).length
+
+      if (source !== 'casl' && alarmsCount > 1) {
         await api.groupProcessAlarm(alarmID, OPERATOR_NAME)
       } else {
         await api.processAlarm(alarmID, { user: OPERATOR_NAME, causeCode: 'FALSE_ALARM', note: 'Скасовано оператором' })
@@ -570,7 +594,7 @@ export function App() {
     } finally {
       setAlarmWorkflowBusy(false)
     }
-  }, [activeAlarmRow, journalAlarmRows])
+  }, [activeAlarmRow, journalStream.alarmGroups])
 
   const handleToggleShowAll = useCallback(() => setShowAllAlarms((v) => !v), [])
 
@@ -638,7 +662,7 @@ export function App() {
               groupArrived={activeAlarmRow?.alarmID != null && groupArrivedAlarmIDs.has(activeAlarmRow.alarmID)}
               workflowBusy={alarmWorkflowBusy || alarmProcessingBusy}
               onPickAlarm={() => void handlePickAlarm()}
-              onStandby={() => {}}
+              onStandby={() => void handleStandby()}
               onCancelAlarm={() => void handleCancelAlarm()}
               onDispatchGroup={handleDispatchGroup}
               onGroupAction={() => void handleGroupAction()}
@@ -696,6 +720,7 @@ export function App() {
         selectedObjectZones={selectedObjectZones}
         selectedObjectContacts={selectedObjectContacts}
         selectedObjectEvents={selectedObjectEvents}
+        liveObjectEvents={liveObjectEvents}
         objectEventsFeed={objectEventsFeed}
         workflowBusy={alarmWorkflowBusy || alarmProcessingBusy}
         workflowError={alarmWorkflowError}
@@ -703,7 +728,7 @@ export function App() {
         groupDispatched={activeAlarmRow?.alarmID != null && groupDispatchedAlarmIDs.has(activeAlarmRow.alarmID)}
         groupArrived={activeAlarmRow?.alarmID != null && groupArrivedAlarmIDs.has(activeAlarmRow.alarmID)}
         onPickAlarm={() => void handlePickAlarm()}
-        onStandby={() => {}}
+        onStandby={() => void handleStandby()}
         onCancelAlarm={() => void handleCancelAlarm()}
         onDispatchGroup={handleDispatchGroup}
         onGroupAction={() => void handleGroupAction()}

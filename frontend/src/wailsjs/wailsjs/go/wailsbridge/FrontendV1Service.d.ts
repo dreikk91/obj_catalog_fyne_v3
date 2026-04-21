@@ -38,3 +38,5 @@ export function PickAlarm(arg1:number,arg2:v1.AlarmPickRequest):Promise<void>;
 export function ProcessAlarm(arg1:number,arg2:v1.AlarmProcessRequest):Promise<void>;
 
 export function SetBackend(arg1:contracts.FrontendBackend):Promise<void>;
+
+export function StandbyObject(arg1:number):Promise<void>;

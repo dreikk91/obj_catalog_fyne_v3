@@ -1031,7 +1031,9 @@ func (p *CASLCloudProvider) mapCASLHistoryRowToTapeMessage(
 	}
 
 	action := strings.ToUpper(strings.TrimSpace(row.Action))
-	if action != "GRD_OBJ_FINISH" && (strings.HasPrefix(action, "GRD_OBJ_") || isCASLActionSource(row.Type)) {
+	// We no longer filter out GRD_OBJ_* or internal actions for tape messages,
+	// because they are often part of the alarm story (e.g. who picked it up).
+	if action == "GRD_OBJ_FINISH" {
 		return caslTapeMessage{}, false
 	}
 
@@ -1182,6 +1184,37 @@ func selectCASLTapeCauseMessage(messages []caslTapeMessage) (caslTapeMessage, bo
 	return caslTapeMessage{}, false
 }
 
+func (p *CASLCloudProvider) mergeCASLTapeMessages(primary []caslTapeMessage, secondary []caslTapeMessage) []caslTapeMessage {
+	if len(secondary) == 0 {
+		return primary
+	}
+	if len(primary) == 0 {
+		return secondary
+	}
+
+	out := append([]caslTapeMessage(nil), primary...)
+	seen := make(map[string]struct{}, len(out))
+	for _, m := range out {
+		seen[fmt.Sprintf("%d|%s", m.Time, m.Code)] = struct{}{}
+	}
+
+	for _, m := range secondary {
+		key := fmt.Sprintf("%d|%s", m.Time, m.Code)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, m)
+	}
+
+	if len(out) > 1 {
+		sort.SliceStable(out, func(i, j int) bool {
+			return out[i].Time > out[j].Time
+		})
+	}
+	return out
+}
+
 func (p *CASLCloudProvider) findCASLGeneralTapeAlarmCauseInHistory(
 	ctx context.Context,
 	historyRows []map[string]any,
@@ -1329,7 +1362,7 @@ func (p *CASLCloudProvider) readGeneralTapeAsAlarms(ctx context.Context, byObjec
 
 		details, causeType, historyMsgs, hasCause := p.findCASLGeneralTapeAlarmCauseInHistory(ctx, historyByObject[item.ObjID], item.Translator, item.TranslatorFlags, dictMap, item.DeviceType)
 		if len(historyMsgs) > 0 {
-			item.PPKMsgs = historyMsgs
+			item.PPKMsgs = p.mergeCASLTapeMessages(item.PPKMsgs, historyMsgs)
 		}
 		if hasCause && strings.TrimSpace(item.Msg) == "" {
 			item.Msg = details
@@ -1516,37 +1549,35 @@ func caslObjectEventMergeKey(event models.Event) string {
 func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 	p.ensureRealtimeStream()
 
-	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
-	defer cancel()
+	// HTTP-оновлення запускаємо у фоні — CombinedDataProvider дає лише 3 с на провайдер,
+	// а CASL HTTP може тривати до 12 с. Повертаємо snapshot одразу.
+	if p.alarmsRefreshing.CompareAndSwap(false, true) {
+		go func() {
+			defer p.alarmsRefreshing.Store(false)
+			ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+			defer cancel()
 
-	// 1. БУДУЄМО СПІЛЬНИЙ КОНТЕКСТ ОДИН РАЗ
-	_, byObject, ctxErr := p.buildSharedObjectContext(ctx)
-	if ctxErr != nil {
-		log.Debug().Err(ctxErr).Msg("CASL: не вдалося побудувати спільний контекст об'єктів")
-	}
+			_, byObject, ctxErr := p.buildSharedObjectContext(ctx)
+			if ctxErr != nil {
+				log.Debug().Err(ctxErr).Msg("CASL bg: не вдалося побудувати спільний контекст об'єктів")
+			}
 
-	if _, err := p.readEventsJournalAsEvents(ctx); err != nil {
-		log.Debug().Err(err).Msg("CASL: read_events недоступний під час оновлення кешу журналу")
+			if _, err := p.readEventsJournalAsEvents(ctx); err != nil {
+				log.Debug().Err(err).Msg("CASL bg: read_events недоступний")
+			}
+
+			if len(p.snapshotRealtimeAlarms()) == 0 {
+				tapeAlarms, err := p.readGeneralTapeAsAlarms(ctx, byObject)
+				if err != nil {
+					log.Debug().Err(err).Msg("CASL bg: get_general_tape_objects недоступний")
+				} else if len(tapeAlarms) > 0 {
+					p.replaceRealtimeAlarmsSnapshot(tapeAlarms)
+				}
+			}
+		}()
 	}
 
 	alarms := p.snapshotRealtimeAlarms()
-	if len(alarms) == 0 {
-		// 2. БУДУЄМО fallback стрічку активних тривог напряму з get_general_tape_objects.
-		// Так не губимо alarm_type і можемо enrich-нути причину через get_general_tape_item.
-		tapeAlarms, err := p.readGeneralTapeAsAlarms(ctx, byObject)
-		if err != nil {
-			log.Debug().Err(err).Msg("CASL: get_general_tape_objects недоступний під час формування активних тривог")
-		} else if len(tapeAlarms) > 0 {
-			p.replaceRealtimeAlarmsSnapshot(tapeAlarms)
-			alarms = p.snapshotRealtimeAlarms()
-		}
-	}
-	if len(alarms) == 0 {
-		// get_general_tape_item повертає історичний ланцюжок подій по об'єкту
-		// ("від тривоги далі"), а не перелік поточних активних тривог.
-		// Тому не використовуємо його як fallback для стрічки активних тривог,
-		// інакше в UI зависають уже завершені CASL-кейси.
-	}
 	if len(alarms) == 0 {
 		return nil
 	}

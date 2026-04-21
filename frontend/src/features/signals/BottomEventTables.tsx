@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { flexRender, getCoreRowModel, useReactTable, type Cell, type ColumnDef, type Row, type Table } from '@tanstack/react-table'
+import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type Row, type Table } from '@tanstack/react-table'
 import type { BottomTab } from '../../shared/state/ui-store'
 import { useVirtualRows } from '../../hooks/useVirtualRows'
 import { useColumnVisibility } from '../../hooks/useColumnVisibility'
@@ -183,15 +183,15 @@ export function BottomEventTables({
       {
         accessorKey: 'date',
         header: 'Дата',
-        size: 76,
-        minSize: 68,
+        size: 88,
+        minSize: 80,
         cell: ({ getValue }) => <span className="mono dim">{String(getValue())}</span>,
       },
       {
         accessorKey: 'time',
         header: 'Час',
-        size: 76,
-        minSize: 68,
+        size: 88,
+        minSize: 80,
         cell: ({ getValue }) => <span className="mono">{String(getValue())}</span>,
       },
       {
@@ -268,8 +268,6 @@ export function BottomEventTables({
         return { id, label, isVisible }
       })
   }, [journalColumns, columnVisibility])
-  const columnCount = unprocessedTable.getAllLeafColumns().length
-
   return (
     <div className={isResizing ? 'ps-bottom is-resizing' : 'ps-bottom'} style={height != null ? { height } : undefined}>
       <div className="bot-tabs">
@@ -363,7 +361,7 @@ export function BottomEventTables({
         active={bottomTab === 'unproc'}
         table={unprocessedTable}
         virtualRows={unprocessedVirtual}
-        columnCount={columnCount}
+
         selectedSignalRowID={selectedSignalRowID}
         onSelectSignalRow={onSelectSignalRow}
         onDoubleClickRow={onOpenEventModal}
@@ -390,7 +388,7 @@ export function BottomEventTables({
         active={bottomTab === 'archive'}
         table={archiveTable}
         virtualRows={archiveVirtual}
-        columnCount={columnCount}
+
         selectedSignalRowID={selectedSignalRowID}
         onSelectSignalRow={onSelectSignalRow}
         onDoubleClickRow={onOpenCardModal}
@@ -407,7 +405,6 @@ function JournalPane({
   active,
   table,
   virtualRows,
-  columnCount,
   selectedSignalRowID,
   onSelectSignalRow,
   onDoubleClickRow,
@@ -419,7 +416,6 @@ function JournalPane({
   active: boolean
   table: Table<JournalRow>
   virtualRows: ReturnType<typeof useVirtualRows<Row<JournalRow>>>
-  columnCount: number
   selectedSignalRowID: string | null
   onSelectSignalRow: (row: JournalRow) => void
   onDoubleClickRow: (row: JournalRow) => void
@@ -468,12 +464,7 @@ function JournalPane({
             ))}
           </thead>
           <tbody>
-            {virtualRows.topPaddingPx > 0 && (
-              <tr className="vt-spacer" aria-hidden>
-                <td colSpan={columnCount} style={{ height: virtualRows.topPaddingPx }} />
-              </tr>
-            )}
-            {virtualRows.visibleRows.map((tableRow) => (
+            {table.getRowModel().rows.map((tableRow) => (
               <tr
                 key={tableRow.id}
                 className={rowClassName(tableRow.original)}
@@ -502,11 +493,6 @@ function JournalPane({
                 })}
               </tr>
             ))}
-            {virtualRows.bottomPaddingPx > 0 && (
-              <tr className="vt-spacer" aria-hidden>
-                <td colSpan={columnCount} style={{ height: virtualRows.bottomPaddingPx }} />
-              </tr>
-            )}
           </tbody>
         </table>
         {virtualRows.loadedCount < virtualRows.totalCount && (

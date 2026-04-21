@@ -27,8 +27,9 @@ export function toArchiveRow(item: FrontendEventItem): JournalRow {
   const typeText = item.typeText || 'Подія'
   const isAlarm = item.visualSeverity === 'critical' || isCriticalCode(item.typeCode)
   const severity = resolveJournalSeverity(item.visualSeverity, item.typeCode)
+  const ts = Number.isFinite(sortTimestampMs) ? sortTimestampMs : 0
   return {
-    rowID: `event-${item.id}-${item.time}`,
+    rowID: `event-${item.source}-${item.id}-${ts}`,
     alarmID: null,
     source: item.source,
     sortTimestampMs: Number.isFinite(sortTimestampMs) ? sortTimestampMs : 0,
@@ -62,7 +63,7 @@ export function toAlarmRow(item: FrontendAlarmItem): JournalRow {
   const severity = resolveJournalSeverity(item.visualSeverity, item.typeCode)
   const zone = item.zoneName.trim() || (item.zoneNumber > 0 ? String(item.zoneNumber) : '—')
   return {
-    rowID: `alarm-${item.id}-${item.time}-${item.typeCode}-${item.zoneNumber}-${item.source}`,
+    rowID: `alarm-${item.source}-${item.id}-${sortTimestampMs}-${item.typeCode}-${item.zoneNumber}`,
     alarmID: item.id,
     source: item.source,
     sortTimestampMs: Number.isFinite(sortTimestampMs) ? sortTimestampMs : 0,
@@ -125,7 +126,8 @@ export function compareEventItemsDesc(left: FrontendEventItem, right: FrontendEv
 
 export function sortJournalRowsDesc(left: JournalRow, right: JournalRow): number {
   if (left.sortTimestampMs === right.sortTimestampMs) {
-    return left.rowID < right.rowID ? 1 : -1
+    // Використовуємо числовий порівняльник для рядків, щоб '10' було більше ніж '2'
+    return right.rowID.localeCompare(left.rowID, undefined, { numeric: true })
   }
   return right.sortTimestampMs - left.sortTimestampMs
 }

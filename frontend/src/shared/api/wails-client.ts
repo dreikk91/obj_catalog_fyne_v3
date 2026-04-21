@@ -41,6 +41,7 @@ type WailsFrontendBridge = {
   AssignResponseGroup?: WailsMethod<[number, FrontendAlarmGroupActionRequest], void>
   NotifyGroupArrived?: WailsMethod<[number], void>
   CancelResponseGroup?: WailsMethod<[number], void>
+  StandbyObject?: WailsMethod<[number], void>
   ListObjectEvents?: WailsMethod<[number, number, number], FrontendEventPage>
   GetObjectDetails?: WailsMethod<[number], FrontendObjectDetails>
 }
@@ -146,6 +147,11 @@ export function createWailsFrontendClient(): FrontendClient | null {
       const fn = frontendBridge.CancelResponseGroup
       if (!fn) throw new Error('CancelResponseGroup не підтримується')
       await fn(alarmID)
+    },
+    async standbyObject(objectID) {
+      const fn = frontendBridge.StandbyObject
+      if (!fn) throw new Error('StandbyObject не підтримується')
+      await fn(objectID)
     },
     async listObjectEvents(objectID, offset, limit) {
       const page = await listObjectEvents(objectID, offset, limit)

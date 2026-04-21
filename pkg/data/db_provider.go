@@ -443,6 +443,7 @@ func (p *DBDataProvider) GetAlarms() []models.Alarm {
 			Type:         alarmType,
 			ZoneNumber:   selected.ZoneNumber,
 			SC1:          resolveDBGroupedAlarmSC1(activeMsgs, selected.SC1),
+			SourceMsgs:   mapDBAlarmMessagesToSourceMsgs(activeMsgs),
 		}
 		alarms = append(alarms, alarm)
 	}
@@ -578,6 +579,7 @@ func mapDBAlarmMessagesToSourceMsgs(messages []dbAlarmMessage) []models.AlarmMsg
 		result = append(result, models.AlarmMsg{
 			Time:    msg.Time,
 			Number:  msg.ZoneNumber,
+			Code:    strconv.Itoa(msg.SC1),
 			Details: msg.Details,
 			SC1:     msg.SC1,
 			IsAlarm: msg.IsAlarm,

@@ -311,6 +311,7 @@ type FrontendBackend interface {
 	PickAlarm(ctx context.Context, alarmID int, request FrontendAlarmPickRequest) error
 	ProcessAlarm(ctx context.Context, alarmID int, request FrontendAlarmProcessRequest) error
 	GroupProcessAlarm(ctx context.Context, alarmID int, user string) error
+	StandbyObject(ctx context.Context, objectID int) error
 	ListResponseGroups(ctx context.Context) ([]FrontendResponseGroup, error)
 	AssignResponseGroup(ctx context.Context, alarmID int, request FrontendAlarmGroupActionRequest) error
 	NotifyGroupArrived(ctx context.Context, alarmID int) error

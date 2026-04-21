@@ -553,7 +553,7 @@ function ObjectEventsPane({
           <thead>
             <tr>
               {visibleSet.has('date') && (
-                <th style={{ width: 80 }}>
+                <th style={{ width: 88 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetAll} />
                     Дата
@@ -561,7 +561,7 @@ function ObjectEventsPane({
                 </th>
               )}
               {visibleSet.has('time') && (
-                <th style={{ width: 64 }}>
+                <th style={{ width: 80 }}>
                   {!visibleSet.has('date') && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetAll} />
@@ -592,18 +592,16 @@ function ObjectEventsPane({
             </tr>
           </thead>
           <tbody>
-            <SpacerRow colSpan={visibleColCount} height={virtualRows.topPaddingPx} />
-            {virtualRows.visibleRows.map((item) => (
+            {rows.map((item) => (
               <tr key={item.rowID}>
                 {visibleSet.has('date') && <td>{item.date}</td>}
                 {visibleSet.has('time') && <td>{item.time}</td>}
                 {visibleSet.has('typeText') && <td className={resolveJournalTypeClass(item)}>{item.typeText}</td>}
-                {visibleSet.has('line') && <td>{item.line}</td>}
-                {visibleSet.has('code') && <td>{item.code}</td>}
-                {visibleSet.has('details') && <td>{item.details}</td>}
+                {visibleSet.has('line') && <td className="mono dim">{item.line}</td>}
+                {visibleSet.has('code') && <td className="mono dim">{item.code}</td>}
+                {visibleSet.has('details') && <td className="dim">{item.details}</td>}
               </tr>
             ))}
-            <SpacerRow colSpan={visibleColCount} height={virtualRows.bottomPaddingPx} />
             {feed.isInitialLoading && virtualRows.totalCount === 0 && (
               <tr>
                 <td colSpan={visibleColCount}>Завантаження подій...</td>

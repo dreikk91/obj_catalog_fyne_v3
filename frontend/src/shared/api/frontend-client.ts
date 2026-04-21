@@ -27,6 +27,7 @@ export interface FrontendClient {
   assignResponseGroup(alarmID: number, request: FrontendAlarmGroupActionRequest): Promise<void>
   notifyGroupArrived(alarmID: number): Promise<void>
   cancelResponseGroup(alarmID: number): Promise<void>
+  standbyObject(objectID: number): Promise<void>
   listObjectEvents(objectID: number, offset: number, limit: number): Promise<FrontendEventPage>
   getObjectDetails(objectID: number): Promise<FrontendObjectDetails>
   getDBSettings(): Promise<FrontendDBSettings>

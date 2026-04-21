@@ -73,3 +73,7 @@ export function ProcessAlarm(arg1, arg2) {
 export function SetBackend(arg1) {
   return window['go']['wailsbridge']['FrontendV1Service']['SetBackend'](arg1);
 }
+
+export function StandbyObject(arg1) {
+  return window['go']['wailsbridge']['FrontendV1Service']['StandbyObject'](arg1);
+}

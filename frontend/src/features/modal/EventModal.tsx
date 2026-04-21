@@ -19,6 +19,7 @@ type EventModalProps = {
   selectedObjectZones: FrontendZone[]
   selectedObjectContacts: FrontendContact[]
   selectedObjectEvents: JournalRow[]
+  liveObjectEvents: JournalRow[]
   objectEventsFeed: {
     totalCount: number
     hasMore: boolean
@@ -49,6 +50,7 @@ export function EventModal({
   selectedObjectZones,
   selectedObjectContacts,
   selectedObjectEvents,
+  liveObjectEvents,
   objectEventsFeed,
   workflowBusy,
   workflowError,
@@ -146,64 +148,99 @@ export function EventModal({
           )}
         </div>
         <div className="proc-box">
-          <div className="proc-hdr">Обробка події</div>
-          {workflowError !== '' && <div className="proc-error">{workflowError}</div>}
-          <div className="proc-btns">
+          <div className="proc-hdr-row">
+            <span className="proc-hdr-label">Обробка події</span>
+            {workflowError !== '' && <span className="proc-error-inline">{workflowError}</span>}
+            <div style={{ flex: 1 }} />
             <button
-              className="btn btn-violet"
-              style={{ height: 30 }}
+              className="proc-wbtn proc-wbtn--violet"
               onClick={onPickAlarm}
               disabled={workflowBusy || eventModalRow?.alarmID == null || isInWorkflow}
             >
-              {eventModalRow?.inProgress && !isInWorkflow ? 'Перехопити тривогу' : isInWorkflow ? 'У вас в роботі' : 'Взяти в роботу'}
+              {eventModalRow?.inProgress && !isInWorkflow ? 'Перехопити тривогу' : isInWorkflow ? '● У вас в роботі' : 'Взяти в роботу'}
             </button>
+            {groupDispatched && (
+              <button className="proc-wbtn proc-wbtn--gray" onClick={onGroupAction} disabled={workflowBusy}>
+                {groupArrived ? 'Зняти групу' : 'Група прибула'}
+              </button>
+            )}
             <button
-              className="btn btn-gray"
-              style={{ height: 30 }}
-              onClick={onStandby}
-              disabled={workflowBusy || !isInWorkflow}
-            >
-              В стенди
-            </button>
-            <button
-              className="btn btn-gray"
-              style={{ height: 30 }}
-              onClick={onCancelAlarm}
-              disabled={workflowBusy || !isInWorkflow}
-            >
-              Відміна тривоги
-            </button>
-            <button
-              className="btn btn-green"
-              style={{ height: 30 }}
-              onClick={onDispatchGroup}
-              disabled={workflowBusy || !isInWorkflow}
-            >
-              Вислати групу
-            </button>
-            <button
-              className="btn btn-gray"
-              style={{ height: 30 }}
-              onClick={onGroupAction}
-              disabled={workflowBusy || !groupDispatched}
-            >
-              {groupArrived ? 'Зняти групу з тривоги' : 'Група прибула'}
-            </button>
-            <button
-              className="btn btn-green"
-              style={{ height: 30 }}
+              className="proc-wbtn proc-wbtn--green"
               onClick={onOpenProcessAlarm}
               disabled={workflowBusy || eventModalRow?.alarmID == null || !isInWorkflow}
             >
-              Завершити тривогу
+              Завершити із причиною
             </button>
+          </div>
+          <div className="proc-action-row">
+            <button className="proc-lbtn proc-lbtn--green" onClick={onDispatchGroup} disabled={workflowBusy || !isInWorkflow}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round">
+                <path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/>
+                <circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+              </svg>
+              Вислати групу
+            </button>
+            <button className="proc-lbtn proc-lbtn--blue" onClick={onStandby} disabled={workflowBusy || !isInWorkflow}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+              До стендів
+            </button>
+            <button className="proc-lbtn proc-lbtn--red" onClick={onCancelAlarm} disabled={workflowBusy || !isInWorkflow}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+              </svg>
+              Скасування тривоги
+            </button>
+          </div>
+          <div className="proc-live-events">
+            <div className="proc-live-hdr">
+              <span>Необроблені події на об'єкті</span>
+              {liveObjectEvents.length > 0 && <span className="proc-live-count">{liveObjectEvents.length}</span>}
+            </div>
+            <div className="proc-live-table-wrap">
+              <table className="mtable">
+                <thead>
+                  <tr>
+                    <th style={{ width: 60 }}>Об'єкт</th>
+                    <th style={{ width: 88 }}>Дата</th>
+                    <th style={{ width: 80 }}>Час</th>
+                    <th style={{ width: 38 }}>Гр.</th>
+                    <th style={{ width: 130 }}>Тип коду</th>
+                    <th style={{ width: 44 }}>Шл.</th>
+                    <th style={{ width: 50 }}>Лінія</th>
+                    <th style={{ width: 60 }}>Код</th>
+                    <th>Опис події</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {liveObjectEvents.length === 0 ? (
+                    <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--tx2)' }}>Подій не знайдено</td></tr>
+                  ) : (
+                    liveObjectEvents.slice(0, 20).map((row) => (
+                      <tr key={`live-${row.rowID}`}>
+                        <td className="bright">{row.objectNumber}</td>
+                        <td>{row.date}</td>
+                        <td>{row.time}</td>
+                        <td className="dim">{row.group || '—'}</td>
+                        <td className={resolveJournalTypeClass(row)}>{row.typeText}</td>
+                        <td className="mono dim">{row.zone || '—'}</td>
+                        <td className="mono dim">{row.line || '—'}</td>
+                        <td className="mono dim">{row.code || '—'}</td>
+                        <td className="dim">{row.details || '—'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
         <div className="modal-footer">
-          <div style={{ marginLeft: 'auto' }} />
-          <button className="btn btn-red" style={{ width: 140, height: 28 }} onClick={onClose}>
-            ЗАКРИТИ
-          </button>
+          <div style={{ flex: 1 }} />
+          <button className="btn btn-red" style={{ width: 140, height: 28 }} onClick={onClose}>ЗАКРИТИ</button>
         </div>
       </div>
     </div>
@@ -488,7 +525,7 @@ function EventsPane({
           <thead>
             <tr>
               {visibleSet.has('date') && (
-                <th style={{ width: 80 }}>
+                <th style={{ width: 88 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetAll} />
                     Дата
@@ -496,7 +533,7 @@ function EventsPane({
                 </th>
               )}
               {visibleSet.has('time') && (
-                <th style={{ width: 64 }}>
+                <th style={{ width: 80 }}>
                   {!visibleSet.has('date') && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <ColumnVisibilityButton columns={toggleableColumns} onToggle={toggleColumn} onReset={resetAll} />
@@ -523,18 +560,16 @@ function EventsPane({
             </tr>
           </thead>
           <tbody>
-            <SpacerRow colSpan={visibleColCount} height={virtualRows.topPaddingPx} />
-            {virtualRows.visibleRows.map((item) => (
+            {rows.map((item) => (
               <tr key={`event-modal-${item.rowID}`}>
                 {visibleSet.has('date') && <td>{item.date}</td>}
                 {visibleSet.has('time') && <td>{item.time}</td>}
                 {visibleSet.has('typeText') && <td className={resolveJournalTypeClass(item)}>{item.typeText}</td>}
-                {visibleSet.has('line') && <td>{item.line}</td>}
-                {visibleSet.has('code') && <td>{item.code}</td>}
-                {visibleSet.has('details') && <td>{item.details}</td>}
+                {visibleSet.has('line') && <td className="mono dim">{item.line}</td>}
+                {visibleSet.has('code') && <td className="mono dim">{item.code}</td>}
+                {visibleSet.has('details') && <td className="dim">{item.details}</td>}
               </tr>
             ))}
-            <SpacerRow colSpan={visibleColCount} height={virtualRows.bottomPaddingPx} />
             {feed.isInitialLoading && virtualRows.totalCount === 0 && (
               <tr>
                 <td colSpan={visibleColCount}>Завантаження подій...</td>

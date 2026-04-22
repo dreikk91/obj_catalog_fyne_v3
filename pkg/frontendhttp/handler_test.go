@@ -71,6 +71,10 @@ func (s *frontendBackendStub) GetAlarmProcessingOptions(_ context.Context, alarm
 	return s.alarmProcessingOptionsResult, s.alarmProcessingOptionsErr
 }
 
+func (s *frontendBackendStub) ListAlarmProcessingOptionsCached(context.Context) ([]contracts.FrontendAlarmProcessingOption, error) {
+	return s.alarmProcessingOptionsResult, s.alarmProcessingOptionsErr
+}
+
 func (s *frontendBackendStub) PickAlarm(_ context.Context, alarmID int, request contracts.FrontendAlarmPickRequest) error {
 	s.pickAlarmID = alarmID
 	s.pickAlarmInput = request
@@ -81,6 +85,30 @@ func (s *frontendBackendStub) ProcessAlarm(_ context.Context, alarmID int, reque
 	s.processAlarmID = alarmID
 	s.processAlarmInput = request
 	return s.processAlarmErr
+}
+
+func (s *frontendBackendStub) GroupProcessAlarm(context.Context, int, string) error {
+	return nil
+}
+
+func (s *frontendBackendStub) StandbyObject(context.Context, int, contracts.FrontendStandbyRequest) error {
+	return nil
+}
+
+func (s *frontendBackendStub) ListResponseGroups(context.Context) ([]contracts.FrontendResponseGroup, error) {
+	return nil, nil
+}
+
+func (s *frontendBackendStub) AssignResponseGroup(context.Context, int, contracts.FrontendAlarmGroupActionRequest) error {
+	return nil
+}
+
+func (s *frontendBackendStub) NotifyGroupArrived(context.Context, int) error {
+	return nil
+}
+
+func (s *frontendBackendStub) CancelResponseGroup(context.Context, int) error {
+	return nil
 }
 
 func (s *frontendBackendStub) ListEvents(context.Context) ([]contracts.FrontendEventItem, error) {
@@ -153,7 +181,8 @@ func TestHandlerGetObjectDetails(t *testing.T) {
 				DisplayNumber: "4001",
 				Name:          "CASL object",
 			},
-			ExternalSignal: "GPRS",
+			ExternalSignal:           "GPRS",
+			PreferredResponseGroupID: "1",
 		},
 	}
 
@@ -173,6 +202,9 @@ func TestHandlerGetObjectDetails(t *testing.T) {
 	decodeJSON(t, rec, &payload)
 	if payload.Summary.Name != "CASL object" {
 		t.Fatalf("summary.Name = %q, want %q", payload.Summary.Name, "CASL object")
+	}
+	if payload.PreferredResponseGroupID != "1" {
+		t.Fatalf("preferred response group = %q, want 1", payload.PreferredResponseGroupID)
 	}
 }
 
@@ -299,6 +331,7 @@ func TestHandlerBackendErrorMapping(t *testing.T) {
 }
 
 func TestHandlerCapabilities(t *testing.T) {
+	lastPing := time.Date(2026, time.April, 22, 6, 11, 55, 0, time.UTC)
 	stub := &frontendBackendStub{
 		capabilitiesResult: contracts.FrontendCapabilities{
 			Sources: []contracts.FrontendSourceCapability{
@@ -309,6 +342,11 @@ func TestHandlerCapabilities(t *testing.T) {
 					ReadObjectDetails: true,
 					ReadEvents:        true,
 					ReadAlarms:        true,
+					HealthStatus:      contracts.FrontendSourceHealthStatusDegraded,
+					HealthText:        "CASL: API online, але WS не отримує ping понад 12 с",
+					APIStatus:         contracts.FrontendConnectionStatusOnline,
+					RealtimeStatus:    contracts.FrontendConnectionStatusOffline,
+					LastRealtimePing:  lastPing,
 				},
 			},
 		},
@@ -327,6 +365,12 @@ func TestHandlerCapabilities(t *testing.T) {
 	decodeJSON(t, rec, &payload)
 	if len(payload.Sources) != 1 {
 		t.Fatalf("sources = %d, want 1", len(payload.Sources))
+	}
+	if payload.Sources[0].HealthStatus != "degraded" {
+		t.Fatalf("health status = %q, want %q", payload.Sources[0].HealthStatus, "degraded")
+	}
+	if payload.Sources[0].LastRealtimePing != lastPing.Format(time.RFC3339) {
+		t.Fatalf("last realtime ping = %q, want %q", payload.Sources[0].LastRealtimePing, lastPing.Format(time.RFC3339))
 	}
 }
 

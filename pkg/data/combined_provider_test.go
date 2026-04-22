@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,12 @@ type combinedStubProvider struct {
 	pickUsers    []string
 	processErr   error
 	processOpts  []contracts.AlarmProcessingOption
+	healthInfo   contracts.FrontendSourceHealthInfo
+	eventsDelay  time.Duration
+	alarmsDelay  time.Duration
+
+	reconnectMu    sync.Mutex
+	reconnectCalls []string
 }
 
 func (s *combinedStubProvider) GetObjects() []models.Object {
@@ -50,6 +57,9 @@ func (s *combinedStubProvider) GetEmployees(objectID string) []models.Contact {
 }
 
 func (s *combinedStubProvider) GetEvents() []models.Event {
+	if s.eventsDelay > 0 {
+		time.Sleep(s.eventsDelay)
+	}
 	return append([]models.Event(nil), s.events...)
 }
 
@@ -61,7 +71,22 @@ func (s *combinedStubProvider) GetObjectEvents(objectID string) []models.Event {
 }
 
 func (s *combinedStubProvider) GetAlarms() []models.Alarm {
+	if s.alarmsDelay > 0 {
+		time.Sleep(s.alarmsDelay)
+	}
 	return append([]models.Alarm(nil), s.alarms...)
+}
+
+func (s *combinedStubProvider) TriggerReconnect(reason string) {
+	s.reconnectMu.Lock()
+	s.reconnectCalls = append(s.reconnectCalls, reason)
+	s.reconnectMu.Unlock()
+}
+
+func (s *combinedStubProvider) reconnectReasons() []string {
+	s.reconnectMu.Lock()
+	defer s.reconnectMu.Unlock()
+	return append([]string(nil), s.reconnectCalls...)
 }
 
 func (s *combinedStubProvider) ProcessAlarm(id string, user string, note string) error { return nil }
@@ -90,6 +115,10 @@ func (s *combinedStubProvider) GetTestMessages(objectID string) []models.TestMes
 
 func (s *combinedStubProvider) GetLatestEventID() (int64, error) {
 	return s.latestID, s.latestErr
+}
+
+func (s *combinedStubProvider) FrontendSourceHealth() contracts.FrontendSourceHealthInfo {
+	return s.healthInfo
 }
 
 func TestCombinedDataProvider_MergesObjectsAndAlarms(t *testing.T) {
@@ -190,6 +219,35 @@ func TestCombinedDataProvider_GetLatestEventID_ChangesWhenAnySourceChanges(t *te
 	}
 	if third == second {
 		t.Fatalf("cursor must change when secondary source changes: %d == %d", third, second)
+	}
+}
+
+func TestCombinedDataProvider_FrontendSourceCapabilities_IncludeHealth(t *testing.T) {
+	t.Parallel()
+
+	provider := NewMultiSourceDataProvider(
+		ProviderSource{
+			Name: "casl",
+			Provider: &combinedStubProvider{
+				healthInfo: contracts.FrontendSourceHealthInfo{
+					HealthStatus:   contracts.FrontendSourceHealthStatusDegraded,
+					HealthText:     "CASL: API online, але WS не отримує ping понад 12 с",
+					APIStatus:      contracts.FrontendConnectionStatusOnline,
+					RealtimeStatus: contracts.FrontendConnectionStatusOffline,
+				},
+			},
+		},
+	)
+
+	caps := provider.FrontendSourceCapabilities()
+	if len(caps) != 1 {
+		t.Fatalf("len(caps) = %d, want 1", len(caps))
+	}
+	if caps[0].HealthStatus != contracts.FrontendSourceHealthStatusDegraded {
+		t.Fatalf("HealthStatus = %q, want degraded", caps[0].HealthStatus)
+	}
+	if caps[0].RealtimeStatus != contracts.FrontendConnectionStatusOffline {
+		t.Fatalf("RealtimeStatus = %q, want offline", caps[0].RealtimeStatus)
 	}
 }
 
@@ -303,5 +361,67 @@ func TestCombinedDataProvider_PickAlarm_RoutesToCASLSource(t *testing.T) {
 	}
 	if len(primary.pickUsers) != 0 {
 		t.Fatalf("primary provider must not receive CASL pick request")
+	}
+}
+
+func TestCombinedDataProvider_GetEvents_TriggersReconnectOnTimeout(t *testing.T) {
+	t.Parallel()
+
+	casl := &combinedStubProvider{
+		eventsDelay: 80 * time.Millisecond,
+	}
+	provider := NewMultiSourceDataProvider(ProviderSource{
+		Name:         "casl",
+		Provider:     casl,
+		OwnsObjectID: ids.IsCASLObjectID,
+		OwnsAlarmID:  ids.IsCASLObjectID,
+	})
+	provider.eventsTimeout = 20 * time.Millisecond
+
+	start := time.Now()
+	events := provider.GetEvents()
+	duration := time.Since(start)
+
+	if len(events) != 0 {
+		t.Fatalf("expected no events after timeout, got %+v", events)
+	}
+	if duration > 250*time.Millisecond {
+		t.Fatalf("GetEvents blocked for too long: %v", duration)
+	}
+
+	reasons := casl.reconnectReasons()
+	if len(reasons) != 1 || reasons[0] != "combined get_events timeout" {
+		t.Fatalf("unexpected reconnect reasons: %+v", reasons)
+	}
+}
+
+func TestCombinedDataProvider_GetAlarms_TriggersReconnectOnTimeout(t *testing.T) {
+	t.Parallel()
+
+	casl := &combinedStubProvider{
+		alarmsDelay: 80 * time.Millisecond,
+	}
+	provider := NewMultiSourceDataProvider(ProviderSource{
+		Name:         "casl",
+		Provider:     casl,
+		OwnsObjectID: ids.IsCASLObjectID,
+		OwnsAlarmID:  ids.IsCASLObjectID,
+	})
+	provider.alarmsTimeout = 20 * time.Millisecond
+
+	start := time.Now()
+	alarms := provider.GetAlarms()
+	duration := time.Since(start)
+
+	if len(alarms) != 0 {
+		t.Fatalf("expected no alarms after timeout, got %+v", alarms)
+	}
+	if duration > 250*time.Millisecond {
+		t.Fatalf("GetAlarms blocked for too long: %v", duration)
+	}
+
+	reasons := casl.reconnectReasons()
+	if len(reasons) != 1 || reasons[0] != "combined get_alarms timeout" {
+		t.Fatalf("unexpected reconnect reasons: %+v", reasons)
 	}
 }

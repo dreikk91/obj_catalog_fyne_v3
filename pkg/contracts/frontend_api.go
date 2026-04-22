@@ -58,6 +58,32 @@ type FrontendSourceCapability struct {
 	ReadAlarms        bool
 	CreateObject      bool
 	UpdateObject      bool
+	HealthStatus      FrontendSourceHealthStatus
+	HealthText        string
+	APIStatus         FrontendConnectionStatus
+	RealtimeStatus    FrontendConnectionStatus
+	LastRealtimePing  time.Time
+}
+
+type FrontendSourceHealthStatus string
+
+const (
+	FrontendSourceHealthStatusUnknown  FrontendSourceHealthStatus = "unknown"
+	FrontendSourceHealthStatusOnline   FrontendSourceHealthStatus = "online"
+	FrontendSourceHealthStatusDegraded FrontendSourceHealthStatus = "degraded"
+	FrontendSourceHealthStatusOffline  FrontendSourceHealthStatus = "offline"
+)
+
+type FrontendSourceHealthInfo struct {
+	HealthStatus     FrontendSourceHealthStatus
+	HealthText       string
+	APIStatus        FrontendConnectionStatus
+	RealtimeStatus   FrontendConnectionStatus
+	LastRealtimePing time.Time
+}
+
+type FrontendSourceHealthProvider interface {
+	FrontendSourceHealth() FrontendSourceHealthInfo
 }
 
 type FrontendConnectionStatus string
@@ -147,28 +173,31 @@ type FrontendContact struct {
 }
 
 type FrontendAlarmItem struct {
-	ID             int
-	Source         FrontendSource
-	ObjectID       int
-	ObjectNativeID string
-	ObjectNumber   string
-	ObjectName     string
-	Address        string
-	Time           time.Time
-	Details        string
-	TypeCode       string
-	TypeText       string
-	ZoneNumber     int
-	ZoneName       string
-	IsProcessed    bool
-	ProcessedBy    string
-	ProcessNote    string
-	IsInProgress   bool
-	InProgressBy   string
-	IsOwnedByMe    bool
-	CanTakeOver    bool
-	CanProcess     bool
-	VisualSeverity FrontendVisualSeverity
+	ID                        int
+	Source                    FrontendSource
+	ObjectID                  int
+	ObjectNativeID            string
+	ObjectNumber              string
+	ObjectName                string
+	Address                   string
+	Time                      time.Time
+	Details                   string
+	TypeCode                  string
+	TypeText                  string
+	ZoneNumber                int
+	ZoneName                  string
+	IsProcessed               bool
+	ProcessedBy               string
+	ProcessNote               string
+	IsInProgress              bool
+	InProgressBy              string
+	IsOwnedByMe               bool
+	CanTakeOver               bool
+	CanProcess                bool
+	ResponseGroupID           string
+	IsResponseGroupDispatched bool
+	IsResponseGroupArrived    bool
+	VisualSeverity            FrontendVisualSeverity
 }
 
 type FrontendAlarmProcessingOption struct {
@@ -210,28 +239,30 @@ type FrontendEventItem struct {
 }
 
 type FrontendObjectDetails struct {
-	Summary             FrontendObjectSummary
-	GSMLevel            int
-	PowerSource         string
-	AutoTestHours       int
-	SubServerA          string
-	SubServerB          string
-	ChannelCode         int
-	AKBState            int64
-	PowerFault          int64
-	TestControl         bool
-	TestIntervalMin     int64
-	Phones              string
-	Notes               string
-	Location            string
-	LaunchDate          string
-	ExternalSignal      string
-	ExternalTestMessage string
-	ExternalLastTest    time.Time
-	ExternalLastMessage time.Time
-	Zones               []FrontendZone
-	Contacts            []FrontendContact
-	Events              []FrontendEventItem
+	Summary                    FrontendObjectSummary
+	GSMLevel                   int
+	PowerSource                string
+	AutoTestHours              int
+	SubServerA                 string
+	SubServerB                 string
+	ChannelCode                int
+	AKBState                   int64
+	PowerFault                 int64
+	TestControl                bool
+	TestIntervalMin            int64
+	Phones                     string
+	Notes                      string
+	Location                   string
+	LaunchDate                 string
+	PreferredResponseGroupID   string
+	PreferredResponseGroupName string
+	ExternalSignal             string
+	ExternalTestMessage        string
+	ExternalLastTest           time.Time
+	ExternalLastMessage        time.Time
+	Zones                      []FrontendZone
+	Contacts                   []FrontendContact
+	Events                     []FrontendEventItem
 }
 
 type FrontendEventPage struct {
@@ -302,6 +333,13 @@ type FrontendAlarmGroupActionRequest struct {
 	GroupID string
 }
 
+// FrontendStandbyRequest описує запит переведення об'єкта в режим стендів.
+// DurationMinutes — тривалість у хвилинах (1..1440); 0 означає нескінченно (рік 2050).
+type FrontendStandbyRequest struct {
+	DurationMinutes int    // 0 = нескінченно, max 1440 (24 год)
+	Reason          string // причина переведення в стенди
+}
+
 type FrontendBackend interface {
 	Capabilities(ctx context.Context) (FrontendCapabilities, error)
 	ListObjects(ctx context.Context) ([]FrontendObjectSummary, error)
@@ -311,7 +349,7 @@ type FrontendBackend interface {
 	PickAlarm(ctx context.Context, alarmID int, request FrontendAlarmPickRequest) error
 	ProcessAlarm(ctx context.Context, alarmID int, request FrontendAlarmProcessRequest) error
 	GroupProcessAlarm(ctx context.Context, alarmID int, user string) error
-	StandbyObject(ctx context.Context, objectID int) error
+	StandbyObject(ctx context.Context, objectID int, request FrontendStandbyRequest) error
 	ListResponseGroups(ctx context.Context) ([]FrontendResponseGroup, error)
 	AssignResponseGroup(ctx context.Context, alarmID int, request FrontendAlarmGroupActionRequest) error
 	NotifyGroupArrived(ctx context.Context, alarmID int) error

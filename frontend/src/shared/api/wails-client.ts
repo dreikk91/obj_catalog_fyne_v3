@@ -1,5 +1,6 @@
 import type { FrontendClient } from './frontend-client'
 import type {
+  FrontendCapabilities,
   FrontendAlarmGroupActionRequest,
   FrontendAlarmItem,
   FrontendAlarmGroup,
@@ -14,6 +15,7 @@ import type {
   FrontendResponseGroup,
 } from './types'
 import {
+  normalizeCapabilities,
   normalizeAlarmItem,
   normalizeAlarmGroup,
   normalizeAlarmProcessingOption,
@@ -28,6 +30,7 @@ import {
 type WailsMethod<T extends unknown[] = unknown[], R = unknown> = (...args: T) => Promise<R>
 
 type WailsFrontendBridge = {
+  Capabilities?: WailsMethod<[], FrontendCapabilities>
   ListObjects?: WailsMethod<[], FrontendObjectSummary[]>
   ListEvents?: WailsMethod<[], FrontendEventItem[]>
   ListAlarms?: WailsMethod<[], FrontendAlarmItem[]>
@@ -41,7 +44,7 @@ type WailsFrontendBridge = {
   AssignResponseGroup?: WailsMethod<[number, FrontendAlarmGroupActionRequest], void>
   NotifyGroupArrived?: WailsMethod<[number], void>
   CancelResponseGroup?: WailsMethod<[number], void>
-  StandbyObject?: WailsMethod<[number], void>
+  StandbyObject?: WailsMethod<[number, number, string], void>
   ListObjectEvents?: WailsMethod<[number, number, number], FrontendEventPage>
   GetObjectDetails?: WailsMethod<[number], FrontendObjectDetails>
 }
@@ -76,6 +79,7 @@ export function createWailsFrontendClient(): FrontendClient | null {
   const settingsBridge = resolveSettingsBridge()
 
   const listObjects = frontendBridge.ListObjects
+  const capabilities = frontendBridge.Capabilities
   const listEvents = frontendBridge.ListEvents
   const listAlarms = frontendBridge.ListAlarms
   const listAlarmGroups = frontendBridge.ListAlarmGroups
@@ -85,11 +89,15 @@ export function createWailsFrontendClient(): FrontendClient | null {
   const listObjectEvents = frontendBridge.ListObjectEvents
   const getObjectDetails = frontendBridge.GetObjectDetails
 
-  if (!listObjects || !listEvents || !listAlarms || !listAlarmGroups || !getAlarmProcessingOptions || !pickAlarm || !processAlarm || !listObjectEvents || !getObjectDetails) {
+  if (!capabilities || !listObjects || !listEvents || !listAlarms || !listAlarmGroups || !getAlarmProcessingOptions || !pickAlarm || !processAlarm || !listObjectEvents || !getObjectDetails) {
     return null
   }
 
   return {
+    async capabilities() {
+      const result = await capabilities()
+      return normalizeCapabilities(result)
+    },
     async listObjects() {
       const items = await listObjects()
       return items.map(normalizeObjectSummary)
@@ -148,10 +156,10 @@ export function createWailsFrontendClient(): FrontendClient | null {
       if (!fn) throw new Error('CancelResponseGroup не підтримується')
       await fn(alarmID)
     },
-    async standbyObject(objectID) {
+    async standbyObject(objectID, durationMinutes, reason) {
       const fn = frontendBridge.StandbyObject
       if (!fn) throw new Error('StandbyObject не підтримується')
-      await fn(objectID)
+      await fn(objectID, durationMinutes, reason)
     },
     async listObjectEvents(objectID, offset, limit) {
       const page = await listObjectEvents(objectID, offset, limit)

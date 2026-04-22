@@ -39,4 +39,4 @@ export function ProcessAlarm(arg1:number,arg2:v1.AlarmProcessRequest):Promise<vo
 
 export function SetBackend(arg1:contracts.FrontendBackend):Promise<void>;
 
-export function StandbyObject(arg1:number):Promise<void>;
+export function StandbyObject(arg1:number,arg2:number,arg3:string):Promise<void>;

@@ -34,11 +34,39 @@ func (s *frontendUIBackendStub) GetAlarmProcessingOptions(context.Context, int) 
 	return nil, nil
 }
 
+func (s *frontendUIBackendStub) ListAlarmProcessingOptionsCached(context.Context) ([]contracts.FrontendAlarmProcessingOption, error) {
+	return nil, nil
+}
+
 func (s *frontendUIBackendStub) PickAlarm(context.Context, int, contracts.FrontendAlarmPickRequest) error {
 	return nil
 }
 
 func (s *frontendUIBackendStub) ProcessAlarm(context.Context, int, contracts.FrontendAlarmProcessRequest) error {
+	return nil
+}
+
+func (s *frontendUIBackendStub) GroupProcessAlarm(context.Context, int, string) error {
+	return nil
+}
+
+func (s *frontendUIBackendStub) StandbyObject(context.Context, int, contracts.FrontendStandbyRequest) error {
+	return nil
+}
+
+func (s *frontendUIBackendStub) ListResponseGroups(context.Context) ([]contracts.FrontendResponseGroup, error) {
+	return nil, nil
+}
+
+func (s *frontendUIBackendStub) AssignResponseGroup(context.Context, int, contracts.FrontendAlarmGroupActionRequest) error {
+	return nil
+}
+
+func (s *frontendUIBackendStub) NotifyGroupArrived(context.Context, int) error {
+	return nil
+}
+
+func (s *frontendUIBackendStub) CancelResponseGroup(context.Context, int) error {
 	return nil
 }
 

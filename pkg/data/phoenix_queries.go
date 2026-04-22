@@ -459,6 +459,20 @@ WHERE COALESCE(gr.Disabled, 0) = 0
 ORDER BY gr.Group_id
 `
 
+const phoenixObjectPreferredResponseGroupQuery = `
+SELECT TOP (1)
+	grg.Group_id AS group_id,
+	gr.Description AS description
+FROM GroupResponse_Group grg WITH (NOLOCK)
+INNER JOIN GroupResponse gr WITH (NOLOCK) ON gr.Group_id = grg.Group_id
+WHERE
+	grg.Panel_id = @p1
+	AND grg.Group_ = 0
+ORDER BY
+	CASE WHEN COALESCE(grg.MainGroup, 0) = 0 THEN 0 ELSE 1 END DESC,
+	grg.Group_id
+`
+
 const phoenixObjectEventsQuery = `
 SELECT TOP (500)
 	A.Event_id AS event_id,

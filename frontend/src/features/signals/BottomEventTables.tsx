@@ -98,7 +98,13 @@ export function BottomEventTables({
         header: 'Лінія',
         size: 56,
         minSize: 42,
-        cell: ({ getValue }) => <span className="dim">{String(getValue())}</span>,
+        cell: ({ row, getValue }) => {
+          const rowMeta = unprocessedRowMetaByID.get(row.original.rowID)
+          if (rowMeta?.isChild) {
+            return <span className="dim"></span>
+          }
+          return <span className="dim">{String(getValue())}</span>
+        },
       },
       {
         accessorKey: 'objectNumber',
@@ -145,7 +151,7 @@ export function BottomEventTables({
                     event.stopPropagation()
                     onToggleGroup(rowMeta.groupID)
                   }}
-                  title={isExpanded ? 'Згорнути події' : 'Розгорнути події'}
+                  title={isExpanded ? 'Згорнути події обʼєкта' : 'Розгорнути події обʼєкта'}
                   style={{ width: 16, height: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid currentColor', borderRadius: 2, marginRight: 6, cursor: 'pointer', background: 'transparent', color: 'inherit', padding: 0, fontSize: 14, lineHeight: 1 }}
                 >
                                     <svg
@@ -167,7 +173,7 @@ export function BottomEventTables({
               )}
                             {rowMeta.isChild && (
                 <span className="tree-branch-symbol" style={{ color: 'var(--tx2)', opacity: 0.5, marginRight: 8, fontSize: 14 }}>
-                  └─
+                  {rowMeta.isLastChild ? '└─' : '├─'}
                 </span>
               )}
                             <span className={typeClass} style={rowMeta.isChild ? { fontSize: '0.95em' } : undefined}>{value}</span>
@@ -213,7 +219,13 @@ export function BottomEventTables({
         header: 'Назва',
         enableResizing: false,
         meta: { fluid: true, minWidth: 180 } satisfies TableColumnMeta,
-        cell: ({ getValue }) => <span className="dim">{String(getValue())}</span>,
+        cell: ({ row, getValue }) => {
+          const rowMeta = unprocessedRowMetaByID.get(row.original.rowID)
+          if (rowMeta?.isChild) {
+            return <span className="dim"></span>
+          }
+          return <span className="dim">{String(getValue())}</span>
+        },
       },
       {
         accessorKey: 'state',
@@ -293,17 +305,17 @@ export function BottomEventTables({
                 <button
                   className="btn btn-violet"
                   style={{ height: 24, fontSize: 11 }}
-                  disabled={selectedUnprocessedRow == null || workflowBusy}
+                  disabled={selectedUnprocessedRow == null || workflowBusy || groupDispatched}
                   onClick={onPickAlarm}
                 >
-                  Обробити
+                  {selectedUnprocessedRow?.inProgress ? 'Перехопити' : 'Обробити'}
                 </button>
               ) : (
                 <>
                   <button
                     className="btn btn-green"
                     style={{ height: 24, fontSize: 11 }}
-                    disabled={workflowBusy}
+                    disabled={workflowBusy || groupDispatched}
                     onClick={onOpenProcessAlarm}
                   >
                     Закінчити оброблення
@@ -315,7 +327,7 @@ export function BottomEventTables({
                       disabled={workflowBusy}
                       onClick={onGroupAction}
                     >
-                      {groupArrived ? 'Скасувати групи' : 'Групи прибули'}
+                      {groupArrived ? 'Зняти групу' : 'Підтвердити прибуття'}
                     </button>
                   )}
                   {!groupDispatched && (
@@ -339,7 +351,7 @@ export function BottomEventTables({
                   <button
                     className="btn btn-gray"
                     style={{ height: 24, fontSize: 11 }}
-                    disabled={workflowBusy}
+                    disabled={workflowBusy || groupDispatched}
                     onClick={onCancelAlarm}
                   >
                     Скасувати тривогу

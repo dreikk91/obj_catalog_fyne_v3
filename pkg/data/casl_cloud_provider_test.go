@@ -391,6 +391,27 @@ func TestMapCASLObjectStatusState(t *testing.T) {
 	}
 }
 
+func TestMapCASLGrdObjectToObject_UsesGeoZoneAsPreferredResponseGroup(t *testing.T) {
+	t.Parallel()
+
+	obj := mapCASLGrdObjectToObject(caslGrdObject{
+		ObjID:          "25",
+		Name:           "10005 Офіс",
+		Address:        "Львів",
+		Status:         "Включено",
+		DeviceNumber:   10005,
+		GeoZoneID:      1,
+		StartDate:      1669154400000,
+		Contract:       "C-1",
+		Description:    "Опис",
+		ReactingPultID: "1",
+	}, nil)
+
+	if obj.PreferredResponseGroupID != "1" {
+		t.Fatalf("PreferredResponseGroupID = %q, want 1", obj.PreferredResponseGroupID)
+	}
+}
+
 func TestMapCASLDeviceGroupsToObjectGroups(t *testing.T) {
 	t.Parallel()
 
@@ -2407,6 +2428,126 @@ func TestCASLProvider_GetEvents_ReturnsRealtimeCache(t *testing.T) {
 	}
 }
 
+func TestCASLProvider_GetEvents_DoesNotBlockOnRealtimeBootstrap(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			time.Sleep(3 * time.Second)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token","ws_url":"ws://127.0.0.1/ws","user_id":"7"}`))
+		case caslCommandPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "operator@example.com", "secret")
+	defer provider.Shutdown()
+
+	provider.mu.Lock()
+	provider.cachedEvents = []models.Event{
+		{ID: 11, ObjectID: mapCASLObjectID("24"), ObjectName: "Object 24", Type: models.EventFire, Details: "cached"},
+	}
+	provider.mu.Unlock()
+
+	startedAt := time.Now()
+	events := provider.GetEvents()
+	elapsed := time.Since(startedAt)
+
+	if elapsed >= 2500*time.Millisecond {
+		t.Fatalf("GetEvents blocked on realtime bootstrap for %v", elapsed)
+	}
+	if len(events) != 1 || events[0].ID != 11 {
+		t.Fatalf("expected cached events fallback, got %+v", events)
+	}
+}
+
+func TestCASLProvider_GetAlarms_DoesNotBlockOnRealtimeBootstrap(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			time.Sleep(3 * time.Second)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token","ws_url":"ws://127.0.0.1/ws","user_id":"7"}`))
+		case caslCommandPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "operator@example.com", "secret")
+	defer provider.Shutdown()
+
+	startedAt := time.Now()
+	alarms := provider.GetAlarms()
+	elapsed := time.Since(startedAt)
+
+	if elapsed >= 2500*time.Millisecond {
+		t.Fatalf("GetAlarms blocked on realtime bootstrap for %v", elapsed)
+	}
+	if len(alarms) != 0 {
+		t.Fatalf("expected empty alarms snapshot, got %+v", alarms)
+	}
+}
+
+func TestCASLProvider_FrontendSourceHealth_Online(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	provider.recordAPISuccess()
+	provider.mu.Lock()
+	provider.lastRealtimePingAt = time.Now()
+	provider.lastRealtimeMsgAt = time.Now()
+	provider.mu.Unlock()
+	provider.realtimeMu.Lock()
+	provider.realtimeRunning = true
+	provider.realtimeSubscribed = true
+	provider.realtimeMu.Unlock()
+
+	health := provider.FrontendSourceHealth()
+	if health.HealthStatus != contracts.FrontendSourceHealthStatusOnline {
+		t.Fatalf("HealthStatus = %q, want %q", health.HealthStatus, contracts.FrontendSourceHealthStatusOnline)
+	}
+	if health.APIStatus != contracts.FrontendConnectionStatusOnline {
+		t.Fatalf("APIStatus = %q, want online", health.APIStatus)
+	}
+	if health.RealtimeStatus != contracts.FrontendConnectionStatusOnline {
+		t.Fatalf("RealtimeStatus = %q, want online", health.RealtimeStatus)
+	}
+}
+
+func TestCASLProvider_FrontendSourceHealth_DegradedOnStalePing(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	provider.recordAPISuccess()
+	provider.mu.Lock()
+	provider.lastRealtimePingAt = time.Now().Add(-13 * time.Second)
+	provider.lastRealtimeMsgAt = time.Now().Add(-13 * time.Second)
+	provider.mu.Unlock()
+	provider.realtimeMu.Lock()
+	provider.realtimeRunning = true
+	provider.realtimeSubscribed = true
+	provider.realtimeMu.Unlock()
+
+	health := provider.FrontendSourceHealth()
+	if health.HealthStatus != contracts.FrontendSourceHealthStatusDegraded {
+		t.Fatalf("HealthStatus = %q, want %q", health.HealthStatus, contracts.FrontendSourceHealthStatusDegraded)
+	}
+	if health.APIStatus != contracts.FrontendConnectionStatusOnline {
+		t.Fatalf("APIStatus = %q, want online", health.APIStatus)
+	}
+	if health.RealtimeStatus != contracts.FrontendConnectionStatusOffline {
+		t.Fatalf("RealtimeStatus = %q, want offline", health.RealtimeStatus)
+	}
+}
+
 func TestCASLProvider_GetAlarms_DoesNotUseReadEventsRowsAsActiveAlarmSource(t *testing.T) {
 	t.Parallel()
 
@@ -3863,11 +4004,14 @@ func TestCASLProvider_ProcessAlarmWithRequest_UsesSelectedCause(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 
 			switch cmdType {
-			case "grd_obj_pick":
-				pickPayload = copyStringAnyMap(payload)
-				_, _ = w.Write([]byte(`{"status":"ok"}`))
-			case "grd_obj_finish":
-				finishPayload = copyStringAnyMap(payload)
+			case "grd_object_action":
+				action := strings.TrimSpace(asString(payload["action"]))
+				if action == "GRD_OBJ_PICK" {
+					pickPayload = copyStringAnyMap(payload)
+				}
+				if action == "GRD_OBJ_FINISH" {
+					finishPayload = copyStringAnyMap(payload)
+				}
 				_, _ = w.Write([]byte(`{"status":"ok"}`))
 			default:
 				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
@@ -3922,5 +4066,127 @@ func TestCASLProvider_ProcessAlarmWithRequest_UsesSelectedCause(t *testing.T) {
 	provider.mu.RUnlock()
 	if exists {
 		t.Fatalf("expected realtime alarm to be removed after successful processing")
+	}
+}
+
+func TestCASLProvider_PickAlarm_UsesHijackForForeignOperator(t *testing.T) {
+	t.Parallel()
+
+	var actionPayload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-hijack","user_id":"u-me","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "get_general_tape_objects":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"25","last_act":"GRD_OBJ_PICK","user_id":"u-other","user_fio":"Інший оператор","time":1774769732941}]}`))
+			case "grd_object_action":
+				actionPayload = copyStringAnyMap(payload)
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	alarmID := ids.CASLObjectIDNamespaceStart + 51
+
+	provider.mu.Lock()
+	provider.objectByInternalID[alarmID] = caslGrdObject{
+		ObjID:        "25",
+		Name:         "1005 Object",
+		DeviceID:     caslInt64(23),
+		DeviceNumber: caslInt64(1005),
+	}
+	provider.realtimeAlarmByObjID["25"] = models.Alarm{
+		ID:           alarmID,
+		ObjectID:     alarmID,
+		IsInProgress: true,
+		InProgressBy: "Інший оператор",
+	}
+	provider.mu.Unlock()
+
+	if err := provider.PickAlarm(context.Background(), models.Alarm{ID: alarmID, ObjectID: alarmID}, ""); err != nil {
+		t.Fatalf("PickAlarm error: %v", err)
+	}
+	if got := strings.TrimSpace(asString(actionPayload["action"])); got != "GRD_OBJ_HIJACK" {
+		t.Fatalf("unexpected action payload: %#v", actionPayload)
+	}
+	if got := strings.TrimSpace(asString(actionPayload["obj_id"])); got != "25" {
+		t.Fatalf("unexpected obj_id: %#v", actionPayload)
+	}
+}
+
+func TestCASLProvider_ProcessAlarmWithRequest_BlocksFinishWhenMgrAlreadyAssigned(t *testing.T) {
+	t.Parallel()
+
+	var actionPayload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-mgr","user_id":"u-me","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "get_general_tape_objects":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"25","last_act":"GRD_OBJ_ASS_MGR","user_id":"u-me","time":1774769732941,"mgr_id":"11"}]}`))
+			case "grd_object_action":
+				actionPayload = copyStringAnyMap(payload)
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	alarmID := ids.CASLObjectIDNamespaceStart + 52
+
+	provider.mu.Lock()
+	provider.objectByInternalID[alarmID] = caslGrdObject{
+		ObjID:        "25",
+		Name:         "1006 Object",
+		DeviceID:     caslInt64(23),
+		DeviceNumber: caslInt64(1006),
+	}
+	provider.realtimeAlarmByObjID["25"] = models.Alarm{
+		ID:       alarmID,
+		ObjectID: alarmID,
+	}
+	provider.mu.Unlock()
+
+	err := provider.ProcessAlarmWithRequest(context.Background(), models.Alarm{
+		ID:       alarmID,
+		ObjectID: alarmID,
+	}, "", contracts.AlarmProcessingRequest{CauseCode: "CAUSES_FALSE_ALARM"})
+	if err == nil {
+		t.Fatal("expected mgr-assigned finish to be rejected")
+	}
+	if !strings.Contains(err.Error(), "response group workflow is active") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if actionPayload != nil {
+		t.Fatalf("finish must not send grd_object_action when MGR is active: %#v", actionPayload)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
 
 	"github.com/rs/zerolog/log"
@@ -142,6 +143,8 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 		}
 		obj.Groups = p.buildCASLObjectGroups(ctx, record, state.Groups)
 	}
+	// read_device.offline/disconnected приходить з іншого CASL зрізу і для списку/картки
+	// має пріоритет над read_device_state.online, якщо сервер ще не встиг синхронізувати стани.
 	if hasDevice {
 		applyCASLObjectDeviceConnectivityState(&obj, device)
 	}
@@ -385,6 +388,58 @@ func (p *CASLCloudProvider) loadObjects(ctx context.Context) ([]caslGrdObject, e
 		return nil, err
 	}
 	return nil, connErr
+}
+
+// caslStandbyUntilFar — unix-час блокування "до нескінченності" (рік 2050).
+const caslStandbyUntilFar int64 = 2_554_790_050
+
+// StandbyCASLObject переводить CASL-об'єкт в режим "стенди" через DEVICE_BLOCK.
+func (p *CASLCloudProvider) StandbyCASLObject(ctx context.Context, internalID int, req contracts.FrontendStandbyRequest) error {
+	record, found, err := p.resolveObjectRecord(ctx, internalID)
+	if err != nil {
+		return fmt.Errorf("casl standby: пошук об'єкта %d: %w", internalID, err)
+	}
+	if !found {
+		return fmt.Errorf("casl standby: об'єкт %d не знайдено", internalID)
+	}
+
+	if _, devicesErr := p.loadDevices(ctx); devicesErr != nil {
+		log.Debug().Err(devicesErr).Msg("casl standby: не вдалося завантажити пристрої")
+	}
+
+	device, hasDevice := p.resolveDeviceForObject(record)
+
+	var deviceID string
+	var deviceNumber int64
+	if hasDevice {
+		deviceID = strings.TrimSpace(device.DeviceID.String())
+		deviceNumber = device.Number.Int64()
+	}
+	if deviceID == "" || deviceID == "0" {
+		return fmt.Errorf("casl standby: пристрій для об'єкта %d не визначено", internalID)
+	}
+
+	timeUnblock := caslStandbyUntilFar
+	if req.DurationMinutes > 0 {
+		maxMinutes := 24 * 60
+		d := req.DurationMinutes
+		if d > maxMinutes {
+			d = maxMinutes
+		}
+		timeUnblock = time.Now().Add(time.Duration(d) * time.Minute).Unix()
+	}
+
+	message := strings.TrimSpace(req.Reason)
+	if message == "" {
+		message = "Стенди"
+	}
+
+	return p.BlockCASLDevice(ctx, contracts.CASLDeviceBlockRequest{
+		DeviceID:     deviceID,
+		DeviceNumber: deviceNumber,
+		TimeUnblock:  timeUnblock,
+		Message:      message,
+	})
 }
 
 func (p *CASLCloudProvider) resolveObjectRecord(ctx context.Context, internalID int) (caslGrdObject, bool, error) {
@@ -687,6 +742,12 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 		Notes1:         notes,
 		Location1:      address,
 		LaunchDate:     launchDate,
+		PreferredResponseGroupID: func() string {
+			if geoZoneID := record.GeoZoneID.Int64(); geoZoneID > 0 {
+				return strconv.FormatInt(geoZoneID, 10)
+			}
+			return ""
+		}(),
 		BlockedArmedOnOff: func() int16 {
 			if blocked {
 				return 1

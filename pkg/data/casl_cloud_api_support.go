@@ -811,6 +811,20 @@ func (p *CASLCloudProvider) PickGuardObject(ctx context.Context, objID string, _
 	return err
 }
 
+// HijackGuardObject executes GRD_OBJ_HIJACK action via grd_object_action command.
+func (p *CASLCloudProvider) HijackGuardObject(ctx context.Context, objID string) error {
+	objID = strings.TrimSpace(objID)
+	if objID == "" {
+		return fmt.Errorf("casl GRD_OBJ_HIJACK: obj_id is required")
+	}
+	_, err := p.ExecuteCASLCommand(ctx, map[string]any{
+		"type":   "grd_object_action",
+		"action": "GRD_OBJ_HIJACK",
+		"obj_id": objID,
+	}, true)
+	return err
+}
+
 // FinishGuardObject executes GRD_OBJ_FINISH action via grd_object_action command.
 func (p *CASLCloudProvider) FinishGuardObject(ctx context.Context, objID string, _ string, cause string, note string) error {
 	objID = strings.TrimSpace(objID)

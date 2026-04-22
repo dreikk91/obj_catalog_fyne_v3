@@ -1,5 +1,6 @@
 import type {
   ConnectionStatus,
+  FrontendCapabilities,
   FrontendAlarmItem,
   FrontendAlarmGroup,
   FrontendAlarmProcessRequest,
@@ -12,12 +13,21 @@ import type {
   FrontendObjectDetails,
   FrontendObjectSummary,
   FrontendResponseGroup,
+  FrontendSourceCapability,
+  FrontendSourceHealthStatus,
   FrontendSource,
   FrontendZone,
   GuardStatus,
   MonitoringStatus,
   VisualSeverity,
 } from './types'
+
+export function normalizeCapabilities(input: unknown): FrontendCapabilities {
+  const value = asRecord(input)
+  return {
+    sources: asArray(value.sources ?? value.Sources).map(normalizeSourceCapability),
+  }
+}
 
 export function normalizeObjectSummary(input: unknown): FrontendObjectSummary {
   const value = asRecord(input)
@@ -69,6 +79,9 @@ export function normalizeAlarmItem(input: unknown): FrontendAlarmItem {
     isOwnedByMe: asBoolean(value.isOwnedByMe ?? value.IsOwnedByMe),
     canTakeOver: asBoolean(value.canTakeOver ?? value.CanTakeOver),
     canProcess: asBoolean(value.canProcess ?? value.CanProcess),
+    responseGroupID: asString(value.responseGroupID ?? value.ResponseGroupID),
+    isResponseGroupDispatched: asBoolean(value.isResponseGroupDispatched ?? value.IsResponseGroupDispatched),
+    isResponseGroupArrived: asBoolean(value.isResponseGroupArrived ?? value.IsResponseGroupArrived),
     details: asString(value.details ?? value.Details),
     visualSeverity: asVisualSeverity(value.visualSeverity ?? value.VisualSeverity),
   }
@@ -154,6 +167,8 @@ export function normalizeObjectDetails(input: unknown): FrontendObjectDetails {
     notes: asString(value.notes ?? value.Notes),
     location: asString(value.location ?? value.Location),
     launchDate: asString(value.launchDate ?? value.LaunchDate),
+    preferredResponseGroupID: asString(value.preferredResponseGroupID ?? value.PreferredResponseGroupID),
+    preferredResponseGroupName: asString(value.preferredResponseGroupName ?? value.PreferredResponseGroupName),
     zones,
     contacts,
     events,
@@ -198,6 +213,25 @@ export function normalizeResponseGroup(input: unknown): FrontendResponseGroup {
     name: asString(value.name ?? value.Name),
     callsign: asString(value.callsign ?? value.Callsign),
     phone: asString(value.phone ?? value.Phone),
+  }
+}
+
+function normalizeSourceCapability(input: unknown): FrontendSourceCapability {
+  const value = asRecord(input)
+  return {
+    source: asSource(value.source ?? value.Source),
+    displayName: asString(value.displayName ?? value.DisplayName),
+    readObjects: asBoolean(value.readObjects ?? value.ReadObjects),
+    readObjectDetails: asBoolean(value.readObjectDetails ?? value.ReadObjectDetails),
+    readEvents: asBoolean(value.readEvents ?? value.ReadEvents),
+    readAlarms: asBoolean(value.readAlarms ?? value.ReadAlarms),
+    createObject: asBoolean(value.createObject ?? value.CreateObject),
+    updateObject: asBoolean(value.updateObject ?? value.UpdateObject),
+    healthStatus: asSourceHealthStatus(value.healthStatus ?? value.HealthStatus),
+    healthText: asString(value.healthText ?? value.HealthText),
+    apiStatus: asConnectionStatus(value.apiStatus ?? value.APIStatus),
+    realtimeStatus: asConnectionStatus(value.realtimeStatus ?? value.RealtimeStatus),
+    lastRealtimePing: asDateText(value.lastRealtimePing ?? value.LastRealtimePing),
   }
 }
 
@@ -297,6 +331,14 @@ function asSource(value: unknown): FrontendSource {
   const source = asString(value).toLowerCase()
   if (source === 'bridge' || source === 'phoenix' || source === 'casl') {
     return source
+  }
+  return 'unknown'
+}
+
+function asSourceHealthStatus(value: unknown): FrontendSourceHealthStatus {
+  const status = asString(value).toLowerCase()
+  if (status === 'online' || status === 'degraded' || status === 'offline') {
+    return status
   }
   return 'unknown'
 }

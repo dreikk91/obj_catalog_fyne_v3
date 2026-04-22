@@ -102,6 +102,7 @@ func TestCASLProvider_ServiceEndpoints(t *testing.T) {
 func TestCASLProvider_CommandWrappers(t *testing.T) {
 	called := map[string]int{}
 	var loginCalls int
+	var objectActions []string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -174,7 +175,10 @@ func TestCASLProvider_CommandWrappers(t *testing.T) {
 				} else {
 					_, _ = w.Write([]byte(`{"status":"ok","data":{"device_id":"23","obj_id":"24","responseFrequencies":6,"communicQuality":6,"powerFailure":6,"criminogenicity":0,"customWins":13}}`))
 				}
-			case "group_on_device", "group_off_device", "update_grd_object", "grd_obj_pick", "grd_obj_finish":
+			case "group_on_device", "group_off_device", "update_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			case "grd_object_action":
+				objectActions = append(objectActions, strings.TrimSpace(asString(payload["action"])))
 				_, _ = w.Write([]byte(`{"status":"ok"}`))
 			default:
 				t.Fatalf("unexpected command type: %s", cmdType)
@@ -404,14 +408,16 @@ func TestCASLProvider_CommandWrappers(t *testing.T) {
 		"group_on_device",
 		"group_off_device",
 		"update_grd_object",
-		"grd_obj_pick",
-		"grd_obj_finish",
+		"grd_object_action",
 	}
 
 	for _, cmd := range expectedCommands {
 		if called[cmd] == 0 {
 			t.Fatalf("expected command %s to be called", cmd)
 		}
+	}
+	if len(objectActions) != 2 || objectActions[0] != "GRD_OBJ_PICK" || objectActions[1] != "GRD_OBJ_FINISH" {
+		t.Fatalf("unexpected grd_object_action sequence: %#v", objectActions)
 	}
 
 	if loginCalls != 1 {

@@ -56,11 +56,42 @@ func (s *frontendBackendStub) GetAlarmProcessingOptions(context.Context, int) ([
 	return s.alarmProcessingOptions, nil
 }
 
+func (s *frontendBackendStub) ListAlarmProcessingOptionsCached(context.Context) ([]contracts.FrontendAlarmProcessingOption, error) {
+	if s.alarmProcessingOptionsErr != nil {
+		return nil, s.alarmProcessingOptionsErr
+	}
+	return s.alarmProcessingOptions, nil
+}
+
 func (s *frontendBackendStub) PickAlarm(context.Context, int, contracts.FrontendAlarmPickRequest) error {
 	return nil
 }
 
 func (s *frontendBackendStub) ProcessAlarm(context.Context, int, contracts.FrontendAlarmProcessRequest) error {
+	return nil
+}
+
+func (s *frontendBackendStub) GroupProcessAlarm(context.Context, int, string) error {
+	return nil
+}
+
+func (s *frontendBackendStub) StandbyObject(context.Context, int, contracts.FrontendStandbyRequest) error {
+	return nil
+}
+
+func (s *frontendBackendStub) ListResponseGroups(context.Context) ([]contracts.FrontendResponseGroup, error) {
+	return nil, nil
+}
+
+func (s *frontendBackendStub) AssignResponseGroup(context.Context, int, contracts.FrontendAlarmGroupActionRequest) error {
+	return nil
+}
+
+func (s *frontendBackendStub) NotifyGroupArrived(context.Context, int) error {
+	return nil
+}
+
+func (s *frontendBackendStub) CancelResponseGroup(context.Context, int) error {
 	return nil
 }
 
@@ -124,6 +155,7 @@ func TestFrontendV1ServiceUnavailableBackend(t *testing.T) {
 
 func TestFrontendV1ServiceMapping(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 20, 11, 0, 0, time.UTC)
+	lastPing := time.Date(2026, time.April, 22, 6, 11, 55, 0, time.UTC)
 	backend := &frontendBackendStub{
 		capabilities: contracts.FrontendCapabilities{
 			Sources: []contracts.FrontendSourceCapability{
@@ -134,6 +166,11 @@ func TestFrontendV1ServiceMapping(t *testing.T) {
 					ReadObjectDetails: true,
 					ReadAlarms:        true,
 					ReadEvents:        true,
+					HealthStatus:      contracts.FrontendSourceHealthStatusOnline,
+					HealthText:        "CASL: API і WS online",
+					APIStatus:         contracts.FrontendConnectionStatusOnline,
+					RealtimeStatus:    contracts.FrontendConnectionStatusOnline,
+					LastRealtimePing:  lastPing,
 				},
 			},
 		},
@@ -197,8 +234,9 @@ func TestFrontendV1ServiceMapping(t *testing.T) {
 				DisplayNumber: "11",
 				Name:          "Obj",
 			},
-			Phones:   "380...",
-			Location: "Kyiv",
+			Phones:                   "380...",
+			Location:                 "Kyiv",
+			PreferredResponseGroupID: "5",
 		},
 	}
 	service := NewFrontendV1Service(backend)
@@ -213,6 +251,9 @@ func TestFrontendV1ServiceMapping(t *testing.T) {
 	}
 	if len(caps.Sources) != 1 || caps.Sources[0].Source != frontendv1.SourceBridge {
 		t.Fatalf("Capabilities mapping failed: %+v", caps.Sources)
+	}
+	if caps.Sources[0].LastRealtimePing != lastPing.Format(time.RFC3339) {
+		t.Fatalf("Capabilities last ping failed: %+v", caps.Sources[0])
 	}
 
 	objects, err := service.ListObjects()
@@ -259,7 +300,7 @@ func TestFrontendV1ServiceMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetObjectDetails err = %v", err)
 	}
-	if details.Summary.ID != 11 || details.Location != "Kyiv" {
+	if details.Summary.ID != 11 || details.Location != "Kyiv" || details.PreferredResponseGroupID != "5" {
 		t.Fatalf("GetObjectDetails mapping failed: %+v", details)
 	}
 }

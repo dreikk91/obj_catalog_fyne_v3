@@ -322,7 +322,11 @@ func (a *FrontendAdapter) ListAlarmProcessingOptionsCached(ctx context.Context) 
 	return append([]contracts.FrontendAlarmProcessingOption(nil), legacyFrontendAlarmProcessingOptions...), nil
 }
 
-func (a *FrontendAdapter) StandbyObject(ctx context.Context, objectID int) error {
+type caslStandbyCapable interface {
+	StandbyCASLObject(ctx context.Context, internalID int, req contracts.FrontendStandbyRequest) error
+}
+
+func (a *FrontendAdapter) StandbyObject(ctx context.Context, objectID int, request contracts.FrontendStandbyRequest) error {
 	if a == nil || a.dataProvider == nil {
 		return contracts.ErrFrontendBackendUnavailable
 	}
@@ -330,8 +334,15 @@ func (a *FrontendAdapter) StandbyObject(ctx context.Context, objectID int) error
 		return fmt.Errorf("невірний ID об'єкта")
 	}
 	source := contracts.DetectFrontendSourceByObjectID(objectID)
-	if admin, ok := a.dataProvider.(contracts.AdminProvider); ok && source == contracts.FrontendSourceBridge {
-		return admin.SetDisplayBlockMode(int64(objectID), contracts.DisplayBlockDebug)
+	switch source {
+	case contracts.FrontendSourceBridge:
+		if admin, ok := AsAdminProvider(a.dataProvider); ok {
+			return admin.SetDisplayBlockMode(int64(objectID), contracts.DisplayBlockDebug)
+		}
+	case contracts.FrontendSourceCASL:
+		if standby, ok := a.dataProvider.(caslStandbyCapable); ok {
+			return standby.StandbyCASLObject(ctx, objectID, request)
+		}
 	}
 	return fmt.Errorf("переведення в стенди не підтримується для джерела %s", source)
 }
@@ -504,28 +515,37 @@ func (a *FrontendAdapter) GetObjectDetails(ctx context.Context, objectID int) (c
 	}
 
 	signal, testMessage, lastTest, lastMessage := a.dataProvider.GetExternalData(rawID)
+	// Merge external timestamps into summary so Bridge/CASL test times are visible.
+	if !lastTest.IsZero() && lastTest.After(summary.LastTestTime) {
+		summary.LastTestTime = lastTest
+	}
+	if !lastMessage.IsZero() && lastMessage.After(summary.LastMessageTime) {
+		summary.LastMessageTime = lastMessage
+	}
 	details := contracts.FrontendObjectDetails{
-		Summary:             summary,
-		GSMLevel:            object.GSMLevel,
-		PowerSource:         frontendPowerSource(object.PowerSource),
-		AutoTestHours:       object.AutoTestHours,
-		SubServerA:          object.SubServerA,
-		SubServerB:          object.SubServerB,
-		ChannelCode:         object.ObjChan,
-		AKBState:            object.AkbState,
-		PowerFault:          object.PowerFault,
-		TestControl:         object.TestControl > 0,
-		TestIntervalMin:     object.TestTime,
-		Phones:              object.Phones1,
-		Notes:               object.Notes1,
-		Location:            object.Location1,
-		LaunchDate:          object.LaunchDate,
-		ExternalSignal:      signal,
-		ExternalTestMessage: testMessage,
-		ExternalLastTest:    lastTest,
-		ExternalLastMessage: lastMessage,
-		Zones:               mapFrontendZones(a.dataProvider.GetZones(rawID)),
-		Contacts:            mapFrontendContacts(a.dataProvider.GetEmployees(rawID)),
+		Summary:                    summary,
+		GSMLevel:                   object.GSMLevel,
+		PowerSource:                frontendPowerSource(object.PowerSource),
+		AutoTestHours:              object.AutoTestHours,
+		SubServerA:                 object.SubServerA,
+		SubServerB:                 object.SubServerB,
+		ChannelCode:                object.ObjChan,
+		AKBState:                   object.AkbState,
+		PowerFault:                 object.PowerFault,
+		TestControl:                object.TestControl > 0,
+		TestIntervalMin:            object.TestTime,
+		Phones:                     object.Phones1,
+		Notes:                      object.Notes1,
+		Location:                   object.Location1,
+		LaunchDate:                 object.LaunchDate,
+		PreferredResponseGroupID:   strings.TrimSpace(object.PreferredResponseGroupID),
+		PreferredResponseGroupName: strings.TrimSpace(object.PreferredResponseGroupName),
+		ExternalSignal:             signal,
+		ExternalTestMessage:        testMessage,
+		ExternalLastTest:           lastTest,
+		ExternalLastMessage:        lastMessage,
+		Zones:                      mapFrontendZones(a.dataProvider.GetZones(rawID)),
+		Contacts:                   mapFrontendContacts(a.dataProvider.GetEmployees(rawID)),
 	}
 
 	return details, nil
@@ -921,28 +941,31 @@ func mapFrontendEvents(events []models.Event) []contracts.FrontendEventItem {
 func mapFrontendAlarmItem(alarm models.Alarm) contracts.FrontendAlarmItem {
 	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
 	return contracts.FrontendAlarmItem{
-		ID:             alarm.ID,
-		Source:         source,
-		ObjectID:       alarm.ObjectID,
-		ObjectNumber:   alarm.GetObjectNumberDisplay(),
-		ObjectName:     strings.TrimSpace(alarm.ObjectName),
-		Address:        strings.TrimSpace(alarm.Address),
-		Time:           alarm.Time,
-		Details:        strings.TrimSpace(alarm.Details),
-		TypeCode:       string(alarm.Type),
-		TypeText:       strings.TrimSpace(alarm.GetTypeDisplay()),
-		ZoneNumber:     alarm.ZoneNumber,
-		ZoneName:       strings.TrimSpace(alarm.ZoneName),
-		IsProcessed:    alarm.IsProcessed,
-		ProcessedBy:    strings.TrimSpace(alarm.ProcessedBy),
-		ProcessNote:    strings.TrimSpace(alarm.ProcessNote),
-		IsInProgress:   alarm.IsInProgress,
-		InProgressBy:   strings.TrimSpace(alarm.InProgressBy),
-		IsOwnedByMe:    alarm.IsOwnedByMe,
-		CanTakeOver:    source == contracts.FrontendSourceCASL && alarm.IsInProgress && !alarm.IsOwnedByMe,
-		CanProcess:     source != contracts.FrontendSourceCASL || !alarm.IsInProgress || alarm.IsOwnedByMe,
-		ObjectNativeID: alarm.GetObjectNumberDisplay(),
-		VisualSeverity: frontendAlarmSeverity(alarm),
+		ID:                        alarm.ID,
+		Source:                    source,
+		ObjectID:                  alarm.ObjectID,
+		ObjectNumber:              alarm.GetObjectNumberDisplay(),
+		ObjectName:                strings.TrimSpace(alarm.ObjectName),
+		Address:                   strings.TrimSpace(alarm.Address),
+		Time:                      alarm.Time,
+		Details:                   strings.TrimSpace(alarm.Details),
+		TypeCode:                  string(alarm.Type),
+		TypeText:                  strings.TrimSpace(alarm.GetTypeDisplay()),
+		ZoneNumber:                alarm.ZoneNumber,
+		ZoneName:                  strings.TrimSpace(alarm.ZoneName),
+		IsProcessed:               alarm.IsProcessed,
+		ProcessedBy:               strings.TrimSpace(alarm.ProcessedBy),
+		ProcessNote:               strings.TrimSpace(alarm.ProcessNote),
+		IsInProgress:              alarm.IsInProgress,
+		InProgressBy:              strings.TrimSpace(alarm.InProgressBy),
+		IsOwnedByMe:               alarm.IsOwnedByMe,
+		CanTakeOver:               source == contracts.FrontendSourceCASL && alarm.IsInProgress && !alarm.IsOwnedByMe,
+		CanProcess:                (source != contracts.FrontendSourceCASL || !alarm.IsInProgress || alarm.IsOwnedByMe) && !alarm.IsResponseGroupDispatched,
+		ResponseGroupID:           strings.TrimSpace(alarm.ResponseGroupID),
+		IsResponseGroupDispatched: alarm.IsResponseGroupDispatched,
+		IsResponseGroupArrived:    alarm.IsResponseGroupArrived,
+		ObjectNativeID:            alarm.GetObjectNumberDisplay(),
+		VisualSeverity:            frontendAlarmSeverity(alarm),
 	}
 }
 
@@ -1002,17 +1025,17 @@ func frontendGuardStatus(object models.Object) contracts.FrontendGuardStatus {
 }
 
 func frontendConnectionStatus(object models.Object) contracts.FrontendConnectionStatus {
-	switch {
-	case object.IsConnState > 0, object.IsConnOK, object.Status != models.StatusOffline:
-		if object.IsConnState == 0 && !object.IsConnOK {
-			return contracts.FrontendConnectionStatusOffline
-		}
+	// Explicit "online" signals take highest priority.
+	if object.IsConnState > 0 || object.IsConnOK {
 		return contracts.FrontendConnectionStatusOnline
-	case object.IsConnState == 0, object.Status == models.StatusOffline:
-		return contracts.FrontendConnectionStatusOffline
-	default:
-		return contracts.FrontendConnectionStatusUnknown
 	}
+	// Explicit "offline" status (provider set it deliberately).
+	if object.Status == models.StatusOffline {
+		return contracts.FrontendConnectionStatusOffline
+	}
+	// IsConnState == 0 with non-offline status means the provider does not track
+	// connection state (e.g. Bridge with NULL IsConnState1 in DB) — report unknown.
+	return contracts.FrontendConnectionStatusUnknown
 }
 
 func frontendMonitoringStatus(object models.Object) contracts.FrontendMonitoringStatus {

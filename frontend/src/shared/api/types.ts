@@ -1,8 +1,29 @@
 export type FrontendSource = 'unknown' | 'bridge' | 'phoenix' | 'casl'
+export type FrontendSourceHealthStatus = 'unknown' | 'online' | 'degraded' | 'offline'
 export type GuardStatus = 'unknown' | 'guarded' | 'disarmed'
 export type ConnectionStatus = 'unknown' | 'online' | 'offline'
 export type MonitoringStatus = 'unknown' | 'active' | 'blocked' | 'debug'
 export type VisualSeverity = 'unknown' | 'normal' | 'info' | 'warning' | 'fault' | 'critical'
+
+export type FrontendSourceCapability = {
+  source: FrontendSource
+  displayName: string
+  readObjects: boolean
+  readObjectDetails: boolean
+  readEvents: boolean
+  readAlarms: boolean
+  createObject: boolean
+  updateObject: boolean
+  healthStatus: FrontendSourceHealthStatus
+  healthText: string
+  apiStatus: ConnectionStatus
+  realtimeStatus: ConnectionStatus
+  lastRealtimePing: string
+}
+
+export type FrontendCapabilities = {
+  sources: FrontendSourceCapability[]
+}
 
 export type FrontendObjectSummary = {
   id: number
@@ -86,6 +107,9 @@ export type FrontendAlarmItem = {
   isOwnedByMe: boolean
   canTakeOver: boolean
   canProcess: boolean
+  responseGroupID: string
+  isResponseGroupDispatched: boolean
+  isResponseGroupArrived: boolean
   details: string
   visualSeverity: VisualSeverity
 }
@@ -125,6 +149,8 @@ export type FrontendObjectDetails = {
   notes: string
   location: string
   launchDate: string
+  preferredResponseGroupID: string
+  preferredResponseGroupName: string
   zones: FrontendZone[]
   contacts: FrontendContact[]
   events: FrontendEventItem[]

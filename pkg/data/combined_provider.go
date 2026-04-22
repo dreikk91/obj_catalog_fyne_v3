@@ -38,11 +38,18 @@ type alarmProcessingProvider interface {
 	contracts.AlarmProcessingProvider
 }
 
+type timeoutRecoverableProvider interface {
+	TriggerReconnect(reason string)
+}
+
 // Default slice capacities for pre-allocation
 const (
 	defaultObjectsCapacity = 128
 	defaultEventsCapacity  = 256
 	defaultAlarmsCapacity  = 64
+
+	defaultCombinedProviderGetEventsTimeout = 5 * time.Second
+	defaultCombinedProviderGetAlarmsTimeout = 3 * time.Second
 )
 
 // ProviderSource описує одне джерело даних у мультисистемній конфігурації.
@@ -58,7 +65,9 @@ type ProviderSource struct {
 // CombinedDataProvider об'єднує декілька пультових систем в один DataProvider.
 // Назва збережена для зворотної сумісності.
 type CombinedDataProvider struct {
-	sources []ProviderSource
+	sources       []ProviderSource
+	eventsTimeout time.Duration
+	alarmsTimeout time.Duration
 }
 
 func (p *CombinedDataProvider) FrontendSourceCapabilities() []contracts.FrontendSourceCapability {
@@ -86,6 +95,14 @@ func (p *CombinedDataProvider) FrontendSourceCapabilities() []contracts.Frontend
 			capability.CreateObject = true
 			capability.UpdateObject = true
 		}
+		if healthProvider, ok := source.Provider.(contracts.FrontendSourceHealthProvider); ok {
+			health := healthProvider.FrontendSourceHealth()
+			capability.HealthStatus = health.HealthStatus
+			capability.HealthText = health.HealthText
+			capability.APIStatus = health.APIStatus
+			capability.RealtimeStatus = health.RealtimeStatus
+			capability.LastRealtimePing = health.LastRealtimePing
+		}
 
 		capabilities = append(capabilities, capability)
 	}
@@ -112,6 +129,19 @@ func NewCombinedDataProvider(primary contracts.DataProvider, secondary contracts
 	return NewMultiSourceDataProvider(sources...)
 }
 
+func triggerProviderRecovery(source *ProviderSource, reason string) {
+	if source == nil || source.Provider == nil {
+		return
+	}
+
+	recoverable, ok := source.Provider.(timeoutRecoverableProvider)
+	if !ok {
+		return
+	}
+
+	recoverable.TriggerReconnect(reason)
+}
+
 // NewMultiSourceDataProvider створює агрегатор для довільної кількості пультових систем.
 func NewMultiSourceDataProvider(sources ...ProviderSource) *CombinedDataProvider {
 	filtered := make([]ProviderSource, 0, len(sources))
@@ -121,7 +151,11 @@ func NewMultiSourceDataProvider(sources ...ProviderSource) *CombinedDataProvider
 		}
 		filtered = append(filtered, source)
 	}
-	return &CombinedDataProvider{sources: filtered}
+	return &CombinedDataProvider{
+		sources:       filtered,
+		eventsTimeout: defaultCombinedProviderGetEventsTimeout,
+		alarmsTimeout: defaultCombinedProviderGetAlarmsTimeout,
+	}
 }
 
 func (p *CombinedDataProvider) Shutdown() {
@@ -440,6 +474,11 @@ func (p *CombinedDataProvider) GetEvents() []models.Event {
 		return nil
 	}
 
+	timeout := p.eventsTimeout
+	if timeout <= 0 {
+		timeout = defaultCombinedProviderGetEventsTimeout
+	}
+
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	events := make([]models.Event, 0, defaultEventsCapacity)
@@ -448,7 +487,7 @@ func (p *CombinedDataProvider) GetEvents() []models.Event {
 		wg.Add(1)
 		go func(src *ProviderSource) {
 			defer wg.Done()
-			
+
 			resChan := make(chan []models.Event, 1)
 			go func() {
 				resChan <- src.Provider.GetEvents()
@@ -461,8 +500,9 @@ func (p *CombinedDataProvider) GetEvents() []models.Event {
 					events = append(events, sourceEvents...)
 					mu.Unlock()
 				}
-			case <-time.After(2 * time.Second): // Individual provider timeout
-				log.Debug().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout")
+			case <-time.After(timeout):
+				log.Warn().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout — повертаємо дані без цього джерела")
+				triggerProviderRecovery(src, "combined get_events timeout")
 			}
 		}(&p.sources[i])
 	}
@@ -533,6 +573,11 @@ func (p *CombinedDataProvider) GetAlarms() []models.Alarm {
 		return nil
 	}
 
+	timeout := p.alarmsTimeout
+	if timeout <= 0 {
+		timeout = defaultCombinedProviderGetAlarmsTimeout
+	}
+
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	alarms := make([]models.Alarm, 0, defaultAlarmsCapacity)
@@ -541,7 +586,7 @@ func (p *CombinedDataProvider) GetAlarms() []models.Alarm {
 		wg.Add(1)
 		go func(src *ProviderSource) {
 			defer wg.Done()
-			
+
 			resChan := make(chan []models.Alarm, 1)
 			go func() {
 				resChan <- src.Provider.GetAlarms()
@@ -554,8 +599,9 @@ func (p *CombinedDataProvider) GetAlarms() []models.Alarm {
 					alarms = append(alarms, sourceAlarms...)
 					mu.Unlock()
 				}
-			case <-time.After(3 * time.Second): // Individual provider timeout
+			case <-time.After(timeout):
 				log.Debug().Str("provider", src.Name).Msg("CombinedDataProvider: GetAlarms timeout")
+				triggerProviderRecovery(src, "combined get_alarms timeout")
 			}
 		}(&p.sources[i])
 	}
@@ -841,6 +887,22 @@ func (p *CombinedDataProvider) resolveAnyCASLObjectEditorProvider() (caslObjectE
 		}
 	}
 	return nil, errors.New("casl object editor provider is not configured")
+}
+
+// StandbyCASLObject реалізує caslStandbyCapable для CombinedDataProvider.
+func (p *CombinedDataProvider) StandbyCASLObject(ctx context.Context, internalID int, req contracts.FrontendStandbyRequest) error {
+	source := p.sourceForObjectID(internalID)
+	if source == nil {
+		return fmt.Errorf("casl standby: джерело для об'єкта %d не знайдено", internalID)
+	}
+	type standbyCapable interface {
+		StandbyCASLObject(ctx context.Context, internalID int, req contracts.FrontendStandbyRequest) error
+	}
+	capable, ok := source.Provider.(standbyCapable)
+	if !ok {
+		return fmt.Errorf("casl standby: джерело %q не підтримує стенди", source.Name)
+	}
+	return capable.StandbyCASLObject(ctx, internalID, req)
 }
 
 func sortEvents(events []models.Event) {

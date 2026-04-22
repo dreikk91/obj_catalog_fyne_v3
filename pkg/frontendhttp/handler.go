@@ -113,6 +113,10 @@ func (h *Handler) handleObjectItem(w http.ResponseWriter, r *http.Request, rawID
 			h.handleObjectEvents(w, r, objectID)
 			return
 		}
+		if len(parts) == 2 && parts[1] == "standby" {
+			h.handleObjectStandby(w, r, objectID)
+			return
+		}
 		writeError(w, http.StatusNotFound, "route not found")
 		return
 	}
@@ -173,6 +177,31 @@ func (h *Handler) handleObjectEvents(w http.ResponseWriter, r *http.Request, obj
 		return
 	}
 	writeJSON(w, http.StatusOK, frontendv1.ToEventPageResponse(page))
+}
+
+func (h *Handler) handleObjectStandby(w http.ResponseWriter, r *http.Request, objectID int) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	var req struct {
+		DurationMinutes int    `json:"durationMinutes"`
+		Reason          string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.backend.StandbyObject(r.Context(), objectID, contracts.FrontendStandbyRequest{
+		DurationMinutes: req.DurationMinutes,
+		Reason:          req.Reason,
+	}); err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct{}{})
 }
 
 func (h *Handler) handleAlarms(w http.ResponseWriter, r *http.Request) {

@@ -52,6 +52,9 @@ export function toArchiveRow(item: FrontendEventItem): JournalRow {
     inProgressByMe: false,
     canTakeOver: false,
     canProcess: false,
+    responseGroupID: '',
+    responseGroupDispatched: false,
+    responseGroupArrived: false,
     severity,
   }
 }
@@ -77,7 +80,15 @@ export function toAlarmRow(item: FrontendAlarmItem): JournalRow {
     group: resolveJournalGroup(item.details, item.zoneNumber),
     zone,
     objectName: item.objectName || '—',
-    state: item.isProcessed ? 'Оброблено' : item.isInProgress ? 'Прийнято' : 'Нова',
+    state: item.isProcessed
+      ? 'Оброблено'
+      : item.isResponseGroupArrived
+        ? 'МГР прибула'
+        : item.isResponseGroupDispatched
+          ? 'МГР вислана'
+          : item.isInProgress
+            ? 'Прийнято'
+            : 'Нова',
     details: buildAlarmDetailsText(item),
     alarm: true,
     processed: item.isProcessed,
@@ -86,6 +97,9 @@ export function toAlarmRow(item: FrontendAlarmItem): JournalRow {
     inProgressByMe: item.isOwnedByMe,
     canTakeOver: item.canTakeOver,
     canProcess: item.canProcess,
+    responseGroupID: item.responseGroupID,
+    responseGroupDispatched: item.isResponseGroupDispatched,
+    responseGroupArrived: item.isResponseGroupArrived,
     severity,
   }
 }
@@ -171,8 +185,9 @@ export function mergeUnprocessedGroupsByObject(groups: UnprocessedAlarmGroup[]):
   const byKey = new Map<string, UnprocessedAlarmGroup>()
   
   for (const group of groups) {
-    const key = String(group.objectID)
-    const stableGroupID = `group-obj-${group.objectID}`
+    const shouldMergeAsTree = supportsTreeGroupedUnprocessedGroup(group)
+    const key = shouldMergeAsTree ? `${group.anchorRow.source}:${group.objectID}` : group.groupID
+    const stableGroupID = shouldMergeAsTree ? `group-${group.anchorRow.source}-obj-${group.objectID}` : group.groupID
     
     const existing = byKey.get(key)
     if (existing == null) {
@@ -221,7 +236,7 @@ export function flattenUnprocessedAlarmGroups(
   const rows: JournalRow[] = []
   for (const group of groups) {
     rows.push(group.anchorRow)
-    if (!expandedGroups[group.groupID] || group.rows.length <= 1) {
+    if (!isTreeGroupedUnprocessedGroup(group) || !expandedGroups[group.groupID]) {
       continue
     }
 
@@ -237,6 +252,10 @@ export function buildUnprocessedRowMeta(
 ): Map<string, UnprocessedRowMeta> {
   const map = new Map<string, UnprocessedRowMeta>()
   for (const group of groups) {
+    if (!isTreeGroupedUnprocessedGroup(group)) {
+      continue
+    }
+
     const memberRowIDs = group.rows.map((row) => row.rowID)
     map.set(group.anchorRow.rowID, {
       groupID: group.groupID,
@@ -246,13 +265,17 @@ export function buildUnprocessedRowMeta(
       memberRowIDs,
     })
 
-    if (!expandedGroups[group.groupID] || group.rows.length <= 1) {
+    if (!expandedGroups[group.groupID]) {
       continue
     }
 
-    for (const childRow of group.rows) {
+    const childRows = group.rows
+      .filter((childRow) => childRow.rowID !== group.anchorRow.rowID)
+      .sort(sortJournalRowsDesc)
+
+    childRows.forEach((childRow, index) => {
       if (childRow.rowID === group.anchorRow.rowID) {
-        continue
+        return
       }
       map.set(childRow.rowID, {
         groupID: group.groupID,
@@ -260,10 +283,20 @@ export function buildUnprocessedRowMeta(
         isChild: true,
         groupSize: group.rows.length,
         memberRowIDs: [],
+        childIndex: index,
+        isLastChild: index === childRows.length - 1,
       })
-    }
+    })
   }
   return map
+}
+
+export function isTreeGroupedUnprocessedGroup(group: UnprocessedAlarmGroup): boolean {
+  return supportsTreeGroupedUnprocessedGroup(group) && group.rows.length > 1
+}
+
+function supportsTreeGroupedUnprocessedGroup(group: UnprocessedAlarmGroup): boolean {
+  return group.anchorRow.source === 'casl' || group.anchorRow.source === 'phoenix'
 }
 
 export function resolveJournalRowClass(row: JournalRow, isSelected: boolean, forceAlarm = false): string {
@@ -307,6 +340,12 @@ export function resolveJournalTypeClass(row: JournalRow): string {
 }
 
 export function resolveJournalStateChipClass(row: JournalRow): string {
+  if (row.responseGroupArrived) {
+    return 'chip-info'
+  }
+  if (row.responseGroupDispatched) {
+    return 'chip-orange'
+  }
   if (row.inProgress) {
     return row.inProgressByMe ? 'chip-info' : 'chip-orange'
   }

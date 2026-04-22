@@ -368,10 +368,31 @@ func (p *CASLCloudProvider) buildSharedObjectContext(ctx context.Context) (
 	return byPPK, byObject, nil
 }
 
-func (p *CASLCloudProvider) GetEvents() []models.Event {
-	p.ensureRealtimeStream()
+// caslGetEventsHTTPTimeout — короткий таймаут для HTTP-опитування в GetEvents.
+// Менший за timeout агрегатора, щоб не блокувати загальне оновлення журналу.
+const caslGetEventsHTTPTimeout = 1500 * time.Millisecond
 
-	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+func (p *CASLCloudProvider) GetEvents() []models.Event {
+	// Realtime bootstrap не має блокувати отримання журналу подій.
+	// Якщо websocket ще не готовий, піднімаємо його у фоні, а сам GetEvents
+	// працює через коротке HTTP-опитування або віддає кеш.
+	p.ensureRealtimeStreamAsync()
+
+	// Якщо WebSocket-підписка активна — повертаємо кеш одразу.
+	// Realtime loop підтримує cachedEvents свіжими через mergeCachedEventsLocked.
+	p.realtimeMu.Lock()
+	subscribed := p.realtimeRunning && p.realtimeSubscribed
+	p.realtimeMu.Unlock()
+
+	if subscribed {
+		p.mu.RLock()
+		defer p.mu.RUnlock()
+		return append([]models.Event(nil), p.cachedEvents...)
+	}
+
+	// Стрім ще не підключений — HTTP-опитування для початкового завантаження.
+	// Використовуємо короткий таймаут, щоб не перевищувати ліміт combined provider.
+	ctx, cancel := context.WithTimeout(context.Background(), caslGetEventsHTTPTimeout)
 	defer cancel()
 	if events, err := p.readEventsJournalAsEvents(ctx); err == nil {
 		return events
@@ -380,6 +401,85 @@ func (p *CASLCloudProvider) GetEvents() []models.Event {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return append([]models.Event(nil), p.cachedEvents...)
+}
+
+func (p *CASLCloudProvider) FrontendSourceHealth() contracts.FrontendSourceHealthInfo {
+	if p == nil {
+		return contracts.FrontendSourceHealthInfo{
+			HealthStatus:   contracts.FrontendSourceHealthStatusUnknown,
+			APIStatus:      contracts.FrontendConnectionStatusUnknown,
+			RealtimeStatus: contracts.FrontendConnectionStatusUnknown,
+		}
+	}
+
+	p.ensureRealtimeStreamAsync()
+
+	now := time.Now()
+	p.mu.RLock()
+	apiSuccessAt := p.lastAPISuccessAt
+	apiFailureAt := p.lastAPIFailureAt
+	apiErrorText := strings.TrimSpace(p.lastAPIErrorText)
+	lastRealtimeMsgAt := p.lastRealtimeMsgAt
+	lastRealtimePingAt := p.lastRealtimePingAt
+	wsURL := strings.TrimSpace(p.wsURL)
+	p.mu.RUnlock()
+
+	p.realtimeMu.Lock()
+	realtimeRunning := p.realtimeRunning
+	realtimeSubscribed := p.realtimeSubscribed
+	p.realtimeMu.Unlock()
+
+	apiStatus := contracts.FrontendConnectionStatusUnknown
+	switch {
+	case !apiSuccessAt.IsZero() && (apiFailureAt.IsZero() || !apiFailureAt.After(apiSuccessAt)):
+		apiStatus = contracts.FrontendConnectionStatusOnline
+	case !apiFailureAt.IsZero() && (apiSuccessAt.IsZero() || apiFailureAt.After(apiSuccessAt)):
+		apiStatus = contracts.FrontendConnectionStatusOffline
+	}
+
+	realtimeStatus := contracts.FrontendConnectionStatusUnknown
+	switch {
+	case realtimeSubscribed && !lastRealtimePingAt.IsZero() && now.Sub(lastRealtimePingAt) <= caslRealtimePingGracePeriod:
+		realtimeStatus = contracts.FrontendConnectionStatusOnline
+	case realtimeSubscribed && !lastRealtimeMsgAt.IsZero() && now.Sub(lastRealtimeMsgAt) <= caslRealtimePingGracePeriod:
+		realtimeStatus = contracts.FrontendConnectionStatusOnline
+	case realtimeRunning || realtimeSubscribed || wsURL != "" || p.canRelogin():
+		realtimeStatus = contracts.FrontendConnectionStatusOffline
+	}
+
+	healthStatus := contracts.FrontendSourceHealthStatusUnknown
+	healthText := "CASL: стан з'єднання ще не визначено"
+
+	switch {
+	case apiStatus == contracts.FrontendConnectionStatusOnline && realtimeStatus == contracts.FrontendConnectionStatusOnline:
+		healthStatus = contracts.FrontendSourceHealthStatusOnline
+		healthText = "CASL: API і WS online"
+	case apiStatus == contracts.FrontendConnectionStatusOffline && realtimeStatus == contracts.FrontendConnectionStatusOffline:
+		healthStatus = contracts.FrontendSourceHealthStatusOffline
+		healthText = "CASL: API і WS недоступні"
+	case apiStatus == contracts.FrontendConnectionStatusOffline:
+		healthStatus = contracts.FrontendSourceHealthStatusDegraded
+		if apiErrorText != "" {
+			healthText = "CASL: API недоступний, WS нестабільний. " + apiErrorText
+		} else {
+			healthText = "CASL: API недоступний, WS нестабільний"
+		}
+	case realtimeStatus == contracts.FrontendConnectionStatusOffline:
+		healthStatus = contracts.FrontendSourceHealthStatusDegraded
+		if !lastRealtimePingAt.IsZero() {
+			healthText = "CASL: API online, але WS не отримує ping понад 12 с"
+		} else {
+			healthText = "CASL: API online, але WS не підписаний або не отримує ping"
+		}
+	}
+
+	return contracts.FrontendSourceHealthInfo{
+		HealthStatus:     healthStatus,
+		HealthText:       healthText,
+		APIStatus:        apiStatus,
+		RealtimeStatus:   realtimeStatus,
+		LastRealtimePing: lastRealtimePingAt,
+	}
 }
 
 func (p *CASLCloudProvider) readEventsJournalAsEvents(ctx context.Context) ([]models.Event, error) {
@@ -1346,6 +1446,7 @@ func (p *CASLCloudProvider) readGeneralTapeAsAlarms(ctx context.Context, byObjec
 			PultID:          strings.TrimSpace(asString(rawRow["pult_id"])),
 			UserID:          firstCASLValue(strings.TrimSpace(row.UserID), strings.TrimSpace(asString(rawRow["user_id"]))),
 			UserFIO:         firstCASLValue(strings.TrimSpace(row.UserFIO), strings.TrimSpace(asString(rawRow["user_fio"]))),
+			MgrID:           firstCASLValue(strings.TrimSpace(row.MgrID), strings.TrimSpace(asString(rawRow["mgr_id"]))),
 			LastAct:         firstCASLValue(strings.TrimSpace(asString(rawRow["last_act"])), strings.TrimSpace(row.Action)),
 			Msg:             stringifyCASLTapeItemMsg(rawRow["msg"]),
 			ReasonAlarm:     strings.TrimSpace(asString(rawRow["reasonAlarm"])),
@@ -1408,24 +1509,29 @@ func (p *CASLCloudProvider) readGeneralTapeAsAlarms(ctx context.Context, byObjec
 		}
 
 		inProgressBy, isOwnedByMe := p.resolveCASLAlarmAssignee(item, users, currentUserID)
-		isInProgress := strings.EqualFold(strings.TrimSpace(item.LastAct), "GRD_OBJ_PICK")
+		isInProgress := isCASLAlarmInProgressAction(item.LastAct)
+		groupDispatched := strings.EqualFold(strings.TrimSpace(item.LastAct), "GRD_OBJ_ASS_MGR") || strings.EqualFold(strings.TrimSpace(item.LastAct), "GRD_OBJ_MGR_ARRIVE")
+		groupArrived := strings.EqualFold(strings.TrimSpace(item.LastAct), "GRD_OBJ_MGR_ARRIVE")
 
 		alarms = append(alarms, models.Alarm{
-			ID:             item.ID,
-			ObjectID:       item.ObjectID,
-			ObjectNumber:   item.ObjectNum,
-			ObjectName:     item.ObjectName,
-			Address:        item.ObjAddr,
-			Time:           time.UnixMilli(item.Time).Local(),
-			Details:        details,
-			Type:           alarmType,
-			ZoneNumber:     item.ZoneNumber,
-			SC1:            mapCASLEventSC1(eventType),
-			IsInProgress:   isInProgress,
-			InProgressBy:   inProgressBy,
-			InProgressUser: strings.TrimSpace(item.UserID),
-			IsOwnedByMe:    isInProgress && isOwnedByMe,
-			SourceMsgs:     mapCASLTapeMessagesToAlarmMsgs(item.PPKMsgs),
+			ID:                        item.ID,
+			ObjectID:                  item.ObjectID,
+			ObjectNumber:              item.ObjectNum,
+			ObjectName:                item.ObjectName,
+			Address:                   item.ObjAddr,
+			Time:                      time.UnixMilli(item.Time).Local(),
+			Details:                   details,
+			Type:                      alarmType,
+			ZoneNumber:                item.ZoneNumber,
+			SC1:                       mapCASLEventSC1(eventType),
+			IsInProgress:              isInProgress,
+			InProgressBy:              inProgressBy,
+			InProgressUser:            strings.TrimSpace(item.UserID),
+			IsOwnedByMe:               isInProgress && isOwnedByMe,
+			ResponseGroupID:           strings.TrimSpace(item.MgrID),
+			IsResponseGroupDispatched: groupDispatched,
+			IsResponseGroupArrived:    groupArrived,
+			SourceMsgs:                mapCASLTapeMessagesToAlarmMsgs(item.PPKMsgs),
 		})
 	}
 
@@ -1546,34 +1652,67 @@ func caslObjectEventMergeKey(event models.Event) string {
 	}, "|")
 }
 
-func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
-	p.ensureRealtimeStream()
+func isCASLAlarmInProgressAction(action string) bool {
+	switch strings.ToUpper(strings.TrimSpace(action)) {
+	case "GRD_OBJ_PICK", "GRD_OBJ_HIJACK":
+		return true
+	default:
+		return false
+	}
+}
 
-	// HTTP-оновлення запускаємо у фоні — CombinedDataProvider дає лише 3 с на провайдер,
-	// а CASL HTTP може тривати до 12 с. Повертаємо snapshot одразу.
-	if p.alarmsRefreshing.CompareAndSwap(false, true) {
+func isCASLAlarmFinishBlockedAction(action string) bool {
+	switch strings.ToUpper(strings.TrimSpace(action)) {
+	case "GRD_OBJ_ASS_MGR", "GRD_OBJ_MGR_ARRIVE":
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *CASLCloudProvider) refreshCASLAlarmSnapshot(ctx context.Context, forceTapeSnapshot bool) {
+	_, byObject, ctxErr := p.buildSharedObjectContext(ctx)
+	if ctxErr != nil {
+		log.Debug().Err(ctxErr).Msg("CASL bg: не вдалося побудувати спільний контекст об'єктів")
+	}
+
+	if _, err := p.readEventsJournalAsEvents(ctx); err != nil {
+		log.Debug().Err(err).Msg("CASL bg: read_events недоступний")
+	}
+
+	if !forceTapeSnapshot && len(p.snapshotRealtimeAlarms()) > 0 {
+		return
+	}
+
+	tapeAlarms, err := p.readGeneralTapeAsAlarms(ctx, byObject)
+	if err != nil {
+		log.Debug().Err(err).Msg("CASL bg: get_general_tape_objects недоступний")
+		return
+	}
+	if len(tapeAlarms) > 0 || forceTapeSnapshot {
+		p.replaceRealtimeAlarmsSnapshot(tapeAlarms)
+	}
+}
+
+func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
+	p.ensureRealtimeStreamAsync()
+
+	initialLoad := len(p.snapshotRealtimeAlarms()) == 0
+	p.mu.RLock()
+	hasToken := strings.TrimSpace(p.token) != ""
+	p.mu.RUnlock()
+
+	if initialLoad && hasToken && p.alarmsRefreshing.CompareAndSwap(false, true) {
+		ctx, cancel := context.WithTimeout(context.Background(), caslInitialAlarmsLoad)
+		p.refreshCASLAlarmSnapshot(ctx, true)
+		cancel()
+		p.alarmsRefreshing.Store(false)
+	} else if p.alarmsRefreshing.CompareAndSwap(false, true) {
 		go func() {
 			defer p.alarmsRefreshing.Store(false)
 			ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
 			defer cancel()
-
-			_, byObject, ctxErr := p.buildSharedObjectContext(ctx)
-			if ctxErr != nil {
-				log.Debug().Err(ctxErr).Msg("CASL bg: не вдалося побудувати спільний контекст об'єктів")
-			}
-
-			if _, err := p.readEventsJournalAsEvents(ctx); err != nil {
-				log.Debug().Err(err).Msg("CASL bg: read_events недоступний")
-			}
-
-			if len(p.snapshotRealtimeAlarms()) == 0 {
-				tapeAlarms, err := p.readGeneralTapeAsAlarms(ctx, byObject)
-				if err != nil {
-					log.Debug().Err(err).Msg("CASL bg: get_general_tape_objects недоступний")
-				} else if len(tapeAlarms) > 0 {
-					p.replaceRealtimeAlarmsSnapshot(tapeAlarms)
-				}
-			}
+			p.refreshCASLAlarmSnapshot(ctx, false)
 		}()
 	}
 
@@ -1710,7 +1849,23 @@ func (p *CASLCloudProvider) PickAlarm(ctx context.Context, alarm models.Alarm, _
 	if err != nil {
 		return err
 	}
-	if target.Alarm.IsInProgress && target.Alarm.IsOwnedByMe {
+	workflow, workflowErr := p.readCASLAlarmWorkflowState(ctx, target.CASLObjectID)
+	if workflowErr != nil {
+		log.Debug().Err(workflowErr).Str("obj_id", target.CASLObjectID).Msg("CASL: не вдалося прочитати workflow state перед pick")
+	}
+	target.Alarm = p.applyCASLWorkflowStateToAlarm(target.Alarm, workflow)
+
+	if isCASLAlarmFinishBlockedAction(workflow.LastAct) {
+		return fmt.Errorf("casl alarm pick: alarm %d already has response group workflow in state %s", target.Alarm.ID, workflow.LastAct)
+	}
+	if target.Alarm.IsInProgress {
+		if target.Alarm.IsOwnedByMe {
+			return nil
+		}
+		if err := p.HijackGuardObject(ctx, target.CASLObjectID); err != nil {
+			return fmt.Errorf("casl alarm hijack: %w", err)
+		}
+		p.markCASLAlarmPicked(target.CacheKey, target.Alarm, target.Record, time.Now())
 		return nil
 	}
 
@@ -1750,6 +1905,14 @@ func (p *CASLCloudProvider) ProcessAlarmWithRequest(ctx context.Context, alarm m
 	if err != nil {
 		return err
 	}
+	workflow, workflowErr := p.readCASLAlarmWorkflowState(ctx, target.CASLObjectID)
+	if workflowErr != nil {
+		log.Debug().Err(workflowErr).Str("obj_id", target.CASLObjectID).Msg("CASL: не вдалося прочитати workflow state перед finish")
+	}
+	target.Alarm = p.applyCASLWorkflowStateToAlarm(target.Alarm, workflow)
+	if isCASLAlarmFinishBlockedAction(workflow.LastAct) {
+		return fmt.Errorf("casl alarm processing: alarm %d cannot be finished while response group workflow is active (%s)", alarmID, workflow.LastAct)
+	}
 	if target.Alarm.IsInProgress && !target.Alarm.IsOwnedByMe {
 		assignee := strings.TrimSpace(target.Alarm.InProgressBy)
 		if assignee == "" {
@@ -1774,6 +1937,69 @@ func (p *CASLCloudProvider) ProcessAlarmWithRequest(ctx context.Context, alarm m
 	}
 
 	return nil
+}
+
+type caslAlarmWorkflowState struct {
+	LastAct     string
+	UserID      string
+	UserFIO     string
+	DisplayName string
+	MgrID       string
+}
+
+func (p *CASLCloudProvider) readCASLAlarmWorkflowState(ctx context.Context, objID string) (caslAlarmWorkflowState, error) {
+	objID = strings.TrimSpace(objID)
+	if objID == "" {
+		return caslAlarmWorkflowState{}, nil
+	}
+
+	rows, err := p.ReadGeneralTapeObjects(ctx)
+	if err != nil {
+		return caslAlarmWorkflowState{}, err
+	}
+
+	for _, rawRow := range rows {
+		row := normalizeCASLGeneralTapeRow(rawRow)
+		if strings.TrimSpace(row.ObjID) != objID {
+			continue
+		}
+
+		state := caslAlarmWorkflowState{
+			LastAct: strings.TrimSpace(firstCASLValue(asString(rawRow["last_act"]), row.Action)),
+			UserID:  strings.TrimSpace(firstCASLValue(asString(rawRow["user_id"]), row.UserID)),
+			UserFIO: strings.TrimSpace(firstCASLValue(asString(rawRow["userFio"]), asString(rawRow["user_fio"]), row.UserFIO)),
+			MgrID:   strings.TrimSpace(firstCASLValue(asString(rawRow["mgr_id"]), row.MgrID)),
+		}
+		if state.UserFIO != "" {
+			state.DisplayName = state.UserFIO
+			return state, nil
+		}
+		if state.UserID != "" {
+			if displayName := p.resolveCASLUserDisplayName(ctx, state.UserID); displayName != "" {
+				state.DisplayName = displayName
+			} else {
+				state.DisplayName = "Оператор #" + state.UserID
+			}
+		}
+		return state, nil
+	}
+
+	return caslAlarmWorkflowState{}, nil
+}
+
+func (p *CASLCloudProvider) applyCASLWorkflowStateToAlarm(alarm models.Alarm, state caslAlarmWorkflowState) models.Alarm {
+	alarm.ResponseGroupID = strings.TrimSpace(state.MgrID)
+	alarm.IsResponseGroupDispatched = strings.EqualFold(strings.TrimSpace(state.LastAct), "GRD_OBJ_ASS_MGR") || strings.EqualFold(strings.TrimSpace(state.LastAct), "GRD_OBJ_MGR_ARRIVE")
+	alarm.IsResponseGroupArrived = strings.EqualFold(strings.TrimSpace(state.LastAct), "GRD_OBJ_MGR_ARRIVE")
+	if !isCASLAlarmInProgressAction(state.LastAct) {
+		return alarm
+	}
+
+	alarm.IsInProgress = true
+	alarm.InProgressUser = strings.TrimSpace(state.UserID)
+	alarm.InProgressBy = strings.TrimSpace(state.DisplayName)
+	alarm.IsOwnedByMe = alarm.InProgressUser != "" && alarm.InProgressUser == p.currentCASLUserID()
+	return alarm
 }
 
 type caslAlarmTarget struct {
@@ -1870,7 +2096,7 @@ func shouldLoadCASLGeneralTapeUsers(rows []map[string]any) bool {
 }
 
 func (p *CASLCloudProvider) resolveCASLAlarmAssignee(item caslTapeItem, users map[string]caslUser, currentUserID string) (string, bool) {
-	if !strings.EqualFold(strings.TrimSpace(item.LastAct), "GRD_OBJ_PICK") {
+	if !isCASLAlarmInProgressAction(item.LastAct) {
 		return "", false
 	}
 

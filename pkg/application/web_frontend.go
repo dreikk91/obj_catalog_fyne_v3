@@ -169,6 +169,14 @@ func (b applicationFrontendBackend) CancelResponseGroup(ctx context.Context, ala
 	return backend.CancelResponseGroup(ctx, alarmID)
 }
 
+func (b applicationFrontendBackend) StandbyObject(ctx context.Context, objectID int, request contracts.FrontendStandbyRequest) error {
+	backend, err := b.current()
+	if err != nil {
+		return err
+	}
+	return backend.StandbyObject(ctx, objectID, request)
+}
+
 func (a *Application) startWebFrontendServer() {
 	if _, err := a.ensureWebFrontendServer(); err != nil {
 		log.Warn().Err(err).Msg("Не вдалося запустити web frontend server")

@@ -373,7 +373,7 @@ func TestFrontendAdapterListObjectsNormalizesStateFields(t *testing.T) {
 			{
 				ID:                ids.CASLObjectIDNamespaceStart + 5,
 				Name:              "CASL",
-				Status:            models.StatusFault,
+				Status:            models.StatusOffline,
 				GuardState:        0,
 				IsConnState:       0,
 				BlockedArmedOnOff: 1,
@@ -479,6 +479,31 @@ func TestFrontendAdapterListObjectEventsReturnsSortedPage(t *testing.T) {
 	}
 	if len(nextPage.Items) != 1 || nextPage.Items[0].ID != 1 {
 		t.Fatalf("ListObjectEvents() second page = %+v, want id 1", nextPage.Items)
+	}
+}
+
+func TestFrontendAdapterGetObjectDetailsIncludesPreferredResponseGroup(t *testing.T) {
+	adapter := NewFrontendAdapter(&frontendTestDataProvider{
+		objectByID: map[string]models.Object{
+			"10": {
+				ID:                         10,
+				Name:                       "Об'єкт",
+				DisplayNumber:              "10",
+				PreferredResponseGroupID:   "1",
+				PreferredResponseGroupName: "Захід-Холдинг",
+			},
+		},
+	})
+
+	details, err := adapter.GetObjectDetails(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("GetObjectDetails() error = %v", err)
+	}
+	if details.PreferredResponseGroupID != "1" {
+		t.Fatalf("PreferredResponseGroupID = %q, want 1", details.PreferredResponseGroupID)
+	}
+	if details.PreferredResponseGroupName != "Захід-Холдинг" {
+		t.Fatalf("PreferredResponseGroupName = %q, want Захід-Холдинг", details.PreferredResponseGroupName)
 	}
 }
 

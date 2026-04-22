@@ -81,6 +81,9 @@ export namespace v1 {
 	    IsOwnedByMe: boolean;
 	    CanTakeOver: boolean;
 	    CanProcess: boolean;
+	    ResponseGroupID: string;
+	    IsResponseGroupDispatched: boolean;
+	    IsResponseGroupArrived: boolean;
 	    VisualSeverity: string;
 	
 	    static createFrom(source: any = {}) {
@@ -110,6 +113,9 @@ export namespace v1 {
 	        this.IsOwnedByMe = source["IsOwnedByMe"];
 	        this.CanTakeOver = source["CanTakeOver"];
 	        this.CanProcess = source["CanProcess"];
+	        this.ResponseGroupID = source["ResponseGroupID"];
+	        this.IsResponseGroupDispatched = source["IsResponseGroupDispatched"];
+	        this.IsResponseGroupArrived = source["IsResponseGroupArrived"];
 	        this.VisualSeverity = source["VisualSeverity"];
 	    }
 	}
@@ -227,6 +233,11 @@ export namespace v1 {
 	    ReadAlarms: boolean;
 	    CreateObject: boolean;
 	    UpdateObject: boolean;
+	    HealthStatus: string;
+	    HealthText: string;
+	    APIStatus: string;
+	    RealtimeStatus: string;
+	    LastRealtimePing: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SourceCapability(source);
@@ -242,6 +253,11 @@ export namespace v1 {
 	        this.ReadAlarms = source["ReadAlarms"];
 	        this.CreateObject = source["CreateObject"];
 	        this.UpdateObject = source["UpdateObject"];
+	        this.HealthStatus = source["HealthStatus"];
+	        this.HealthText = source["HealthText"];
+	        this.APIStatus = source["APIStatus"];
+	        this.RealtimeStatus = source["RealtimeStatus"];
+	        this.LastRealtimePing = source["LastRealtimePing"];
 	    }
 	}
 	export class Capabilities {
@@ -466,6 +482,8 @@ export namespace v1 {
 	    Notes: string;
 	    Location: string;
 	    LaunchDate: string;
+	    PreferredResponseGroupID: string;
+	    PreferredResponseGroupName: string;
 	    ExternalSignal: string;
 	    ExternalTestMessage: string;
 	    ExternalLastTest: string;
@@ -495,6 +513,8 @@ export namespace v1 {
 	        this.Notes = source["Notes"];
 	        this.Location = source["Location"];
 	        this.LaunchDate = source["LaunchDate"];
+	        this.PreferredResponseGroupID = source["PreferredResponseGroupID"];
+	        this.PreferredResponseGroupName = source["PreferredResponseGroupName"];
 	        this.ExternalSignal = source["ExternalSignal"];
 	        this.ExternalTestMessage = source["ExternalTestMessage"];
 	        this.ExternalLastTest = source["ExternalLastTest"];

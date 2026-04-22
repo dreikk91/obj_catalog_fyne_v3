@@ -28,11 +28,39 @@ func (s *frontendAdminBridgeBackendStub) GetAlarmProcessingOptions(context.Conte
 	return nil, nil
 }
 
+func (s *frontendAdminBridgeBackendStub) ListAlarmProcessingOptionsCached(context.Context) ([]contracts.FrontendAlarmProcessingOption, error) {
+	return nil, nil
+}
+
 func (s *frontendAdminBridgeBackendStub) PickAlarm(context.Context, int, contracts.FrontendAlarmPickRequest) error {
 	return nil
 }
 
 func (s *frontendAdminBridgeBackendStub) ProcessAlarm(context.Context, int, contracts.FrontendAlarmProcessRequest) error {
+	return nil
+}
+
+func (s *frontendAdminBridgeBackendStub) GroupProcessAlarm(context.Context, int, string) error {
+	return nil
+}
+
+func (s *frontendAdminBridgeBackendStub) StandbyObject(context.Context, int, contracts.FrontendStandbyRequest) error {
+	return nil
+}
+
+func (s *frontendAdminBridgeBackendStub) ListResponseGroups(context.Context) ([]contracts.FrontendResponseGroup, error) {
+	return nil, nil
+}
+
+func (s *frontendAdminBridgeBackendStub) AssignResponseGroup(context.Context, int, contracts.FrontendAlarmGroupActionRequest) error {
+	return nil
+}
+
+func (s *frontendAdminBridgeBackendStub) NotifyGroupArrived(context.Context, int) error {
+	return nil
+}
+
+func (s *frontendAdminBridgeBackendStub) CancelResponseGroup(context.Context, int) error {
 	return nil
 }
 

@@ -37,26 +37,29 @@ const (
 
 // Alarm представляє активну тривогу, що потребує обробки
 type Alarm struct {
-	ID             int       // Унікальний ID тривоги
-	ObjectID       int       // ID об'єкта
-	ObjectNumber   string    // Номер об'єкта (людський формат)
-	ObjectName     string    // Назва об'єкта (для швидкого відображення)
-	Address        string    // Адреса об'єкта
-	Time           time.Time // Час виникнення
-	Details        string    // Деталі тривоги
-	Type           AlarmType // Тип тривоги
-	ZoneNumber     int       // Номер зони (шлейфу)
-	ZoneName       string    // Назва зони
-	SC1            int       // Код кольору з БД
-	VisualSeverity VisualSeverity
-	IsProcessed    bool   // Чи оброблена тривога
-	ProcessedBy    string // Ким оброблена
-	ProcessNote    string // Примітка при обробці
-	IsInProgress   bool   // Чи взята тривога в роботу
-	InProgressBy   string // Хто зараз обробляє
-	InProgressUser string // Ідентифікатор оператора, що взяв у роботу
-	IsOwnedByMe    bool   // Чи поточний оператор володіє тривогою
-	SourceMsgs     []AlarmMsg
+	ID                        int       // Унікальний ID тривоги
+	ObjectID                  int       // ID об'єкта
+	ObjectNumber              string    // Номер об'єкта (людський формат)
+	ObjectName                string    // Назва об'єкта (для швидкого відображення)
+	Address                   string    // Адреса об'єкта
+	Time                      time.Time // Час виникнення
+	Details                   string    // Деталі тривоги
+	Type                      AlarmType // Тип тривоги
+	ZoneNumber                int       // Номер зони (шлейфу)
+	ZoneName                  string    // Назва зони
+	SC1                       int       // Код кольору з БД
+	VisualSeverity            VisualSeverity
+	IsProcessed               bool   // Чи оброблена тривога
+	ProcessedBy               string // Ким оброблена
+	ProcessNote               string // Примітка при обробці
+	IsInProgress              bool   // Чи взята тривога в роботу
+	InProgressBy              string // Хто зараз обробляє
+	InProgressUser            string // Ідентифікатор оператора, що взяв у роботу
+	IsOwnedByMe               bool   // Чи поточний оператор володіє тривогою
+	ResponseGroupID           string // Ідентифікатор призначеної МГР
+	IsResponseGroupDispatched bool   // Чи вислана МГР
+	IsResponseGroupArrived    bool   // Чи МГР відмічена як така, що прибула
+	SourceMsgs                []AlarmMsg
 }
 
 // AlarmMsg представляє джерельне повідомлення тривожного кейсу (ppk_msgs-ланцюжок).

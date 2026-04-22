@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useShallow } from 'zustand/react/shallow'
 import { resolveFrontendClient } from '../shared/api/client'
-import type { FrontendDBSettings, FrontendAlarmProcessingOption, FrontendResponseGroup } from '../shared/api/types'
+import type {
+  FrontendDBSettings,
+  FrontendAlarmProcessingOption,
+  FrontendResponseGroup,
+  FrontendSourceCapability,
+} from '../shared/api/types'
 import { useOperatorUIStore } from '../shared/state/ui-store'
 import { useThemeStore } from '../shared/state/theme-store'
 import { useJournalStream } from '../hooks/useJournalStream'
@@ -11,6 +16,7 @@ import { CardModal } from '../features/modal/CardModal'
 import { EventModal } from '../features/modal/EventModal'
 import { AlarmProcessingModal } from '../features/modal/AlarmProcessingModal'
 import { DispatchGroupModal } from '../features/modal/DispatchGroupModal'
+import { StandbyModal } from '../features/modal/StandbyModal'
 import { SettingsModal } from '../features/modal/SettingsModal'
 import { ObjectsTab } from '../features/objects/ObjectsTab'
 import { SignalsTab } from '../features/signals/SignalsTab'
@@ -108,6 +114,9 @@ export function App() {
   const [isDispatchGroupModalOpen, setIsDispatchGroupModalOpen] = useState(false)
   const [dispatchGroupBusy, setDispatchGroupBusy] = useState(false)
   const [dispatchGroupError, setDispatchGroupError] = useState('')
+  const [isStandbyModalOpen, setIsStandbyModalOpen] = useState(false)
+  const [standbyBusy, setStandbyBusy] = useState(false)
+  const [standbyError, setStandbyError] = useState('')
   const [responseGroups, setResponseGroups] = useState<FrontendResponseGroup[]>([])
   const [cachedProcessingOptions, setCachedProcessingOptions] = useState<FrontendAlarmProcessingOption[]>([])
 
@@ -115,6 +124,12 @@ export function App() {
     queryKey: ['frontend', 'objects'],
     queryFn: () => api.listObjects(),
     refetchInterval: 30_000,
+  })
+
+  const capabilitiesQuery = useQuery({
+    queryKey: ['frontend', 'capabilities'],
+    queryFn: () => api.capabilities(),
+    refetchInterval: 10_000,
   })
 
   useEffect(() => {
@@ -179,6 +194,37 @@ export function App() {
     () => (objectsQuery.data ?? []).map((item) => toObjectRow(item, alarmIndex.get(item.id) ?? 0)),
     [alarmIndex, objectsQuery.data],
   )
+
+  const caslCapability = useMemo<FrontendSourceCapability | null>(
+    () => capabilitiesQuery.data?.sources.find((item) => item.source === 'casl') ?? null,
+    [capabilitiesQuery.data],
+  )
+
+  const caslHealthClass = useMemo(() => {
+    switch (caslCapability?.healthStatus) {
+      case 'offline':
+        return 'source-health-banner source-health-banner--error'
+      case 'degraded':
+        return 'source-health-banner source-health-banner--warn'
+      case 'unknown':
+        return 'source-health-banner source-health-banner--info'
+      default:
+        return ''
+    }
+  }, [caslCapability?.healthStatus])
+
+  const caslStatusbarClass = useMemo(() => {
+    switch (caslCapability?.healthStatus) {
+      case 'online':
+        return 'status-link status-link--ok'
+      case 'offline':
+        return 'status-link status-link--error'
+      case 'degraded':
+        return 'status-link status-link--warn'
+      default:
+        return 'status-link'
+    }
+  }, [caslCapability?.healthStatus])
 
   const effectiveSelectedObjectID = selectedObjectID ?? objectRows[0]?.id ?? null
 
@@ -313,11 +359,23 @@ export function App() {
   const activeAlarmRow = useMemo(() => {
     const row = selectedSignalRow
     if (row == null || !row.alarm) return null
-    if (row.alarmID != null && localPickedAlarmIDs.has(row.alarmID)) {
-      return { ...row, inProgressByMe: true, canProcess: true }
+    if (row.alarmID == null) {
+      return row
     }
-    return row
-  }, [selectedSignalRow, localPickedAlarmIDs])
+    const pickedByMe = localPickedAlarmIDs.has(row.alarmID)
+    const groupDispatched = row.responseGroupDispatched || groupDispatchedAlarmIDs.has(row.alarmID)
+    const groupArrived = row.responseGroupArrived || groupArrivedAlarmIDs.has(row.alarmID)
+    if (!pickedByMe && !groupDispatched && !groupArrived) {
+      return row
+    }
+    return {
+      ...row,
+      inProgressByMe: pickedByMe || row.inProgressByMe,
+      canProcess: (pickedByMe || row.canProcess) && !groupDispatched,
+      responseGroupDispatched: groupDispatched,
+      responseGroupArrived: groupArrived,
+    }
+  }, [selectedSignalRow, localPickedAlarmIDs, groupDispatchedAlarmIDs, groupArrivedAlarmIDs])
 
   useEffect(() => {
     if (!isEventModalOpen) {
@@ -412,6 +470,14 @@ export function App() {
       setAlarmProcessingOptions([])
       return
     }
+    if (activeAlarmRow?.responseGroupDispatched) {
+      setAlarmWorkflowError(
+        activeAlarmRow.responseGroupArrived
+          ? 'На тривогу вже прибула МГР. Спочатку зніміть групу, потім завершуйте тривогу.'
+          : 'На тривогу вже вислана МГР. Спочатку відмітьте прибуття або зніміть групу.',
+      )
+      return
+    }
     if (activeAlarmRow?.canProcess === false) {
       const assignee = activeAlarmRow.inProgressBy || 'інший оператор'
       setAlarmWorkflowError(`Тривога вже обробляється: ${assignee}. Спочатку перехопіть її.`)
@@ -487,6 +553,10 @@ export function App() {
       setAlarmWorkflowError('Для вибраного рядка недоступне взяття тривоги в роботу.')
       return
     }
+    if (activeAlarmRow?.responseGroupDispatched) {
+      setAlarmWorkflowError('Тривога вже перейшла в етап МГР. Перехоплення через UI для цього стану недоступне.')
+      return
+    }
     if (activeAlarmRow?.inProgressByMe) {
       setAlarmWorkflowError('')
       return
@@ -505,29 +575,41 @@ export function App() {
     } finally {
       setAlarmWorkflowBusy(false)
     }
-  }, [activeAlarmRow?.alarmID, activeAlarmRow?.inProgressByMe, activeAlarmRow?.source])
+  }, [activeAlarmRow?.alarmID, activeAlarmRow?.inProgressByMe, activeAlarmRow?.responseGroupDispatched, activeAlarmRow?.source])
 
-  const handleStandby = useCallback(async () => {
+  const handleStandby = useCallback(() => {
     const objectID = activeAlarmRow?.objectID
     if (objectID == null || objectID <= 0) return
-    setAlarmWorkflowBusy(true)
-    setAlarmWorkflowError('')
+    setStandbyError('')
+    setIsStandbyModalOpen(true)
+  }, [activeAlarmRow?.objectID])
+
+  const handleConfirmStandby = useCallback(async (durationMinutes: number, reason: string) => {
+    const objectID = activeAlarmRow?.objectID
+    if (objectID == null || objectID <= 0) return
+    setStandbyBusy(true)
+    setStandbyError('')
     try {
-      await api.standbyObject(objectID)
+      await api.standbyObject(objectID, durationMinutes, reason)
+      setIsStandbyModalOpen(false)
     } catch (error: unknown) {
-      setAlarmWorkflowError(error instanceof Error ? error.message : String(error))
+      setStandbyError(error instanceof Error ? error.message : String(error))
     } finally {
-      setAlarmWorkflowBusy(false)
+      setStandbyBusy(false)
     }
   }, [activeAlarmRow?.objectID])
 
   const handleDispatchGroup = useCallback(() => {
     const alarmID = activeAlarmRow?.alarmID
     if (alarmID == null || alarmID <= 0) return
+    if (activeAlarmRow?.responseGroupDispatched) {
+      setAlarmWorkflowError('МГР вже призначена для цієї тривоги.')
+      return
+    }
     setDispatchGroupError('')
     void api.listResponseGroups().then(setResponseGroups).catch(() => {})
     setIsDispatchGroupModalOpen(true)
-  }, [activeAlarmRow?.alarmID])
+  }, [activeAlarmRow?.alarmID, activeAlarmRow?.responseGroupDispatched])
 
   const handleConfirmDispatchGroup = useCallback(async (groupID: string) => {
     const alarmID = activeAlarmRow?.alarmID
@@ -570,6 +652,10 @@ export function App() {
   const handleCancelAlarm = useCallback(async () => {
     if (!activeAlarmRow || !activeAlarmRow.alarmID || activeAlarmRow.alarmID <= 0) return
     const alarmID = activeAlarmRow.alarmID
+    if (activeAlarmRow.responseGroupDispatched) {
+      setAlarmWorkflowError('Поки активна МГР, завершення тривоги через UI недоступне. Спочатку зніміть групу.')
+      return
+    }
     setAlarmWorkflowBusy(true)
     setAlarmWorkflowError('')
     try {
@@ -637,6 +723,10 @@ export function App() {
             </div>
           </div>
 
+          {caslCapability != null && caslCapability.healthStatus !== 'online' && (
+            <div className={caslHealthClass}>{caslCapability.healthText}</div>
+          )}
+
           <div className={mainTab === 'signals' ? 'tpane active' : 'tpane'}>
             <SignalsTab
               innerTab={innerTab}
@@ -658,8 +748,8 @@ export function App() {
               onOpenEventModal={handleOpenEventModal}
               onOpenCardModal={handleOpenCardModal}
               isInWorkflow={activeAlarmRow?.inProgressByMe === true}
-              groupDispatched={activeAlarmRow?.alarmID != null && groupDispatchedAlarmIDs.has(activeAlarmRow.alarmID)}
-              groupArrived={activeAlarmRow?.alarmID != null && groupArrivedAlarmIDs.has(activeAlarmRow.alarmID)}
+              groupDispatched={activeAlarmRow?.responseGroupDispatched === true}
+              groupArrived={activeAlarmRow?.responseGroupArrived === true}
               workflowBusy={alarmWorkflowBusy || alarmProcessingBusy}
               onPickAlarm={() => void handlePickAlarm()}
               onStandby={() => void handleStandby()}
@@ -690,8 +780,8 @@ export function App() {
                 Оператор: <strong>{OPERATOR_NAME}</strong>
               </span>
             </div>
-            <div className="sb-field" style={{ color: 'var(--ac)', fontSize: 11 }}>
-              ● Зв'язок із ПЦС: є
+            <div className={`sb-field ${caslStatusbarClass}`} style={{ fontSize: 11 }}>
+              {caslCapability != null ? `● ${caslCapability.healthText}` : '● CASL не використовується'}
             </div>
             <div className="sb-clock">{clockValue}</div>
           </div>
@@ -701,6 +791,7 @@ export function App() {
       <CardModal
         isOpen={isCardModalOpen}
         selectedObjectRow={selectedObjectRow}
+        objectDetails={detailsQuery.data ?? null}
         selectedObjectZones={selectedObjectZones}
         selectedObjectContacts={selectedObjectContacts}
         selectedObjectEvents={selectedObjectEvents}
@@ -717,6 +808,7 @@ export function App() {
         onClose={() => setIsEventModalOpen(false)}
         eventModalRow={activeAlarmRow}
         selectedObjectRow={selectedObjectRow}
+        objectDetails={detailsQuery.data ?? null}
         selectedObjectZones={selectedObjectZones}
         selectedObjectContacts={selectedObjectContacts}
         selectedObjectEvents={selectedObjectEvents}
@@ -725,8 +817,8 @@ export function App() {
         workflowBusy={alarmWorkflowBusy || alarmProcessingBusy}
         workflowError={alarmWorkflowError}
         isInWorkflow={activeAlarmRow?.inProgressByMe === true}
-        groupDispatched={activeAlarmRow?.alarmID != null && groupDispatchedAlarmIDs.has(activeAlarmRow.alarmID)}
-        groupArrived={activeAlarmRow?.alarmID != null && groupArrivedAlarmIDs.has(activeAlarmRow.alarmID)}
+        groupDispatched={activeAlarmRow?.responseGroupDispatched === true}
+        groupArrived={activeAlarmRow?.responseGroupArrived === true}
         onPickAlarm={() => void handlePickAlarm()}
         onStandby={() => void handleStandby()}
         onCancelAlarm={() => void handleCancelAlarm()}
@@ -748,9 +840,20 @@ export function App() {
         onThemeChange={setThemeMode}
       />
 
+      <StandbyModal
+        isOpen={isStandbyModalOpen}
+        busy={standbyBusy}
+        error={standbyError}
+        onClose={() => setIsStandbyModalOpen(false)}
+        onConfirm={(d, r) => void handleConfirmStandby(d, r)}
+      />
+
       <DispatchGroupModal
         isOpen={isDispatchGroupModalOpen}
         groups={responseGroups}
+        preferredGroupID={detailsQuery.data?.preferredResponseGroupID || ''}
+        preferredGroupName={detailsQuery.data?.preferredResponseGroupName || ''}
+        objectGroupHint={detailsQuery.data?.notes || selectedObjectRow?.note || ''}
         busy={dispatchGroupBusy}
         error={dispatchGroupError}
         onClose={() => setIsDispatchGroupModalOpen(false)}
@@ -759,8 +862,14 @@ export function App() {
 
       <AlarmProcessingModal
         isOpen={isAlarmProcessingModalOpen}
-        objectName={activeAlarmRow?.objectName ?? '—'}
-        alarmTypeText={activeAlarmRow?.typeText ?? '—'}
+        eventModalRow={activeAlarmRow}
+        selectedObjectRow={selectedObjectRow}
+        objectDetails={detailsQuery.data ?? null}
+        selectedObjectZones={selectedObjectZones}
+        selectedObjectContacts={selectedObjectContacts}
+        selectedObjectEvents={selectedObjectEvents}
+        liveObjectEvents={liveObjectEvents}
+        objectEventsFeed={objectEventsFeed}
         options={alarmProcessingOptions}
         loading={alarmProcessingLoading}
         busy={alarmProcessingBusy}

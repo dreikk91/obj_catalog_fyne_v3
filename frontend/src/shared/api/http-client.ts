@@ -1,5 +1,6 @@
 import type { FrontendClient } from './frontend-client'
 import type {
+  FrontendCapabilities,
   FrontendAlarmItem,
   FrontendAlarmGroup,
   FrontendAlarmPickRequest,
@@ -12,6 +13,7 @@ import type {
   FrontendResponseGroup,
 } from './types'
 import {
+  normalizeCapabilities,
   normalizeAlarmItem,
   normalizeAlarmGroup,
   normalizeAlarmProcessingOption,
@@ -25,6 +27,7 @@ import {
 const FRONTEND_API_BASE = import.meta.env.VITE_FRONTEND_API_BASE ?? '/api/frontend/v1'
 
 type ObjectListResponse = { items: FrontendObjectSummary[] }
+type CapabilitiesResponse = FrontendCapabilities
 type AlarmListResponse = { items: FrontendAlarmItem[] }
 type AlarmGroupListResponse = { items: FrontendAlarmGroup[] }
 type AlarmProcessingOptionsResponse = { items: FrontendAlarmProcessingOption[] }
@@ -34,6 +37,10 @@ type EventPageResponse = FrontendEventPage
 
 export function createHTTPFrontendClient(): FrontendClient {
   return {
+    async capabilities() {
+      const body = await fetchJSON<CapabilitiesResponse>(`${FRONTEND_API_BASE}/capabilities`)
+      return normalizeCapabilities(body)
+    },
     async listObjects() {
       const body = await fetchJSON<ObjectListResponse>(`${FRONTEND_API_BASE}/objects`)
       return body.items.map(normalizeObjectSummary)
@@ -96,8 +103,12 @@ export function createHTTPFrontendClient(): FrontendClient {
         method: 'POST',
       })
     },
-    async standbyObject(objectID) {
-      await fetchJSON<void>(`${FRONTEND_API_BASE}/objects/${objectID}/standby`, { method: 'POST' })
+    async standbyObject(objectID, durationMinutes, reason) {
+      await fetchJSON<void>(`${FRONTEND_API_BASE}/objects/${objectID}/standby`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ durationMinutes, reason }),
+      })
     },
     async listObjectEvents(objectID, offset, limit) {
       const params = new URLSearchParams({

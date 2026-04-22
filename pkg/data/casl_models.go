@@ -72,6 +72,7 @@ type caslTapeItem struct {
 	PultID          string
 	UserID          string
 	UserFIO         string
+	MgrID           string
 	LastAct         string
 	Msg             string
 	ReasonAlarm     string
@@ -253,6 +254,7 @@ type caslGrdObject struct {
 	Contract       string     `json:"contract"`
 	Note           string     `json:"note"`
 	StartDate      caslInt64  `json:"start_date"`
+	GeoZoneID      caslInt64  `json:"geo_zone_id"`
 	Status         string     `json:"status"`
 	ObjectType     string     `json:"object_type"`
 	DeviceNumber   caslInt64  `json:"device_number"`

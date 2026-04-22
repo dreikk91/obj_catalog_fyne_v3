@@ -53,19 +53,21 @@ type Object struct {
 	PowerSource     PowerSource // Поточне джерело живлення
 	AutoTestHours   int         // Період автотесту в годинах
 
-	SIM1        string // Номер SIM 1
-	SIM2        string // Номер SIM 2
-	SubServerA  string // Підсервер A (SBSA)
-	SubServerB  string // Підсервер B (SBSB)
-	ObjChan     int    // Канал зв'язку (1=Автододзвін, 5=GPRS, інше=Інший)
-	AkbState    int64  // Стан АКБ
-	PowerFault  int64  // Несправність 220В (0=ОК, >0=Тривога)
-	TestControl int64  // Контроль тесту
-	TestTime    int64  // Час тесту (період)
-	Phones1     string // Телефон на об'єкті
-	Notes1      string // Додаткова інформація
-	Location1   string // Розташування
-	LaunchDate  string // Дата запуску (OBJECTS_INFO.RESERVTEXT)
+	SIM1                       string // Номер SIM 1
+	SIM2                       string // Номер SIM 2
+	SubServerA                 string // Підсервер A (SBSA)
+	SubServerB                 string // Підсервер B (SBSB)
+	ObjChan                    int    // Канал зв'язку (1=Автододзвін, 5=GPRS, інше=Інший)
+	AkbState                   int64  // Стан АКБ
+	PowerFault                 int64  // Несправність 220В (0=ОК, >0=Тривога)
+	TestControl                int64  // Контроль тесту
+	TestTime                   int64  // Час тесту (період)
+	Phones1                    string // Телефон на об'єкті
+	Notes1                     string // Додаткова інформація
+	Location1                  string // Розташування
+	LaunchDate                 string // Дата запуску (OBJECTS_INFO.RESERVTEXT)
+	PreferredResponseGroupID   string // Основна/прив'язана ГМР з картки об'єкта
+	PreferredResponseGroupName string // Назва основної/прив'язаної ГМР
 
 	// Технічні стани
 	IsUnderGuard  bool

@@ -147,13 +147,16 @@ func (s *FrontendV1Service) ListAlarmProcessingOptionsCached() ([]frontendv1.Ala
 	return items, nil
 }
 
-func (s *FrontendV1Service) StandbyObject(objectID int) error {
+func (s *FrontendV1Service) StandbyObject(objectID int, durationMinutes int, reason string) error {
 	backend, err := s.backendOrErr()
 	if err != nil {
 		return err
 	}
 
-	return backend.StandbyObject(context.Background(), objectID)
+	return backend.StandbyObject(context.Background(), objectID, contracts.FrontendStandbyRequest{
+		DurationMinutes: durationMinutes,
+		Reason:          reason,
+	})
 }
 
 func (s *FrontendV1Service) ListResponseGroups() ([]frontendv1.ResponseGroup, error) {

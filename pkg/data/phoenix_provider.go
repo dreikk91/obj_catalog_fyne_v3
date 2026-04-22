@@ -119,6 +119,14 @@ func (p *PhoenixDataProvider) GetObjectByID(objectID string) *models.Object {
 		p.applyChannelInfo(&obj, channelRows[0])
 	}
 
+	var preferredGroup phoenixPreferredResponseGroupRow
+	if err := p.db.GetContext(ctx, &preferredGroup, phoenixObjectPreferredResponseGroupQuery, panelID); err != nil && err != sql.ErrNoRows {
+		log.Error().Err(err).Str("panelID", panelID).Msg("Phoenix: помилка отримання основної ГМР об'єкта")
+	} else if preferredGroup.GroupID.Valid && preferredGroup.GroupID.Int64 > 0 {
+		obj.PreferredResponseGroupID = strconv.FormatInt(preferredGroup.GroupID.Int64, 10)
+		obj.PreferredResponseGroupName = strings.TrimSpace(nullString(preferredGroup.Description))
+	}
+
 	return &obj
 }
 

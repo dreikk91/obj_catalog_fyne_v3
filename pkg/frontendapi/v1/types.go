@@ -53,6 +53,11 @@ type SourceCapability struct {
 	ReadAlarms        bool   `json:"ReadAlarms"`
 	CreateObject      bool   `json:"CreateObject"`
 	UpdateObject      bool   `json:"UpdateObject"`
+	HealthStatus      string `json:"HealthStatus"`
+	HealthText        string `json:"HealthText"`
+	APIStatus         string `json:"APIStatus"`
+	RealtimeStatus    string `json:"RealtimeStatus"`
+	LastRealtimePing  string `json:"LastRealtimePing"`
 }
 
 type Capabilities struct {
@@ -107,28 +112,31 @@ type Contact struct {
 }
 
 type AlarmItem struct {
-	ID             int            `json:"ID"`
-	Source         Source         `json:"Source"`
-	ObjectID       int            `json:"ObjectID"`
-	ObjectNativeID string         `json:"ObjectNativeID"`
-	ObjectNumber   string         `json:"ObjectNumber"`
-	ObjectName     string         `json:"ObjectName"`
-	Address        string         `json:"Address"`
-	Time           string         `json:"Time"`
-	Details        string         `json:"Details"`
-	TypeCode       string         `json:"TypeCode"`
-	TypeText       string         `json:"TypeText"`
-	ZoneNumber     int            `json:"ZoneNumber"`
-	ZoneName       string         `json:"ZoneName"`
-	IsProcessed    bool           `json:"IsProcessed"`
-	ProcessedBy    string         `json:"ProcessedBy"`
-	ProcessNote    string         `json:"ProcessNote"`
-	IsInProgress   bool           `json:"IsInProgress"`
-	InProgressBy   string         `json:"InProgressBy"`
-	IsOwnedByMe    bool           `json:"IsOwnedByMe"`
-	CanTakeOver    bool           `json:"CanTakeOver"`
-	CanProcess     bool           `json:"CanProcess"`
-	VisualSeverity VisualSeverity `json:"VisualSeverity"`
+	ID                        int            `json:"ID"`
+	Source                    Source         `json:"Source"`
+	ObjectID                  int            `json:"ObjectID"`
+	ObjectNativeID            string         `json:"ObjectNativeID"`
+	ObjectNumber              string         `json:"ObjectNumber"`
+	ObjectName                string         `json:"ObjectName"`
+	Address                   string         `json:"Address"`
+	Time                      string         `json:"Time"`
+	Details                   string         `json:"Details"`
+	TypeCode                  string         `json:"TypeCode"`
+	TypeText                  string         `json:"TypeText"`
+	ZoneNumber                int            `json:"ZoneNumber"`
+	ZoneName                  string         `json:"ZoneName"`
+	IsProcessed               bool           `json:"IsProcessed"`
+	ProcessedBy               string         `json:"ProcessedBy"`
+	ProcessNote               string         `json:"ProcessNote"`
+	IsInProgress              bool           `json:"IsInProgress"`
+	InProgressBy              string         `json:"InProgressBy"`
+	IsOwnedByMe               bool           `json:"IsOwnedByMe"`
+	CanTakeOver               bool           `json:"CanTakeOver"`
+	CanProcess                bool           `json:"CanProcess"`
+	ResponseGroupID           string         `json:"ResponseGroupID"`
+	IsResponseGroupDispatched bool           `json:"IsResponseGroupDispatched"`
+	IsResponseGroupArrived    bool           `json:"IsResponseGroupArrived"`
+	VisualSeverity            VisualSeverity `json:"VisualSeverity"`
 }
 
 type AlarmProcessingOption struct {
@@ -177,28 +185,30 @@ type EventItem struct {
 }
 
 type ObjectDetails struct {
-	Summary             ObjectSummary `json:"Summary"`
-	GSMLevel            int           `json:"GSMLevel"`
-	PowerSource         string        `json:"PowerSource"`
-	AutoTestHours       int           `json:"AutoTestHours"`
-	SubServerA          string        `json:"SubServerA"`
-	SubServerB          string        `json:"SubServerB"`
-	ChannelCode         int           `json:"ChannelCode"`
-	AKBState            int64         `json:"AKBState"`
-	PowerFault          int64         `json:"PowerFault"`
-	TestControl         bool          `json:"TestControl"`
-	TestIntervalMin     int64         `json:"TestIntervalMin"`
-	Phones              string        `json:"Phones"`
-	Notes               string        `json:"Notes"`
-	Location            string        `json:"Location"`
-	LaunchDate          string        `json:"LaunchDate"`
-	ExternalSignal      string        `json:"ExternalSignal"`
-	ExternalTestMessage string        `json:"ExternalTestMessage"`
-	ExternalLastTest    string        `json:"ExternalLastTest"`
-	ExternalLastMessage string        `json:"ExternalLastMessage"`
-	Zones               []Zone        `json:"Zones"`
-	Contacts            []Contact     `json:"Contacts"`
-	Events              []EventItem   `json:"Events"`
+	Summary                    ObjectSummary `json:"Summary"`
+	GSMLevel                   int           `json:"GSMLevel"`
+	PowerSource                string        `json:"PowerSource"`
+	AutoTestHours              int           `json:"AutoTestHours"`
+	SubServerA                 string        `json:"SubServerA"`
+	SubServerB                 string        `json:"SubServerB"`
+	ChannelCode                int           `json:"ChannelCode"`
+	AKBState                   int64         `json:"AKBState"`
+	PowerFault                 int64         `json:"PowerFault"`
+	TestControl                bool          `json:"TestControl"`
+	TestIntervalMin            int64         `json:"TestIntervalMin"`
+	Phones                     string        `json:"Phones"`
+	Notes                      string        `json:"Notes"`
+	Location                   string        `json:"Location"`
+	LaunchDate                 string        `json:"LaunchDate"`
+	PreferredResponseGroupID   string        `json:"PreferredResponseGroupID"`
+	PreferredResponseGroupName string        `json:"PreferredResponseGroupName"`
+	ExternalSignal             string        `json:"ExternalSignal"`
+	ExternalTestMessage        string        `json:"ExternalTestMessage"`
+	ExternalLastTest           string        `json:"ExternalLastTest"`
+	ExternalLastMessage        string        `json:"ExternalLastMessage"`
+	Zones                      []Zone        `json:"Zones"`
+	Contacts                   []Contact     `json:"Contacts"`
+	Events                     []EventItem   `json:"Events"`
 }
 
 type ObjectCoreFields struct {

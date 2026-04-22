@@ -484,6 +484,6 @@ func (emptyFrontendBackend) CancelResponseGroup(context.Context, int) error {
 	return fmt.Errorf("unavailable in shell-only mode")
 }
 
-func (emptyFrontendBackend) StandbyObject(context.Context, int) error {
+func (emptyFrontendBackend) StandbyObject(context.Context, int, contracts.FrontendStandbyRequest) error {
 	return fmt.Errorf("unavailable in shell-only mode")
 }

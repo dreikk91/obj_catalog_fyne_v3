@@ -27,6 +27,11 @@ type phoenixObjectGroupRow struct {
 	Sim2Number    sql.NullString `db:"sim2_number"`
 }
 
+type phoenixPreferredResponseGroupRow struct {
+	GroupID     sql.NullInt64  `db:"group_id"`
+	Description sql.NullString `db:"description"`
+}
+
 type phoenixChannelRow struct {
 	PanelID               string         `db:"panel_id"`
 	DeviceName            sql.NullString `db:"device_name"`

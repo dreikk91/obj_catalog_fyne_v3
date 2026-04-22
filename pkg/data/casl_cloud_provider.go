@@ -25,6 +25,7 @@ const (
 	caslDefaultBaseURL = "http://127.0.0.1:50003"
 
 	caslHTTPTimeout       = 12 * time.Second
+	caslInitialAlarmsLoad = 2500 * time.Millisecond
 	caslObjectsCacheTTL   = 20 * time.Second
 	caslUsersCacheTTL     = 5 * time.Minute
 	caslObjectEventsTTL   = 10 * time.Second
@@ -36,6 +37,7 @@ const (
 	caslTranslatorTTL     = 15 * time.Minute
 	caslProbeEventsSpan   = 2 * time.Minute
 	caslRealtimeBackoff   = 10 * time.Second
+	caslReconnectCooldown = 30 * time.Second
 
 	caslMaxCachedEvents = 2000
 	caslReadLimit       = 100000
@@ -107,6 +109,14 @@ type CASLCloudProvider struct {
 	realtimeAlarmByObjID map[string]models.Alarm
 
 	alarmsRefreshing atomic.Bool
+	reconnectRunning atomic.Bool
+
+	lastAPISuccessAt   time.Time
+	lastAPIFailureAt   time.Time
+	lastAPIErrorText   string
+	lastRealtimeMsgAt  time.Time
+	lastRealtimePingAt time.Time
+	lastReconnectAt    time.Time
 }
 
 func NewCASLCloudProvider(baseURL string, token string, pultID int64, credentials ...string) *CASLCloudProvider {
@@ -149,7 +159,6 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 		eventsCursorMs:         nowMS,
 		realtimeAlarmByObjID:   make(map[string]models.Alarm),
 	}
-	go p.loadDictionaryMap(lifecycleCtx)
 	return p
 }
 
@@ -268,13 +277,17 @@ func (p *CASLCloudProvider) doJSONRequest(ctx context.Context, path string, payl
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return nil, caslStatusOnlyResponse{}, fmt.Errorf("casl request failed: %w", err)
+		requestErr := fmt.Errorf("casl request failed: %w", err)
+		p.recordAPIFailure(requestErr)
+		return nil, caslStatusOnlyResponse{}, requestErr
 	}
 	defer resp.Body.Close()
 
 	body, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		return nil, caslStatusOnlyResponse{}, fmt.Errorf("casl read response: %w", readErr)
+		requestErr := fmt.Errorf("casl read response: %w", readErr)
+		p.recordAPIFailure(requestErr)
+		return nil, caslStatusOnlyResponse{}, requestErr
 	}
 
 	log.Debug().
@@ -290,12 +303,43 @@ func (p *CASLCloudProvider) doJSONRequest(ctx context.Context, path string, payl
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		if strings.TrimSpace(status.Error) != "" {
-			return nil, status, fmt.Errorf("casl http %d: %s", resp.StatusCode, status.Error)
+			requestErr := fmt.Errorf("casl http %d: %s", resp.StatusCode, status.Error)
+			p.recordAPIFailure(requestErr)
+			return nil, status, requestErr
 		}
-		return nil, status, fmt.Errorf("casl unexpected http status: %d", resp.StatusCode)
+		requestErr := fmt.Errorf("casl unexpected http status: %d", resp.StatusCode)
+		p.recordAPIFailure(requestErr)
+		return nil, status, requestErr
 	}
 
+	p.recordAPISuccess()
 	return body, status, nil
+}
+
+func (p *CASLCloudProvider) recordAPISuccess() {
+	if p == nil {
+		return
+	}
+	now := time.Now()
+	p.mu.Lock()
+	p.lastAPISuccessAt = now
+	p.lastAPIErrorText = ""
+	p.mu.Unlock()
+}
+
+func (p *CASLCloudProvider) recordAPIFailure(err error) {
+	if p == nil {
+		return
+	}
+	now := time.Now()
+	text := ""
+	if err != nil {
+		text = strings.TrimSpace(err.Error())
+	}
+	p.mu.Lock()
+	p.lastAPIFailureAt = now
+	p.lastAPIErrorText = text
+	p.mu.Unlock()
 }
 
 func (p *CASLCloudProvider) ensureToken(ctx context.Context) (string, error) {
@@ -328,8 +372,11 @@ func (p *CASLCloudProvider) refreshToken(ctx context.Context, force bool) error 
 		return errors.New("casl: credentials are not configured")
 	}
 
-	p.authMu.Lock()
-	defer p.authMu.Unlock()
+	unlock, err := lockCASLMutexWithContext(ctx, &p.authMu)
+	if err != nil {
+		return fmt.Errorf("casl auth lock: %w", err)
+	}
+	defer unlock()
 
 	if force {
 		p.mu.Lock()
@@ -382,6 +429,74 @@ func (p *CASLCloudProvider) refreshToken(ctx context.Context, force bool) error 
 	p.restartRealtimeStream()
 
 	return nil
+}
+
+func (p *CASLCloudProvider) TriggerReconnect(reason string) {
+	if p == nil {
+		return
+	}
+	if !p.canRelogin() {
+		log.Debug().Str("reason", strings.TrimSpace(reason)).Msg("CASL reconnect skipped: credentials are not configured")
+		return
+	}
+	if !p.reconnectRunning.CompareAndSwap(false, true) {
+		return
+	}
+
+	now := time.Now()
+	p.mu.Lock()
+	lastReconnectAt := p.lastReconnectAt
+	if !lastReconnectAt.IsZero() && now.Sub(lastReconnectAt) < caslReconnectCooldown {
+		p.mu.Unlock()
+		p.reconnectRunning.Store(false)
+		log.Debug().
+			Str("reason", strings.TrimSpace(reason)).
+			Dur("cooldownLeft", caslReconnectCooldown-now.Sub(lastReconnectAt)).
+			Msg("CASL reconnect skipped due to cooldown")
+		return
+	}
+	p.lastReconnectAt = now
+	p.mu.Unlock()
+
+	go func() {
+		defer p.reconnectRunning.Store(false)
+
+		ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+		defer cancel()
+
+		if err := p.refreshToken(ctx, true); err != nil {
+			log.Warn().Err(err).Str("reason", strings.TrimSpace(reason)).Msg("CASL reconnect failed")
+			return
+		}
+
+		log.Info().Str("reason", strings.TrimSpace(reason)).Msg("CASL reconnect completed")
+	}()
+}
+
+func lockCASLMutexWithContext(ctx context.Context, mu *sync.Mutex) (func(), error) {
+	if mu == nil {
+		return func() {}, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if mu.TryLock() {
+		return mu.Unlock, nil
+	}
+
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			if mu.TryLock() {
+				return mu.Unlock, nil
+			}
+		}
+	}
 }
 
 func (p *CASLCloudProvider) resolveLoginPultID(ctx context.Context) string {

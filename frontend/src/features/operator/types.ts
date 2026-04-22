@@ -41,6 +41,9 @@ export type JournalRow = {
   inProgressByMe: boolean
   canTakeOver: boolean
   canProcess: boolean
+  responseGroupID: string
+  responseGroupDispatched: boolean
+  responseGroupArrived: boolean
   severity: VisualSeverity
 }
 
@@ -64,6 +67,8 @@ export type UnprocessedRowMeta = {
   isChild: boolean
   groupSize: number
   memberRowIDs: string[]
+  childIndex?: number
+  isLastChild?: boolean
 }
 
 export type VirtualRowsOptions = {

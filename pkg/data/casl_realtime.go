@@ -19,6 +19,8 @@ import (
 	"golang.org/x/net/websocket"
 )
 
+const caslRealtimePingGracePeriod = 12 * time.Second
+
 func extractCASLRealtimeConnID(raw []byte) string {
 	payload, ok := decodeCASLRealtimePayload(raw)
 	if ok {
@@ -63,6 +65,19 @@ func decodeCASLRealtimePayload(raw []byte) (any, bool) {
 		return nil, false
 	}
 	return payload, true
+}
+
+func isCASLRealtimePingPayload(payload any) bool {
+	root, ok := payload.(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, raw := range []any{root["type"], root["tag"], root["event"]} {
+		if strings.EqualFold(strings.TrimSpace(asString(raw)), "ping") {
+			return true
+		}
+	}
+	return false
 }
 
 func extractCASLConnIDFromTextEnvelope(raw string) string {
@@ -418,6 +433,46 @@ func (p *CASLCloudProvider) ensureRealtimeStream() {
 	go p.runRealtimeLoop(ctx)
 }
 
+func (p *CASLCloudProvider) ensureRealtimeStreamAsync() {
+	p.mu.RLock()
+	wsURL := strings.TrimSpace(p.wsURL)
+	p.mu.RUnlock()
+
+	// Не запускаємо background login тут. Інакше короткі foreground-запити
+	// на кшталт GetEvents() можуть чекати authMu, поки realtime loop робить
+	// довгий login, і втрачати власний timeout budget.
+	// Після будь-якого успішного API login refreshToken() сам перезапустить WS.
+	if wsURL == "" {
+		return
+	}
+
+	p.realtimeMu.Lock()
+	if p.realtimeRunning {
+		p.realtimeMu.Unlock()
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	p.realtimeCancel = cancel
+	p.realtimeRunning = true
+	p.realtimeMu.Unlock()
+
+	go p.runRealtimeLoop(ctx)
+}
+
+func (p *CASLCloudProvider) noteRealtimePayload(payload any) {
+	if p == nil {
+		return
+	}
+	now := time.Now()
+	p.mu.Lock()
+	p.lastRealtimeMsgAt = now
+	if isCASLRealtimePingPayload(payload) {
+		p.lastRealtimePingAt = now
+	}
+	p.mu.Unlock()
+}
+
 func (p *CASLCloudProvider) runRealtimeLoop(ctx context.Context) {
 	defer func() {
 		p.realtimeMu.Lock()
@@ -582,6 +637,7 @@ func (p *CASLCloudProvider) runRealtimeSession(ctx context.Context) error {
 			}
 			payload, _ := decodeCASLRealtimePayload(raw)
 			if payload != nil {
+				p.noteRealtimePayload(payload)
 				p.handleCASLRealtimePayload(payload)
 			}
 
@@ -1121,10 +1177,12 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			continue
 		}
 
-		if action == "GRD_OBJ_PICK" || action == "GRD_OBJ_ASS_MGR" {
-			isInProgress := action == "GRD_OBJ_PICK"
+		if action == "GRD_OBJ_PICK" || action == "GRD_OBJ_HIJACK" || action == "GRD_OBJ_ASS_MGR" || action == "GRD_OBJ_MGR_ARRIVE" || action == "GRD_OBJ_MGR_CANCEL" {
+			isInProgress := isCASLAlarmInProgressAction(action)
 			isOwnedByMe := strings.TrimSpace(row.UserID) != "" && strings.TrimSpace(row.UserID) == p.currentCASLUserID()
 			inProgressBy := strings.TrimSpace(row.UserFIO)
+			groupDispatched := action == "GRD_OBJ_ASS_MGR" || action == "GRD_OBJ_MGR_ARRIVE"
+			groupArrived := action == "GRD_OBJ_MGR_ARRIVE"
 			if inProgressBy == "" && strings.TrimSpace(row.UserID) != "" {
 				inProgressBy = p.resolveCASLUserDisplayName(context.Background(), strings.TrimSpace(row.UserID))
 			}
@@ -1149,6 +1207,9 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 				existing.InProgressUser = strings.TrimSpace(row.UserID)
 				existing.InProgressBy = inProgressBy
 				existing.IsOwnedByMe = isInProgress && isOwnedByMe
+				existing.ResponseGroupID = strings.TrimSpace(row.MgrID)
+				existing.IsResponseGroupDispatched = groupDispatched
+				existing.IsResponseGroupArrived = groupArrived
 				p.realtimeAlarmByObjID[key] = existing
 			}
 			continue

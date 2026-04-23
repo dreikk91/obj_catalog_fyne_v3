@@ -153,6 +153,37 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_UsesNormalizedStatuses(
 	}
 }
 
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_UnknownConnection(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:               ids.PhoenixObjectIDNamespaceStart + 120,
+		ConnectionStatus: models.ConnectionStatusUnknown,
+	})
+
+	if presentation.ConnectionText != "Стан зв'язку невідомий" {
+		t.Fatalf("unexpected unknown connection text: %q", presentation.ConnectionText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_MonitoringOverridesGuardHeuristics(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:               ids.PhoenixObjectIDNamespaceStart + 121,
+		MonitoringStatus: models.MonitoringStatusBlocked,
+		GuardStatus:      models.GuardStatusDisarmed,
+		IsUnderGuard:     false,
+		Groups: []models.ObjectGroup{
+			{Number: 1, Name: "Група 1", Armed: false, StateText: "БЕЗ ОХОРОНИ"},
+		},
+	})
+
+	if presentation.GuardText != "Заблоковано" {
+		t.Fatalf("unexpected monitoring-priority guard text: %q", presentation.GuardText)
+	}
+}
+
 func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLFallbacks(t *testing.T) {
 	vm := NewWorkAreaDeviceViewModel()
 

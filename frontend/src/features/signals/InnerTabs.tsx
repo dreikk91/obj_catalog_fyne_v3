@@ -1,13 +1,19 @@
+import type { FrontendObjectDetails } from '../../shared/api/types'
 import type { InnerTab } from '../../shared/state/ui-store'
 import type { ObjectRow } from '../operator/types'
+import { resolveExtraNotes, resolveMainNotes } from './objectPresentation'
 
 type InnerTabsProps = {
   innerTab: InnerTab
   onSelectTab: (tab: InnerTab) => void
   selectedObjectRow: ObjectRow | null
+  objectDetails: FrontendObjectDetails | null
 }
 
-export function InnerTabs({ innerTab, onSelectTab, selectedObjectRow }: InnerTabsProps) {
+export function InnerTabs({ innerTab, onSelectTab, selectedObjectRow, objectDetails }: InnerTabsProps) {
+  const notesText = resolveMainNotes(objectDetails).trim()
+  const extraText = resolveExtraNotes(objectDetails).trim()
+
   return (
     <div className="ps-tabs-right">
       <div className="inner-tabs">
@@ -25,10 +31,10 @@ export function InnerTabs({ innerTab, onSelectTab, selectedObjectRow }: InnerTab
         </div>
       </div>
       <div className={innerTab === 'notes' ? 'inner-pane active' : 'inner-pane'}>
-        <textarea className="note-area" value={selectedObjectRow?.note ?? ''} readOnly />
+        <textarea className="note-area" value={notesText || selectedObjectRow?.note || ''} readOnly />
       </div>
       <div className={innerTab === 'extra' ? 'inner-pane active' : 'inner-pane'}>
-        <div style={{ padding: 10, color: 'var(--tx2)', fontSize: 12 }}>Додаткові відомості про об'єкт</div>
+        <textarea className="note-area" value={extraText} readOnly />
       </div>
       <div className={innerTab === 'subs' ? 'inner-pane active' : 'inner-pane'}>
         <div style={{ padding: 10, color: 'var(--tx2)', fontSize: 12 }}>Заміни охоронців</div>

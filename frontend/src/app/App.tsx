@@ -733,6 +733,7 @@ export function App() {
               bottomTab={bottomTab}
               selectedSignalRow={selectedSignalRow}
               selectedObjectRow={selectedObjectRow}
+              objectDetails={detailsQuery.data ?? null}
               unprocessedAlarmGroups={unprocessedAlarmGroups}
               journalArchiveRows={journalArchiveRows}
               unprocessedFlatRows={unprocessedFlatRows}

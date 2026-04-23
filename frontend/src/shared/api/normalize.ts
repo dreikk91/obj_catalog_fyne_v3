@@ -164,6 +164,7 @@ export function normalizeObjectDetails(input: unknown): FrontendObjectDetails {
   return {
     summary: normalizeObjectSummary(value.summary ?? value.Summary),
     phones: asString(value.phones ?? value.Phones),
+    description: asString(value.description ?? value.Description),
     notes: asString(value.notes ?? value.Notes),
     location: asString(value.location ?? value.Location),
     launchDate: asString(value.launchDate ?? value.LaunchDate),

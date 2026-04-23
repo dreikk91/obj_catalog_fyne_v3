@@ -199,6 +199,7 @@ func ToObjectDetails(item contracts.FrontendObjectDetails) ObjectDetails {
 		TestControl:                item.TestControl,
 		TestIntervalMin:            item.TestIntervalMin,
 		Phones:                     item.Phones,
+		Description:                item.Description,
 		Notes:                      item.Notes,
 		Location:                   item.Location,
 		LaunchDate:                 item.LaunchDate,

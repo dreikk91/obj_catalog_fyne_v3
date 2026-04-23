@@ -7,24 +7,46 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
 func (p *CASLCloudProvider) loadDevices(ctx context.Context) ([]caslDevice, error) {
-	p.mu.RLock()
-	cacheValid := len(p.deviceByDeviceID) > 0 && time.Since(p.cachedDevicesAt) < caslObjectsCacheTTL
-	if cacheValid {
+retry:
+	p.mu.Lock()
+	if len(p.deviceByDeviceID) > 0 {
 		result := make([]caslDevice, 0, len(p.deviceByDeviceID))
 		for _, item := range p.deviceByDeviceID {
 			result = append(result, item)
 		}
-		p.mu.RUnlock()
+		p.mu.Unlock()
 		return result, nil
 	}
-	p.mu.RUnlock()
+	if waitCh := p.devicesLoadInFlight; waitCh != nil {
+		p.mu.Unlock()
+		select {
+		case <-waitCh:
+			goto retry
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	waitCh := make(chan struct{})
+	p.devicesLoadInFlight = waitCh
+	p.mu.Unlock()
 
+	devices, err := p.loadDevicesRemote(ctx)
+
+	p.mu.Lock()
+	if p.devicesLoadInFlight == waitCh {
+		close(waitCh)
+		p.devicesLoadInFlight = nil
+	}
+	p.mu.Unlock()
+	return devices, err
+}
+
+func (p *CASLCloudProvider) loadDevicesRemote(ctx context.Context) ([]caslDevice, error) {
 	devices, err := p.readDevices(ctx)
 	if err == nil && len(devices) > 0 {
 		p.applyCASLCoreSnapshot(nil, devices, nil)

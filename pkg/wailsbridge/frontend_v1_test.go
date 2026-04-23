@@ -234,6 +234,7 @@ func TestFrontendV1ServiceMapping(t *testing.T) {
 				DisplayNumber: "11",
 				Name:          "Obj",
 			},
+			Description:              "Міст опис",
 			Phones:                   "380...",
 			Location:                 "Kyiv",
 			PreferredResponseGroupID: "5",
@@ -300,7 +301,7 @@ func TestFrontendV1ServiceMapping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetObjectDetails err = %v", err)
 	}
-	if details.Summary.ID != 11 || details.Location != "Kyiv" || details.PreferredResponseGroupID != "5" {
+	if details.Summary.ID != 11 || details.Location != "Kyiv" || details.Description != "Міст опис" || details.PreferredResponseGroupID != "5" {
 		t.Fatalf("GetObjectDetails mapping failed: %+v", details)
 	}
 }

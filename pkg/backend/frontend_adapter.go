@@ -535,6 +535,7 @@ func (a *FrontendAdapter) GetObjectDetails(ctx context.Context, objectID int) (c
 		TestControl:                object.TestControl > 0,
 		TestIntervalMin:            object.TestTime,
 		Phones:                     object.Phones1,
+		Description:                object.Description1,
 		Notes:                      object.Notes1,
 		Location:                   object.Location1,
 		LaunchDate:                 object.LaunchDate,
@@ -546,7 +547,9 @@ func (a *FrontendAdapter) GetObjectDetails(ctx context.Context, objectID int) (c
 		ExternalLastMessage:        lastMessage,
 		Zones:                      mapFrontendZones(a.dataProvider.GetZones(rawID)),
 		Contacts:                   mapFrontendContacts(a.dataProvider.GetEmployees(rawID)),
+		Events:                     mapFrontendEvents(a.dataProvider.GetObjectEvents(rawID)),
 	}
+	sortFrontendEventsDesc(details.Events)
 
 	return details, nil
 }
@@ -1014,6 +1017,12 @@ func frontendPowerSource(source models.PowerSource) string {
 }
 
 func frontendGuardStatus(object models.Object) contracts.FrontendGuardStatus {
+	switch object.GuardStatus {
+	case models.GuardStatusGuarded:
+		return contracts.FrontendGuardStatusGuarded
+	case models.GuardStatusDisarmed:
+		return contracts.FrontendGuardStatusDisarmed
+	}
 	switch {
 	case object.GuardState > 0, object.IsUnderGuard:
 		return contracts.FrontendGuardStatusGuarded
@@ -1025,6 +1034,12 @@ func frontendGuardStatus(object models.Object) contracts.FrontendGuardStatus {
 }
 
 func frontendConnectionStatus(object models.Object) contracts.FrontendConnectionStatus {
+	switch object.ConnectionStatus {
+	case models.ConnectionStatusOnline:
+		return contracts.FrontendConnectionStatusOnline
+	case models.ConnectionStatusOffline:
+		return contracts.FrontendConnectionStatusOffline
+	}
 	// Explicit "online" signals take highest priority.
 	if object.IsConnState > 0 || object.IsConnOK {
 		return contracts.FrontendConnectionStatusOnline
@@ -1039,6 +1054,14 @@ func frontendConnectionStatus(object models.Object) contracts.FrontendConnection
 }
 
 func frontendMonitoringStatus(object models.Object) contracts.FrontendMonitoringStatus {
+	switch object.MonitoringStatus {
+	case models.MonitoringStatusBlocked:
+		return contracts.FrontendMonitoringStatusBlocked
+	case models.MonitoringStatusDebug:
+		return contracts.FrontendMonitoringStatusDebug
+	case models.MonitoringStatusActive:
+		return contracts.FrontendMonitoringStatusActive
+	}
 	switch object.BlockedArmedOnOff {
 	case 1:
 		return contracts.FrontendMonitoringStatusBlocked

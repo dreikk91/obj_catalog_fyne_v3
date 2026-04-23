@@ -24,9 +24,8 @@ const (
 	caslLoginPath      = "/login"
 	caslDefaultBaseURL = "http://127.0.0.1:50003"
 
-	caslHTTPTimeout       = 12 * time.Second
-	caslInitialAlarmsLoad = 2500 * time.Millisecond
-	caslObjectsCacheTTL   = 20 * time.Second
+	caslHTTPTimeout       = 45 * time.Second
+	caslAPIHealthGrace    = 90 * time.Second
 	caslUsersCacheTTL     = 5 * time.Minute
 	caslObjectEventsTTL   = 10 * time.Second
 	caslObjectEventsSpan  = 7 * 24 * time.Hour
@@ -69,13 +68,15 @@ type CASLCloudProvider struct {
 	wsURL  string
 	userID string
 
-	cachedObjects      []caslGrdObject
-	cachedObjectsAt    time.Time
-	objectByInternalID map[int]caslGrdObject
-	deviceByDeviceID   map[string]caslDevice
-	deviceByObjectID   map[string]caslDevice
-	deviceByNumber     map[int64]caslDevice
-	cachedDevicesAt    time.Time
+	cachedObjects       []caslGrdObject
+	cachedObjectsAt     time.Time
+	objectsLoadInFlight chan struct{}
+	objectByInternalID  map[int]caslGrdObject
+	deviceByDeviceID    map[string]caslDevice
+	deviceByObjectID    map[string]caslDevice
+	deviceByNumber      map[int64]caslDevice
+	cachedDevicesAt     time.Time
+	devicesLoadInFlight chan struct{}
 
 	cachedUsers   map[string]caslUser
 	cachedUsersAt time.Time
@@ -138,7 +139,9 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 		pass:    pass,
 		token:   strings.TrimSpace(token),
 		httpClient: &http.Client{
-			Timeout: caslHTTPTimeout,
+			// Оригінальний CASL web-client шле /command без глобального timeout.
+			// Залишаємо скасування лише через context конкретного запиту.
+			Timeout: 0,
 		},
 		lifecycleCtx:           lifecycleCtx,
 		lifecycleCancel:        lifecycleCancel,
@@ -160,6 +163,15 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 		realtimeAlarmByObjID:   make(map[string]models.Alarm),
 	}
 	return p
+}
+
+func withCASLRequestTimeout(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	// Для базових CASL /command запитів поводимося як оригінальний web-client:
+	// не ставимо локальний дедлайн, якщо його не задав викликаючий код.
+	return context.WithCancel(parent)
 }
 
 func (p *CASLCloudProvider) Shutdown() {

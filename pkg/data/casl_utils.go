@@ -185,6 +185,56 @@ func firstCASLIntValue(values ...any) (int, bool) {
 	return 0, false
 }
 
+func tryParseCASLAnyBool(value any) (bool, bool) {
+	switch typed := value.(type) {
+	case nil:
+		return false, false
+	case bool:
+		return typed, true
+	case int:
+		return typed != 0, true
+	case int64:
+		return typed != 0, true
+	case int32:
+		return typed != 0, true
+	case float64:
+		return typed != 0, true
+	case float32:
+		return typed != 0, true
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return parsed != 0, true
+		}
+		if parsed, err := typed.Float64(); err == nil {
+			return parsed != 0, true
+		}
+		return false, false
+	case string:
+		text := strings.TrimSpace(typed)
+		switch {
+		case text == "":
+			return false, false
+		case strings.EqualFold(text, "true"), text == "1":
+			return true, true
+		case strings.EqualFold(text, "false"), text == "0":
+			return false, true
+		default:
+			return false, false
+		}
+	default:
+		return false, false
+	}
+}
+
+func firstCASLBoolValue(values ...any) (bool, bool) {
+	for _, value := range values {
+		if parsed, ok := tryParseCASLAnyBool(value); ok {
+			return parsed, true
+		}
+	}
+	return false, false
+}
+
 func firstCASLTimeValue(values ...any) (time.Time, bool) {
 	for _, value := range values {
 		if parsed, ok := tryParseCASLAnyTime(value); ok {
@@ -218,11 +268,46 @@ func mapCASLObjectStatusState(statusRaw string, blocked bool) caslObjectStatusSt
 	}
 
 	lower := strings.ToLower(statusText)
-	isOffline := strings.Contains(lower, "нема") ||
-		strings.Contains(lower, "offline") ||
-		strings.Contains(lower, "зв'язк") ||
-		strings.Contains(lower, "без зв") ||
-		strings.Contains(lower, "lost")
+	containsAny := func(haystack string, needles ...string) bool {
+		for _, needle := range needles {
+			if needle != "" && strings.Contains(haystack, needle) {
+				return true
+			}
+		}
+		return false
+	}
+
+	isOffline := containsAny(lower,
+		"немає зв'язку",
+		"нет связи",
+		"без зв'язку",
+		"без связи",
+		"втрата зв'язку",
+		"потеря связи",
+		"відсутній зв'язок",
+		"loss of communication",
+		"lost communication",
+		"no communication",
+		"offline",
+	)
+	isOnline := containsAny(lower,
+		"на зв'язку",
+		"є зв'язок",
+		"связь в норме",
+		"зв'язок в нормі",
+		"зв'язок із усіма пристроями в нормі",
+		"восстановление связи",
+		"восстановлена связь",
+		"відновлення зв'язку",
+		"відновлено зв'язок",
+		"restoring communication",
+		"communication restored",
+		"connection restored",
+		"ppk_conn_ok",
+	)
+	if isOnline {
+		isOffline = false
+	}
 	isAlarm := strings.Contains(lower, "трив") ||
 		strings.Contains(lower, "alarm") ||
 		strings.Contains(lower, "пожеж")
@@ -233,7 +318,7 @@ func mapCASLObjectStatusState(statusRaw string, blocked bool) caslObjectStatusSt
 	isDisarmed := strings.Contains(lower, "виключ") ||
 		strings.Contains(lower, "знято") ||
 		strings.Contains(lower, "disarm") ||
-		strings.Contains(lower, "off")
+		strings.Contains(lower, "без охор")
 	isArmed := strings.Contains(lower, "включ") ||
 		strings.Contains(lower, "під охор") ||
 		strings.Contains(lower, "armed") ||

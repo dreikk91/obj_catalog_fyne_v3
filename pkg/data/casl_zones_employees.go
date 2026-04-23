@@ -18,7 +18,7 @@ func (p *CASLCloudProvider) GetZones(objectID string) []models.Zone {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+	ctx, cancel := withCASLRequestTimeout(context.Background())
 	defer cancel()
 
 	record, found, err := p.resolveObjectRecord(ctx, internalID)
@@ -123,7 +123,7 @@ func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+	ctx, cancel := withCASLRequestTimeout(context.Background())
 	defer cancel()
 
 	record, found, err := p.resolveObjectRecord(ctx, internalID)

@@ -197,6 +197,7 @@ type ObjectDetails struct {
 	TestControl                bool          `json:"TestControl"`
 	TestIntervalMin            int64         `json:"TestIntervalMin"`
 	Phones                     string        `json:"Phones"`
+	Description                string        `json:"Description"`
 	Notes                      string        `json:"Notes"`
 	Location                   string        `json:"Location"`
 	LaunchDate                 string        `json:"LaunchDate"`

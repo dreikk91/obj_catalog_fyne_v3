@@ -18,13 +18,14 @@ import (
 func (p *CASLCloudProvider) GetObjects() []models.Object {
 	p.ensureRealtimeStream()
 
-	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
-	defer cancel()
-
-	records, err := p.loadObjects(ctx)
+	loadCtx, loadCancel := withCASLRequestTimeout(context.Background())
+	records, err := p.loadObjects(loadCtx)
+	loadCancel()
 	if err != nil {
 		log.Warn().Err(err).Msg("CASL: read_grd_object недоступний, fallback на read_pult")
-		pults, pErr := p.readPultsPublic(ctx)
+		fallbackCtx, fallbackCancel := withCASLRequestTimeout(context.Background())
+		pults, pErr := p.readPultsPublic(fallbackCtx)
+		fallbackCancel()
 		if pErr != nil {
 			log.Error().Err(pErr).Msg("CASL: не вдалося завантажити об'єкти")
 			return nil
@@ -36,17 +37,25 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 		return objects
 	}
 
-	if _, devicesErr := p.loadDevices(ctx); devicesErr != nil {
+	devicesCtx, devicesCancel := withCASLRequestTimeout(context.Background())
+	if _, devicesErr := p.loadDevices(devicesCtx); devicesErr != nil {
 		log.Debug().Err(devicesErr).Msg("CASL: не вдалося завантажити read_device (продовжую без enrich)")
 	}
-	disconnected := p.loadDisconnectedDevicesIndex(ctx)
-	activeAlarms := p.loadCASLActiveAlarmIndex(ctx)
+	devicesCancel()
+
+	disconnectedCtx, disconnectedCancel := withCASLRequestTimeout(context.Background())
+	disconnected := p.loadDisconnectedDevicesIndex(disconnectedCtx)
+	disconnectedCancel()
+
+	activeAlarms := p.loadCASLActiveAlarmIndex(context.Background())
+	enrichCtx, enrichCancel := withCASLRequestTimeout(context.Background())
+	defer enrichCancel()
 
 	objects := make([]models.Object, 0, len(records))
 	for _, record := range records {
 		device, hasDevice := p.resolveDeviceForObject(record)
 		obj := mapCASLGrdObjectToObject(record, selectCASLDevice(hasDevice, device))
-		p.enrichCASLObjectWithDeviceMeta(ctx, &obj, hasDevice, device)
+		p.enrichCASLObjectWithDeviceMeta(enrichCtx, &obj, hasDevice, device)
 		if hasDevice {
 			applyCASLObjectDeviceConnectivityState(&obj, device)
 		}
@@ -58,6 +67,7 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 				applyCASLObjectAlarmState(&obj, alarm)
 			}
 		}
+		syncCASLObjectFrontendStatuses(&obj)
 		objects = append(objects, obj)
 	}
 	// sortCASLObjectsByNumber(objects)
@@ -105,25 +115,29 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 
 	p.ensureRealtimeStream()
 
-	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
-	defer cancel()
-
-	record, found, err := p.resolveObjectRecord(ctx, objectID)
+	recordCtx, recordCancel := withCASLRequestTimeout(context.Background())
+	record, found, err := p.resolveObjectRecord(recordCtx, objectID)
+	recordCancel()
 	if err != nil || !found {
 		return nil
 	}
 
-	if _, devicesErr := p.loadDevices(ctx); devicesErr != nil {
+	devicesCtx, devicesCancel := withCASLRequestTimeout(context.Background())
+	if _, devicesErr := p.loadDevices(devicesCtx); devicesErr != nil {
 		log.Debug().Err(devicesErr).Msg("CASL: не вдалося завантажити read_device (GetObjectByID)")
 	}
+	devicesCancel()
 
 	device, hasDevice := p.resolveDeviceForObject(record)
 	obj := mapCASLGrdObjectToObject(record, selectCASLDevice(hasDevice, device))
-	p.enrichCASLObjectWithDeviceMeta(ctx, &obj, hasDevice, device)
+	enrichCtx, enrichCancel := withCASLRequestTimeout(context.Background())
+	p.enrichCASLObjectWithDeviceMeta(enrichCtx, &obj, hasDevice, device)
+	enrichCancel()
 	if hasDevice {
 		applyCASLObjectDeviceConnectivityState(&obj, device)
 	}
-	if state, stateErr := p.readDeviceState(ctx, record); stateErr == nil {
+	stateCtx, stateCancel := withCASLRequestTimeout(context.Background())
+	if state, stateErr := p.readDeviceState(stateCtx, record); stateErr == nil {
 		obj.PowerFault = state.Power.Int64()
 		obj.AkbState = state.Accum.Int64()
 		obj.PowerSource = models.PowerMains
@@ -141,24 +155,30 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 			obj.LastMessageTime = msgTime
 			obj.LastTestTime = msgTime
 		}
-		obj.Groups = p.buildCASLObjectGroups(ctx, record, state.Groups)
+		groupCtx, groupCancel := withCASLRequestTimeout(context.Background())
+		obj.Groups = p.buildCASLObjectGroups(groupCtx, record, state.Groups)
+		groupCancel()
 	}
+	stateCancel()
 	// read_device.offline/disconnected приходить з іншого CASL зрізу і для списку/картки
 	// має пріоритет над read_device_state.online, якщо сервер ще не встиг синхронізувати стани.
 	if hasDevice {
 		applyCASLObjectDeviceConnectivityState(&obj, device)
 	}
 	if obj.IsConnState > 0 {
-		disconnected := p.loadDisconnectedDevicesIndex(ctx)
+		disconnectedCtx, disconnectedCancel := withCASLRequestTimeout(context.Background())
+		disconnected := p.loadDisconnectedDevicesIndex(disconnectedCtx)
+		disconnectedCancel()
 		if disconnected.match(record, selectCASLDevice(hasDevice, device)) {
 			applyCASLObjectDisconnectedState(&obj, disconnected.lastSeen(record, selectCASLDevice(hasDevice, device)))
 		}
 	}
 	if obj.IsConnState > 0 {
-		if alarm, ok := p.loadCASLActiveAlarmIndex(ctx)[obj.ID]; ok {
+		if alarm, ok := p.loadCASLActiveAlarmIndex(context.Background())[obj.ID]; ok {
 			applyCASLObjectAlarmState(&obj, alarm)
 		}
 	}
+	syncCASLObjectFrontendStatuses(&obj)
 
 	return &obj
 }
@@ -181,7 +201,23 @@ func (p *CASLCloudProvider) loadDisconnectedDevicesIndex(ctx context.Context) ca
 		byNumber:   make(map[int64]time.Time, len(rows)),
 	}
 	for _, row := range rows {
-		seenAt, _ := firstCASLTimeValue(row["offline"], row["last"], row["lastPingDate"], row["date"])
+		offlineEpoch, hasOfflineEpoch := firstCASLIntValue(row["offline"])
+		explicitlyDisconnected, hasDisconnectedState := firstCASLBoolValue(row["disconnected"], row["disconnected_state"])
+		isDisconnected := offlineEpoch > 0
+		if hasDisconnectedState {
+			isDisconnected = isDisconnected || explicitlyDisconnected
+		}
+		if !isDisconnected {
+			continue
+		}
+
+		seenAt := time.Time{}
+		if hasOfflineEpoch && offlineEpoch > 0 {
+			seenAt, _ = firstCASLTimeValue(row["offline"])
+		}
+		if seenAt.IsZero() {
+			seenAt, _ = firstCASLTimeValue(row["last"], row["lastPingDate"], row["date"])
+		}
 		if deviceID := strings.TrimSpace(firstCASLString(row["device_id"], row["id"])); deviceID != "" {
 			index.byDeviceID[deviceID] = seenAt
 		}
@@ -262,6 +298,28 @@ func applyCASLObjectDisconnectedState(obj *models.Object, lastSeen time.Time) {
 			obj.LastTestTime = lastSeen
 		}
 	}
+}
+
+func syncCASLObjectFrontendStatuses(obj *models.Object) {
+	if obj == nil {
+		return
+	}
+	switch obj.BlockedArmedOnOff {
+	case 1:
+		obj.MonitoringStatus = models.MonitoringStatusBlocked
+	default:
+		obj.MonitoringStatus = models.MonitoringStatusActive
+	}
+	if obj.GuardState == 0 && !obj.IsUnderGuard {
+		obj.GuardStatus = models.GuardStatusDisarmed
+	} else {
+		obj.GuardStatus = models.GuardStatusGuarded
+	}
+	if obj.IsConnState > 0 || obj.IsConnOK {
+		obj.ConnectionStatus = models.ConnectionStatusOnline
+		return
+	}
+	obj.ConnectionStatus = models.ConnectionStatusOffline
 }
 
 func applyCASLObjectDeviceConnectivityState(obj *models.Object, device caslDevice) {
@@ -360,15 +418,38 @@ func caslObjectAlarmPriority(alarm models.Alarm) int {
 }
 
 func (p *CASLCloudProvider) loadObjects(ctx context.Context) ([]caslGrdObject, error) {
-	p.mu.RLock()
-	cacheValid := len(p.cachedObjects) > 0 && time.Since(p.cachedObjectsAt) < caslObjectsCacheTTL
-	if cacheValid {
+retry:
+	p.mu.Lock()
+	if len(p.cachedObjects) > 0 {
 		copied := append([]caslGrdObject(nil), p.cachedObjects...)
-		p.mu.RUnlock()
+		p.mu.Unlock()
 		return copied, nil
 	}
-	p.mu.RUnlock()
+	if waitCh := p.objectsLoadInFlight; waitCh != nil {
+		p.mu.Unlock()
+		select {
+		case <-waitCh:
+			goto retry
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	waitCh := make(chan struct{})
+	p.objectsLoadInFlight = waitCh
+	p.mu.Unlock()
 
+	records, err := p.loadObjectsRemote(ctx)
+
+	p.mu.Lock()
+	if p.objectsLoadInFlight == waitCh {
+		close(waitCh)
+		p.objectsLoadInFlight = nil
+	}
+	p.mu.Unlock()
+	return records, err
+}
+
+func (p *CASLCloudProvider) loadObjectsRemote(ctx context.Context) ([]caslGrdObject, error) {
 	records, err := p.readGrdObjects(ctx)
 	if err == nil && len(records) > 0 {
 		for idx := range records {
@@ -666,9 +747,7 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 	statusState := mapCASLObjectStatusState(record.Status, blocked)
 
 	notes := strings.TrimSpace(record.Note)
-	if notes == "" {
-		notes = strings.TrimSpace(record.Description)
-	}
+	description := strings.TrimSpace(record.Description)
 
 	// displayNubmer := ""
 	// if record.DeviceNumber.Int64() > 0 {
@@ -726,6 +805,24 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 		GuardState:     statusState.GuardState,
 		TechAlarmState: statusState.TechAlarmState,
 		IsConnState:    statusState.IsConnState,
+		GuardStatus: func() models.GuardStatus {
+			if statusState.GuardState == 0 && !statusState.IsUnderGuard {
+				return models.GuardStatusDisarmed
+			}
+			return models.GuardStatusGuarded
+		}(),
+		ConnectionStatus: func() models.ConnectionStatus {
+			if statusState.IsConnState > 0 {
+				return models.ConnectionStatusOnline
+			}
+			return models.ConnectionStatusOffline
+		}(),
+		MonitoringStatus: func() models.MonitoringStatus {
+			if blocked {
+				return models.MonitoringStatusBlocked
+			}
+			return models.MonitoringStatusActive
+		}(),
 		IsUnderGuard:   statusState.IsUnderGuard,
 		IsConnOK:       statusState.IsConnState > 0,
 		HasAssignment:  hasAssignment,
@@ -739,6 +836,7 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 		SIM2:           sim2,
 		ObjChan:        5,
 		AutoTestHours:  autoTestHours,
+		Description1:   description,
 		Notes1:         notes,
 		Location1:      address,
 		LaunchDate:     launchDate,
@@ -781,21 +879,24 @@ func mapCASLPultToObject(item caslPult) models.Object {
 	}
 
 	return models.Object{
-		ID:             id,
-		Name:           name,
-		Address:        address,
-		ContractNum:    strings.TrimSpace(item.Nickname),
-		Status:         models.StatusNormal,
-		StatusText:     caslObjectStatusText,
-		GuardState:     1,
-		IsConnState:    1,
-		IsUnderGuard:   true,
-		IsConnOK:       true,
-		HasAssignment:  true,
-		SignalStrength: "н/д",
-		DeviceType:     "CASL Pult",
-		ObjChan:        5,
-		AutoTestHours:  24,
+		ID:               id,
+		Name:             name,
+		Address:          address,
+		ContractNum:      strings.TrimSpace(item.Nickname),
+		Status:           models.StatusNormal,
+		StatusText:       caslObjectStatusText,
+		GuardState:       1,
+		IsConnState:      1,
+		GuardStatus:      models.GuardStatusGuarded,
+		ConnectionStatus: models.ConnectionStatusOnline,
+		MonitoringStatus: models.MonitoringStatusActive,
+		IsUnderGuard:     true,
+		IsConnOK:         true,
+		HasAssignment:    true,
+		SignalStrength:   "н/д",
+		DeviceType:       "CASL Pult",
+		ObjChan:          5,
+		AutoTestHours:    24,
 	}
 }
 
@@ -810,7 +911,7 @@ func (p *CASLCloudProvider) enrichCASLObjectWithDeviceMeta(ctx context.Context, 
 	}
 
 	deviceName := strings.TrimSpace(device.Name.String())
-	if deviceName != "" {
+	if deviceName != "" && strings.TrimSpace(obj.Notes1) == "" {
 		obj.Notes1 = deviceName
 	}
 }

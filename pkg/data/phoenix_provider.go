@@ -78,6 +78,7 @@ func (p *PhoenixDataProvider) GetObjects() []models.Object {
 	}
 
 	objects := p.buildObjects(rows)
+	p.applyPhoenixConnectionStates(ctx, objects)
 	p.enrichObjectsWithSIM(ctx, objects)
 
 	p.objectMu.Lock()
@@ -111,6 +112,7 @@ func (p *PhoenixDataProvider) GetObjectByID(objectID string) *models.Object {
 		return nil
 	}
 	obj := object[0]
+	obj = p.applyPhoenixConnectionStateForObject(ctx, obj)
 
 	var channelRows []phoenixChannelRow
 	if err := p.db.SelectContext(ctx, &channelRows, phoenixChannelInfoQuery, panelID); err != nil {
@@ -388,6 +390,14 @@ func (p *PhoenixDataProvider) buildObjects(rows []phoenixObjectGroupRow) []model
 
 		obj := objectsByPanel[panelID]
 		if obj == nil {
+			connectionStatus := models.ConnectionStatusUnknown
+			isConnState := int64(0)
+			isConnOK := false
+			if nullBool(row.HasZStatus) {
+				connectionStatus = models.ConnectionStatusOnline
+				isConnState = 1
+				isConnOK = true
+			}
 			obj = &models.Object{
 				ID:            p.registerPanelID(panelID),
 				DisplayNumber: panelID,
@@ -396,13 +406,20 @@ func (p *PhoenixDataProvider) buildObjects(rows []phoenixObjectGroupRow) []model
 				Address:       strings.TrimSpace(nullString(row.Address)),
 				Phone:         strings.TrimSpace(nullString(row.Telephones)),
 				Phones1:       strings.TrimSpace(nullString(row.Telephones)),
-				ContractNum:   panelID,
-				DeviceType:    strings.TrimSpace(nullString(row.TypeName)),
-				Groups:        make([]models.ObjectGroup, 0, 4),
-				IsConnOK:      true,
-				IsConnState:   1,
-				GuardState:    1,
-				LaunchDate:    phoenixDateText(row.CreateDate),
+				Notes1: func() string {
+					if memo := strings.TrimSpace(nullString(row.CompanyMemo)); memo != "" {
+						return memo
+					}
+					return strings.TrimSpace(nullString(row.PanelTechInfo))
+				}(),
+				ContractNum:      panelID,
+				DeviceType:       strings.TrimSpace(nullString(row.TypeName)),
+				Groups:           make([]models.ObjectGroup, 0, 4),
+				IsConnOK:         isConnOK,
+				IsConnState:      isConnState,
+				ConnectionStatus: connectionStatus,
+				GuardState:       1,
+				LaunchDate:       phoenixDateText(row.CreateDate),
 			}
 			if sim := strings.TrimSpace(nullString(row.Sim1Number)); sim != "" {
 				obj.SIM1 = sim
@@ -789,14 +806,23 @@ func (p *PhoenixDataProvider) applyPhoenixObjectState(obj *models.Object, row ph
 		obj.AlarmState = 1
 	case obj.Status != models.StatusFire && nullBool(row.TestPanel):
 		obj.BlockedArmedOnOff = 2
+		obj.MonitoringStatus = models.MonitoringStatusDebug
 		obj.Status = models.StatusNormal
 		obj.StatusText = phoenixStandStateText
-	case obj.Status != models.StatusFire && (nullBool(row.GroupDisabled) || nullBool(row.PanelDisabled)):
+	case obj.Status != models.StatusFire && (nullBool(row.GroupDisabled) || nullBool(row.PanelDisabled) || nullBool(row.IsProhibited)):
 		if obj.BlockedArmedOnOff != 2 {
 			obj.BlockedArmedOnOff = 1
+			obj.MonitoringStatus = models.MonitoringStatusBlocked
 		}
 		obj.Status = models.StatusNormal
 		obj.StatusText = phoenixBlockedStateText
+	case obj.Status != models.StatusFire && nullBool(row.HasEngineer):
+		if obj.BlockedArmedOnOff == 0 {
+			obj.BlockedArmedOnOff = 2
+		}
+		obj.MonitoringStatus = models.MonitoringStatusDebug
+		obj.Status = models.StatusNormal
+		obj.StatusText = phoenixStandStateText
 	case obj.StatusText == "":
 		if nullBool(row.IsOpen) {
 			obj.StatusText = phoenixDisarmedStateText
@@ -815,14 +841,20 @@ func (p *PhoenixDataProvider) finalizePhoenixObjectState(obj *models.Object) {
 	if len(obj.Groups) == 0 {
 		switch obj.BlockedArmedOnOff {
 		case 1:
+			obj.MonitoringStatus = models.MonitoringStatusBlocked
+		case 2:
+			obj.MonitoringStatus = models.MonitoringStatusDebug
+		default:
+			obj.MonitoringStatus = models.MonitoringStatusActive
+		}
+		switch obj.BlockedArmedOnOff {
+		case 1:
 			obj.GuardState = 1
-			obj.IsUnderGuard = false
 			if obj.StatusText == "" {
 				obj.StatusText = phoenixBlockedStateText
 			}
 		case 2:
 			obj.GuardState = 1
-			obj.IsUnderGuard = false
 			if obj.StatusText == "" {
 				obj.StatusText = phoenixStandStateText
 			}
@@ -835,24 +867,7 @@ func (p *PhoenixDataProvider) finalizePhoenixObjectState(obj *models.Object) {
 				obj.StatusText = "ПІД ОХОРОНОЮ"
 			}
 		}
-		return
-	}
-
-	if obj.BlockedArmedOnOff == 1 {
-		obj.GuardState = 1
-		obj.IsUnderGuard = false
-		if obj.Status == models.StatusNormal {
-			obj.StatusText = phoenixBlockedStateText
-		}
-		return
-	}
-
-	if obj.BlockedArmedOnOff == 2 {
-		obj.GuardState = 1
-		obj.IsUnderGuard = false
-		if obj.Status == models.StatusNormal {
-			obj.StatusText = phoenixStandStateText
-		}
+		obj.GuardStatus = phoenixGuardStatusForObject(obj)
 		return
 	}
 
@@ -886,6 +901,21 @@ func (p *PhoenixDataProvider) finalizePhoenixObjectState(obj *models.Object) {
 			obj.StatusText = phoenixPartialDisarmedText
 		}
 	}
+	switch obj.BlockedArmedOnOff {
+	case 1:
+		obj.MonitoringStatus = models.MonitoringStatusBlocked
+		if obj.Status == models.StatusNormal {
+			obj.StatusText = phoenixBlockedStateText
+		}
+	case 2:
+		obj.MonitoringStatus = models.MonitoringStatusDebug
+		if obj.Status == models.StatusNormal {
+			obj.StatusText = phoenixStandStateText
+		}
+	default:
+		obj.MonitoringStatus = models.MonitoringStatusActive
+	}
+	obj.GuardStatus = phoenixGuardStatusForObject(obj)
 }
 
 func (p *PhoenixDataProvider) applyChannelInfo(obj *models.Object, row phoenixChannelRow) {
@@ -921,6 +951,61 @@ func (p *PhoenixDataProvider) applyChannelInfo(obj *models.Object, row phoenixCh
 			obj.AutoTestHours = int(timeoutMinutes / 60)
 		}
 	}
+}
+
+func (p *PhoenixDataProvider) applyPhoenixConnectionStates(ctx context.Context, objects []models.Object) {
+	if p == nil || p.db == nil || len(objects) == 0 {
+		return
+	}
+
+	var rows []phoenixOfflinePanelRow
+	if err := p.db.SelectContext(ctx, &rows, phoenixOfflinePanelsQuery); err != nil {
+		log.Error().Err(err).Msg("Phoenix: помилка визначення об'єктів без зв'язку")
+		return
+	}
+
+	offlinePanels := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		panelID := strings.TrimSpace(row.PanelID)
+		if panelID == "" {
+			continue
+		}
+		offlinePanels[panelID] = struct{}{}
+	}
+
+	for i := range objects {
+		obj := &objects[i]
+		if _, ok := offlinePanels[strings.TrimSpace(obj.DisplayNumber)]; ok {
+			obj.ConnectionStatus = models.ConnectionStatusOffline
+			obj.IsConnState = 0
+			obj.IsConnOK = false
+			continue
+		}
+		if obj.ConnectionStatus == models.ConnectionStatusOnline {
+			obj.IsConnState = 1
+			obj.IsConnOK = true
+			continue
+		}
+		obj.ConnectionStatus = models.ConnectionStatusUnknown
+		obj.IsConnState = 0
+		obj.IsConnOK = false
+	}
+}
+
+func (p *PhoenixDataProvider) applyPhoenixConnectionStateForObject(ctx context.Context, object models.Object) models.Object {
+	objects := []models.Object{object}
+	p.applyPhoenixConnectionStates(ctx, objects)
+	return objects[0]
+}
+
+func phoenixGuardStatusForObject(obj *models.Object) models.GuardStatus {
+	if obj == nil {
+		return models.GuardStatusUnknown
+	}
+	if obj.GuardState == 0 && !obj.IsUnderGuard {
+		return models.GuardStatusDisarmed
+	}
+	return models.GuardStatusGuarded
 }
 
 func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {

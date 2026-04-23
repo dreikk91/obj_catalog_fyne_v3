@@ -431,7 +431,8 @@ func (p *CASLCloudProvider) FrontendSourceHealth() contracts.FrontendSourceHealt
 
 	apiStatus := contracts.FrontendConnectionStatusUnknown
 	switch {
-	case !apiSuccessAt.IsZero() && (apiFailureAt.IsZero() || !apiFailureAt.After(apiSuccessAt)):
+	case !apiSuccessAt.IsZero() &&
+		(apiFailureAt.IsZero() || !apiFailureAt.After(apiSuccessAt) || now.Sub(apiSuccessAt) <= caslAPIHealthGrace):
 		apiStatus = contracts.FrontendConnectionStatusOnline
 	case !apiFailureAt.IsZero() && (apiSuccessAt.IsZero() || apiFailureAt.After(apiSuccessAt)):
 		apiStatus = contracts.FrontendConnectionStatusOffline
@@ -1671,20 +1672,35 @@ func isCASLAlarmFinishBlockedAction(action string) bool {
 }
 
 func (p *CASLCloudProvider) refreshCASLAlarmSnapshot(ctx context.Context, forceTapeSnapshot bool) {
-	_, byObject, ctxErr := p.buildSharedObjectContext(ctx)
+	// Кожен підзапит отримує власний незалежний таймаут — як оригінальний CASL
+	// web-client, що шле кожен /command без спільного бюджету. Батьківський ctx
+	// використовується лише як сигнал дострокового виходу між етапами.
+	buildCtx, buildCancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+	defer buildCancel()
+	_, byObject, ctxErr := p.buildSharedObjectContext(buildCtx)
 	if ctxErr != nil {
 		log.Debug().Err(ctxErr).Msg("CASL bg: не вдалося побудувати спільний контекст об'єктів")
 	}
+	if ctx.Err() != nil {
+		return
+	}
 
-	if _, err := p.readEventsJournalAsEvents(ctx); err != nil {
+	evCtx, evCancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+	defer evCancel()
+	if _, err := p.readEventsJournalAsEvents(evCtx); err != nil {
 		log.Debug().Err(err).Msg("CASL bg: read_events недоступний")
+	}
+	if ctx.Err() != nil {
+		return
 	}
 
 	if !forceTapeSnapshot && len(p.snapshotRealtimeAlarms()) > 0 {
 		return
 	}
 
-	tapeAlarms, err := p.readGeneralTapeAsAlarms(ctx, byObject)
+	tapeCtx, tapeCancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+	defer tapeCancel()
+	tapeAlarms, err := p.readGeneralTapeAsAlarms(tapeCtx, byObject)
 	if err != nil {
 		log.Debug().Err(err).Msg("CASL bg: get_general_tape_objects недоступний")
 		return
@@ -1702,17 +1718,13 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 	hasToken := strings.TrimSpace(p.token) != ""
 	p.mu.RUnlock()
 
-	if initialLoad && hasToken && p.alarmsRefreshing.CompareAndSwap(false, true) {
-		ctx, cancel := context.WithTimeout(context.Background(), caslInitialAlarmsLoad)
-		p.refreshCASLAlarmSnapshot(ctx, true)
-		cancel()
-		p.alarmsRefreshing.Store(false)
-	} else if p.alarmsRefreshing.CompareAndSwap(false, true) {
+	if p.alarmsRefreshing.CompareAndSwap(false, true) {
+		forceTape := initialLoad && hasToken
 		go func() {
 			defer p.alarmsRefreshing.Store(false)
 			ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
 			defer cancel()
-			p.refreshCASLAlarmSnapshot(ctx, false)
+			p.refreshCASLAlarmSnapshot(ctx, forceTape)
 		}()
 	}
 

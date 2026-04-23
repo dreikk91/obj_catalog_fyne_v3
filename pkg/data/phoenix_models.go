@@ -22,9 +22,18 @@ type phoenixObjectGroupRow struct {
 	StateEvent    sql.NullInt64  `db:"state_event"`
 	CreateDate    sql.NullTime   `db:"create_date"`
 	LastChange    sql.NullTime   `db:"date_last_change"`
+	HasZStatus    sql.NullBool   `db:"has_zstatus_device"`
+	IsProhibited  sql.NullBool   `db:"is_prohibited"`
+	HasEngineer   sql.NullBool   `db:"has_engineer"`
 	EngineerName  sql.NullString `db:"engineer_name"`
+	CompanyMemo   sql.NullString `db:"company_memo"`
+	PanelTechInfo sql.NullString `db:"additional_technical_information"`
 	Sim1Number    sql.NullString `db:"sim1_number"`
 	Sim2Number    sql.NullString `db:"sim2_number"`
+}
+
+type phoenixOfflinePanelRow struct {
+	PanelID string `db:"panel_id"`
 }
 
 type phoenixPreferredResponseGroupRow struct {

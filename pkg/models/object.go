@@ -63,6 +63,7 @@ type Object struct {
 	TestControl                int64  // Контроль тесту
 	TestTime                   int64  // Час тесту (період)
 	Phones1                    string // Телефон на об'єкті
+	Description1               string // Опис об'єкта / джерела
 	Notes1                     string // Додаткова інформація
 	Location1                  string // Розташування
 	LaunchDate                 string // Дата запуску (OBJECTS_INFO.RESERVTEXT)

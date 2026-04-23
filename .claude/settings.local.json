@@ -6,7 +6,9 @@
       "Bash(powershell -Command ' *)",
       "Bash(Select-Object -First 100)",
       "Bash(go vet *)",
-      "Bash(go test *)"
+      "Bash(go test *)",
+      "Bash(go clean *)",
+      "Bash(git stash *)"
     ]
   }
 }

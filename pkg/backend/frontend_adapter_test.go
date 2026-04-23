@@ -404,6 +404,39 @@ func TestFrontendAdapterListObjectsNormalizesStateFields(t *testing.T) {
 	}
 }
 
+func TestFrontendAdapterListObjectsPrefersExplicitStateFields(t *testing.T) {
+	adapter := NewFrontendAdapter(&frontendTestDataProvider{
+		objects: []models.Object{
+			{
+				ID:               ids.PhoenixObjectIDNamespaceStart + 5,
+				Name:             "Phoenix",
+				Status:           models.StatusNormal,
+				GuardStatus:      models.GuardStatusDisarmed,
+				ConnectionStatus: models.ConnectionStatusOffline,
+				MonitoringStatus: models.MonitoringStatusDebug,
+			},
+		},
+	})
+
+	objects, err := adapter.ListObjects(context.Background())
+	if err != nil {
+		t.Fatalf("ListObjects() error = %v", err)
+	}
+	if len(objects) != 1 {
+		t.Fatalf("len(ListObjects()) = %d, want 1", len(objects))
+	}
+	got := objects[0]
+	if got.GuardStatus != contracts.FrontendGuardStatusDisarmed {
+		t.Fatalf("GuardStatus = %q, want %q", got.GuardStatus, contracts.FrontendGuardStatusDisarmed)
+	}
+	if got.ConnectionStatus != contracts.FrontendConnectionStatusOffline {
+		t.Fatalf("ConnectionStatus = %q, want %q", got.ConnectionStatus, contracts.FrontendConnectionStatusOffline)
+	}
+	if got.MonitoringStatus != contracts.FrontendMonitoringStatusDebug {
+		t.Fatalf("MonitoringStatus = %q, want %q", got.MonitoringStatus, contracts.FrontendMonitoringStatusDebug)
+	}
+}
+
 func TestFrontendAdapterListEventsAndAlarmsNormalizesVisualSeverity(t *testing.T) {
 	adapter := NewFrontendAdapter(&frontendTestDataProvider{
 		events: []models.Event{
@@ -489,8 +522,15 @@ func TestFrontendAdapterGetObjectDetailsIncludesPreferredResponseGroup(t *testin
 				ID:                         10,
 				Name:                       "Об'єкт",
 				DisplayNumber:              "10",
+				Description1:               "Опис картки",
 				PreferredResponseGroupID:   "1",
 				PreferredResponseGroupName: "Захід-Холдинг",
+			},
+		},
+		objectEventsByID: map[string][]models.Event{
+			"10": {
+				{ID: 1, ObjectID: 10, Type: models.EventDisarm, Time: time.Unix(1_700_000_000, 0)},
+				{ID: 2, ObjectID: 10, Type: models.EventArm, Time: time.Unix(1_700_000_100, 0)},
 			},
 		},
 	})
@@ -502,8 +542,17 @@ func TestFrontendAdapterGetObjectDetailsIncludesPreferredResponseGroup(t *testin
 	if details.PreferredResponseGroupID != "1" {
 		t.Fatalf("PreferredResponseGroupID = %q, want 1", details.PreferredResponseGroupID)
 	}
+	if details.Description != "Опис картки" {
+		t.Fatalf("Description = %q, want %q", details.Description, "Опис картки")
+	}
 	if details.PreferredResponseGroupName != "Захід-Холдинг" {
 		t.Fatalf("PreferredResponseGroupName = %q, want Захід-Холдинг", details.PreferredResponseGroupName)
+	}
+	if len(details.Events) != 2 {
+		t.Fatalf("Events len = %d, want 2", len(details.Events))
+	}
+	if details.Events[0].TypeCode != string(models.EventArm) {
+		t.Fatalf("Events[0].TypeCode = %q, want %q", details.Events[0].TypeCode, models.EventArm)
 	}
 }
 

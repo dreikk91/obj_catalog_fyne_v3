@@ -5,11 +5,19 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func assertCASLPayloadShape(t *testing.T, got map[string]any, want map[string]any) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("payload = %#v, want %#v", got, want)
+	}
+}
 
 func TestCASLProvider_ServiceEndpoints(t *testing.T) {
 	var loginCalls int
@@ -97,6 +105,91 @@ func TestCASLProvider_ServiceEndpoints(t *testing.T) {
 	if subscribeCalls != 1 {
 		t.Fatalf("expected 1 subscribe call, got %d", subscribeCalls)
 	}
+}
+
+func TestCASLProvider_CommandPayloadsMatchOriginalWebClient(t *testing.T) {
+	t.Parallel()
+
+	type capturedRequest struct {
+		path    string
+		method  string
+		payload map[string]any
+	}
+
+	var captured []capturedRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != caslCommandPath {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		captured = append(captured, capturedRequest{
+			path:    r.URL.Path,
+			method:  r.Method,
+			payload: payload,
+		})
+
+		cmdType := strings.TrimSpace(asString(payload["type"]))
+		w.Header().Set("Content-Type", "application/json")
+		switch cmdType {
+		case "read_grd_object", "read_device":
+			_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+		case "read_device_state":
+			_, _ = w.Write([]byte(`{"status":"ok","state":{"power":-1,"accum":-1,"door":-1,"online":0,"lastPingDate":0,"lines":{},"groups":{},"adapters":{}}}`))
+		default:
+			t.Fatalf("unexpected command type: %s", cmdType)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCASLCloudProvider(server.URL, "token-web", 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	if _, err := provider.ReadGuardObjects(ctx, 0, 100000); err != nil {
+		t.Fatalf("ReadGuardObjects error: %v", err)
+	}
+	if _, err := provider.ReadDevices(ctx, 0, 100000); err != nil {
+		t.Fatalf("ReadDevices error: %v", err)
+	}
+	if _, err := provider.ReadDeviceStateByID(ctx, "23"); err != nil {
+		t.Fatalf("ReadDeviceStateByID error: %v", err)
+	}
+
+	if len(captured) != 3 {
+		t.Fatalf("captured requests = %d, want 3", len(captured))
+	}
+
+	for _, item := range captured {
+		if item.path != caslCommandPath {
+			t.Fatalf("path = %q, want %q", item.path, caslCommandPath)
+		}
+		if item.method != http.MethodPost {
+			t.Fatalf("method = %q, want %q", item.method, http.MethodPost)
+		}
+	}
+
+	assertCASLPayloadShape(t, captured[0].payload, map[string]any{
+		"type":  "read_grd_object",
+		"skip":  float64(0),
+		"limit": float64(100000),
+		"token": "token-web",
+	})
+	assertCASLPayloadShape(t, captured[1].payload, map[string]any{
+		"type":  "read_device",
+		"skip":  float64(0),
+		"limit": float64(100000),
+		"token": "token-web",
+	})
+	assertCASLPayloadShape(t, captured[2].payload, map[string]any{
+		"type":      "read_device_state",
+		"device_id": "23",
+		"token":     "token-web",
+	})
 }
 
 func TestCASLProvider_CommandWrappers(t *testing.T) {

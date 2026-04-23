@@ -66,6 +66,7 @@ func TestToObjectDetails(t *testing.T) {
 			MonitoringStatus: contracts.FrontendMonitoringStatusActive,
 		},
 		ExternalSignal:             "GPRS",
+		Description:                "Опис об'єкта",
 		PreferredResponseGroupID:   "1",
 		PreferredResponseGroupName: "Захід-Холдинг",
 		Zones: []contracts.FrontendZone{
@@ -93,6 +94,9 @@ func TestToObjectDetails(t *testing.T) {
 	}
 	if len(got.Events) != 1 || got.Events[0].VisualSeverity != VisualSeverityWarning {
 		t.Fatalf("events = %+v, want one warning event", got.Events)
+	}
+	if got.Description != "Опис об'єкта" {
+		t.Fatalf("description = %q, want %q", got.Description, "Опис об'єкта")
 	}
 	if got.PreferredResponseGroupID != "1" || got.PreferredResponseGroupName != "Захід-Холдинг" {
 		t.Fatalf("preferred response group = %q/%q, want 1/Захід-Холдинг", got.PreferredResponseGroupID, got.PreferredResponseGroupName)

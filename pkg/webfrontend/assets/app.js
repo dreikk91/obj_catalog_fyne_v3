@@ -261,15 +261,18 @@ function renderObjectDetails() {
 
 function renderObjectInfo(details) {
   const summary = details.Summary || {};
+  const guardStatusText = guardStatusCaption(summary.GuardStatus);
+  const connectionStatusText = connectionStatusCaption(summary.ConnectionStatus);
+  const monitoringStatusText = monitoringStatusCaption(summary.MonitoringStatus);
   const groups = [
     {
       title: "Загальні відомості",
       items: [
         ["Номер об'єкта", summary.DisplayNumber || summary.ID],
         ["Статус", summary.StatusText || "—"],
-        ["Охорона", summary.GuardStatus || "—"],
-        ["Зв'язок", summary.ConnectionStatus || "—"],
-        ["Моніторинг", summary.MonitoringStatus || "—"],
+        ["Охорона", guardStatusText],
+        ["Зв'язок", connectionStatusText],
+        ["Моніторинг", monitoringStatusText],
         ["Тип пристрою", summary.DeviceType || "—"],
         ["Пульт / ППК", summary.PanelMark || "—"],
         ["Канал", details.ChannelCode || "—"],
@@ -496,6 +499,41 @@ function activateMainTab(tabName) {
   Object.entries(elements.mainPanels).forEach(([name, panel]) => {
     panel.classList.toggle("active", name === tabName);
   });
+}
+
+function guardStatusCaption(status) {
+  switch (String(status || "").toLowerCase()) {
+    case "guarded":
+      return "Під охороною";
+    case "disarmed":
+      return "Без охорони";
+    default:
+      return "—";
+  }
+}
+
+function connectionStatusCaption(status) {
+  switch (String(status || "").toLowerCase()) {
+    case "online":
+      return "На зв'язку";
+    case "offline":
+      return "Немає зв'язку";
+    default:
+      return "—";
+  }
+}
+
+function monitoringStatusCaption(status) {
+  switch (String(status || "").toLowerCase()) {
+    case "active":
+      return "Активний";
+    case "blocked":
+      return "Заблокований";
+    case "debug":
+      return "Стенди";
+    default:
+      return "—";
+  }
 }
 
 function activateObjectTab(tabName) {

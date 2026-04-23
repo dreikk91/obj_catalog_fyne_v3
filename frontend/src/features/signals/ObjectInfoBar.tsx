@@ -1,40 +1,70 @@
+import type { FrontendObjectDetails } from '../../shared/api/types'
 import type { JournalRow, ObjectRow } from '../operator/types'
+import {
+  resolveAuxiliaryLine,
+  resolveCity,
+  resolveContactNames,
+  resolveGuardPresentation,
+  resolvePanelLine,
+  resolvePanelSummary,
+  resolveReactionLine,
+  resolveSecondaryAddressLine,
+} from './objectPresentation'
 
 type ObjectInfoBarProps = {
   selectedSignalRow: JournalRow | null
   selectedObjectRow: ObjectRow | null
+  objectDetails: FrontendObjectDetails | null
 }
 
-export function ObjectInfoBar({ selectedSignalRow, selectedObjectRow }: ObjectInfoBarProps) {
+export function ObjectInfoBar({ selectedSignalRow, selectedObjectRow, objectDetails }: ObjectInfoBarProps) {
+  const addressText = objectDetails?.summary.address || selectedObjectRow?.address || selectedSignalRow?.details || '—'
+  const cityText = resolveCity(objectDetails) || '—'
+  const panelSummaryText = resolvePanelSummary(objectDetails) || '—'
+  const panelLineText = resolvePanelLine(objectDetails) || '—'
+  const contactNames = resolveContactNames(objectDetails)
+  const firstContactText = contactNames[0] || '—'
+  const secondContactText = contactNames[1] || '—'
+  const thirdContactText = contactNames[2] || '—'
+  const auxiliaryLineText = resolveAuxiliaryLine(objectDetails) || '—'
+  const reactionLineText = resolveReactionLine(objectDetails) || selectedSignalRow?.group || '—'
+  const secondaryAddressLineText = resolveSecondaryAddressLine(objectDetails) || '—'
+  const guardPresentation = resolveGuardPresentation(objectDetails)
+  const objectNumberText = selectedSignalRow?.objectNumber ?? selectedObjectRow?.number ?? '—'
+  const passText = selectedSignalRow?.code || objectDetails?.summary.contractNumber || selectedObjectRow?.contract || '—'
+  const objectNameText = selectedObjectRow?.name ?? objectDetails?.summary.name ?? '—'
+
   return (
     <div className="obj-info-bar">
       <div style={{ display: 'flex', gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <div className="oib-grid">
-            <InfoInput icon="card" value={selectedSignalRow?.objectNumber ?? '—'} />
-            <InfoInput icon="lock" value={selectedSignalRow?.code ?? '—'} />
-            <InfoInput icon="map" value={selectedObjectRow?.address ?? selectedSignalRow?.details ?? '—'} />
-            <InfoInput icon="alarm" value={selectedSignalRow?.typeText ?? '—'} />
-
-            <InfoInput icon="user" value={selectedSignalRow?.objectName ?? '—'} />
-            <InfoInput icon="group" value={selectedObjectRow?.group ?? '—'} />
-            <InfoInput icon="group" value={selectedObjectRow?.phone ?? '—'} />
-            <InfoInput icon="mobile" value={selectedObjectRow?.contract ?? '—'} />
+          <div className="oib-grid oib-grid--top">
+            <InfoInput icon="card" value={objectNumberText} />
+            <InfoInput icon="lock" value={passText} />
+            <InfoInput icon="map" value={cityText} />
+            <InfoInput icon="alarm" value={panelSummaryText} />
+            <InfoInput icon="user" value={firstContactText} />
+            <InfoInput icon="user" value={secondContactText} />
+            <InfoInput icon="user" value={thirdContactText} />
+            <InfoInput icon="group" value={auxiliaryLineText} />
           </div>
-          <div className="oib-bottom">
-            <InfoInput icon="doc" value={selectedObjectRow?.name ?? '—'} />
-            <InfoInput icon="key" value={selectedObjectRow?.lastTestAt ?? '—'} />
-            <InfoInput icon="panel" value={selectedObjectRow?.note ?? '—'} />
-            <InfoStatus value={selectedObjectRow?.statusLabel ?? 'НЕВІДОМО'} />
+          <div className="oib-bottom oib-bottom--stacked">
+            <InfoInput icon="doc" value={objectNameText} emphasis="strong" />
+            <InfoInput icon="panel" value={panelLineText} />
+            <InfoInput icon="map" value={addressText} emphasis="strong" />
+            <InfoInput icon="group" value={reactionLineText} />
+            <InfoInput icon="mobile" value={secondaryAddressLineText} />
+            <InfoStatus state={guardPresentation.state} value={guardPresentation.text} />
           </div>
         </div>
         <div className="oib-right" style={{ width: 220, justifyContent: 'center' }}>
           <div className="oib-right-row">
-            <input className="oib-right-inp" value="Тип реагув." readOnly />
-            <input className="oib-right-inp" value={selectedSignalRow?.group ?? '—'} readOnly />
+            <input className="oib-right-inp" value={objectDetails?.summary.panelMark || '—'} readOnly />
+            <input className="oib-right-inp" value={objectDetails?.summary.deviceType || '—'} readOnly />
           </div>
           <div className="oib-right-row">
-            <input className="oib-right-inp" value={selectedSignalRow?.zone ?? '—'} readOnly />
+            <input className="oib-right-inp" value={objectDetails?.summary.sim1 || 'НЕМАЄ'} readOnly />
+            <input className="oib-right-inp" value={objectDetails?.summary.sim2 || 'НЕМАЄ'} readOnly />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
             <span className="workreg-lbl">Режим роботи</span>
@@ -50,24 +80,42 @@ export function ObjectInfoBar({ selectedSignalRow, selectedObjectRow }: ObjectIn
   )
 }
 
-function InfoInput({ icon, value }: { icon: 'card' | 'lock' | 'map' | 'alarm' | 'user' | 'group' | 'mobile' | 'doc' | 'key' | 'panel'; value: string }) {
+function InfoInput({
+  icon,
+  value,
+  emphasis,
+}: {
+  icon: 'card' | 'lock' | 'map' | 'alarm' | 'user' | 'group' | 'mobile' | 'doc' | 'key' | 'panel'
+  value: string
+  emphasis?: 'normal' | 'strong'
+}) {
+  const className = emphasis === 'strong' ? 'oib-inp oib-inp--strong' : 'oib-inp'
+
   return (
     <div className="oib-row">
       <div className="oib-icon">
         <Icon kind={icon} />
       </div>
-      <input className="oib-inp" value={value} readOnly />
+      <input className={className} value={value} readOnly />
     </div>
   )
 }
 
-function InfoStatus({ value }: { value: string }) {
+function InfoStatus({ state, value }: { state: 'guarded' | 'disarmed' | 'unknown'; value: string }) {
+  const icon = state === 'guarded' ? 'lock' : state === 'disarmed' ? 'unlock' : 'help'
+  const className =
+    state === 'guarded'
+      ? 'status-chip status-chip--guarded'
+      : state === 'disarmed'
+        ? 'status-chip status-chip--disarmed'
+        : 'status-chip status-chip--unknown'
+
   return (
     <div className="oib-row">
       <div className="oib-icon">
-        <Icon kind="phone" />
+        <Icon kind={icon} />
       </div>
-      <div className="status-unknown">{value}</div>
+      <div className={className}>{value}</div>
     </div>
   )
 }
@@ -89,6 +137,13 @@ function Icon({ kind }: { kind: string }) {
         <svg {...common}>
           <rect x="3" y="11" width="18" height="11" rx="2" />
           <path d="M7 11V7a5 5 0 0110 0v4" />
+        </svg>
+      )
+    case 'unlock':
+      return (
+        <svg {...common}>
+          <rect x="3" y="11" width="18" height="11" rx="2" />
+          <path d="M7 11V8a5 5 0 019-3" />
         </svg>
       )
     case 'map':
@@ -144,6 +199,14 @@ function Icon({ kind }: { kind: string }) {
         <svg {...common}>
           <rect x="2" y="7" width="20" height="14" rx="2" />
           <path d="M16 3h-8v4h8V3z" />
+        </svg>
+      )
+    case 'help':
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.5 9a2.5 2.5 0 015 0c0 2-2.5 2.25-2.5 4" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
       )
     default:

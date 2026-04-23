@@ -479,6 +479,7 @@ export namespace v1 {
 	    TestControl: boolean;
 	    TestIntervalMin: number;
 	    Phones: string;
+	    Description: string;
 	    Notes: string;
 	    Location: string;
 	    LaunchDate: string;
@@ -510,6 +511,7 @@ export namespace v1 {
 	        this.TestControl = source["TestControl"];
 	        this.TestIntervalMin = source["TestIntervalMin"];
 	        this.Phones = source["Phones"];
+	        this.Description = source["Description"];
 	        this.Notes = source["Notes"];
 	        this.Location = source["Location"];
 	        this.LaunchDate = source["LaunchDate"];

@@ -146,6 +146,7 @@ export type FrontendAlarmPickRequest = {
 export type FrontendObjectDetails = {
   summary: FrontendObjectSummary
   phones: string
+  description: string
   notes: string
   location: string
   launchDate: string

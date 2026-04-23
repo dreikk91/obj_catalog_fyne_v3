@@ -397,6 +397,58 @@ func TestPhoenixBuildObjects_TestPanelMarkedStand(t *testing.T) {
 	}
 }
 
+func TestPhoenixBuildObjects_DisabledObjectKeepsDisarmedGuardState(t *testing.T) {
+	provider := NewPhoenixDataProvider(nil, "")
+	rows := []phoenixObjectGroupRow{
+		{
+			PanelID:       "L00032",
+			GroupNo:       1,
+			GroupName:     sql.NullString{String: "Офіс", Valid: true},
+			IsOpen:        sql.NullBool{Bool: true, Valid: true},
+			GroupDisabled: sql.NullBool{Bool: true, Valid: true},
+		},
+	}
+
+	objects := provider.buildObjects(rows)
+	if len(objects) != 1 {
+		t.Fatalf("buildObjects() returned %d objects, want 1", len(objects))
+	}
+
+	obj := objects[0]
+	if obj.GuardStatus != models.GuardStatusDisarmed {
+		t.Fatalf("GuardStatus = %q, want %q", obj.GuardStatus, models.GuardStatusDisarmed)
+	}
+	if obj.MonitoringStatus != models.MonitoringStatusBlocked {
+		t.Fatalf("MonitoringStatus = %q, want %q", obj.MonitoringStatus, models.MonitoringStatusBlocked)
+	}
+}
+
+func TestPhoenixBuildObjects_EngineerModeMapsToDebugMonitoring(t *testing.T) {
+	provider := NewPhoenixDataProvider(nil, "")
+	rows := []phoenixObjectGroupRow{
+		{
+			PanelID:     "L00033",
+			GroupNo:     1,
+			GroupName:   sql.NullString{String: "Офіс", Valid: true},
+			IsOpen:      sql.NullBool{Bool: false, Valid: true},
+			HasEngineer: sql.NullBool{Bool: true, Valid: true},
+		},
+	}
+
+	objects := provider.buildObjects(rows)
+	if len(objects) != 1 {
+		t.Fatalf("buildObjects() returned %d objects, want 1", len(objects))
+	}
+
+	obj := objects[0]
+	if obj.GuardStatus != models.GuardStatusGuarded {
+		t.Fatalf("GuardStatus = %q, want %q", obj.GuardStatus, models.GuardStatusGuarded)
+	}
+	if obj.MonitoringStatus != models.MonitoringStatusDebug {
+		t.Fatalf("MonitoringStatus = %q, want %q", obj.MonitoringStatus, models.MonitoringStatusDebug)
+	}
+}
+
 func TestPhoenixBuildPhoenixAlarms_ReturnsOnlyActiveAlarmRows(t *testing.T) {
 	provider := NewPhoenixDataProvider(nil, "")
 	rows := []phoenixObjectGroupRow{

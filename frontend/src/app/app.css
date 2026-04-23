@@ -76,12 +76,17 @@ html,body{height:100%;overflow:hidden;font-family:'Exo 2',sans-serif;background:
 .oib-icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center;color:var(--tx2);flex-shrink:0}
 .oib-icon svg{width:14px;height:14px}
 .oib-inp{flex:1;height:22px;background:var(--bg);border:1px solid var(--bd2);border-radius:2px;color:var(--tx);font-family:'Exo 2',sans-serif;font-size:12px;padding:0 6px;outline:none}
+.oib-inp--strong{font-weight:700}
 .oib-inp:focus{border-color:var(--ac)}
 .oib-right{display:flex;flex-direction:column;gap:6px;padding-left:10px;border-left:1px solid var(--bd)}
 .oib-right-row{display:flex;gap:4px}
 .oib-right-inp{width:80px;height:22px;background:var(--bg);border:1px solid var(--bd2);border-radius:2px;color:var(--tx);font-family:'Exo 2',sans-serif;font-size:12px;padding:0 6px;outline:none}
 .oib-bottom{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-top:4px;padding-top:4px;border-top:1px solid var(--bd)}
-.status-unknown{background:var(--ac);color:#fff;font-weight:700;font-size:12px;padding:2px 14px;border-radius:2px;text-align:center;letter-spacing:.5px}
+.oib-bottom--stacked{grid-template-columns:minmax(0,1fr) minmax(220px,0.85fr)}
+.status-chip{flex:1;height:22px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px;padding:0 10px;border-radius:2px;letter-spacing:.3px}
+.status-chip--guarded{background:var(--ac2)}
+.status-chip--disarmed{background:var(--ac)}
+.status-chip--unknown{background:#118b82}
 .workreg-lbl{font-size:11px;color:var(--tx2);margin-right:4px}
 .redirect-btn{background:var(--bg);border:1px solid var(--bd2);border-radius:2px;color:var(--tx);font-family:'Exo 2',sans-serif;font-size:11px;padding:3px 10px;cursor:pointer;white-space:nowrap;transition:background .12s}
 .redirect-btn:hover{background:var(--bg4)}
@@ -393,4 +398,3 @@ th:hover>.col-resizer::after{opacity:.55}
 
 
 /* Clean semantic vars ensure correct theme transition without these overrides */
-

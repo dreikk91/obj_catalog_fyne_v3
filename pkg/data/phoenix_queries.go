@@ -18,7 +18,12 @@ SELECT
 	T.StateEvent AS state_event,
 	P.CreateDate AS create_date,
 	P.DateLastChange AS date_last_change,
+	PanelMeta.has_zstatus_device AS has_zstatus_device,
+	PanelMeta.is_prohibited AS is_prohibited,
+	PanelEngineer.has_engineer AS has_engineer,
 	CAST(NULL AS nvarchar(255)) AS engineer_name,
+	CAST(NULL AS nvarchar(max)) AS company_memo,
+	CAST(NULL AS nvarchar(max)) AS additional_technical_information,
 	PrimarySIM.sim_number AS sim1_number,
 	SecondarySIM.sim_number AS sim2_number
 FROM Groups G WITH (NOLOCK)
@@ -29,6 +34,28 @@ LEFT JOIN (
 	GROUP BY Panel_id, Group_
 ) T ON T.Panel_id = G.Panel_id AND T.Group_ = G.Group_
 INNER JOIN vwRealPanel P WITH (NOLOCK) ON P.Panel_id = G.Panel_id
+OUTER APPLY (
+	SELECT TOP (1)
+		CASE WHEN ISNULL(M.IsZStatusDevice, 0) = 1 AND ISNULL(M.NotTested, 0) = 0 THEN 1 ELSE 0 END AS has_zstatus_device,
+		CASE
+			WHEN COALESCE(CASE
+				WHEN MRT.DeviceId IN (79,107,120,128,132,134,137,138,149,151,166,177,179,191,197,199) THEN G.IsProhibited
+				ELSE M.IsProhibited
+			END, 0) = 1 THEN 1
+			ELSE 0
+		END AS is_prohibited
+	FROM Mphone M WITH (NOLOCK)
+	LEFT JOIN MphoneRadioType MRT WITH (NOLOCK) ON MRT.RadioType_id = M.RadioType
+	WHERE M.Panel_id = G.Panel_id
+	ORDER BY
+		CASE WHEN ISNULL(M.IsZStatusDevice, 0) = 1 AND ISNULL(M.NotTested, 0) = 0 THEN 0 ELSE 1 END,
+		M.Mphone_id
+) AS PanelMeta
+OUTER APPLY (
+	SELECT TOP (1) 1 AS has_engineer
+	FROM Engineers E WITH (NOLOCK)
+	WHERE E.Work_panel_id = G.Panel_id
+) AS PanelEngineer
 OUTER APPLY (
 	SELECT TOP (1)
 		LTRIM(RTRIM(ISNULL(RT.PhoneNo, ''))) AS phone_number
@@ -98,7 +125,12 @@ SELECT
 	T.StateEvent AS state_event,
 	P.CreateDate AS create_date,
 	P.DateLastChange AS date_last_change,
-	E.engineer_name AS engineer_name
+	PanelMeta.has_zstatus_device AS has_zstatus_device,
+	PanelMeta.is_prohibited AS is_prohibited,
+	CASE WHEN E.engineer_name IS NULL THEN 0 ELSE 1 END AS has_engineer,
+	E.engineer_name AS engineer_name,
+	C.Memo AS company_memo,
+	P.AdditionalTechnicalInformation AS additional_technical_information
 FROM Groups G WITH (NOLOCK)
 LEFT JOIN Company C WITH (NOLOCK) ON C.ID = G.CompanyID
 LEFT JOIN CompanyType CT WITH (NOLOCK) ON CT.ID = C.TypeID
@@ -109,6 +141,23 @@ LEFT JOIN (
 ) T ON T.Panel_id = G.Panel_id AND T.Group_ = G.Group_
 INNER JOIN vwRealPanel P WITH (NOLOCK) ON P.Panel_id = G.Panel_id
 LEFT JOIN Engineers E WITH (NOLOCK) ON E.Work_Panel_id = G.Panel_id
+OUTER APPLY (
+	SELECT TOP (1)
+		CASE WHEN ISNULL(M.IsZStatusDevice, 0) = 1 AND ISNULL(M.NotTested, 0) = 0 THEN 1 ELSE 0 END AS has_zstatus_device,
+		CASE
+			WHEN COALESCE(CASE
+				WHEN MRT.DeviceId IN (79,107,120,128,132,134,137,138,149,151,166,177,179,191,197,199) THEN G.IsProhibited
+				ELSE M.IsProhibited
+			END, 0) = 1 THEN 1
+			ELSE 0
+		END AS is_prohibited
+	FROM Mphone M WITH (NOLOCK)
+	LEFT JOIN MphoneRadioType MRT WITH (NOLOCK) ON MRT.RadioType_id = M.RadioType
+	WHERE M.Panel_id = G.Panel_id
+	ORDER BY
+		CASE WHEN ISNULL(M.IsZStatusDevice, 0) = 1 AND ISNULL(M.NotTested, 0) = 0 THEN 0 ELSE 1 END,
+		M.Mphone_id
+) AS PanelMeta
 OUTER APPLY (
 	SELECT TOP (1)
 		LTRIM(RTRIM(ISNULL(RT.PhoneNo, ''))) AS phone_number
@@ -243,6 +292,126 @@ SELECT
 	MAX(CASE WHEN sim_slot = 1 AND rn = 1 THEN sim_number END) AS sim2_number
 FROM SimBase
 GROUP BY panel_id
+`
+
+const phoenixOfflinePanelsQuery = `
+SELECT DISTINCT panel_id
+FROM (
+	SELECT
+		MDC.Panel_id AS panel_id
+	FROM vwMPhoneDeviceChannels MDC WITH (NOLOCK)
+	JOIN (
+		SELECT
+			Panel_id,
+			MIN(Group_) AS Group_,
+			SUM(CONVERT(int, ISNULL(IsOpen, 0))) AS IsOpen
+		FROM Groups G WITH (NOLOCK)
+		GROUP BY Panel_id
+	) G ON G.Panel_id = MDC.Panel_id
+	JOIN MPhone M WITH (NOLOCK) ON M.Mphone_id = MDC.mphone_id
+	JOIN vwRealPanel RP WITH (NOLOCK) ON RP.Panel_id = MDC.Panel_id
+	LEFT JOIN Sim S WITH (NOLOCK) ON S.OnBoardDevice_ID = MDC.OnBoardDevice_ID
+	LEFT JOIN (
+		SELECT DISTINCT
+			Mphone_id,
+			OnBoardDevice_ID,
+			OnBoardDeviceTypeEnum,
+			ChannelType_id AS ActiveChannel,
+			TestTimeout AS TestTimeoutActiveChannel,
+			TestTimeoutReserved AS TestTimeoutReservedActiveChannel
+		FROM vwMPhoneDeviceChannels WITH (NOLOCK)
+		WHERE IsActive = 1
+	) AC ON AC.OnBoardDevice_ID = MDC.OnBoardDevice_ID
+	WHERE
+		ISNULL(MDC.IsZStatus, 0) = 0
+		AND RP.Disabled = 0
+		AND (RP.Movable_Object = 0 OR G.IsOpen = 0)
+		AND MDC.LastTest IS NOT NULL
+		AND MDC.TestTimeout IS NOT NULL
+		AND M.NotTested = 0
+		AND (
+			(MDC.OnBoardDeviceTypeEnum IN (0,1) AND S.IsCurrentSim = 1 AND MDC.IsActive = 1 AND MDC.LastTest + CONVERT(varchar, MDC.TestTimeout, 108) + '0:2:0' < GETDATE())
+			OR (MDC.OnBoardDeviceTypeEnum IN (0,1) AND S.IsCurrentSim = 0 AND MDC.IsActive = 1 AND MDC.LastTest + CONVERT(varchar, COALESCE(MDC.TestTimeoutReserved, MDC.TestTimeout), 108) + '0:2:0' < GETDATE())
+			OR (MDC.OnBoardDeviceTypeEnum IN (2,3,4) AND MDC.LastTest + CONVERT(varchar, MDC.TestTimeout, 108) + '0:2:0' < GETDATE())
+			OR (MDC.OnBoardDeviceTypeEnum IN (0,1) AND S.IsCurrentSim = 1 AND MDC.IsActive = 0 AND MDC.ChannelType_id IN (1, 5) AND AC.ActiveChannel IN (2, 6) AND MDC.LastTest + CONVERT(varchar, AC.TestTimeoutActiveChannel, 108) + '0:2:0' + '0:3:0' < GETDATE())
+			OR (MDC.OnBoardDeviceTypeEnum IN (0,1) AND S.IsCurrentSim = 1 AND MDC.IsActive = 0 AND MDC.ChannelType_id IN (2, 6) AND AC.ActiveChannel IN (1, 5) AND MDC.LastTest + CONVERT(varchar, MDC.TestTimeout, 108) + '0:2:0' < GETDATE())
+			OR (MDC.OnBoardDeviceTypeEnum IN (0,1) AND S.IsCurrentSim = 0 AND MDC.IsActive = 0 AND MDC.ChannelType_id IN (1, 5) AND AC.ActiveChannel IN (2, 6) AND MDC.LastTest + CONVERT(varchar, COALESCE(AC.TestTimeoutReservedActiveChannel, AC.TestTimeoutActiveChannel), 108) + '0:2:0' + '0:3:0' < GETDATE())
+			OR (MDC.OnBoardDeviceTypeEnum IN (0,1) AND S.IsCurrentSim = 0 AND MDC.IsActive = 0 AND MDC.ChannelType_id IN (2, 6) AND AC.ActiveChannel IN (1, 5) AND MDC.LastTest + CONVERT(varchar, COALESCE(MDC.TestTimeoutReserved, MDC.TestTimeout), 108) + '0:2:0' < GETDATE())
+			OR (MDC.OnBoardDeviceTypeEnum IN (0,1) AND S.IsCurrentSim = 0 AND MDC.IsActive = 0 AND AC.ActiveChannel IS NULL AND MDC.LastTest + CONVERT(varchar, COALESCE(MDC.TestTimeoutReserved, MDC.TestTimeout), 108) + '0:2:0' + '0:3:0' < GETDATE())
+		)
+	UNION
+	SELECT
+		MDC.Panel_id AS panel_id
+	FROM vwMPhoneDeviceChannels MDC WITH (NOLOCK)
+	JOIN (
+		SELECT
+			Panel_id,
+			MIN(Group_) AS Group_,
+			SUM(CONVERT(int, ISNULL(IsOpen, 0))) AS IsOpen
+		FROM Groups G WITH (NOLOCK)
+		GROUP BY Panel_id
+	) G ON G.Panel_id = MDC.Panel_id
+	JOIN MPhone M WITH (NOLOCK) ON M.Mphone_id = MDC.mphone_id
+	JOIN vwRealPanel RP WITH (NOLOCK) ON RP.Panel_id = MDC.Panel_id
+	LEFT JOIN Sim S WITH (NOLOCK) ON S.OnBoardDevice_ID = MDC.OnBoardDevice_ID
+	LEFT JOIN (
+		SELECT DISTINCT
+			BD.Mphone_id,
+			MIN(C.TestTimeout) AS TestTimeoutCurrentSimChannel,
+			MAX(C.LastTest) AS LastTestCurrentSimChannel
+		FROM OnBoardDevice BD WITH (NOLOCK)
+		JOIN Channel C WITH (NOLOCK) ON C.OnBoardDevice_ID = BD.OnBoardDevice_ID
+		JOIN Sim S WITH (NOLOCK) ON S.OnBoardDevice_ID = BD.OnBoardDevice_ID
+		WHERE S.IsCurrentSim = 1
+			AND C.IsActive = 1
+		GROUP BY BD.MPhone_ID
+	) CS ON CS.MPhone_ID = MDC.Mphone_id
+	LEFT JOIN (
+		SELECT DISTINCT
+			BD.MPhone_ID,
+			MIN(CONVERT(int, C.IsZStatus)) AS IsZStatusCurrentSim
+		FROM OnBoardDevice BD WITH (NOLOCK)
+		JOIN Channel C WITH (NOLOCK) ON C.OnBoardDevice_ID = BD.OnBoardDevice_ID
+		JOIN Sim S WITH (NOLOCK) ON S.OnBoardDevice_ID = BD.OnBoardDevice_ID
+		WHERE S.IsCurrentSim = 1
+		GROUP BY BD.MPhone_ID
+	) ZC ON ZC.MPhone_ID = MDC.MPhone_ID
+	WHERE
+		ISNULL(MDC.IsZStatus, 0) = 0
+		AND RP.Disabled = 0
+		AND (RP.Movable_Object = 0 OR G.IsOpen = 0)
+		AND MDC.LastTest IS NOT NULL
+		AND MDC.TestTimeout IS NOT NULL
+		AND M.NotTested = 0
+		AND M.UseAlternativeTesting = 1
+		AND MDC.OnBoardDeviceTypeEnum IN (0,1)
+		AND S.IsCurrentSim = 0
+		AND ISNULL(ZC.IsZStatusCurrentSim, 0) = 1
+		AND ISNULL(CS.LastTestCurrentSimChannel, 0) + CONVERT(varchar, CS.TestTimeoutCurrentSimChannel, 108) + '0:2:0' + '0:3:0' + '0:1:0' < GETDATE()
+	UNION
+	SELECT
+		M.Panel_id AS panel_id
+	FROM MPhone M WITH (NOLOCK)
+	JOIN (
+		SELECT
+			Panel_id,
+			MIN(Group_) AS Group_,
+			SUM(CONVERT(int, ISNULL(IsOpen, 0))) AS IsOpen
+		FROM Groups G WITH (NOLOCK)
+		GROUP BY Panel_id
+	) G ON G.Panel_id = M.Panel_id
+	JOIN vwRealPanel RP WITH (NOLOCK) ON RP.Panel_id = M.Panel_id
+	JOIN MphoneRadioType MRT WITH (NOLOCK) ON MRT.RadioType_id = M.RadioType
+	WHERE
+		ISNULL(M.IsZStatusDevice, 0) = 0
+		AND NOT EXISTS (
+			SELECT TOP (1) Channel_ID
+			FROM vwMPhoneDeviceChannels WITH (NOLOCK)
+			WHERE IsZStatus = 0
+				AND Mphone_id = M.mphone_id
+		)
+		AND M.NotTested = 0
+) offline_panels
 `
 
 const phoenixZonesQuery = `

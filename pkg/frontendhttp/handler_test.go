@@ -181,6 +181,7 @@ func TestHandlerGetObjectDetails(t *testing.T) {
 				DisplayNumber: "4001",
 				Name:          "CASL object",
 			},
+			Description:              "Опис CASL",
 			ExternalSignal:           "GPRS",
 			PreferredResponseGroupID: "1",
 		},
@@ -205,6 +206,9 @@ func TestHandlerGetObjectDetails(t *testing.T) {
 	}
 	if payload.PreferredResponseGroupID != "1" {
 		t.Fatalf("preferred response group = %q, want 1", payload.PreferredResponseGroupID)
+	}
+	if payload.Description != "Опис CASL" {
+		t.Fatalf("description = %q, want %q", payload.Description, "Опис CASL")
 	}
 }
 

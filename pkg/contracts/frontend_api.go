@@ -251,6 +251,7 @@ type FrontendObjectDetails struct {
 	TestControl                bool
 	TestIntervalMin            int64
 	Phones                     string
+	Description                string
 	Notes                      string
 	Location                   string
 	LaunchDate                 string

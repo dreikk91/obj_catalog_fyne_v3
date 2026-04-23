@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { FrontendObjectDetails } from '../../shared/api/types'
 import type { BottomTab, InnerTab } from '../../shared/state/ui-store'
 import type { JournalRow, ObjectRow, UnprocessedAlarmGroup, UnprocessedRowMeta } from '../operator/types'
 import { BottomEventTables } from './BottomEventTables'
@@ -15,6 +16,7 @@ type SignalsTabProps = {
   bottomTab: BottomTab
   selectedSignalRow: JournalRow | null
   selectedObjectRow: ObjectRow | null
+  objectDetails: FrontendObjectDetails | null
   unprocessedAlarmGroups: UnprocessedAlarmGroup[]
   journalArchiveRows: JournalRow[]
   unprocessedFlatRows: JournalRow[]
@@ -102,11 +104,20 @@ export function SignalsTab(props: SignalsTabProps) {
 
   return (
     <div className="ps-layout" ref={layoutRef}>
-      <ObjectInfoBar selectedSignalRow={props.selectedSignalRow} selectedObjectRow={props.selectedObjectRow} />
+      <ObjectInfoBar
+        selectedSignalRow={props.selectedSignalRow}
+        selectedObjectRow={props.selectedObjectRow}
+        objectDetails={props.objectDetails}
+      />
 
       <div className="ps-mid">
         <div className="ps-groups" />
-        <InnerTabs innerTab={props.innerTab} onSelectTab={props.onSelectInnerTab} selectedObjectRow={props.selectedObjectRow} />
+        <InnerTabs
+          innerTab={props.innerTab}
+          onSelectTab={props.onSelectInnerTab}
+          selectedObjectRow={props.selectedObjectRow}
+          objectDetails={props.objectDetails}
+        />
       </div>
 
       <div

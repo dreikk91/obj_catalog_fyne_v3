@@ -266,10 +266,26 @@ func buildWorkAreaConnectionSummary(obj models.Object) string {
 	if obj.ConnectionStatusValue() == models.ConnectionStatusOnline || obj.IsConnOK {
 		return "На зв'язку"
 	}
+	if obj.ConnectionStatus == models.ConnectionStatusUnknown {
+		return "Стан зв'язку невідомий"
+	}
 	return "На зв'язку"
 }
 
 func buildWorkAreaGuardSummary(obj models.Object) string {
+	switch obj.MonitoringStatusValue() {
+	case models.MonitoringStatusBlocked:
+		if ids.IsPhoenixObjectID(obj.ID) {
+			return "Заблоковано"
+		}
+		return "Знято зі спостереження"
+	case models.MonitoringStatusDebug:
+		if ids.IsPhoenixObjectID(obj.ID) {
+			return "Стенди"
+		}
+		return "Режим налагодження"
+	}
+
 	if strings.Contains(strings.ToUpper(strings.TrimSpace(obj.StatusText)), "ЧАСТКОВО") {
 		return "Частково без охорони"
 	}
@@ -296,14 +312,6 @@ func buildWorkAreaGuardSummary(obj models.Object) string {
 	}
 
 	switch {
-	case ids.IsPhoenixObjectID(obj.ID) && obj.MonitoringStatusValue() == models.MonitoringStatusBlocked:
-		return "Заблоковано"
-	case ids.IsPhoenixObjectID(obj.ID) && obj.MonitoringStatusValue() == models.MonitoringStatusDebug:
-		return "Стенди"
-	case obj.MonitoringStatusValue() == models.MonitoringStatusBlocked:
-		return "Знято зі спостереження"
-	case obj.MonitoringStatusValue() == models.MonitoringStatusDebug:
-		return "Режим налагодження"
 	case obj.GuardStatusValue() == models.GuardStatusDisarmed || !obj.IsUnderGuard:
 		if ids.IsPhoenixObjectID(obj.ID) {
 			return "Без охорони"

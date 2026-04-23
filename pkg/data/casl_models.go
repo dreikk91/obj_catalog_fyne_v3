@@ -293,6 +293,7 @@ func (r *caslConnectionRecord) UnmarshalJSON(data []byte) error {
 	type rawConnection struct {
 		GuardedObject    json.RawMessage `json:"guardedObject"`
 		GuardedObjectAlt json.RawMessage `json:"guarded_object"`
+		GrdObject        json.RawMessage `json:"grd_object"`
 		Device           json.RawMessage `json:"device"`
 		Devices          json.RawMessage `json:"devices"`
 	}
@@ -305,6 +306,9 @@ func (r *caslConnectionRecord) UnmarshalJSON(data []byte) error {
 	guardedObjectRaw := raw.GuardedObject
 	if len(guardedObjectRaw) == 0 {
 		guardedObjectRaw = raw.GuardedObjectAlt
+	}
+	if len(guardedObjectRaw) == 0 {
+		guardedObjectRaw = raw.GrdObject
 	}
 	if len(guardedObjectRaw) == 0 {
 		guardedObjectRaw = data

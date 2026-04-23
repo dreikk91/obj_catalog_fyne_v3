@@ -11,9 +11,24 @@ import (
 	"obj_catalog_fyne_v3/pkg/models"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// waitForCASLAlarms polls GetAlarms() until at least minCount alarms are returned or timeout expires.
+// Needed because GetAlarms() now always triggers an async goroutine, so results arrive after a short delay.
+func waitForCASLAlarms(t *testing.T, p *CASLCloudProvider, minCount int, timeout time.Duration) []models.Alarm {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if alarms := p.GetAlarms(); len(alarms) >= minCount {
+			return alarms
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return p.GetAlarms()
+}
 
 func TestNormalizeCASLBaseURL(t *testing.T) {
 	t.Parallel()
@@ -49,6 +64,189 @@ func TestNormalizeCASLBaseURL(t *testing.T) {
 				t.Fatalf("normalizeCASLBaseURL(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNewCASLCloudProvider_DisablesGlobalHTTPTimeout(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://10.32.1.221:50003", "token", 1)
+	if provider == nil || provider.httpClient == nil {
+		t.Fatalf("provider/httpClient must be initialized")
+	}
+	if provider.httpClient.Timeout != 0 {
+		t.Fatalf("httpClient.Timeout = %s, want 0", provider.httpClient.Timeout)
+	}
+}
+
+func TestCASLProvider_LoadObjects_DeduplicatesConcurrentSnapshot(t *testing.T) {
+	t.Parallel()
+
+	var readGrdCalls atomic.Int32
+	release := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != caslCommandPath {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if strings.TrimSpace(asString(payload["type"])) != "read_grd_object" {
+			t.Fatalf("unexpected command: %v", payload["type"])
+		}
+		readGrdCalls.Add(1)
+		<-release
+		_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"1003 Магазин","address":"Львів","device_id":"23","device_number":1003}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCASLCloudProvider(server.URL, "token", 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	type result struct {
+		rows []caslGrdObject
+		err  error
+	}
+	results := make(chan result, 2)
+	for range 2 {
+		go func() {
+			rows, err := provider.loadObjects(ctx)
+			results <- result{rows: rows, err: err}
+		}()
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for readGrdCalls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(release)
+
+	first := <-results
+	second := <-results
+	if first.err != nil || second.err != nil {
+		t.Fatalf("loadObjects errors: %v / %v", first.err, second.err)
+	}
+	if len(first.rows) != 1 || len(second.rows) != 1 {
+		t.Fatalf("unexpected rows len: %d / %d", len(first.rows), len(second.rows))
+	}
+	if readGrdCalls.Load() != 1 {
+		t.Fatalf("read_grd_object calls = %d, want 1", readGrdCalls.Load())
+	}
+}
+
+func TestCASLProvider_LoadObjects_UsesCachedSnapshotUntilInvalidated(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected HTTP request to %s", r.URL.Path)
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCASLCloudProvider(server.URL, "token", 1)
+	provider.mu.Lock()
+	provider.cachedObjects = []caslGrdObject{{ObjID: "24", Name: "Cached Object"}}
+	provider.cachedObjectsAt = time.Now().Add(-24 * time.Hour)
+	provider.objectByInternalID = buildCASLObjectIndex(provider.cachedObjects)
+	provider.mu.Unlock()
+
+	rows, err := provider.loadObjects(context.Background())
+	if err != nil {
+		t.Fatalf("loadObjects error: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Name != "Cached Object" {
+		t.Fatalf("unexpected cached rows: %+v", rows)
+	}
+}
+
+func TestCASLProvider_LoadDevices_DeduplicatesConcurrentSnapshot(t *testing.T) {
+	t.Parallel()
+
+	var readDeviceCalls atomic.Int32
+	release := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != caslCommandPath {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if strings.TrimSpace(asString(payload["type"])) != "read_device" {
+			t.Fatalf("unexpected command: %v", payload["type"])
+		}
+		readDeviceCalls.Add(1)
+		<-release
+		_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"name":"MAKS PRO","type":"TYPE_DEVICE_Ajax"}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCASLCloudProvider(server.URL, "token", 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	type result struct {
+		rows []caslDevice
+		err  error
+	}
+	results := make(chan result, 2)
+	for range 2 {
+		go func() {
+			rows, err := provider.loadDevices(ctx)
+			results <- result{rows: rows, err: err}
+		}()
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for readDeviceCalls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(release)
+
+	first := <-results
+	second := <-results
+	if first.err != nil || second.err != nil {
+		t.Fatalf("loadDevices errors: %v / %v", first.err, second.err)
+	}
+	if len(first.rows) != 1 || len(second.rows) != 1 {
+		t.Fatalf("unexpected rows len: %d / %d", len(first.rows), len(second.rows))
+	}
+	if readDeviceCalls.Load() != 1 {
+		t.Fatalf("read_device calls = %d, want 1", readDeviceCalls.Load())
+	}
+}
+
+func TestCASLProvider_LoadDevices_UsesCachedSnapshotUntilInvalidated(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected HTTP request to %s", r.URL.Path)
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewCASLCloudProvider(server.URL, "token", 1)
+	provider.mu.Lock()
+	provider.deviceByDeviceID = map[string]caslDevice{
+		"23": {DeviceID: "23", ObjID: "24", Number: 1003, Name: "MAKS PRO", Type: "TYPE_DEVICE_Ajax"},
+	}
+	provider.deviceByObjectID = map[string]caslDevice{
+		"24": {DeviceID: "23", ObjID: "24", Number: 1003, Name: "MAKS PRO", Type: "TYPE_DEVICE_Ajax"},
+	}
+	provider.deviceByNumber = map[int64]caslDevice{
+		1003: {DeviceID: "23", ObjID: "24", Number: 1003, Name: "MAKS PRO", Type: "TYPE_DEVICE_Ajax"},
+	}
+	provider.cachedDevicesAt = time.Now().Add(-24 * time.Hour)
+	provider.mu.Unlock()
+
+	rows, err := provider.loadDevices(context.Background())
+	if err != nil {
+		t.Fatalf("loadDevices error: %v", err)
+	}
+	if len(rows) != 1 || rows[0].DeviceID.String() != "23" {
+		t.Fatalf("unexpected cached rows: %+v", rows)
 	}
 }
 
@@ -385,6 +583,16 @@ func TestMapCASLObjectStatusState(t *testing.T) {
 		t.Fatalf("unexpected disarmed state: %+v", disarmed)
 	}
 
+	onlineCommunication := mapCASLObjectStatusState("Стан зв'язку - зв'язок із усіма пристроями в нормі", false)
+	if onlineCommunication.Status != models.StatusNormal || onlineCommunication.IsConnState != 1 {
+		t.Fatalf("communication normal status must stay online: %+v", onlineCommunication)
+	}
+
+	restoredCommunication := mapCASLObjectStatusState("Відновлення зв'язку з ППК", false)
+	if restoredCommunication.Status != models.StatusNormal || restoredCommunication.IsConnState != 1 {
+		t.Fatalf("restored communication status must stay online: %+v", restoredCommunication)
+	}
+
 	blocked := mapCASLObjectStatusState("Включено", true)
 	if blocked.Status != models.StatusNormal || blocked.StatusText != "ЗАБЛОКОВАНО" || blocked.TechAlarmState != 0 {
 		t.Fatalf("unexpected blocked state: %+v", blocked)
@@ -409,6 +617,9 @@ func TestMapCASLGrdObjectToObject_UsesGeoZoneAsPreferredResponseGroup(t *testing
 
 	if obj.PreferredResponseGroupID != "1" {
 		t.Fatalf("PreferredResponseGroupID = %q, want 1", obj.PreferredResponseGroupID)
+	}
+	if obj.Description1 != "Опис" {
+		t.Fatalf("Description1 = %q, want %q", obj.Description1, "Опис")
 	}
 }
 
@@ -2548,6 +2759,73 @@ func TestCASLProvider_FrontendSourceHealth_DegradedOnStalePing(t *testing.T) {
 	}
 }
 
+func TestCASLProvider_FrontendSourceHealth_KeepsAPIOnlineDuringGraceWindow(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1, "user@example.com", "secret")
+	now := time.Now()
+	provider.mu.Lock()
+	provider.lastAPISuccessAt = now.Add(-5 * time.Second)
+	provider.lastAPIFailureAt = now.Add(-2 * time.Second)
+	provider.lastAPIErrorText = "casl request failed: context deadline exceeded"
+	provider.mu.Unlock()
+	provider.realtimeMu.Lock()
+	provider.realtimeRunning = true
+	provider.realtimeSubscribed = false
+	provider.realtimeMu.Unlock()
+
+	health := provider.FrontendSourceHealth()
+	if health.APIStatus != contracts.FrontendConnectionStatusOnline {
+		t.Fatalf("APIStatus = %q, want online", health.APIStatus)
+	}
+	if health.HealthStatus != contracts.FrontendSourceHealthStatusDegraded {
+		t.Fatalf("HealthStatus = %q, want degraded", health.HealthStatus)
+	}
+	if strings.Contains(health.HealthText, "API недоступний") {
+		t.Fatalf("HealthText must not mark API offline during grace: %q", health.HealthText)
+	}
+}
+
+func TestCASLProvider_GetObjects_FallsBackAfterReadGrdObjectTimeout(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslCommandPath:
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+
+			switch strings.TrimSpace(asString(payload["type"])) {
+			case "read_grd_object":
+				time.Sleep(60 * time.Millisecond)
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_connections":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"grd_object":{"obj_id":"24","name":"1003 Магазин","address":"Львів","geo_zone_id":1},"device":{"device_id":"23","obj_id":"24","number":1003,"name":"MAKS PRO","type":"TYPE_DEVICE_Ajax"}}]}`))
+			case "read_device", "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "token", 1)
+	provider.httpClient.Timeout = 20 * time.Millisecond
+
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("GetObjects() len = %d, want 1", len(objects))
+	}
+	if objects[0].Name != "1003 Магазин" {
+		t.Fatalf("GetObjects() name = %q, want %q", objects[0].Name, "1003 Магазин")
+	}
+}
+
 func TestCASLProvider_GetAlarms_DoesNotUseReadEventsRowsAsActiveAlarmSource(t *testing.T) {
 	t.Parallel()
 
@@ -2716,7 +2994,7 @@ func TestCASLProvider_GetAlarms_FromGeneralTapeObjects_UsesTranslatorIsAlarmForC
 	defer server.Close()
 
 	provider := NewCASLCloudProvider(server.URL, "token", 1)
-	alarms := provider.GetAlarms()
+	alarms := waitForCASLAlarms(t, provider, 1, 5*time.Second)
 	if len(alarms) != 1 {
 		t.Fatalf("expected 1 alarm from custom device translator, got %d", len(alarms))
 	}
@@ -2768,7 +3046,7 @@ func TestCASLProvider_GetAlarms_FromGeneralTapeObjects_UsesReadAlarmEventsForSta
 	defer server.Close()
 
 	provider := NewCASLCloudProvider(server.URL, "token", 1)
-	alarms := provider.GetAlarms()
+	alarms := waitForCASLAlarms(t, provider, 1, 5*time.Second)
 	if len(alarms) != 1 {
 		t.Fatalf("expected 1 alarm from read_alarm_events standard device path, got %d", len(alarms))
 	}
@@ -2817,7 +3095,7 @@ func TestCASLProvider_GetAlarms_FromGeneralTapeObjects_PreservesObjectNumber(t *
 	defer server.Close()
 
 	provider := NewCASLCloudProvider(server.URL, "token", 1)
-	alarms := provider.GetAlarms()
+	alarms := waitForCASLAlarms(t, provider, 1, 5*time.Second)
 	if len(alarms) != 1 {
 		t.Fatalf("expected 1 alarm from get_general_tape_objects, got %d", len(alarms))
 	}
@@ -2869,7 +3147,7 @@ func TestCASLProvider_GetAlarms_FromGeneralTapeObjects_PreservesAlarmTypeAndUses
 	defer server.Close()
 
 	provider := NewCASLCloudProvider(server.URL, "token", 1)
-	alarms := provider.GetAlarms()
+	alarms := waitForCASLAlarms(t, provider, 1, 5*time.Second)
 	if len(alarms) != 1 {
 		t.Fatalf("expected 1 alarm from get_general_tape_objects with history enrichment, got %d", len(alarms))
 	}
@@ -2937,7 +3215,7 @@ func TestCASLProvider_GetAlarms_FromGeneralTapeObjects_GenericAlarmTypeDoesNotBe
 	defer server.Close()
 
 	provider := NewCASLCloudProvider(server.URL, "token", 1)
-	alarms := provider.GetAlarms()
+	alarms := waitForCASLAlarms(t, provider, 1, 5*time.Second)
 	if len(alarms) != 1 {
 		t.Fatalf("expected 1 alarm from generic get_general_tape_objects alarm row, got %d", len(alarms))
 	}
@@ -2992,7 +3270,7 @@ func TestCASLProvider_GetAlarms_FromGeneralTapeObjects_UsesReasonAlarmJSON(t *te
 	defer server.Close()
 
 	provider := NewCASLCloudProvider(server.URL, "token", 1)
-	alarms := provider.GetAlarms()
+	alarms := waitForCASLAlarms(t, provider, 1, 5*time.Second)
 	if len(alarms) != 1 {
 		t.Fatalf("expected 1 alarm from reasonAlarm JSON, got %d", len(alarms))
 	}
@@ -3047,7 +3325,7 @@ func TestCASLProvider_GetAlarms_FromGeneralTapeObjects_ALMIODoesNotBecomeFault(t
 	defer server.Close()
 
 	provider := NewCASLCloudProvider(server.URL, "token", 1)
-	alarms := provider.GetAlarms()
+	alarms := waitForCASLAlarms(t, provider, 1, 5*time.Second)
 	if len(alarms) != 1 {
 		t.Fatalf("expected 1 alarm from ALM_IO general tape row, got %d", len(alarms))
 	}
@@ -3099,7 +3377,7 @@ func TestCASLProvider_GetAlarms_FromGeneralTapeObjectsRowWithOnlyDeviceID_UsesDe
 	defer server.Close()
 
 	provider := NewCASLCloudProvider(server.URL, "token", 1)
-	alarms := provider.GetAlarms()
+	alarms := waitForCASLAlarms(t, provider, 1, 5*time.Second)
 	if len(alarms) != 1 {
 		t.Fatalf("expected 1 alarm from general tape row with device_id, got %d", len(alarms))
 	}
@@ -3848,6 +4126,56 @@ func TestCASLProvider_GetObjectsMarksDisconnectedDevicesOffline(t *testing.T) {
 	}
 	if gotByID.Status != models.StatusOffline || gotByID.IsConnState != 0 {
 		t.Fatalf("expected offline object by id, got %+v", gotByID)
+	}
+}
+
+func TestCASLProvider_GetObjects_IgnoresNegativeDisconnectedDeviceOfflineMarkers(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-disconnected-negative","user_id":"u-off","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","address":"Addr 24","status":"Включено","device_id":"23","device_number":1003}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"name":"MAKS PRO","lastPingDate":1774769732941}]}`))
+			case "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"offline":-1774769732941}]}`))
+			case "read_device_state":
+				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":0,"accum":0,"online":1,"lastPingDate":1774769732941}}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].Status != models.StatusNormal || objects[0].IsConnState != 1 {
+		t.Fatalf("negative offline marker must not mark object offline, got %+v", objects[0])
+	}
+
+	gotByID := provider.GetObjectByID(strconv.Itoa(objects[0].ID))
+	if gotByID == nil {
+		t.Fatalf("expected object by id")
+	}
+	if gotByID.Status != models.StatusNormal || gotByID.IsConnState != 1 {
+		t.Fatalf("negative offline marker must not mark object offline by id, got %+v", gotByID)
 	}
 }
 

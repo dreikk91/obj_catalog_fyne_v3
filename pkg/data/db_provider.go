@@ -990,6 +990,29 @@ func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
 			blockMode = raw
 		}
 	}
+	guardStatus := models.GuardStatusUnknown
+	if row.GuardState1 != nil {
+		if guardState == 0 {
+			guardStatus = models.GuardStatusDisarmed
+		} else {
+			guardStatus = models.GuardStatusGuarded
+		}
+	}
+	connectionStatus := models.ConnectionStatusUnknown
+	if row.IsConnState1 != nil {
+		if ptrToInt64(row.IsConnState1) == 0 {
+			connectionStatus = models.ConnectionStatusOffline
+		} else {
+			connectionStatus = models.ConnectionStatusOnline
+		}
+	}
+	monitoringStatus := models.MonitoringStatusActive
+	switch blockMode {
+	case 1:
+		monitoringStatus = models.MonitoringStatusBlocked
+	case 2:
+		monitoringStatus = models.MonitoringStatusDebug
+	}
 
 	return models.Object{
 		ID:          int(row.Objn),
@@ -1010,6 +1033,9 @@ func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
 		TechAlarmState:    ptrToInt64(row.TechAlarmState1),
 		IsConnState:       ptrToInt64(row.IsConnState1),
 		BlockedArmedOnOff: blockMode,
+		GuardStatus:       guardStatus,
+		ConnectionStatus:  connectionStatus,
+		MonitoringStatus:  monitoringStatus,
 	}
 }
 

@@ -218,13 +218,14 @@ func (p *PhoenixDataProvider) GetEvents() []models.Event {
 	defer cancel()
 
 	if p.lastEventID == 0 {
-		var latest sql.NullInt64
-		if err := p.db.GetContext(ctx, &latest, phoenixLatestEventIDQuery); err != nil {
-			log.Error().Err(err).Msg("Phoenix: помилка отримання стартового курсора подій")
+		var rows []phoenixEventRow
+		if err := p.db.SelectContext(ctx, &rows, phoenixRecentEventsQuery); err != nil {
+			log.Error().Err(err).Msg("Phoenix: помилка початкового завантаження журналу подій")
 			return append([]models.Event(nil), p.cachedEvents...)
 		}
 
-		p.lastEventID = nullInt64(latest)
+		p.lastEventID = maxPhoenixEventID(rows, p.lastEventID)
+		p.cachedEvents = mapPhoenixEventRows(rows, p.mapEventRow)
 		return append([]models.Event(nil), p.cachedEvents...)
 	}
 
@@ -390,6 +391,7 @@ func (p *PhoenixDataProvider) buildObjects(rows []phoenixObjectGroupRow) []model
 
 		obj := objectsByPanel[panelID]
 		if obj == nil {
+			deviceName := phoenixDeviceName(row)
 			connectionStatus := models.ConnectionStatusUnknown
 			isConnState := int64(0)
 			isConnOK := false
@@ -401,7 +403,7 @@ func (p *PhoenixDataProvider) buildObjects(rows []phoenixObjectGroupRow) []model
 			obj = &models.Object{
 				ID:            p.registerPanelID(panelID),
 				DisplayNumber: panelID,
-				PanelMark:     panelID,
+				PanelMark:     phoenixFirstNonEmpty(deviceName, panelID),
 				Name:          phoenixObjectName(panelID, row.CompanyName, row.GroupName),
 				Address:       strings.TrimSpace(nullString(row.Address)),
 				Phone:         strings.TrimSpace(nullString(row.Telephones)),
@@ -413,7 +415,9 @@ func (p *PhoenixDataProvider) buildObjects(rows []phoenixObjectGroupRow) []model
 					return strings.TrimSpace(nullString(row.PanelTechInfo))
 				}(),
 				ContractNum:      panelID,
-				DeviceType:       strings.TrimSpace(nullString(row.TypeName)),
+				DeviceType:       deviceName,
+				TechnicianID:     strings.TrimSpace(nullString(row.EngineerName)),
+				TechnicianName:   strings.TrimSpace(nullString(row.EngineerName)),
 				Groups:           make([]models.ObjectGroup, 0, 4),
 				IsConnOK:         isConnOK,
 				IsConnState:      isConnState,
@@ -795,8 +799,9 @@ func (p *PhoenixDataProvider) applyPhoenixObjectState(obj *models.Object, row ph
 	if ts := nullTime(row.GroupTime); ts.After(obj.LastMessageTime) {
 		obj.LastMessageTime = ts
 	}
-	if name := strings.TrimSpace(nullString(row.TypeName)); obj.DeviceType == "" && name != "" {
+	if name := phoenixDeviceName(row); name != "" {
 		obj.DeviceType = name
+		obj.PanelMark = name
 	}
 
 	switch {
@@ -924,6 +929,7 @@ func (p *PhoenixDataProvider) applyChannelInfo(obj *models.Object, row phoenixCh
 	}
 	if name := strings.TrimSpace(nullString(row.DeviceName)); name != "" {
 		obj.PanelMark = name
+		obj.DeviceType = name
 	}
 	if value := strings.TrimSpace(nullString(row.ChannelNo)); value != "" {
 		obj.ContractNum = value
@@ -943,6 +949,7 @@ func (p *PhoenixDataProvider) applyChannelInfo(obj *models.Object, row phoenixCh
 		obj.SIM2 = sim
 	}
 	obj.SignalStrength = phoenixSignalText(row.SignalLevel)
+	obj.GSMLevel = phoenixSignalQuality(row.SignalLevel)
 	obj.LastTestTime = nullTime(row.LastTest)
 	if timeoutMinutes := phoenixTimeoutMinutes(row.TestTimeout); timeoutMinutes > 0 {
 		obj.TestControl = 1
@@ -1197,6 +1204,27 @@ func phoenixObjectName(panelID string, companyName sql.NullString, groupName sql
 	return strings.TrimSpace(panelID)
 }
 
+func phoenixDeviceName(row phoenixObjectGroupRow) string {
+	for _, value := range []string{
+		nullString(row.DeviceName),
+		nullString(row.TypeName),
+	} {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func phoenixFirstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func phoenixGroupName(groupNo int, name sql.NullString) string {
 	if value := strings.TrimSpace(nullString(name)); value != "" {
 		return value
@@ -1256,6 +1284,28 @@ func phoenixSignalText(level sql.NullInt64) string {
 		return "—"
 	}
 	return fmt.Sprintf("%d", level.Int64)
+}
+
+func phoenixSignalQuality(level sql.NullInt64) int {
+	if !level.Valid {
+		return 0
+	}
+	value := int(level.Int64)
+	if value < 0 {
+		quality := (value + 113) * 100 / 62
+		switch {
+		case quality < 0:
+			return 0
+		case quality > 100:
+			return 100
+		default:
+			return quality
+		}
+	}
+	if value > 100 {
+		return 100
+	}
+	return value
 }
 
 func phoenixEventType(

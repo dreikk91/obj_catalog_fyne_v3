@@ -16,6 +16,7 @@ type phoenixObjectGroupRow struct {
 	Address       sql.NullString `db:"company_address"`
 	Telephones    sql.NullString `db:"telephones"`
 	TypeName      sql.NullString `db:"type_name"`
+	DeviceName    sql.NullString `db:"device_name"`
 	PanelDisabled sql.NullBool   `db:"panel_disabled"`
 	TestPanel     sql.NullBool   `db:"test_panel"`
 	PanelType     sql.NullInt64  `db:"panel_type"`

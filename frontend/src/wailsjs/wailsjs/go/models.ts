@@ -23,6 +23,13 @@ export namespace main {
 	    CASLPass: string;
 	    CASLPultID: number;
 	    Mode: string;
+	    AMIEnabled: boolean;
+	    AMIHost: string;
+	    AMIPort: number;
+	    AMIUsername: string;
+	    AMISecret: string;
+	    AMIExtension: string;
+	    AMIContext: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new OperatorDBSettings(source);
@@ -52,6 +59,13 @@ export namespace main {
 	        this.CASLPass = source["CASLPass"];
 	        this.CASLPultID = source["CASLPultID"];
 	        this.Mode = source["Mode"];
+	        this.AMIEnabled = source["AMIEnabled"];
+	        this.AMIHost = source["AMIHost"];
+	        this.AMIPort = source["AMIPort"];
+	        this.AMIUsername = source["AMIUsername"];
+	        this.AMISecret = source["AMISecret"];
+	        this.AMIExtension = source["AMIExtension"];
+	        this.AMIContext = source["AMIContext"];
 	    }
 	}
 

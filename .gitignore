@@ -15,6 +15,7 @@ docs
 REFACTORING_PLAN.md
 lint_results.txt
 .qwen
+*
 .log
 dist
 node_modules

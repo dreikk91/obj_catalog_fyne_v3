@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"obj_catalog_fyne_v3/pkg/ami"
 	"obj_catalog_fyne_v3/pkg/backend"
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
@@ -94,6 +95,36 @@ func savePreferencesDBConfig(cfg config.DBConfig) (err error) {
 	defer fyneInstance.Quit()
 
 	config.SaveDBConfig(fyneInstance.Preferences(), cfg)
+	return nil
+}
+
+func loadPreferencesAMIConfig() (enabled bool, cfg ami.Config, ok bool) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			ok = false
+		}
+	}()
+	fyneInstance := fyneapp.NewWithID(operatorFyneAppID)
+	if fyneInstance == nil {
+		return false, ami.Config{}, false
+	}
+	defer fyneInstance.Quit()
+	en, c := config.LoadAMIConfig(fyneInstance.Preferences())
+	return en, c, true
+}
+
+func savePreferencesAMIConfig(enabled bool, cfg ami.Config) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("operator wails: failed to save AMI preferences: %v", recovered)
+		}
+	}()
+	fyneInstance := fyneapp.NewWithID(operatorFyneAppID)
+	if fyneInstance == nil {
+		return errors.New("operator wails: failed to initialize Fyne app for saving AMI preferences")
+	}
+	defer fyneInstance.Quit()
+	config.SaveAMIConfig(fyneInstance.Preferences(), enabled, cfg)
 	return nil
 }
 

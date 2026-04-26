@@ -4,6 +4,7 @@ import type {
   FrontendAlarmItem,
   FrontendAlarmGroup,
   FrontendAlarmPickRequest,
+  FrontendAMISettings,
   FrontendAlarmProcessingOption,
   FrontendDBSettings,
   FrontendEventPage,
@@ -17,6 +18,7 @@ import {
   normalizeAlarmItem,
   normalizeAlarmGroup,
   normalizeAlarmProcessingOption,
+  normalizeAMISettings,
   normalizeEventItem,
   normalizeEventPage,
   normalizeObjectDetails,
@@ -127,6 +129,32 @@ export function createHTTPFrontendClient(): FrontendClient {
     },
     async saveDBSettings(_: FrontendDBSettings) {
       throw new Error('Налаштування доступні лише у Wails застосунку')
+    },
+    async dialPhone(phone: string) {
+      return fetchJSON<{ callID: string }>(`${FRONTEND_API_BASE}/dial`, {
+        method: 'POST',
+        body: JSON.stringify({ phone }),
+      })
+    },
+    async hangupCall(callID: string) {
+      await fetch(`${FRONTEND_API_BASE}/dial/${encodeURIComponent(callID)}`, { method: 'DELETE' })
+    },
+    async getAMISettings() {
+      const body = await fetchJSON<FrontendAMISettings>(`${FRONTEND_API_BASE}/ami-settings`)
+      return normalizeAMISettings(body)
+    },
+    async saveAMISettings(settings: FrontendAMISettings) {
+      await fetchJSON<void>(`${FRONTEND_API_BASE}/ami-settings`, {
+        method: 'PUT',
+        body: JSON.stringify(settings),
+      })
+    },
+    async getAMIStatus() {
+      try {
+        return await fetchJSON<{ connected: boolean; enabled: boolean }>(`${FRONTEND_API_BASE}/ami-status`)
+      } catch {
+        return { connected: false, enabled: false }
+      }
     },
   }
 }

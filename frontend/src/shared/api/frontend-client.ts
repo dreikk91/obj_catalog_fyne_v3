@@ -6,6 +6,7 @@ import type {
   FrontendAlarmPickRequest,
   FrontendAlarmProcessRequest,
   FrontendAlarmProcessingOption,
+  FrontendAMISettings,
   FrontendDBSettings,
   FrontendEventPage,
   FrontendEventItem,
@@ -34,4 +35,9 @@ export interface FrontendClient {
   getObjectDetails(objectID: number): Promise<FrontendObjectDetails>
   getDBSettings(): Promise<FrontendDBSettings>
   saveDBSettings(settings: FrontendDBSettings): Promise<void>
+  dialPhone(phone: string): Promise<{ callID: string }>
+  hangupCall(callID: string): Promise<void>
+  getAMISettings(): Promise<FrontendAMISettings>
+  saveAMISettings(settings: FrontendAMISettings): Promise<void>
+  getAMIStatus(): Promise<{ connected: boolean; enabled: boolean }>
 }

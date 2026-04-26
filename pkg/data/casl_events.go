@@ -1354,24 +1354,9 @@ func (p *CASLCloudProvider) readGeneralTapeAsAlarms(ctx context.Context, byObjec
 	dictMap := p.loadDictionaryMap(ctx)
 	resolvedByDeviceID := make(map[string]int64)
 	unresolvedByDeviceID := make(map[string]struct{})
-	objIDs := make([]string, 0, len(rows))
-	seenObjIDs := make(map[string]struct{}, len(rows))
-	for _, row := range rows {
-		objID := strings.TrimSpace(asString(row["obj_id"]))
-		if objID == "" {
-			objID = strings.TrimSpace(asString(row["object_id"]))
-		}
-		if objID == "" {
-			continue
-		}
-		if _, exists := seenObjIDs[objID]; exists {
-			continue
-		}
-		seenObjIDs[objID] = struct{}{}
-		objIDs = append(objIDs, objID)
-	}
 
 	historyByObject := map[string][]map[string]any(nil)
+	objIDs := selectCASLGeneralTapeInitialItemObjectIDs(rows, caslGeneralTapeInitialItemLimit)
 	if len(objIDs) > 0 {
 		historyByObject, err = p.ReadGeneralTapeItem(ctx, objIDs)
 		if err != nil {
@@ -1736,6 +1721,40 @@ func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
 	return alarms
 }
 
+func selectCASLGeneralTapeInitialItemObjectIDs(rows []map[string]any, limit int) []string {
+	if limit <= 0 || len(rows) == 0 {
+		return nil
+	}
+
+	capacity := limit
+	if len(rows) < capacity {
+		capacity = len(rows)
+	}
+	objIDs := make([]string, 0, capacity)
+	seenObjIDs := make(map[string]struct{}, capacity)
+	for _, row := range rows {
+		if strings.TrimSpace(asString(row["alarm_type"])) == "" {
+			continue
+		}
+		objID := strings.TrimSpace(asString(row["obj_id"]))
+		if objID == "" {
+			objID = strings.TrimSpace(asString(row["object_id"]))
+		}
+		if objID == "" {
+			continue
+		}
+		if _, exists := seenObjIDs[objID]; exists {
+			continue
+		}
+		seenObjIDs[objID] = struct{}{}
+		objIDs = append(objIDs, objID)
+		if len(objIDs) >= limit {
+			break
+		}
+	}
+	return objIDs
+}
+
 func (p *CASLCloudProvider) readGeneralTapeItemRowsForObjectIDs(ctx context.Context, objIDs []string) ([]CASLObjectEvent, error) {
 	if len(objIDs) == 0 {
 		return nil, nil
@@ -1861,12 +1880,12 @@ func (p *CASLCloudProvider) PickAlarm(ctx context.Context, alarm models.Alarm, _
 	if err != nil {
 		return err
 	}
-	workflow, workflowErr := p.readCASLAlarmWorkflowState(ctx, target.CASLObjectID)
+	workflow, workflowErr := p.cachedCASLAlarmWorkflowState(ctx, target)
+	target.Alarm = p.applyCASLWorkflowStateToAlarm(target.Alarm, workflow)
+
 	if workflowErr != nil {
 		log.Debug().Err(workflowErr).Str("obj_id", target.CASLObjectID).Msg("CASL: не вдалося прочитати workflow state перед pick")
 	}
-	target.Alarm = p.applyCASLWorkflowStateToAlarm(target.Alarm, workflow)
-
 	if isCASLAlarmFinishBlockedAction(workflow.LastAct) {
 		return fmt.Errorf("casl alarm pick: alarm %d already has response group workflow in state %s", target.Alarm.ID, workflow.LastAct)
 	}
@@ -1917,11 +1936,11 @@ func (p *CASLCloudProvider) ProcessAlarmWithRequest(ctx context.Context, alarm m
 	if err != nil {
 		return err
 	}
-	workflow, workflowErr := p.readCASLAlarmWorkflowState(ctx, target.CASLObjectID)
+	workflow, workflowErr := p.cachedCASLAlarmWorkflowState(ctx, target)
+	target.Alarm = p.applyCASLWorkflowStateToAlarm(target.Alarm, workflow)
 	if workflowErr != nil {
 		log.Debug().Err(workflowErr).Str("obj_id", target.CASLObjectID).Msg("CASL: не вдалося прочитати workflow state перед finish")
 	}
-	target.Alarm = p.applyCASLWorkflowStateToAlarm(target.Alarm, workflow)
 	if isCASLAlarmFinishBlockedAction(workflow.LastAct) {
 		return fmt.Errorf("casl alarm processing: alarm %d cannot be finished while response group workflow is active (%s)", alarmID, workflow.LastAct)
 	}
@@ -1949,6 +1968,35 @@ func (p *CASLCloudProvider) ProcessAlarmWithRequest(ctx context.Context, alarm m
 	}
 
 	return nil
+}
+
+func (p *CASLCloudProvider) cachedCASLAlarmWorkflowState(ctx context.Context, target caslAlarmTarget) (caslAlarmWorkflowState, error) {
+	if target.CacheKey == "" {
+		return p.readCASLAlarmWorkflowState(ctx, target.CASLObjectID)
+	}
+
+	state := caslAlarmWorkflowState{
+		UserID:      strings.TrimSpace(target.Alarm.InProgressUser),
+		DisplayName: strings.TrimSpace(target.Alarm.InProgressBy),
+		MgrID:       strings.TrimSpace(target.Alarm.ResponseGroupID),
+	}
+	switch {
+	case target.Alarm.IsResponseGroupArrived:
+		state.LastAct = "GRD_OBJ_MGR_ARRIVE"
+	case target.Alarm.IsResponseGroupDispatched:
+		state.LastAct = "GRD_OBJ_ASS_MGR"
+	case target.Alarm.IsInProgress && !target.Alarm.IsOwnedByMe:
+		state.LastAct = "GRD_OBJ_PICK"
+	case target.Alarm.IsInProgress:
+		state.LastAct = "GRD_OBJ_PICK"
+	}
+	if state.UserID == "" && state.DisplayName != "" {
+		state.UserFIO = state.DisplayName
+	}
+	if state.LastAct == "" && state.UserID == "" && state.DisplayName == "" && state.MgrID == "" {
+		return p.readCASLAlarmWorkflowState(ctx, target.CASLObjectID)
+	}
+	return state, nil
 }
 
 type caslAlarmWorkflowState struct {

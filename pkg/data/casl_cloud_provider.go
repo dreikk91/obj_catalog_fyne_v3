@@ -38,9 +38,10 @@ const (
 	caslRealtimeBackoff   = 10 * time.Second
 	caslReconnectCooldown = 30 * time.Second
 
-	caslMaxCachedEvents = 2000
-	caslReadLimit       = 100000
-	caslDebugBodyLimit  = 8192
+	caslMaxCachedEvents             = 2000
+	caslReadLimit                   = 100000
+	caslDebugBodyLimit              = 8192
+	caslGeneralTapeInitialItemLimit = 20
 
 	caslObjectStatusText = "НОРМА"
 )

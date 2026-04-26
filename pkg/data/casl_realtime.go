@@ -682,7 +682,6 @@ func (p *CASLCloudProvider) subscribeRealtimeTags(ctx context.Context, connID st
 		{name: "ppk_in", required: true},
 		{name: "user_action", required: true},
 		{name: "ppk_service", required: false},
-		{name: "ppk_out", required: false},
 		{name: "system_event", required: false},
 		{name: "system_action", required: false},
 		{name: "m3_in", required: false},
@@ -1096,6 +1095,10 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			p.applyCASLRealtimeDeviceBlockLocked(row, true)
 		case "DEVICE_UNBLOCK":
 			p.applyCASLRealtimeDeviceBlockLocked(row, false)
+		case "PPK_NO_CONN", "DISABLED":
+			p.applyCASLRealtimeDeviceOfflineLocked(row, true)
+		case "PPK_CONN_OK", "ENABLED":
+			p.applyCASLRealtimeDeviceOfflineLocked(row, false)
 		}
 
 		deviceType := ""
@@ -1246,6 +1249,74 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			InProgressUser: "",
 			InProgressBy:   "",
 		}
+	}
+}
+
+func (p *CASLCloudProvider) applyCASLRealtimeDeviceOfflineLocked(row CASLObjectEvent, offline bool) {
+	deviceID := strings.TrimSpace(row.DeviceID)
+	objID := strings.TrimSpace(row.ObjID)
+	ppkNum := row.PPKNum
+	eventTime := row.Time
+	if eventTime <= 0 {
+		eventTime = time.Now().UnixMilli()
+	}
+
+	offlineMarker := eventTime
+	if !offline {
+		offlineMarker = -eventTime
+	}
+
+	updateDevice := func(device caslDevice) {
+		device.Offline = caslInt64(offlineMarker)
+		if eventTime > 0 {
+			device.LastPingDate = caslInt64(eventTime)
+		}
+		if strings.TrimSpace(deviceID) == "" {
+			deviceID = strings.TrimSpace(device.DeviceID.String())
+		}
+		if strings.TrimSpace(objID) == "" {
+			objID = strings.TrimSpace(device.ObjID.String())
+		}
+		if ppkNum <= 0 {
+			ppkNum = device.Number.Int64()
+		}
+		if deviceID != "" {
+			p.deviceByDeviceID[deviceID] = device
+		}
+		if deviceObjID := strings.TrimSpace(device.ObjID.String()); deviceObjID != "" {
+			p.deviceByObjectID[deviceObjID] = device
+		}
+		if number := device.Number.Int64(); number > 0 {
+			p.deviceByNumber[number] = device
+		}
+	}
+
+	if deviceID != "" {
+		if device, ok := p.deviceByDeviceID[deviceID]; ok {
+			updateDevice(device)
+		}
+	}
+	if objID != "" {
+		if device, ok := p.deviceByObjectID[objID]; ok {
+			updateDevice(device)
+		}
+	}
+	if ppkNum > 0 {
+		if device, ok := p.deviceByNumber[ppkNum]; ok {
+			updateDevice(device)
+		}
+	}
+
+	for idx := range p.cachedObjects {
+		record := &p.cachedObjects[idx]
+		if objID != "" && strings.TrimSpace(record.ObjID) != objID {
+			continue
+		}
+		if ppkNum > 0 && record.DeviceNumber.Int64() != ppkNum && objID == "" {
+			continue
+		}
+		internalID := mapCASLObjectID(record.ObjID, record.Name, strconv.FormatInt(record.DeviceNumber.Int64(), 10))
+		p.objectByInternalID[internalID] = *record
 	}
 }
 

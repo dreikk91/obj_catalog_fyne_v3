@@ -9,3 +9,12 @@ export function resolveFrontendClient(): FrontendClient {
   }
   return createHTTPFrontendClient()
 }
+
+let _client: FrontendClient | null = null
+
+export function getClient(): FrontendClient {
+  if (_client == null) {
+    _client = resolveFrontendClient()
+  }
+  return _client
+}

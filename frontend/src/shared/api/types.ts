@@ -174,6 +174,16 @@ export type FrontendAlarmGroupActionRequest = {
   groupID: string
 }
 
+export type FrontendAMISettings = {
+  enabled: boolean
+  host: string
+  port: number
+  username: string
+  secret: string
+  extension: string
+  context: string
+}
+
 export type FrontendDBSettings = {
   firebirdEnabled: boolean
   firebirdUser: string
@@ -200,4 +210,12 @@ export type FrontendDBSettings = {
   caslPultID: number
 
   mode: string
+
+  amiEnabled: boolean
+  amiHost: string
+  amiPort: number
+  amiUsername: string
+  amiSecret: string
+  amiExtension: string
+  amiContext: string
 }

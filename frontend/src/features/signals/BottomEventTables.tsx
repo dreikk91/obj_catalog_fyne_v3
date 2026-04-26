@@ -3,6 +3,7 @@ import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type Row, t
 import type { BottomTab } from '../../shared/state/ui-store'
 import { useVirtualRows } from '../../hooks/useVirtualRows'
 import { useColumnVisibility } from '../../hooks/useColumnVisibility'
+import { useNow, formatAge, ageUrgencyClass } from '../../hooks/useNow'
 import { ColumnVisibilityButton, type ColumnToggleItem } from '../../shared/ui/ColumnVisibilityButton'
 import type { JournalRow, TableColumnMeta, UnprocessedAlarmGroup, UnprocessedRowMeta } from '../operator/types'
 import {
@@ -11,6 +12,13 @@ import {
   resolveJournalStateChipClass,
   resolveJournalTypeClass,
 } from '../operator/utils'
+
+function AgeCell({ timestampMs }: { timestampMs: number }) {
+  const now = useNow()
+  if (!timestampMs) return <span className="dim">—</span>
+  const cls = ageUrgencyClass(now, timestampMs)
+  return <span className={`mono ${cls}`}>{formatAge(now, timestampMs)}</span>
+}
 
 type BottomEventTablesProps = {
   height?: number
@@ -201,6 +209,13 @@ export function BottomEventTables({
         cell: ({ getValue }) => <span className="mono">{String(getValue())}</span>,
       },
       {
+        id: 'age',
+        header: 'Вік',
+        size: 54,
+        minSize: 48,
+        cell: ({ row }) => <AgeCell timestampMs={row.original.sortTimestampMs} />,
+      },
+      {
         accessorKey: 'group',
         header: 'Гр.',
         size: 44,
@@ -304,7 +319,7 @@ export function BottomEventTables({
               {!isInWorkflow ? (
                 <button
                   className="btn btn-violet"
-                  style={{ height: 24, fontSize: 11 }}
+                  style={{ height: 30, fontSize: 12 }}
                   disabled={selectedUnprocessedRow == null || workflowBusy || groupDispatched}
                   onClick={onPickAlarm}
                 >
@@ -314,7 +329,7 @@ export function BottomEventTables({
                 <>
                   <button
                     className="btn btn-green"
-                    style={{ height: 24, fontSize: 11 }}
+                    style={{ height: 30, fontSize: 12 }}
                     disabled={workflowBusy || groupDispatched}
                     onClick={onOpenProcessAlarm}
                   >
@@ -323,7 +338,7 @@ export function BottomEventTables({
                   {groupDispatched && (
                     <button
                       className="btn btn-gray"
-                      style={{ height: 24, fontSize: 11 }}
+                      style={{ height: 30, fontSize: 12 }}
                       disabled={workflowBusy}
                       onClick={onGroupAction}
                     >
@@ -333,7 +348,7 @@ export function BottomEventTables({
                   {!groupDispatched && (
                     <button
                       className="btn btn-violet"
-                      style={{ height: 24, fontSize: 11 }}
+                      style={{ height: 30, fontSize: 12 }}
                       disabled={workflowBusy}
                       onClick={onDispatchGroup}
                     >
@@ -342,7 +357,7 @@ export function BottomEventTables({
                   )}
                   <button
                     className="btn btn-gray"
-                    style={{ height: 24, fontSize: 11 }}
+                    style={{ height: 30, fontSize: 12 }}
                     disabled={workflowBusy}
                     onClick={onStandby}
                   >
@@ -350,7 +365,7 @@ export function BottomEventTables({
                   </button>
                   <button
                     className="btn btn-gray"
-                    style={{ height: 24, fontSize: 11 }}
+                    style={{ height: 30, fontSize: 12 }}
                     disabled={workflowBusy || groupDispatched}
                     onClick={onCancelAlarm}
                   >

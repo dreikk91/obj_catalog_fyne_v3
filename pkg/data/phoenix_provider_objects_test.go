@@ -57,6 +57,32 @@ func TestPhoenixBuildObjects_PopulatesNotesFromMemo(t *testing.T) {
 	}
 }
 
+func TestPhoenixBuildObjects_UsesRadioTypeMessageAsDeviceName(t *testing.T) {
+	provider := &PhoenixDataProvider{
+		panelByID: make(map[int]string),
+		idByPanel: make(map[string]int),
+	}
+
+	objects := provider.buildObjects([]phoenixObjectGroupRow{
+		{
+			PanelID:    "L00027",
+			GroupNo:    1,
+			DeviceName: sql.NullString{String: "Лунь-11", Valid: true},
+			TypeName:   sql.NullString{String: "Пожежний", Valid: true},
+		},
+	})
+
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].DeviceType != "Лунь-11" {
+		t.Fatalf("unexpected DeviceType: %q", objects[0].DeviceType)
+	}
+	if objects[0].PanelMark != "Лунь-11" {
+		t.Fatalf("unexpected PanelMark: %q", objects[0].PanelMark)
+	}
+}
+
 func TestPhoenixChannelInfoUsesTelephonNumPriority(t *testing.T) {
 	row := phoenixChannelRow{
 		Sim1Number: sql.NullString{String: "380671783262", Valid: true},

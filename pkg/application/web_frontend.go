@@ -195,7 +195,14 @@ func (a *Application) ensureWebFrontendServer() (string, error) {
 		return a.webServerURL, nil
 	}
 
-	handler, err := webfrontend.NewSiteHandler(applicationFrontendBackend{app: a})
+	dialer := buildAMIDialer(a)
+	amiSettings := applicationAMISettings{app: a}
+	handler, err := webfrontend.NewSiteHandlerFull(
+		applicationFrontendBackend{app: a},
+		dialer,
+		amiSettings,
+		buildDialerFromSettings,
+	)
 	if err != nil {
 		return "", err
 	}

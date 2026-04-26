@@ -1,5 +1,6 @@
 import type { FrontendObjectDetails } from '../../shared/api/types'
 import type { JournalRow, ObjectRow } from '../operator/types'
+import { CallButton } from '../../shared/ui/CallButton'
 import {
   resolveAuxiliaryLine,
   resolveCity,
@@ -62,9 +63,13 @@ export function ObjectInfoBar({ selectedSignalRow, selectedObjectRow, objectDeta
             <input className="oib-right-inp" value={objectDetails?.summary.panelMark || '—'} readOnly />
             <input className="oib-right-inp" value={objectDetails?.summary.deviceType || '—'} readOnly />
           </div>
-          <div className="oib-right-row">
+          <div className="oib-right-row" style={{ alignItems: 'center' }}>
             <input className="oib-right-inp" value={objectDetails?.summary.sim1 || 'НЕМАЄ'} readOnly />
+            {objectDetails?.summary.sim1 && <CallButton phone={objectDetails.summary.sim1} contactName="SIM1" />}
+          </div>
+          <div className="oib-right-row" style={{ alignItems: 'center' }}>
             <input className="oib-right-inp" value={objectDetails?.summary.sim2 || 'НЕМАЄ'} readOnly />
+            {objectDetails?.summary.sim2 && <CallButton phone={objectDetails.summary.sim2} contactName="SIM2" />}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
             <span className="workreg-lbl">Режим роботи</span>

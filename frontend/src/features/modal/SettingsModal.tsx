@@ -1,5 +1,6 @@
-import type { FrontendDBSettings } from '../../shared/api/types'
+import type { FrontendAMISettings, FrontendDBSettings } from '../../shared/api/types'
 import type { ThemeMode } from '../../shared/state/theme-store'
+import type { LogLevel } from '../../shared/state/log-store'
 
 type SettingsModalProps = {
   isOpen: boolean
@@ -8,10 +9,19 @@ type SettingsModalProps = {
   settingsError: string
   settingsSuccess: string
   themeMode: ThemeMode
+  logLevel: LogLevel
+  amiDraft: FrontendAMISettings | null
+  amiError: string
+  amiSuccess: string
+  amiBusy: boolean
+  amiConnected: boolean | null
   onClose: () => void
   onSave: () => void
   onUpdateDraft: (patch: Partial<FrontendDBSettings>) => void
   onThemeChange: (theme: ThemeMode) => void
+  onLogLevelChange: (level: LogLevel) => void
+  onUpdateAMI: (patch: Partial<FrontendAMISettings>) => void
+  onSaveAMI: () => void
 }
 
 export function SettingsModal({
@@ -21,10 +31,19 @@ export function SettingsModal({
   settingsError,
   settingsSuccess,
   themeMode,
+  logLevel,
+  amiDraft,
+  amiError,
+  amiSuccess,
+  amiBusy,
+  amiConnected,
   onClose,
   onSave,
   onUpdateDraft,
   onThemeChange,
+  onLogLevelChange,
+  onUpdateAMI,
+  onSaveAMI,
 }: SettingsModalProps) {
   return (
     <div className={isOpen ? 'modal-overlay open' : 'modal-overlay'}>
@@ -69,6 +88,16 @@ export function SettingsModal({
                       <span className="theme-option-desc">Світлий варіант з тим самим layout і акцентами</span>
                     </button>
                   </div>
+                  <div className="irow" style={{ borderTop: '1px solid var(--bd)', marginTop: 6 }}>
+                    <label>Рівень логування</label>
+                    <select value={logLevel} onChange={(e) => onLogLevelChange(e.target.value as import('../../shared/state/log-store').LogLevel)}>
+                      <option value="debug">debug — усі повідомлення</option>
+                      <option value="info">info — інформація+</option>
+                      <option value="warn">warn — попередження+ (стандарт)</option>
+                      <option value="error">error — лише помилки</option>
+                      <option value="off">off — вимкнено</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="isection">
@@ -102,6 +131,41 @@ export function SettingsModal({
                   <TextRow label="Email" value={settingsDraft.caslEmail} onChange={(value) => onUpdateDraft({ caslEmail: value })} />
                   <PasswordRow label="Password" value={settingsDraft.caslPass} onChange={(value) => onUpdateDraft({ caslPass: value })} />
                   <NumberRow label="Pult ID" value={settingsDraft.caslPultID} onChange={(value) => onUpdateDraft({ caslPultID: value })} />
+                </div>
+              </div>
+            )}
+
+            <div className="settings-section-sep" />
+
+            <div className="isect-title" style={{ padding: '8px 0 4px' }}>
+              Asterisk (Click-to-Call)
+              {amiConnected != null && (
+                <span className={`ami-status-dot ${amiConnected ? 'ami-status-dot--ok' : 'ami-status-dot--off'}`}>
+                  {amiConnected ? '● підключено' : '● відключено'}
+                </span>
+              )}
+            </div>
+            {amiError !== '' && <div className="settings-banner settings-banner-warn">{amiError}</div>}
+            {amiSuccess !== '' && <div className="settings-banner settings-banner-success">{amiSuccess}</div>}
+            {amiDraft == null ? (
+              <div className="settings-loading">Завантаження налаштувань AMI...</div>
+            ) : (
+              <div className="igrid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                <div className="isection">
+                  <CheckboxRow label="Активувати" checked={amiDraft.enabled} onChange={(v) => onUpdateAMI({ enabled: v })} />
+                  <TextRow label="Host" value={amiDraft.host} onChange={(v) => onUpdateAMI({ host: v })} />
+                  <NumberRow label="Port" value={amiDraft.port} onChange={(v) => onUpdateAMI({ port: v })} />
+                  <TextRow label="Username" value={amiDraft.username} onChange={(v) => onUpdateAMI({ username: v })} />
+                  <PasswordRow label="Secret" value={amiDraft.secret} onChange={(v) => onUpdateAMI({ secret: v })} />
+                </div>
+                <div className="isection">
+                  <TextRow label="Extension (лінія оператора)" value={amiDraft.extension} onChange={(v) => onUpdateAMI({ extension: v })} />
+                  <TextRow label="Context" value={amiDraft.context} onChange={(v) => onUpdateAMI({ context: v })} />
+                  <div style={{ marginTop: 8 }}>
+                    <button className="btn btn-blue" style={{ height: 28 }} onClick={onSaveAMI} disabled={amiBusy}>
+                      {amiBusy ? 'ЗБЕРЕЖЕННЯ...' : 'ЗБЕРЕГТИ AMI'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

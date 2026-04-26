@@ -46,6 +46,8 @@ type Object struct {
 	// Інформація про прилад
 	DeviceType      string      // Тип приладу (напр. "Тірас-16П")
 	PanelMark       string      // Марка ППК (напр. "Тірас-8П")
+	TechnicianID    string      // Ідентифікатор або ім'я техніка з джерела даних
+	TechnicianName  string      // Людська назва техніка з джерела даних
 	SignalStrength  string      // Рівень сигналу (напр. "[-61 dBm]" або "AVD")
 	GSMLevel        int         // Рівень GSM сигналу (0-100%)
 	LastTestTime    time.Time   // Час останнього тесту

@@ -6,6 +6,7 @@ import type {
   FrontendAlarmProcessRequest,
   FrontendAlarmPickRequest,
   FrontendAlarmProcessingOption,
+  FrontendAMISettings,
   FrontendContact,
   FrontendDBSettings,
   FrontendEventPage,
@@ -204,6 +205,27 @@ export function normalizeDBSettings(input: unknown): FrontendDBSettings {
     caslPultID: asNumber(value.caslPultID ?? value.CASLPultID),
 
     mode: asString(value.mode ?? value.Mode),
+
+    amiEnabled: asBoolean(value.amiEnabled ?? value.AMIEnabled),
+    amiHost: asString(value.amiHost ?? value.AMIHost),
+    amiPort: asNumber(value.amiPort ?? value.AMIPort),
+    amiUsername: asString(value.amiUsername ?? value.AMIUsername),
+    amiSecret: asString(value.amiSecret ?? value.AMISecret),
+    amiExtension: asString(value.amiExtension ?? value.AMIExtension),
+    amiContext: asString(value.amiContext ?? value.AMIContext),
+  }
+}
+
+export function normalizeAMISettings(input: unknown): FrontendAMISettings {
+  const value = asRecord(input)
+  return {
+    enabled: asBoolean(value.enabled),
+    host: asString(value.host) || '127.0.0.1',
+    port: asNumber(value.port) || 5038,
+    username: asString(value.username) || 'admin',
+    secret: asString(value.secret),
+    extension: asString(value.extension) || '100',
+    context: asString(value.context) || 'from-internal',
   }
 }
 

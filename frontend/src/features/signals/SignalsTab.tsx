@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { FrontendObjectDetails } from '../../shared/api/types'
 import type { BottomTab, InnerTab } from '../../shared/state/ui-store'
 import type { JournalRow, ObjectRow, UnprocessedAlarmGroup, UnprocessedRowMeta } from '../operator/types'
+import { ContactsSidebar } from './ContactsSidebar'
 import { BottomEventTables } from './BottomEventTables'
 import { InnerTabs } from './InnerTabs'
 import { ObjectInfoBar } from './ObjectInfoBar'
@@ -111,7 +112,7 @@ export function SignalsTab(props: SignalsTabProps) {
       />
 
       <div className="ps-mid">
-        <div className="ps-groups" />
+        <ContactsSidebar objectDetails={props.objectDetails} />
         <InnerTabs
           innerTab={props.innerTab}
           onSelectTab={props.onSelectInnerTab}

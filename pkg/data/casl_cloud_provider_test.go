@@ -67,6 +67,68 @@ func TestNormalizeCASLBaseURL(t *testing.T) {
 	}
 }
 
+func TestSelectCASLGeneralTapeInitialItemObjectIDs(t *testing.T) {
+	t.Parallel()
+
+	rows := []map[string]any{
+		{"obj_id": "10"},
+		{"obj_id": "11", "alarm_type": "ALARM_TYPE_DEVICE"},
+		{"object_id": "12", "alarm_type": "ALARM_TYPE_OPERATOR"},
+		{"obj_id": "11", "alarm_type": "ALARM_TYPE_DEVICE"},
+		{"obj_id": "13", "alarm_type": "ALARM_TYPE_DEVICE"},
+	}
+
+	got := selectCASLGeneralTapeInitialItemObjectIDs(rows, 2)
+	want := []string{"11", "12"}
+	if len(got) != len(want) {
+		t.Fatalf("ids len = %d, want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ids[%d] = %q, want %q; all=%#v", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestCASLProvider_RealtimeConnectionEventsUpdateDeviceOfflineCache(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	provider.mu.Lock()
+	provider.deviceByDeviceID["23"] = caslDevice{
+		DeviceID: caslText("23"),
+		ObjID:    caslText("24"),
+		Number:   caslInt64(1003),
+	}
+	provider.deviceByObjectID["24"] = provider.deviceByDeviceID["23"]
+	provider.deviceByNumber[1003] = provider.deviceByDeviceID["23"]
+
+	provider.applyCASLRealtimeDeviceOfflineLocked(CASLObjectEvent{
+		DeviceID: "23",
+		ObjID:    "24",
+		PPKNum:   1003,
+		Action:   "PPK_NO_CONN",
+		Time:     1774769732941,
+	}, true)
+	offlineDevice := provider.deviceByDeviceID["23"]
+	provider.applyCASLRealtimeDeviceOfflineLocked(CASLObjectEvent{
+		DeviceID: "23",
+		ObjID:    "24",
+		PPKNum:   1003,
+		Action:   "PPK_CONN_OK",
+		Time:     1774769733999,
+	}, false)
+	onlineDevice := provider.deviceByDeviceID["23"]
+	provider.mu.Unlock()
+
+	if offlineDevice.Offline.Int64() != 1774769732941 {
+		t.Fatalf("offline marker = %d, want 1774769732941", offlineDevice.Offline.Int64())
+	}
+	if onlineDevice.Offline.Int64() != -1774769733999 {
+		t.Fatalf("online marker = %d, want -1774769733999", onlineDevice.Offline.Int64())
+	}
+}
+
 func TestNewCASLCloudProvider_DisablesGlobalHTTPTimeout(t *testing.T) {
 	t.Parallel()
 

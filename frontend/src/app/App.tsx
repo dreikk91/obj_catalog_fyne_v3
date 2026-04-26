@@ -4,12 +4,14 @@ import { useShallow } from 'zustand/react/shallow'
 import { resolveFrontendClient } from '../shared/api/client'
 import type {
   FrontendDBSettings,
+  FrontendAMISettings,
   FrontendAlarmProcessingOption,
   FrontendResponseGroup,
   FrontendSourceCapability,
 } from '../shared/api/types'
 import { useOperatorUIStore } from '../shared/state/ui-store'
 import { useThemeStore } from '../shared/state/theme-store'
+import { useLogStore, applyLogLevel } from '../shared/state/log-store'
 import { useJournalStream } from '../hooks/useJournalStream'
 import { useObjectEventsFeed } from '../hooks/useObjectEventsFeed'
 import { CardModal } from '../features/modal/CardModal'
@@ -18,6 +20,7 @@ import { AlarmProcessingModal } from '../features/modal/AlarmProcessingModal'
 import { DispatchGroupModal } from '../features/modal/DispatchGroupModal'
 import { StandbyModal } from '../features/modal/StandbyModal'
 import { SettingsModal } from '../features/modal/SettingsModal'
+import { CallBar } from '../shared/ui/CallBar'
 import { ObjectsTab } from '../features/objects/ObjectsTab'
 import { SignalsTab } from '../features/signals/SignalsTab'
 import { RECENT_JOURNAL_WINDOW_MS } from '../features/operator/constants'
@@ -40,6 +43,8 @@ const OPERATOR_NAME = 'Підлипний А.М'
 export function App() {
   const themeMode = useThemeStore((state) => state.themeMode)
   const setThemeMode = useThemeStore((state) => state.setThemeMode)
+  const logLevel = useLogStore((state) => state.logLevel)
+  const setLogLevel = useLogStore((state) => state.setLogLevel)
   const {
     mainTab,
     setMainTab,
@@ -100,6 +105,10 @@ export function App() {
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [settingsError, setSettingsError] = useState('')
   const [settingsSuccess, setSettingsSuccess] = useState('')
+  const [amiDraft, setAmiDraft] = useState<FrontendAMISettings | null>(null)
+  const [amiError, setAmiError] = useState('')
+  const [amiSuccess, setAmiSuccess] = useState('')
+  const [amiBusy, setAmiBusy] = useState(false)
   const [expandedUnprocessedGroups, setExpandedUnprocessedGroups] = useState<Record<string, boolean>>({})
   const [isAlarmProcessingModalOpen, setIsAlarmProcessingModalOpen] = useState(false)
   const [alarmProcessingOptions, setAlarmProcessingOptions] = useState<FrontendAlarmProcessingOption[]>([])
@@ -132,6 +141,13 @@ export function App() {
     refetchInterval: 10_000,
   })
 
+  const amiStatusQuery = useQuery({
+    queryKey: ['frontend', 'ami-status'],
+    queryFn: () => api.getAMIStatus(),
+    refetchInterval: 15_000,
+    retry: 0,
+  })
+
   useEffect(() => {
     void api.listResponseGroups().then(setResponseGroups).catch(() => {})
     void api.listAlarmProcessingOptionsCached().then(setCachedProcessingOptions).catch(() => {})
@@ -150,6 +166,10 @@ export function App() {
   }, [themeMode])
 
   useEffect(() => {
+    applyLogLevel(logLevel)
+  }, [logLevel])
+
+  useEffect(() => {
     if (!isSettingsModalOpen) {
       return
     }
@@ -158,12 +178,14 @@ export function App() {
     setSettingsBusy(true)
     setSettingsError('')
     setSettingsSuccess('')
+    setAmiError('')
+    setAmiSuccess('')
 
-    void api
-      .getDBSettings()
-      .then((settings) => {
+    void Promise.all([api.getDBSettings(), api.getAMISettings()])
+      .then(([settings, ami]) => {
         if (!cancelled) {
           setSettingsDraft(settings)
+          setAmiDraft(ami)
         }
       })
       .catch((error: unknown) => {
@@ -408,11 +430,23 @@ export function App() {
       return
     }
 
+    // Merge current AMI draft so the main save never resets AMI fields.
+    const payload: FrontendDBSettings = amiDraft != null ? {
+      ...settingsDraft,
+      amiEnabled:   amiDraft.enabled,
+      amiHost:      amiDraft.host,
+      amiPort:      amiDraft.port,
+      amiUsername:  amiDraft.username,
+      amiSecret:    amiDraft.secret,
+      amiExtension: amiDraft.extension,
+      amiContext:   amiDraft.context,
+    } : settingsDraft
+
     setSettingsBusy(true)
     setSettingsError('')
     setSettingsSuccess('')
     try {
-      await api.saveDBSettings(settingsDraft)
+      await api.saveDBSettings(payload)
       setSettingsSuccess('Налаштування збережено та застосовано')
       await Promise.all([objectsQuery.refetch(), detailsQuery.refetch()])
     } catch (error: unknown) {
@@ -420,7 +454,26 @@ export function App() {
     } finally {
       setSettingsBusy(false)
     }
-  }, [detailsQuery, objectsQuery, settingsDraft])
+  }, [amiDraft, detailsQuery, objectsQuery, settingsDraft])
+
+  const updateAmiDraft = useCallback((patch: Partial<FrontendAMISettings>) => {
+    setAmiDraft((prev) => (prev == null ? prev : { ...prev, ...patch }))
+  }, [])
+
+  const handleSaveAMI = useCallback(async () => {
+    if (amiDraft == null) return
+    setAmiBusy(true)
+    setAmiError('')
+    setAmiSuccess('')
+    try {
+      await api.saveAMISettings(amiDraft)
+      setAmiSuccess('Налаштування AMI збережено')
+    } catch (error: unknown) {
+      setAmiError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setAmiBusy(false)
+    }
+  }, [amiDraft])
 
   const toggleUnprocessedGroup = useCallback((groupID: string) => {
     setExpandedUnprocessedGroups((prev) => ({ ...prev, [groupID]: !prev[groupID] }))
@@ -784,6 +837,11 @@ export function App() {
             <div className={`sb-field ${caslStatusbarClass}`} style={{ fontSize: 11 }}>
               {caslCapability != null ? `● ${caslCapability.healthText}` : '● CASL не використовується'}
             </div>
+            {amiStatusQuery.data?.enabled && (
+              <div className={`sb-field ${amiStatusQuery.data.connected ? 'status-link--ok' : 'status-link--error'}`} style={{ fontSize: 11 }}>
+                {amiStatusQuery.data.connected ? '● AMI підключено' : '● AMI відключено'}
+              </div>
+            )}
             <div className="sb-clock">{clockValue}</div>
           </div>
         </div>
@@ -835,10 +893,19 @@ export function App() {
         settingsError={settingsError}
         settingsSuccess={settingsSuccess}
         themeMode={themeMode}
+        logLevel={logLevel}
+        amiDraft={amiDraft}
+        amiError={amiError}
+        amiSuccess={amiSuccess}
+        amiBusy={amiBusy}
+        amiConnected={amiStatusQuery.data?.connected ?? null}
         onClose={() => setIsSettingsModalOpen(false)}
         onSave={() => void handleSaveSettings()}
         onUpdateDraft={updateSettingsDraft}
         onThemeChange={setThemeMode}
+        onLogLevelChange={setLogLevel}
+        onUpdateAMI={updateAmiDraft}
+        onSaveAMI={() => void handleSaveAMI()}
       />
 
       <StandbyModal
@@ -878,6 +945,7 @@ export function App() {
         onClose={() => setIsAlarmProcessingModalOpen(false)}
         onSubmit={(payload) => void handleSubmitAlarmProcessing(payload)}
       />
+      <CallBar />
     </div>
   )
 }

@@ -4,8 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { App } from './app/App'
 import { ErrorBoundary } from './app/ErrorBoundary'
+import { useLogStore, applyLogLevel } from './shared/state/log-store'
 import './shared/theme/tokens.css'
 import './shared/theme/global.css'
+
+applyLogLevel(useLogStore.getState().logLevel)
 
 const queryClient = new QueryClient({
   defaultOptions: {

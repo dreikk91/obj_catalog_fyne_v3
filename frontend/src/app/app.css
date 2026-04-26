@@ -94,7 +94,33 @@ html,body{height:100%;overflow:hidden;font-family:'Exo 2',sans-serif;background:
 /* middle section */
 .ps-mid{display:flex;flex:1;overflow:hidden}
 .ps-groups{width:280px;flex-shrink:0;border-right:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}
-.ps-groups-title{font-size:12px;font-weight:600;padding:6px 10px;background:var(--bg4);border-bottom:1px solid var(--bd);color:var(--tx2);text-transform:uppercase;letter-spacing:.5px}
+.ps-groups-title{font-size:11px;font-weight:700;padding:5px 10px;background:var(--bg4);border-bottom:1px solid var(--bd);color:var(--tx2);text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:6px;flex-shrink:0}
+.ps-groups-count{background:var(--ac5);color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:0 6px;min-width:18px;text-align:center;line-height:16px}
+.ps-groups-list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:0}
+.ps-groups-empty{padding:20px 12px;font-size:12px;color:var(--tx2);text-align:center;opacity:.6}
+
+/* contacts sidebar */
+.contacts-list{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+.contact-section-header{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--tx2);padding:8px 10px 4px;background:var(--bg4);border-bottom:1px solid var(--bd);flex-shrink:0}
+.contact-card{padding:8px 10px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:3px}
+.contact-name{font-size:12px;font-weight:600;color:var(--tx3);line-height:1.3}
+.contact-position{font-size:11px;color:var(--tx2)}
+.contact-phone{font-family:'Share Tech Mono',monospace;font-size:15px;font-weight:700;color:var(--ac);letter-spacing:.5px;margin-top:2px}
+.contact-group{display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap}
+.contact-group-name{font-size:10px;font-weight:700;padding:1px 6px;border-radius:2px;background:rgba(14,158,120,.15);color:var(--ac);border:1px solid rgba(14,158,120,.25)}
+.contact-group-state{font-size:10px;color:var(--tx2)}
+
+/* age urgency classes */
+.age-medium{color:var(--ac4)!important}
+.age-high{color:#e08000!important;font-weight:700}
+.age-critical{color:var(--ac5)!important;font-weight:700;animation:age-blink .9s ease-in-out infinite}
+@keyframes age-blink{0%,100%{opacity:1}50%{opacity:.55}}
+
+/* alarm row pulse for new unprocessed critical alarms */
+.evt-table tbody tr.alarm:not(.selected){animation:row-alarm-pulse 3s ease-in-out infinite}
+@keyframes row-alarm-pulse{0%,100%{background:rgba(200,50,50,.08)}50%{background:rgba(200,50,50,.15)}}
+.evt-table tbody tr.alarm.selected{animation:none}
+
 .mini-table{width:100%;border-collapse:collapse;font-size:12px}
 .mini-table th{background:var(--base-bg-th);color:var(--tx2);padding:4px 8px;border:1px solid var(--bd);font-size:11px;text-transform:uppercase;letter-spacing:.3px}
 .mini-table td{padding:4px 8px;border-bottom:1px solid var(--bd);color:var(--tx)}
@@ -387,7 +413,11 @@ th:hover>.col-resizer::after{opacity:.55}
 .settings-loading{display:flex;align-items:center;justify-content:center;min-height:180px;color:var(--tx2);font-size:13px}
 .settings-banner{border-radius:3px;padding:8px 10px;font-size:12px;font-weight:600}
 .settings-banner-error{background:rgba(200,50,50,.15);border:1px solid rgba(200,50,50,.35);color:#e79090}
+.settings-banner-warn{background:rgba(200,140,30,.13);border:1px solid rgba(200,140,30,.35);color:#d4a84b}
 .settings-banner-success{background:rgba(14,158,120,.15);border:1px solid rgba(14,158,120,.35);color:#7bd7c0}
+.ami-status-dot{margin-left:auto;font-size:10px;font-weight:600;letter-spacing:.3px}
+.ami-status-dot--ok{color:var(--ac)}
+.ami-status-dot--off{color:var(--ac5)}
 .settings-theme-section{padding-bottom:10px}
 .theme-switcher{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}
 .theme-option{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:12px 14px;border:1px solid var(--bd2);border-radius:4px;background:var(--bg);color:var(--tx);cursor:pointer;transition:border-color .12s,background .12s,box-shadow .12s;text-align:left}
@@ -396,5 +426,31 @@ th:hover>.col-resizer::after{opacity:.55}
 .theme-option-title{font-size:12px;font-weight:700;color:var(--tx3)}
 .theme-option-desc{font-size:11px;color:var(--tx2);line-height:1.35}
 
+/* ── CALL BUTTON ── */
+.call-btn{width:24px;height:24px;flex-shrink:0;border-radius:50%;border:1px solid rgba(14,158,120,.4);background:rgba(14,158,120,.1);color:var(--ac);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s,transform .08s;padding:0}
+.call-btn:hover{background:rgba(14,158,120,.25);transform:scale(1.1)}
+.call-btn:active{transform:scale(.93)}
+.call-btn:disabled{opacity:.35;cursor:default;transform:none}
+.call-btn--active{background:rgba(14,158,120,.35)!important;border-color:var(--ac)!important;animation:call-btn-pulse 1.2s ease-in-out infinite}
+@keyframes call-btn-pulse{0%,100%{box-shadow:0 0 0 0 rgba(14,158,120,.5)}60%{box-shadow:0 0 0 5px rgba(14,158,120,0)}}
+
+/* contact phone row — телефон + кнопка поруч */
+.contact-phone-row{display:flex;align-items:center;gap:6px;margin-top:2px}
+.contact-phone-row .contact-phone{margin-top:0;flex:1}
+
+/* ── CALLBAR — floating call status ── */
+.callbar{position:fixed;bottom:36px;right:14px;z-index:9999;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;min-width:220px;max-width:320px;box-shadow:0 4px 20px rgba(0,0,0,.5);border:1px solid;animation:callbar-in .2s ease-out}
+@keyframes callbar-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.callbar--dialing{background:rgba(14,28,50,.96);border-color:rgba(14,158,120,.5);color:#a0e0c8}
+.callbar--active{background:rgba(10,26,10,.96);border-color:rgba(14,158,120,.7);color:#a0e8a0}
+.callbar--failed{background:rgba(40,10,10,.96);border-color:rgba(200,50,50,.6);color:#e09090}
+.callbar-icon{flex-shrink:0;display:flex;align-items:center;opacity:.9}
+.callbar-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.callbar-name{font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.callbar-phone{font-family:'Share Tech Mono',monospace;font-size:12px;opacity:.75}
+.callbar-status{font-family:'Share Tech Mono',monospace;font-size:13px;font-weight:700;flex-shrink:0;letter-spacing:.5px}
+.callbar-hangup{width:28px;height:28px;flex-shrink:0;border-radius:50%;border:1px solid rgba(200,50,50,.5);background:rgba(200,50,50,.2);color:#e08080;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:background .12s}
+.callbar-hangup:hover{background:var(--ac5);color:#fff}
+@keyframes phone-ring{0%,100%{transform:rotate(0)}20%{transform:rotate(-15deg)}40%{transform:rotate(15deg)}60%{transform:rotate(-8deg)}80%{transform:rotate(8deg)}}
 
 /* Clean semantic vars ensure correct theme transition without these overrides */

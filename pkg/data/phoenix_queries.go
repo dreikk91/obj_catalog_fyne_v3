@@ -12,6 +12,7 @@ SELECT
 	C.Address AS company_address,
 	COALESCE(PrimaryPhone.phone_number, C.Telephones) AS telephones,
 	CAST(NULL AS nvarchar(255)) AS type_name,
+	PanelMeta.device_name AS device_name,
 	P.Disabled AS panel_disabled,
 	P.TestPanel AS test_panel,
 	P.Panel_type AS panel_type,
@@ -36,6 +37,7 @@ LEFT JOIN (
 INNER JOIN vwRealPanel P WITH (NOLOCK) ON P.Panel_id = G.Panel_id
 OUTER APPLY (
 	SELECT TOP (1)
+		MRT.Message AS device_name,
 		CASE WHEN ISNULL(M.IsZStatusDevice, 0) = 1 AND ISNULL(M.NotTested, 0) = 0 THEN 1 ELSE 0 END AS has_zstatus_device,
 		CASE
 			WHEN COALESCE(CASE
@@ -119,6 +121,7 @@ SELECT
 	C.Address AS company_address,
 	COALESCE(PrimaryPhone.phone_number, C.Telephones) AS telephones,
 	CT.Name AS type_name,
+	PanelMeta.device_name AS device_name,
 	P.Disabled AS panel_disabled,
 	P.TestPanel AS test_panel,
 	P.Panel_type AS panel_type,
@@ -143,6 +146,7 @@ INNER JOIN vwRealPanel P WITH (NOLOCK) ON P.Panel_id = G.Panel_id
 LEFT JOIN Engineers E WITH (NOLOCK) ON E.Work_Panel_id = G.Panel_id
 OUTER APPLY (
 	SELECT TOP (1)
+		MRT.Message AS device_name,
 		CASE WHEN ISNULL(M.IsZStatusDevice, 0) = 1 AND ISNULL(M.NotTested, 0) = 0 THEN 1 ELSE 0 END AS has_zstatus_device,
 		CASE
 			WHEN COALESCE(CASE
@@ -611,6 +615,36 @@ LEFT JOIN Zones Z WITH (NOLOCK) ON Z.Panel_id = A.Panel_id AND Z.Group_ = A.Grou
 LEFT JOIN Company Co WITH (NOLOCK) ON Co.ID = G.CompanyID
 WHERE A.Event_id > @p1
 ORDER BY A.Event_id ASC
+`
+
+const phoenixRecentEventsQuery = `
+SELECT TOP (500)
+	A.Event_id AS event_id,
+	A.Panel_id AS panel_id,
+	A.Group_ AS group_no,
+	A.Zone AS zone_no,
+	A.TimeEvent AS time_event,
+	A.Code AS event_code,
+	C.Message AS code_message,
+	TC.idTCode AS type_code_id,
+	TC.Message AS type_code_message,
+	CASE WHEN COALESCE(C.AutoReset, 0) = 1 THEN 1 ELSE 0 END AS auto_reset,
+	CASE WHEN COALESCE(C.groupsent, 0) = 1 THEN 1 ELSE 0 END AS group_sent,
+	ISNULL(C.AccessCode, '0') AS access_code,
+	C.ContactID_Code AS contact_id_code,
+	CASE WHEN COALESCE(C.System, 0) = 1 THEN 1 ELSE 0 END AS system_flag,
+	C.zoneno AS code_zone_no,
+	G.Message AS group_name,
+	Z.Message AS zone_name,
+	Co.CompanyName AS company_name,
+	Co.Address AS company_address
+FROM vwArchives A WITH (NOLOCK)
+LEFT JOIN Groups G WITH (NOLOCK) ON G.Panel_id = A.Panel_id AND G.Group_ = A.Group_
+LEFT JOIN Code C WITH (NOLOCK) ON C.Code = A.Code AND C.CodeGroup = A.CodeGroup
+LEFT JOIN TypeCode TC WITH (NOLOCK) ON TC.idTCode = C.idTCode
+LEFT JOIN Zones Z WITH (NOLOCK) ON Z.Panel_id = A.Panel_id AND Z.Group_ = A.Group_ AND Z.Zone = A.Zone
+LEFT JOIN Company Co WITH (NOLOCK) ON Co.ID = G.CompanyID
+ORDER BY A.Event_id DESC
 `
 
 const phoenixAvailableStatesQuery = `

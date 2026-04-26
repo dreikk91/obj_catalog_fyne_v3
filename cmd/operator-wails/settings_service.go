@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"obj_catalog_fyne_v3/pkg/ami"
 	"obj_catalog_fyne_v3/pkg/backend"
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
@@ -103,6 +104,14 @@ type OperatorDBSettings struct {
 	CASLPultID  int64  `json:"CASLPultID"`
 
 	Mode string `json:"Mode"`
+
+	AMIEnabled   bool   `json:"AMIEnabled"`
+	AMIHost      string `json:"AMIHost"`
+	AMIPort      int    `json:"AMIPort"`
+	AMIUsername  string `json:"AMIUsername"`
+	AMISecret    string `json:"AMISecret"`
+	AMIExtension string `json:"AMIExtension"`
+	AMIContext   string `json:"AMIContext"`
 }
 
 type OperatorSettingsService struct {
@@ -119,6 +128,19 @@ func (s *OperatorSettingsService) GetDBSettings() (OperatorDBSettings, error) {
 }
 
 func (s *OperatorSettingsService) SaveDBSettings(input OperatorDBSettings) error {
+	// Save AMI config first — independent of DB connectivity, must not be lost if reload fails.
+	amiCfg := ami.Config{
+		Host:      strings.TrimSpace(input.AMIHost),
+		Port:      input.AMIPort,
+		Username:  strings.TrimSpace(input.AMIUsername),
+		Secret:    input.AMISecret,
+		Extension: strings.TrimSpace(input.AMIExtension),
+		Context:   strings.TrimSpace(input.AMIContext),
+	}
+	if err := savePreferencesAMIConfig(input.AMIEnabled, amiCfg); err != nil {
+		return err
+	}
+
 	cfg := mapConfigFromOperatorDBSettings(input)
 	if !cfg.FirebirdEnabled && !cfg.PhoenixEnabled && !cfg.CASLEnabled {
 		cfg.FirebirdEnabled = true
@@ -138,7 +160,15 @@ func (s *OperatorSettingsService) SaveDBSettings(input OperatorDBSettings) error
 }
 
 func mapOperatorDBSettings(cfg config.DBConfig) OperatorDBSettings {
+	amiEnabled, amiCfg, _ := loadPreferencesAMIConfig()
 	return OperatorDBSettings{
+		AMIEnabled:   amiEnabled,
+		AMIHost:      amiCfg.Host,
+		AMIPort:      amiCfg.Port,
+		AMIUsername:  amiCfg.Username,
+		AMISecret:    amiCfg.Secret,
+		AMIExtension: amiCfg.Extension,
+		AMIContext:   amiCfg.Context,
 		FirebirdEnabled:  cfg.FirebirdEnabled,
 		FirebirdUser:     cfg.User,
 		FirebirdPassword: cfg.Password,

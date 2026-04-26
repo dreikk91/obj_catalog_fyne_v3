@@ -184,6 +184,61 @@ export function createWailsFrontendClient(): FrontendClient | null {
       }
       await saveDBSettings(settings)
     },
+    async dialPhone(phone: string) {
+      const base = import.meta.env.VITE_FRONTEND_API_BASE ?? '/api/frontend/v1'
+      const res = await fetch(`${base}/dial`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
+      })
+      if (!res.ok) throw new Error(`dial failed: HTTP ${res.status}`)
+      return res.json() as Promise<{ callID: string }>
+    },
+    async hangupCall(callID: string) {
+      const base = import.meta.env.VITE_FRONTEND_API_BASE ?? '/api/frontend/v1'
+      await fetch(`${base}/dial/${encodeURIComponent(callID)}`, { method: 'DELETE' })
+    },
+    async getAMISettings() {
+      const getSettings = settingsBridge?.GetDBSettings
+      if (!getSettings) throw new Error('Сервіс налаштувань Wails недоступний')
+      const s = await getSettings()
+      const v = s as Record<string, unknown>
+      return {
+        enabled: Boolean(v.AMIEnabled),
+        host:      String(v.AMIHost      || '127.0.0.1'),
+        port:      Number(v.AMIPort      || 5038),
+        username:  String(v.AMIUsername  || 'admin'),
+        secret:    String(v.AMISecret    ?? ''),
+        extension: String(v.AMIExtension || '100'),
+        context:   String(v.AMIContext   || 'from-internal'),
+      }
+    },
+    async saveAMISettings(settings) {
+      const getSettings = settingsBridge?.GetDBSettings
+      const saveSettings = settingsBridge?.SaveDBSettings
+      if (!getSettings || !saveSettings) throw new Error('Сервіс налаштувань Wails недоступний')
+      const current = await getSettings()
+      await saveSettings({
+        ...current,
+        AMIEnabled:   settings.enabled,
+        AMIHost:      settings.host,
+        AMIPort:      settings.port,
+        AMIUsername:  settings.username,
+        AMISecret:    settings.secret,
+        AMIExtension: settings.extension,
+        AMIContext:   settings.context,
+      } as typeof current)
+    },
+    async getAMIStatus() {
+      const base = import.meta.env.VITE_FRONTEND_API_BASE ?? '/api/frontend/v1'
+      try {
+        const res = await fetch(`${base}/ami-status`)
+        if (!res.ok) return { connected: false, enabled: false }
+        return res.json() as Promise<{ connected: boolean; enabled: boolean }>
+      } catch {
+        return { connected: false, enabled: false }
+      }
+    },
   }
 }
 

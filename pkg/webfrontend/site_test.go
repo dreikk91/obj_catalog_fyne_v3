@@ -28,11 +28,39 @@ func (siteBackendStub) GetAlarmProcessingOptions(context.Context, int) ([]contra
 	return nil, nil
 }
 
+func (siteBackendStub) ListAlarmProcessingOptionsCached(context.Context) ([]contracts.FrontendAlarmProcessingOption, error) {
+	return nil, nil
+}
+
 func (siteBackendStub) PickAlarm(context.Context, int, contracts.FrontendAlarmPickRequest) error {
 	return nil
 }
 
 func (siteBackendStub) ProcessAlarm(context.Context, int, contracts.FrontendAlarmProcessRequest) error {
+	return nil
+}
+
+func (siteBackendStub) GroupProcessAlarm(context.Context, int, string) error {
+	return nil
+}
+
+func (siteBackendStub) StandbyObject(context.Context, int, contracts.FrontendStandbyRequest) error {
+	return nil
+}
+
+func (siteBackendStub) ListResponseGroups(context.Context) ([]contracts.FrontendResponseGroup, error) {
+	return nil, nil
+}
+
+func (siteBackendStub) AssignResponseGroup(context.Context, int, contracts.FrontendAlarmGroupActionRequest) error {
+	return nil
+}
+
+func (siteBackendStub) NotifyGroupArrived(context.Context, int) error {
+	return nil
+}
+
+func (siteBackendStub) CancelResponseGroup(context.Context, int) error {
 	return nil
 }
 
@@ -80,5 +108,15 @@ func TestNewSiteHandlerRoutesUIAndAPI(t *testing.T) {
 	}
 	if !strings.Contains(uiRec.Body.String(), "Дежурний оператор") {
 		t.Fatalf("ui body = %q", uiRec.Body.String())
+	}
+
+	caslReq := httptest.NewRequest(http.MethodGet, "/captchaShow", nil)
+	caslRec := httptest.NewRecorder()
+	handler.ServeHTTP(caslRec, caslReq)
+	if caslRec.Code != http.StatusOK {
+		t.Fatalf("casl status = %d", caslRec.Code)
+	}
+	if !strings.Contains(caslRec.Body.String(), `"captchaShow":false`) {
+		t.Fatalf("casl body = %q", caslRec.Body.String())
 	}
 }

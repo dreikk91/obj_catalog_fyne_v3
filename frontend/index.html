@@ -5,6 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>frontend</title>
+    <script>
+      (function () {
+        var stored = localStorage.getItem('frontend-log-level');
+        var level = 'warn';
+        try { level = JSON.parse(stored || '{}').state?.logLevel || 'warn'; } catch (_) {}
+        var n = {debug:0,info:1,warn:2,error:3,off:4}[level] ?? 2;
+        var noop = function(){};
+        if (n > 0) { console.debug = noop; }
+        if (n > 1) { console.log = noop; console.info = noop; }
+        if (n > 2) { console.warn = noop; }
+        if (n > 3) { console.error = noop; }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

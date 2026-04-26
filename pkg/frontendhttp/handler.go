@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
 	frontendv1 "obj_catalog_fyne_v3/pkg/frontendapi/v1"
@@ -17,11 +18,45 @@ const (
 )
 
 type Handler struct {
-	backend contracts.FrontendBackend
+	backend     contracts.FrontendBackend
+	dialerMu    sync.RWMutex
+	dialer      contracts.PhoneDialer         // nil if AMI not configured
+	amiSettings contracts.AMISettingsProvider // nil if not available
+	dialBuilder func(contracts.AMISettings) contracts.PhoneDialer
 }
 
 func NewHandler(backend contracts.FrontendBackend) http.Handler {
 	return &Handler{backend: backend}
+}
+
+func NewHandlerWithDialer(backend contracts.FrontendBackend, dialer contracts.PhoneDialer) http.Handler {
+	return &Handler{backend: backend, dialer: dialer}
+}
+
+func NewHandlerFull(
+	backend contracts.FrontendBackend,
+	dialer contracts.PhoneDialer,
+	amiSettings contracts.AMISettingsProvider,
+	dialBuilder func(contracts.AMISettings) contracts.PhoneDialer,
+) http.Handler {
+	return &Handler{
+		backend:     backend,
+		dialer:      dialer,
+		amiSettings: amiSettings,
+		dialBuilder: dialBuilder,
+	}
+}
+
+func (h *Handler) getDialer() contracts.PhoneDialer {
+	h.dialerMu.RLock()
+	defer h.dialerMu.RUnlock()
+	return h.dialer
+}
+
+func (h *Handler) setDialer(d contracts.PhoneDialer) {
+	h.dialerMu.Lock()
+	defer h.dialerMu.Unlock()
+	h.dialer = d
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +85,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleResponseGroups(w, r)
 	case path == APIV1BasePath+"/events":
 		h.handleEvents(w, r)
+	case path == APIV1BasePath+"/dial":
+		h.handleDial(w, r)
+	case strings.HasPrefix(path, APIV1BasePath+"/dial/"):
+		h.handleDialItem(w, r, strings.TrimPrefix(path, APIV1BasePath+"/dial/"))
+	case path == APIV1BasePath+"/ami-settings":
+		h.handleAMISettings(w, r)
+	case path == APIV1BasePath+"/ami-status":
+		h.handleAMIStatus(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "route not found")
 	}
@@ -571,6 +614,95 @@ func writeMethodNotAllowed(w http.ResponseWriter, methods ...string) {
 		w.Header().Set("Allow", strings.Join(methods, ", "))
 	}
 	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+func (h *Handler) handleDial(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, http.MethodPost)
+		return
+	}
+	dialer := h.getDialer()
+	if dialer == nil {
+		writeError(w, http.StatusServiceUnavailable, "phone dialer is not configured")
+		return
+	}
+
+	var req struct {
+		Phone string `json:"phone"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Phone) == "" {
+		writeError(w, http.StatusBadRequest, "phone is required")
+		return
+	}
+
+	callID, err := dialer.DialPhone(strings.TrimSpace(req.Phone))
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "dial failed: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"callID": callID})
+}
+
+func (h *Handler) handleDialItem(w http.ResponseWriter, r *http.Request, callID string) {
+	if r.Method != http.MethodDelete {
+		writeMethodNotAllowed(w, http.MethodDelete)
+		return
+	}
+	dialer := h.getDialer()
+	if dialer == nil {
+		writeError(w, http.StatusServiceUnavailable, "phone dialer is not configured")
+		return
+	}
+	dialer.HangupCall(strings.TrimSpace(callID))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleAMIStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	connected := false
+	enabled := false
+	if h.amiSettings != nil {
+		enabled = h.amiSettings.GetAMISettings().Enabled
+	}
+	if d := h.getDialer(); d != nil {
+		connected = d.IsDialerConnected()
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"connected": connected, "enabled": enabled})
+}
+
+func (h *Handler) handleAMISettings(w http.ResponseWriter, r *http.Request) {
+	if h.amiSettings == nil {
+		writeError(w, http.StatusServiceUnavailable, "ami settings not available")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, h.amiSettings.GetAMISettings())
+
+	case http.MethodPut:
+		var req contracts.AMISettings
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if err := h.amiSettings.SaveAMISettings(req); err != nil {
+			writeError(w, http.StatusInternalServerError, "save failed: "+err.Error())
+			return
+		}
+		// rebuild dialer with new settings
+		if h.dialBuilder != nil {
+			h.setDialer(h.dialBuilder(req))
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		writeMethodNotAllowed(w, http.MethodGet, http.MethodPut)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

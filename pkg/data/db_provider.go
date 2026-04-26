@@ -1015,10 +1015,11 @@ func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
 	}
 
 	return models.Object{
-		ID:          int(row.Objn),
-		Name:        ptrToString(row.ObjShortName1),
-		Address:     ptrToString(row.Address1),
-		ContractNum: ptrToString(row.Contract1),
+		ID:            int(row.Objn),
+		DisplayNumber: strconv.Itoa(int(row.Objn)),
+		Name:          ptrToString(row.ObjShortName1),
+		Address:       ptrToString(row.Address1),
+		ContractNum:   ptrToString(row.Contract1),
 		Phone:       ptrToString(row.GsmPhone),
 		SIM1:        ptrToString(row.GsmPhone),
 		SIM2:        ptrToString(row.GsmPhone2),

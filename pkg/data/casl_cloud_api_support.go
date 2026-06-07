@@ -524,6 +524,54 @@ func (p *CASLCloudProvider) ReadEventsJournal(ctx context.Context, req CASLReadE
 	return result, nil
 }
 
+// ReadEventsJournalNoRelogin executes read_events command without allowing auto-relogin.
+func (p *CASLCloudProvider) ReadEventsJournalNoRelogin(ctx context.Context, req CASLReadEventsRequest) ([]CASLObjectEvent, error) {
+	end := req.TimeEnd
+	if end <= 0 {
+		end = time.Now().UnixMilli()
+	}
+	start := req.TimeStart
+	if start <= 0 {
+		start = end - caslObjectEventsSpan.Milliseconds()
+	}
+	timeRequest := req.TimeRequest
+	if timeRequest <= 0 {
+		timeRequest = end
+	}
+
+	payload := map[string]any{
+		"type":         "read_events",
+		"time_start":   start,
+		"time_end":     end,
+		"time_request": timeRequest,
+	}
+
+	var resp struct {
+		Status string            `json:"status"`
+		Data   []caslObjectEvent `json:"data"`
+		Events []caslObjectEvent `json:"events"`
+		Error  string            `json:"error"`
+	}
+	if err := p.postCommandWithRetry(ctx, payload, &resp, true, false); err != nil {
+		return nil, err
+	}
+
+	rows := resp.Data
+	if len(rows) == 0 {
+		rows = resp.Events
+	}
+	if err := validateCASLObjectEvents(rows, "casl read_events"); err != nil {
+		return nil, err
+	}
+
+	result := make([]CASLObjectEvent, 0, len(rows))
+	for _, item := range rows {
+		result = append(result, normalizeCASLObjectEvent(item))
+	}
+	return result, nil
+}
+
+
 // ReadBasketCount exposes read_count_in_basket command.
 func (p *CASLCloudProvider) ReadBasketCount(ctx context.Context) (int, error) {
 	return p.readBasketCount(ctx)

@@ -21,6 +21,8 @@ import (
 
 const caslRealtimePingGracePeriod = 12 * time.Second
 
+var caslRealtimeWatchdogTimeout = 25 * time.Second
+
 func extractCASLRealtimeConnID(raw []byte) string {
 	payload, ok := decodeCASLRealtimePayload(raw)
 	if ok {
@@ -583,6 +585,17 @@ func (p *CASLCloudProvider) runRealtimeSession(ctx context.Context) error {
 	if connID != "" {
 		log.Debug().Str("conn_id", connID).Msg("CASL realtime conn_id extracted from ws_url")
 	}
+	sessionStartedAt := time.Now()
+	tickerDuration := 3 * time.Second
+	if caslRealtimeWatchdogTimeout < tickerDuration {
+		tickerDuration = caslRealtimeWatchdogTimeout / 2
+		if tickerDuration < 10*time.Millisecond {
+			tickerDuration = 10 * time.Millisecond
+		}
+	}
+	watchdogTicker := time.NewTicker(tickerDuration)
+	defer watchdogTicker.Stop()
+
 	subscribed := false
 	subscribeTicker := time.NewTicker(1500 * time.Millisecond)
 	defer subscribeTicker.Stop()
@@ -668,6 +681,24 @@ func (p *CASLCloudProvider) runRealtimeSession(ctx context.Context) error {
 				continue
 			}
 			subscribeOnce(connID)
+		case <-watchdogTicker.C:
+			p.mu.RLock()
+			lastMsg := p.lastRealtimeMsgAt
+			lastPing := p.lastRealtimePingAt
+			p.mu.RUnlock()
+
+			lastActivity := lastMsg
+			if lastPing.After(lastActivity) {
+				lastActivity = lastPing
+			}
+			if lastActivity.IsZero() {
+				lastActivity = sessionStartedAt
+			}
+
+			if time.Since(lastActivity) > caslRealtimeWatchdogTimeout {
+				log.Warn().Msgf("CASL realtime stream watchdog: no activity (ping/msg) for %v, reconnecting...", caslRealtimeWatchdogTimeout)
+				return fmt.Errorf("realtime stream watchdog timeout")
+			}
 		}
 	}
 }
@@ -968,11 +999,14 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 	objFilter := make(map[string]struct{}, len(rows))
 	resolvedByDeviceID := make(map[string]int64)
 	unresolvedByDeviceID := make(map[string]struct{})
-	for _, row := range rows {
+
+	ppkNums := make([]int64, len(rows))
+	for idx, row := range rows {
 		ppkNum := row.PPKNum
 		if ppkNum <= 0 {
 			ppkNum = p.resolveCASLPPKByDeviceIDWithCache(ctx, row.DeviceID, resolvedByDeviceID, unresolvedByDeviceID)
 		}
+		ppkNums[idx] = ppkNum
 		if ppkNum > 0 {
 			ppkFilter[ppkNum] = struct{}{}
 		}
@@ -990,16 +1024,12 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 	customDeviceTypes := p.loadCASLCustomDeviceTypeSet(ctx)
 	needStandardAlarmFlags := len(customDeviceTypes) == 0
 	if !needStandardAlarmFlags {
-		for _, row := range rows {
-			ppkNum := row.PPKNum
-			if ppkNum <= 0 {
-				ppkNum = p.resolveCASLPPKByDeviceIDWithCache(ctx, row.DeviceID, resolvedByDeviceID, unresolvedByDeviceID)
-			}
-
+		for idx := range rows {
+			ppkNum := ppkNums[idx]
 			deviceType := ""
 			if ctxItem, ok := contextByPPK[ppkNum]; ok {
 				deviceType = strings.TrimSpace(ctxItem.DeviceType)
-			} else if objCtx, ok := contextByObject[strings.TrimSpace(row.ObjID)]; ok {
+			} else if objCtx, ok := contextByObject[strings.TrimSpace(rows[idx].ObjID)]; ok {
 				deviceType = strings.TrimSpace(objCtx.DeviceType)
 			}
 			if deviceType == "" {
@@ -1018,10 +1048,21 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		standardAlarmFlags = p.loadAlarmEventsCatalogMap(ctx)
 	}
 
+	users := map[string]caslUser(nil)
+	if shouldLoadCASLEventUsers(rows) {
+		userCtx, userCancel := context.WithTimeout(ctx, 3*time.Second)
+		if loadedUsers, err := p.loadUsers(userCtx); err == nil {
+			users = loadedUsers
+		} else {
+			log.Debug().Err(err).Msg("CASL realtime: не вдалося завантажити користувачів для підписів тривог")
+		}
+		userCancel()
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for _, row := range rows {
+	for idx, row := range rows {
 		action := strings.ToUpper(strings.TrimSpace(row.Action))
 		if action == "" {
 			action = strings.ToUpper(strings.TrimSpace(row.Code))
@@ -1034,10 +1075,7 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 		}
 
 		rawObjID := strings.TrimSpace(row.ObjID)
-		ppkNum := row.PPKNum
-		if ppkNum <= 0 {
-			ppkNum = p.resolveCASLPPKByDeviceIDWithCache(ctx, row.DeviceID, resolvedByDeviceID, unresolvedByDeviceID)
-		}
+		ppkNum := ppkNums[idx]
 
 		ctxItem, hasCtx := contextByPPK[ppkNum]
 		if !hasCtx && rawObjID != "" {
@@ -1182,12 +1220,14 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 
 		if action == "GRD_OBJ_PICK" || action == "GRD_OBJ_HIJACK" || action == "GRD_OBJ_ASS_MGR" || action == "GRD_OBJ_MGR_ARRIVE" || action == "GRD_OBJ_MGR_CANCEL" {
 			isInProgress := isCASLAlarmInProgressAction(action)
-			isOwnedByMe := strings.TrimSpace(row.UserID) != "" && strings.TrimSpace(row.UserID) == p.currentCASLUserID()
+			isOwnedByMe := strings.TrimSpace(row.UserID) != "" && strings.TrimSpace(row.UserID) == strings.TrimSpace(p.userID)
 			inProgressBy := strings.TrimSpace(row.UserFIO)
 			groupDispatched := action == "GRD_OBJ_ASS_MGR" || action == "GRD_OBJ_MGR_ARRIVE"
 			groupArrived := action == "GRD_OBJ_MGR_ARRIVE"
 			if inProgressBy == "" && strings.TrimSpace(row.UserID) != "" {
-				inProgressBy = p.resolveCASLUserDisplayName(context.Background(), strings.TrimSpace(row.UserID))
+				if user, ok := users[strings.TrimSpace(row.UserID)]; ok {
+					inProgressBy = strings.TrimSpace(user.FullName())
+				}
 			}
 			if inProgressBy == "" && strings.TrimSpace(row.UserID) != "" {
 				inProgressBy = "Оператор #" + strings.TrimSpace(row.UserID)

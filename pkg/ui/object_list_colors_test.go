@@ -49,6 +49,22 @@ func TestObjectListRowColors_PhoenixDisarmedUsesDedicatedPalette(t *testing.T) {
 	}
 }
 
+func TestObjectListRowColors_PhoenixOnlineGuardedDoesNotUseYellow(t *testing.T) {
+	item := models.Object{
+		ID:               1000000079,
+		ConnectionStatus: models.ConnectionStatusOnline,
+		IsConnState:      1,
+		IsConnOK:         true,
+		GuardStatus:      models.GuardStatusGuarded,
+		Status:           models.StatusNormal,
+	}
+
+	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
+	if row.R == 225 && row.G == 235 && row.B == 35 {
+		t.Fatalf("Phoenix online guarded object got colored yellow as if offline: text=%+v row=%+v", text, row)
+	}
+}
+
 func TestObjectListRowColors_OfflinePriority(t *testing.T) {
 	item := models.Object{
 		ConnectionStatus: models.ConnectionStatusOffline,

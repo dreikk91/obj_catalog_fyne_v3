@@ -2,18 +2,8 @@ package application
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"net"
-	"net/http"
-	"net/url"
-	"time"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
-	"obj_catalog_fyne_v3/pkg/ui/dialogs"
-	"obj_catalog_fyne_v3/pkg/webfrontend"
-
-	"github.com/rs/zerolog/log"
 )
 
 const defaultWebFrontendAddr = "127.0.0.1:17890"
@@ -178,107 +168,17 @@ func (b applicationFrontendBackend) StandbyObject(ctx context.Context, objectID 
 }
 
 func (a *Application) startWebFrontendServer() {
-	if _, err := a.ensureWebFrontendServer(); err != nil {
-		log.Warn().Err(err).Msg("Не вдалося запустити web frontend server")
-	}
+	// Web frontend has been disabled as requested
 }
 
 func (a *Application) ensureWebFrontendServer() (string, error) {
-	if a == nil {
-		return "", contracts.ErrFrontendBackendUnavailable
-	}
-
-	a.webServerMu.Lock()
-	defer a.webServerMu.Unlock()
-
-	if a.webServer != nil && a.webServerURL != "" {
-		return a.webServerURL, nil
-	}
-
-	dialer := buildAMIDialer(a)
-	amiSettings := applicationAMISettings{app: a}
-	handler, err := webfrontend.NewSiteHandlerFull(
-		applicationFrontendBackend{app: a},
-		dialer,
-		amiSettings,
-		buildDialerFromSettings,
-	)
-	if err != nil {
-		return "", err
-	}
-
-	listener, err := listenLocalWebFrontend()
-	if err != nil {
-		return "", err
-	}
-
-	server := &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	webURL := "http://" + listener.Addr().String()
-	a.webServer = server
-	a.webServerURL = webURL
-
-	go func() {
-		log.Info().Str("url", webURL).Msg("Web frontend доступний")
-		if serveErr := server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			log.Error().Err(serveErr).Str("url", webURL).Msg("Web frontend server завершився з помилкою")
-		}
-	}()
-
-	return webURL, nil
-}
-
-func listenLocalWebFrontend() (net.Listener, error) {
-	listener, err := net.Listen("tcp", defaultWebFrontendAddr)
-	if err == nil {
-		return listener, nil
-	}
-	return net.Listen("tcp", "127.0.0.1:0")
+	return "", contracts.ErrFrontendBackendUnavailable
 }
 
 func (a *Application) stopWebFrontendServer() {
-	if a == nil {
-		return
-	}
-
-	a.webServerMu.Lock()
-	server := a.webServer
-	a.webServer = nil
-	a.webServerURL = ""
-	a.webServerMu.Unlock()
-
-	if server == nil {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Warn().Err(err).Msg("Не вдалося коректно зупинити web frontend server")
-	}
+	// Web frontend has been disabled as requested
 }
 
 func (a *Application) openWebFrontend() {
-	webURL, err := a.ensureWebFrontendServer()
-	if err != nil {
-		dialogs.ShowErrorDialog(a.mainWindow, "Web frontend", err)
-		return
-	}
-
-	target, err := url.Parse(webURL)
-	if err != nil {
-		dialogs.ShowErrorDialog(a.mainWindow, "Web frontend", fmt.Errorf("invalid web frontend url: %w", err))
-		return
-	}
-
-	if openErr := a.fyneApp.OpenURL(target); openErr != nil {
-		dialogs.ShowInfoDialog(a.mainWindow, "Web frontend", "Відкрити браузер автоматично не вдалося.\n\nАдреса: "+webURL)
-		return
-	}
-	if a.statusLabel != nil {
-		a.statusLabel.SetText(a.backendStatusConnectedText() + " | Web frontend: " + webURL)
-	}
+	// Web frontend has been disabled as requested
 }

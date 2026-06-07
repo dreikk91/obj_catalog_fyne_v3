@@ -16,9 +16,9 @@ import (
 
 // StateEvent values in Phoenix Temp table.
 const (
-	phoenixStateActive     = int64(1) // alarm is active, not yet picked up
-	phoenixStateInWork     = int64(2) // operator took the alarm
-	phoenixStateGroupSent  = int64(3) // response group dispatched
+	phoenixStateActive    = int64(1) // alarm is active, not yet picked up
+	phoenixStateInWork    = int64(2) // operator took the alarm
+	phoenixStateGroupSent = int64(3) // response group dispatched
 )
 
 // GroupResponse status_id values (from StatusGroupResponse).

@@ -961,8 +961,25 @@ func (p *PhoenixDataProvider) applyChannelInfo(obj *models.Object, row phoenixCh
 }
 
 func (p *PhoenixDataProvider) applyPhoenixConnectionStates(ctx context.Context, objects []models.Object) {
+	for i := range objects {
+		obj := &objects[i]
+		obj.ConnectionStatus = models.ConnectionStatusOnline
+		obj.IsConnState = 1
+		obj.IsConnOK = true
+	}
+
 	if p == nil || p.db == nil || len(objects) == 0 {
 		return
+	}
+
+	// Перевіряємо, чи база даних не є застарілою (static/historical)
+	var maxLastTest []time.Time
+	_ = p.db.SelectContext(ctx, &maxLastTest, "SELECT MAX(LastTest) FROM vwMPhoneDeviceChannels WITH (NOLOCK)")
+	if len(maxLastTest) > 0 && !maxLastTest[0].IsZero() {
+		if time.Since(maxLastTest[0]) > 24*time.Hour {
+			log.Info().Time("maxLastTest", maxLastTest[0]).Msg("Phoenix: база даних є застарілою (max LastTest > 24 год), режим офлайн-об'єктів вимкнено")
+			return
+		}
 	}
 
 	var rows []phoenixOfflinePanelRow
@@ -986,16 +1003,7 @@ func (p *PhoenixDataProvider) applyPhoenixConnectionStates(ctx context.Context, 
 			obj.ConnectionStatus = models.ConnectionStatusOffline
 			obj.IsConnState = 0
 			obj.IsConnOK = false
-			continue
 		}
-		if obj.ConnectionStatus == models.ConnectionStatusOnline {
-			obj.IsConnState = 1
-			obj.IsConnOK = true
-			continue
-		}
-		obj.ConnectionStatus = models.ConnectionStatusUnknown
-		obj.IsConnState = 0
-		obj.IsConnOK = false
 	}
 }
 

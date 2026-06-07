@@ -20,6 +20,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/eventbus"
+	"obj_catalog_fyne_v3/pkg/ids"
 	applogger "obj_catalog_fyne_v3/pkg/logger"
 	"obj_catalog_fyne_v3/pkg/models"
 	apptheme "obj_catalog_fyne_v3/pkg/theme"
@@ -607,7 +608,18 @@ func (a *Application) installCloseIntercept() {
 func (a *Application) buildMainMenu() *fyne.MainMenu {
 	adminMenu := fyne.NewMenu("Адмін",
 		fyne.NewMenuItem("Блокування відображення інформації", withAdminCapability(a, func(admin adminDisplayBlockingProvider) {
-			dialogs.ShowDisplayBlockingDialog(a.mainWindow, backend.NewAdminV1DisplayBlockingProvider(admin), func() {
+			var initialObjN int64
+			a.providerMu.RLock()
+			currObj := a.currentObject
+			a.providerMu.RUnlock()
+			if currObj != nil {
+				id := currObj.ID
+				if !ids.IsPhoenixObjectID(id) && !ids.IsCASLObjectID(id) && ids.IsBridgePPKNum(id) {
+					initialObjN = int64(id)
+				}
+			}
+
+			dialogs.ShowDisplayBlockingDialog(a.mainWindow, backend.NewAdminV1DisplayBlockingProvider(admin), initialObjN, func() {
 				a.publishDataRefresh(eventbus.DataRefreshEvent{RefreshObjects: true})
 			})
 		})),
@@ -700,10 +712,6 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	adminMenu.Items[len(adminMenu.Items)-1].ChildMenu = adminDirectories
 
 	helpMenu := fyne.NewMenu("Довідка",
-		fyne.NewMenuItem("Відкрити web frontend", func() {
-			a.openWebFrontend()
-		}),
-		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("Про версію", func() {
 			dialogs.ShowInfoDialog(a.mainWindow, "Про версію", a.versionInfo.FullText())
 		}),

@@ -60,7 +60,7 @@ func adminDisplayBlockObjectColors(item adminv1.DisplayBlockObject, isDark bool)
 	return selectObjectColor(10)
 }
 
-func ShowDisplayBlockingDialog(parent fyne.Window, provider adminv1.DisplayBlockingProvider, onUpdated func()) {
+func ShowDisplayBlockingDialog(parent fyne.Window, provider adminv1.DisplayBlockingProvider, initialObjN int64, onUpdated func()) {
 	win := fyne.CurrentApp().NewWindow("Блокування відображення інформації")
 	win.Resize(fyne.NewSize(1020, 620))
 
@@ -195,6 +195,7 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider adminv1.DisplayBlock
 			for i := range objects {
 				if objects[i].ObjN == selectObjN {
 					table.Select(widget.TableCellID{Row: i, Col: 0})
+					table.ScrollTo(widget.TableCellID{Row: i, Col: 0})
 					return
 				}
 			}
@@ -268,6 +269,6 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider adminv1.DisplayBlock
 	)
 
 	win.SetContent(content)
-	reload(0)
+	reload(initialObjN)
 	win.Show()
 }

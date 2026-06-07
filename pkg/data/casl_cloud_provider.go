@@ -940,3 +940,51 @@ type caslBasketResponse struct {
 	Count  int    `json:"count"`
 	Error  string `json:"error"`
 }
+
+// ExecuteCASLPpkCommand forwards raw /ppk_command requests to the CASL Cloud API.
+func (p *CASLCloudProvider) ExecuteCASLPpkCommand(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	token, err := p.ensureToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reqPayload := copyStringAnyMap(payload)
+	reqPayload["token"] = token
+
+	body, status, err := p.doJSONRequest(ctx, "/ppk_command", reqPayload)
+	if err != nil {
+		return nil, err
+	}
+	if !statusIsOK(status.Status) {
+		return nil, fmt.Errorf("casl ppk_command status=%q error=%q", status.Status, status.Error)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// ExecuteDeviceCommand forwards /api/devices/{deviceNumber}/command requests to the CASL Cloud API.
+func (p *CASLCloudProvider) ExecuteDeviceCommand(ctx context.Context, deviceNumber int, payload map[string]any) (map[string]any, error) {
+	token, err := p.ensureToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reqPayload := copyStringAnyMap(payload)
+	reqPayload["token"] = token
+
+	path := fmt.Sprintf("/api/devices/%d/command", deviceNumber)
+	body, status, err := p.doJSONRequest(ctx, path, reqPayload)
+	if err != nil {
+		return nil, err
+	}
+	if !statusIsOK(status.Status) {
+		return nil, fmt.Errorf("casl device command status=%q error=%q", status.Status, status.Error)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+

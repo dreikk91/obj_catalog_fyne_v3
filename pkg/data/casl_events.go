@@ -378,6 +378,15 @@ func (p *CASLCloudProvider) GetEvents() []models.Event {
 	// працює через коротке HTTP-опитування або віддає кеш.
 	p.ensureRealtimeStreamAsync()
 
+	p.mu.RLock()
+	token := p.token
+	p.mu.RUnlock()
+	if token == "" {
+		p.mu.RLock()
+		defer p.mu.RUnlock()
+		return append([]models.Event(nil), p.cachedEvents...)
+	}
+
 	// Якщо WebSocket-підписка активна — повертаємо кеш одразу.
 	// Realtime loop підтримує cachedEvents свіжими через mergeCachedEventsLocked.
 	p.realtimeMu.Lock()
@@ -496,7 +505,7 @@ func (p *CASLCloudProvider) readEventsJournalAsEvents(ctx context.Context) ([]mo
 	}
 	p.mu.RUnlock()
 
-	rows, err := p.ReadEventsJournal(ctx, CASLReadEventsRequest{
+	rows, err := p.ReadEventsJournalNoRelogin(ctx, CASLReadEventsRequest{
 		TimeStart:   start,
 		TimeEnd:     now,
 		TimeRequest: now,
@@ -1880,8 +1889,9 @@ func (p *CASLCloudProvider) PickAlarm(ctx context.Context, alarm models.Alarm, _
 	if err != nil {
 		return err
 	}
+	currentUserID := p.currentCASLUserID()
 	workflow, workflowErr := p.cachedCASLAlarmWorkflowState(ctx, target)
-	target.Alarm = p.applyCASLWorkflowStateToAlarm(target.Alarm, workflow)
+	target.Alarm = p.applyCASLWorkflowStateToAlarm(target.Alarm, workflow, currentUserID)
 
 	if workflowErr != nil {
 		log.Debug().Err(workflowErr).Str("obj_id", target.CASLObjectID).Msg("CASL: не вдалося прочитати workflow state перед pick")
@@ -1936,8 +1946,9 @@ func (p *CASLCloudProvider) ProcessAlarmWithRequest(ctx context.Context, alarm m
 	if err != nil {
 		return err
 	}
+	currentUserID := p.currentCASLUserID()
 	workflow, workflowErr := p.cachedCASLAlarmWorkflowState(ctx, target)
-	target.Alarm = p.applyCASLWorkflowStateToAlarm(target.Alarm, workflow)
+	target.Alarm = p.applyCASLWorkflowStateToAlarm(target.Alarm, workflow, currentUserID)
 	if workflowErr != nil {
 		log.Debug().Err(workflowErr).Str("obj_id", target.CASLObjectID).Msg("CASL: не вдалося прочитати workflow state перед finish")
 	}
@@ -2047,7 +2058,7 @@ func (p *CASLCloudProvider) readCASLAlarmWorkflowState(ctx context.Context, objI
 	return caslAlarmWorkflowState{}, nil
 }
 
-func (p *CASLCloudProvider) applyCASLWorkflowStateToAlarm(alarm models.Alarm, state caslAlarmWorkflowState) models.Alarm {
+func (p *CASLCloudProvider) applyCASLWorkflowStateToAlarm(alarm models.Alarm, state caslAlarmWorkflowState, currentUserID string) models.Alarm {
 	alarm.ResponseGroupID = strings.TrimSpace(state.MgrID)
 	alarm.IsResponseGroupDispatched = strings.EqualFold(strings.TrimSpace(state.LastAct), "GRD_OBJ_ASS_MGR") || strings.EqualFold(strings.TrimSpace(state.LastAct), "GRD_OBJ_MGR_ARRIVE")
 	alarm.IsResponseGroupArrived = strings.EqualFold(strings.TrimSpace(state.LastAct), "GRD_OBJ_MGR_ARRIVE")
@@ -2058,7 +2069,7 @@ func (p *CASLCloudProvider) applyCASLWorkflowStateToAlarm(alarm models.Alarm, st
 	alarm.IsInProgress = true
 	alarm.InProgressUser = strings.TrimSpace(state.UserID)
 	alarm.InProgressBy = strings.TrimSpace(state.DisplayName)
-	alarm.IsOwnedByMe = alarm.InProgressUser != "" && alarm.InProgressUser == p.currentCASLUserID()
+	alarm.IsOwnedByMe = alarm.InProgressUser != "" && alarm.InProgressUser == currentUserID
 	return alarm
 }
 

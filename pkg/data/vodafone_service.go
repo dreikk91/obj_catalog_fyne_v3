@@ -30,7 +30,7 @@ const (
 	vodafoneBarringCode  = "POPFRBLKUSER"
 )
 
-var errVodafoneAuthRequired = errors.New("vodafone: потрібна авторизація через SMS-код у налаштуваннях")
+var errVodafoneAuthRequired = errors.New("vodafone: потрібна авторизація у налаштуваннях")
 
 type VodafoneService struct {
 	baseURL    string
@@ -89,6 +89,8 @@ func (s *VodafoneService) AuthState() (contracts.VodafoneAuthState, error) {
 
 	state := contracts.VodafoneAuthState{
 		Phone:          strings.TrimSpace(cfg.Phone),
+		LoginMethod:    cfg.NormalizedLoginMethod(),
+		PUKConfigured:  strings.TrimSpace(cfg.PUK) != "",
 		TokenExpiresAt: cfg.TokenExpiryTime(),
 	}
 	state.Authorized = cfg.TokenUsableAt(time.Now().UTC())
@@ -134,14 +136,41 @@ func (s *VodafoneService) VerifyLogin(phone string, code string) (contracts.Voda
 	if err != nil {
 		return contracts.VodafoneAuthState{}, err
 	}
+	cfg := s.loadConfig()
+	method := cfg.NormalizedLoginMethod()
 	code = strings.TrimSpace(code)
 	if code == "" {
+		if method == config.VodafoneLoginMethodPUK {
+			return contracts.VodafoneAuthState{}, errors.New("vodafone: введіть PUK-код")
+		}
+		return contracts.VodafoneAuthState{}, errors.New("vodafone: введіть SMS-код")
+	}
+	if method == config.VodafoneLoginMethodPUK {
+		cfg.Phone = msisdn
+		cfg.PUK = code
+		cfg.LoginMethod = method
+		s.saveConfig(cfg)
+	}
+	return s.loginWithPassword(msisdn, code, method)
+}
+
+func (s *VodafoneService) loginWithPassword(phone string, password string, method string) (contracts.VodafoneAuthState, error) {
+	msisdn, err := normalizeVodafoneMSISDN(phone)
+	if err != nil {
+		return contracts.VodafoneAuthState{}, err
+	}
+	password = strings.TrimSpace(password)
+	method = config.VodafoneConfig{LoginMethod: method}.NormalizedLoginMethod()
+	if password == "" {
+		if method == config.VodafoneLoginMethodPUK {
+			return contracts.VodafoneAuthState{}, errors.New("vodafone: введіть PUK-код")
+		}
 		return contracts.VodafoneAuthState{}, errors.New("vodafone: введіть SMS-код")
 	}
 
 	form := url.Values{
 		"username": {msisdn},
-		"password": {code},
+		"password": {password},
 	}
 	req, err := http.NewRequest(
 		http.MethodPost,
@@ -169,6 +198,10 @@ func (s *VodafoneService) VerifyLogin(phone string, code string) (contracts.Voda
 	expiry := resolveVodafoneTokenExpiry(resp.AccessToken, resp.ExpiresIn)
 	cfg := s.loadConfig()
 	cfg.Phone = msisdn
+	cfg.LoginMethod = method
+	if cfg.LoginMethod == config.VodafoneLoginMethodPUK {
+		cfg.PUK = password
+	}
 	cfg.AccessToken = strings.TrimSpace(resp.AccessToken)
 	if !expiry.IsZero() {
 		cfg.TokenExpiry = expiry.Format(time.RFC3339)
@@ -830,14 +863,21 @@ func (s *VodafoneService) getGuestToken() (string, error) {
 }
 
 func (s *VodafoneService) ensureAuthorizedToken() (string, error) {
-	state, err := s.AuthState()
-	if err != nil {
-		return "", err
+	cfg := s.loadConfig()
+	if cfg.TokenUsableAt(time.Now().UTC()) {
+		return strings.TrimSpace(cfg.AccessToken), nil
 	}
-	if !state.Authorized {
-		return "", errVodafoneAuthRequired
+
+	if cfg.NormalizedLoginMethod() == config.VodafoneLoginMethodPUK && cfg.HasPUKCredentials() {
+		state, err := s.loginWithPassword(cfg.Phone, cfg.PUK, config.VodafoneLoginMethodPUK)
+		if err != nil {
+			return "", err
+		}
+		if state.Authorized {
+			return strings.TrimSpace(s.loadConfig().AccessToken), nil
+		}
 	}
-	return strings.TrimSpace(s.loadConfig().AccessToken), nil
+	return "", errVodafoneAuthRequired
 }
 
 func (s *VodafoneService) doJSON(req *http.Request, out any) error {

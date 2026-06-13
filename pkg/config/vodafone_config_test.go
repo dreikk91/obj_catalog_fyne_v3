@@ -34,3 +34,14 @@ func TestVodafoneConfig_TokenUsableAt_WithoutExpiry(t *testing.T) {
 		t.Fatalf("TokenUsableAt() must accept stored token without expiry")
 	}
 }
+
+func TestVodafoneConfig_NormalizedLoginMethod(t *testing.T) {
+	t.Parallel()
+
+	if got := (VodafoneConfig{}).NormalizedLoginMethod(); got != VodafoneLoginMethodSMS {
+		t.Fatalf("empty LoginMethod = %q, want %q", got, VodafoneLoginMethodSMS)
+	}
+	if got := (VodafoneConfig{LoginMethod: " PUK "}).NormalizedLoginMethod(); got != VodafoneLoginMethodPUK {
+		t.Fatalf("PUK LoginMethod = %q, want %q", got, VodafoneLoginMethodPUK)
+	}
+}

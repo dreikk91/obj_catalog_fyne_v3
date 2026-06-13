@@ -5,6 +5,8 @@ import "time"
 // VodafoneAuthState описує поточний локальний стан авторизації у Vodafone API.
 type VodafoneAuthState struct {
 	Phone          string
+	LoginMethod    string
+	PUKConfigured  bool
 	Authorized     bool
 	TokenExpiresAt time.Time
 }

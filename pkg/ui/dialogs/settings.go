@@ -68,7 +68,9 @@ type settingsDialogState struct {
 	caslPultIDEntry           *widget.Entry
 	caslEnabledCheck          *widget.Check
 	vodafonePhoneEntry        *widget.Entry
+	vodafoneLoginMethodRadio  *widget.RadioGroup
 	vodafoneCodeEntry         *widget.Entry
+	vodafonePUKEntry          *widget.Entry
 	vodafoneStatusLabel       *widget.Label
 	kyivstarClientIDEntry     *widget.Entry
 	kyivstarClientSecretEntry *widget.Entry
@@ -210,11 +212,29 @@ func (s *settingsDialogState) initCarrierFields() {
 	s.vodafonePhoneEntry.SetText(strings.TrimSpace(s.vfCfg.Phone))
 	s.vodafonePhoneEntry.SetPlaceHolder("380501234567")
 
+	s.vodafoneLoginMethodRadio = widget.NewRadioGroup([]string{"SMS-код", "PUK-код"}, nil)
+	s.vodafoneLoginMethodRadio.Horizontal = true
+	s.vodafoneLoginMethodRadio.Required = true
+	if s.vfCfg.NormalizedLoginMethod() == config.VodafoneLoginMethodPUK {
+		s.vodafoneLoginMethodRadio.SetSelected("PUK-код")
+	} else {
+		s.vodafoneLoginMethodRadio.SetSelected("SMS-код")
+	}
+	s.vodafoneLoginMethodRadio.OnChanged = func(string) {
+		s.applyVodafoneLoginMethodState()
+		s.vodafoneStatusLabel.SetText(s.vfAuthVM.BuildStatusText(s.currentVodafoneAuthState()))
+	}
+
 	s.vodafoneCodeEntry = widget.NewPasswordEntry()
 	s.vodafoneCodeEntry.SetPlaceHolder("SMS-код")
 
+	s.vodafonePUKEntry = widget.NewPasswordEntry()
+	s.vodafonePUKEntry.SetText(strings.TrimSpace(s.vfCfg.PUK))
+	s.vodafonePUKEntry.SetPlaceHolder("PUK-код")
+
 	s.vodafoneStatusLabel = widget.NewLabel(s.vfAuthVM.BuildStatusText(s.currentVodafoneAuthState()))
 	s.vodafoneStatusLabel.Wrapping = fyne.TextWrapWord
+	s.applyVodafoneLoginMethodState()
 
 	s.kyivstarClientIDEntry = widget.NewEntry()
 	s.kyivstarClientIDEntry.SetText(strings.TrimSpace(s.ksCfg.ClientID))
@@ -366,14 +386,16 @@ func (s *settingsDialogState) buildCASLTab() fyne.CanvasObject {
 
 func (s *settingsDialogState) buildVodafoneTab() fyne.CanvasObject {
 	return container.NewVBox(
-		widget.NewLabel("Авторизація тільки через SMS-код для батьківського номера Vodafone."),
+		widget.NewLabel("Авторизація Vodafone для батьківського номера. PUK-код зберігається локально і використовується для автоматичного поновлення токена."),
 		widget.NewForm(
+			widget.NewFormItem("Тип входу", s.vodafoneLoginMethodRadio),
 			widget.NewFormItem("Номер входу", s.vodafonePhoneEntry),
-			widget.NewFormItem("SMS-код", s.vodafoneCodeEntry),
+			widget.NewFormItem("SMS/PUK для входу", s.vodafoneCodeEntry),
+			widget.NewFormItem("Збережений PUK", s.vodafonePUKEntry),
 		),
 		container.NewHBox(
 			widget.NewButton("Надіслати SMS", s.handleVodafoneSMSRequest),
-			widget.NewButton("Підтвердити код", s.handleVodafoneCodeVerify),
+			widget.NewButton("Увійти", s.handleVodafoneCodeVerify),
 			widget.NewButton("Очистити токен", s.handleVodafoneTokenClear),
 		),
 		s.vodafoneStatusLabel,
@@ -461,9 +483,34 @@ func (s *settingsDialogState) buildColorsButton() fyne.CanvasObject {
 func (s *settingsDialogState) currentVodafoneAuthState() contracts.VodafoneAuthState {
 	return contracts.VodafoneAuthState{
 		Phone:          strings.TrimSpace(s.vodafonePhoneEntry.Text),
+		LoginMethod:    s.selectedVodafoneLoginMethod(),
+		PUKConfigured:  s.vodafonePUKEntry != nil && strings.TrimSpace(s.vodafonePUKEntry.Text) != "",
 		Authorized:     s.vfCfg.TokenUsableAt(timeNow()),
 		TokenExpiresAt: s.vfCfg.TokenExpiryTime(),
 	}
+}
+
+func (s *settingsDialogState) selectedVodafoneLoginMethod() string {
+	if s == nil || s.vodafoneLoginMethodRadio == nil {
+		return config.VodafoneLoginMethodSMS
+	}
+	if strings.TrimSpace(s.vodafoneLoginMethodRadio.Selected) == "PUK-код" {
+		return config.VodafoneLoginMethodPUK
+	}
+	return config.VodafoneLoginMethodSMS
+}
+
+func (s *settingsDialogState) applyVodafoneLoginMethodState() {
+	if s == nil || s.vodafoneCodeEntry == nil || s.vodafonePUKEntry == nil {
+		return
+	}
+	if s.selectedVodafoneLoginMethod() == config.VodafoneLoginMethodPUK {
+		s.vodafoneCodeEntry.SetPlaceHolder("PUK-код для входу")
+		s.vodafonePUKEntry.Enable()
+		return
+	}
+	s.vodafoneCodeEntry.SetPlaceHolder("SMS-код")
+	s.vodafonePUKEntry.Disable()
 }
 
 func (s *settingsDialogState) currentKyivstarAuthState() contracts.KyivstarAuthState {
@@ -479,11 +526,16 @@ func (s *settingsDialogState) currentKyivstarAuthState() contracts.KyivstarAuthS
 func (s *settingsDialogState) setVodafoneBusy(busy bool) {
 	if busy {
 		s.vodafonePhoneEntry.Disable()
+		s.vodafoneLoginMethodRadio.Disable()
 		s.vodafoneCodeEntry.Disable()
+		s.vodafonePUKEntry.Disable()
 		return
 	}
 	s.vodafonePhoneEntry.Enable()
+	s.vodafoneLoginMethodRadio.Enable()
 	s.vodafoneCodeEntry.Enable()
+	s.vodafonePUKEntry.Enable()
+	s.applyVodafoneLoginMethodState()
 }
 
 func (s *settingsDialogState) setKyivstarBusy(busy bool) {
@@ -507,6 +559,12 @@ func (s *settingsDialogState) refreshVodafoneStatus() {
 				s.vodafonePhoneEntry.SetText(strings.TrimSpace(liveState.Phone))
 			}
 			s.vfCfg.Phone = liveState.Phone
+			s.vfCfg.LoginMethod = liveState.LoginMethod
+			if liveState.LoginMethod == config.VodafoneLoginMethodPUK {
+				s.vodafoneLoginMethodRadio.SetSelected("PUK-код")
+			} else {
+				s.vodafoneLoginMethodRadio.SetSelected("SMS-код")
+			}
 		}
 	}
 	s.vodafoneStatusLabel.SetText(s.vfAuthVM.BuildStatusText(state))
@@ -530,6 +588,10 @@ func (s *settingsDialogState) refreshKyivstarStatus() {
 func (s *settingsDialogState) handleVodafoneSMSRequest() {
 	if s.adminProvider == nil {
 		s.vodafoneStatusLabel.SetText("Vodafone: сервіс недоступний")
+		return
+	}
+	if s.selectedVodafoneLoginMethod() != config.VodafoneLoginMethodSMS {
+		s.vodafoneStatusLabel.SetText("Vodafone: для PUK-входу SMS не потрібне")
 		return
 	}
 
@@ -560,8 +622,25 @@ func (s *settingsDialogState) handleVodafoneCodeVerify() {
 
 	phone := strings.TrimSpace(s.vodafonePhoneEntry.Text)
 	code := strings.TrimSpace(s.vodafoneCodeEntry.Text)
+	method := s.selectedVodafoneLoginMethod()
+	if method == config.VodafoneLoginMethodPUK && code == "" {
+		code = strings.TrimSpace(s.vodafonePUKEntry.Text)
+	}
+	currentCfg := config.LoadVodafoneConfig(s.pref)
+	currentCfg.Phone = phone
+	currentCfg.LoginMethod = method
+	if method == config.VodafoneLoginMethodPUK {
+		currentCfg.PUK = code
+	}
+	config.SaveVodafoneConfig(s.pref, currentCfg)
+	s.vfCfg = currentCfg
+
 	s.setVodafoneBusy(true)
-	s.vodafoneStatusLabel.SetText("Vodafone: перевірка коду...")
+	if method == config.VodafoneLoginMethodPUK {
+		s.vodafoneStatusLabel.SetText("Vodafone: вхід через PUK...")
+	} else {
+		s.vodafoneStatusLabel.SetText("Vodafone: перевірка SMS-коду...")
+	}
 	go func() {
 		state, err := s.adminProvider.VerifyVodafoneLogin(phone, code)
 		fyne.Do(func() {
@@ -571,9 +650,12 @@ func (s *settingsDialogState) handleVodafoneCodeVerify() {
 				return
 			}
 			s.vfCfg.Phone = state.Phone
+			s.vfCfg.LoginMethod = state.LoginMethod
 			latestCfg := config.LoadVodafoneConfig(s.pref)
 			s.vfCfg.AccessToken = latestCfg.AccessToken
 			s.vfCfg.TokenExpiry = latestCfg.TokenExpiry
+			s.vfCfg.PUK = latestCfg.PUK
+			s.vodafonePUKEntry.SetText(strings.TrimSpace(latestCfg.PUK))
 			s.vodafoneCodeEntry.SetText("")
 			s.vodafoneStatusLabel.SetText(s.vfAuthVM.BuildStatusText(state))
 		})
@@ -737,7 +819,16 @@ func (s *settingsDialogState) buildUIConfigFromForm() config.UIConfig {
 
 func (s *settingsDialogState) buildVodafoneConfigFromForm() config.VodafoneConfig {
 	newCfg := config.LoadVodafoneConfig(s.pref)
+	oldMethod := newCfg.NormalizedLoginMethod()
 	newCfg.Phone = strings.TrimSpace(s.vodafonePhoneEntry.Text)
+	newCfg.LoginMethod = s.selectedVodafoneLoginMethod()
+	oldPUK := strings.TrimSpace(newCfg.PUK)
+	newPUK := strings.TrimSpace(s.vodafonePUKEntry.Text)
+	newCfg.PUK = newPUK
+	if oldMethod != newCfg.NormalizedLoginMethod() || oldPUK != newPUK {
+		newCfg.AccessToken = ""
+		newCfg.TokenExpiry = ""
+	}
 	return newCfg
 }
 

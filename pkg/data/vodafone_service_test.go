@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -84,6 +85,65 @@ func TestVodafoneService_VerifyLoginPersistsToken(t *testing.T) {
 	}
 	if store.cfg.TokenExpiry != exp.Format(time.RFC3339) {
 		t.Fatalf("unexpected token expiry: %q", store.cfg.TokenExpiry)
+	}
+}
+
+func TestVodafoneService_EnsureAuthorizedTokenRefreshesWithStoredPUK(t *testing.T) {
+	t.Parallel()
+
+	exp := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
+	token := buildTestJWT(exp)
+	store := &vodafoneConfigStoreStub{
+		cfg: config.VodafoneConfig{
+			Phone:       "380501234567",
+			AccessToken: "expired-token",
+			TokenExpiry: time.Now().UTC().Add(-time.Hour).Format(time.RFC3339),
+			LoginMethod: config.VodafoneLoginMethodPUK,
+			PUK:         "11112222",
+		},
+	}
+
+	authCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/uaa/oauth/token":
+			authCalls++
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm() error = %v", err)
+			}
+			if got := r.Form.Get("username"); got != "380501234567" {
+				t.Fatalf("username = %q, want 380501234567", got)
+			}
+			if got := r.Form.Get("password"); got != "11112222" {
+				t.Fatalf("password = %q, want stored PUK", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": token})
+		case r.Method == http.MethodGet && r.URL.Path == "/entity/api/functions/MYVF-SETTINGS":
+			if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+				t.Fatalf("Authorization = %q, want refreshed token", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"settings": []map[string]any{}})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	service := NewVodafoneService(store, WithVodafoneBaseURL(server.URL))
+	if _, err := service.listSettingsDictionary(context.Background()); err != nil {
+		t.Fatalf("listSettingsDictionary() error = %v", err)
+	}
+	if authCalls != 1 {
+		t.Fatalf("auth calls = %d, want 1", authCalls)
+	}
+	if store.cfg.AccessToken != token {
+		t.Fatalf("stored token was not refreshed")
+	}
+	if store.cfg.TokenExpiry != exp.Format(time.RFC3339) {
+		t.Fatalf("stored expiry = %q, want %q", store.cfg.TokenExpiry, exp.Format(time.RFC3339))
+	}
+	if store.cfg.PUK != "11112222" {
+		t.Fatalf("stored PUK changed unexpectedly")
 	}
 }
 

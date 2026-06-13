@@ -11,6 +11,11 @@ const (
 	PrefVodafonePhone       = "vodafone.phone"
 	PrefVodafoneAccessToken = "vodafone.access_token"
 	PrefVodafoneTokenExpiry = "vodafone.token_expiry"
+	PrefVodafoneLoginMethod = "vodafone.login_method"
+	PrefVodafonePUK         = "vodafone.puk"
+
+	VodafoneLoginMethodSMS = "sms"
+	VodafoneLoginMethodPUK = "puk"
 )
 
 // VodafoneConfig зберігає локальні параметри авторизації Vodafone API.
@@ -18,20 +23,27 @@ type VodafoneConfig struct {
 	Phone       string
 	AccessToken string
 	TokenExpiry string
+	LoginMethod string
+	PUK         string
 }
 
 func LoadVodafoneConfig(p fyne.Preferences) VodafoneConfig {
-	return VodafoneConfig{
+	cfg := VodafoneConfig{
 		Phone:       strings.TrimSpace(p.StringWithFallback(PrefVodafonePhone, "")),
 		AccessToken: strings.TrimSpace(p.StringWithFallback(PrefVodafoneAccessToken, "")),
 		TokenExpiry: strings.TrimSpace(p.StringWithFallback(PrefVodafoneTokenExpiry, "")),
+		LoginMethod: normalizeVodafoneLoginMethod(p.StringWithFallback(PrefVodafoneLoginMethod, VodafoneLoginMethodSMS)),
+		PUK:         strings.TrimSpace(p.StringWithFallback(PrefVodafonePUK, "")),
 	}
+	return cfg
 }
 
 func SaveVodafoneConfig(p fyne.Preferences, cfg VodafoneConfig) {
 	p.SetString(PrefVodafonePhone, strings.TrimSpace(cfg.Phone))
 	p.SetString(PrefVodafoneAccessToken, strings.TrimSpace(cfg.AccessToken))
 	p.SetString(PrefVodafoneTokenExpiry, strings.TrimSpace(cfg.TokenExpiry))
+	p.SetString(PrefVodafoneLoginMethod, normalizeVodafoneLoginMethod(cfg.LoginMethod))
+	p.SetString(PrefVodafonePUK, strings.TrimSpace(cfg.PUK))
 }
 
 func (c VodafoneConfig) TokenExpiryTime() time.Time {
@@ -44,6 +56,23 @@ func (c VodafoneConfig) HasAccessToken() bool {
 
 func (c VodafoneConfig) TokenUsableAt(now time.Time) bool {
 	return tokenUsableAt(c.AccessToken, c.TokenExpiry, now)
+}
+
+func (c VodafoneConfig) NormalizedLoginMethod() string {
+	return normalizeVodafoneLoginMethod(c.LoginMethod)
+}
+
+func (c VodafoneConfig) HasPUKCredentials() bool {
+	return strings.TrimSpace(c.Phone) != "" && strings.TrimSpace(c.PUK) != ""
+}
+
+func normalizeVodafoneLoginMethod(method string) string {
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case VodafoneLoginMethodPUK:
+		return VodafoneLoginMethodPUK
+	default:
+		return VodafoneLoginMethodSMS
+	}
 }
 
 // VodafoneConfigStore абстрагує збереження локальних Vodafone налаштувань.

@@ -2357,16 +2357,43 @@ func (p *CASLCloudProvider) readDeviceState(ctx context.Context, record caslGrdO
 		return caslDeviceState{}, errors.New("casl: empty device_id")
 	}
 
-	payload := map[string]any{"type": "read_device_state", "device_id": strconv.FormatInt(deviceID, 10)}
+	p.mu.RLock()
+	if p.deviceStateCache != nil {
+		if state, ok := p.deviceStateCache[deviceID]; ok && time.Since(p.deviceStateCacheAt[deviceID]) < 3*time.Second {
+			p.mu.RUnlock()
+			return state, nil
+		}
+	}
+	p.mu.RUnlock()
 
-	var resp caslReadDeviceStateResponse
-	if err := p.postCommand(ctx, payload, &resp, true); err != nil {
+	deviceIDStr := strconv.FormatInt(deviceID, 10)
+	val, err, _ := p.deviceStateSF.Do(deviceIDStr, func() (any, error) {
+		payload := map[string]any{"type": "read_device_state", "device_id": deviceIDStr}
+
+		var resp caslReadDeviceStateResponse
+		if err := p.postCommand(ctx, payload, &resp, true); err != nil {
+			return caslDeviceState{}, err
+		}
+		if err := validateCASLDeviceState(resp.State, "casl read_device_state"); err != nil {
+			return caslDeviceState{}, err
+		}
+
+		p.mu.Lock()
+		if p.deviceStateCache == nil {
+			p.deviceStateCache = make(map[int64]caslDeviceState)
+			p.deviceStateCacheAt = make(map[int64]time.Time)
+		}
+		p.deviceStateCache[deviceID] = resp.State
+		p.deviceStateCacheAt[deviceID] = time.Now()
+		p.mu.Unlock()
+
+		return resp.State, nil
+	})
+
+	if err != nil {
 		return caslDeviceState{}, err
 	}
-	if err := validateCASLDeviceState(resp.State, "casl read_device_state"); err != nil {
-		return caslDeviceState{}, err
-	}
-	return resp.State, nil
+	return val.(caslDeviceState), nil
 }
 
 func (p *CASLCloudProvider) readStatsAlarms(ctx context.Context, record caslGrdObject) (caslStatsAlarmsData, error) {

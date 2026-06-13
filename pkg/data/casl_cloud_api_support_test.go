@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -771,5 +773,67 @@ func TestCASLProvider_GetMessageTranslatorByDeviceTypeRejectsArrayData(t *testin
 	_, err := provider.GetMessageTranslatorByDeviceType(context.Background(), "MAKS_PRO")
 	if err == nil || !strings.Contains(err.Error(), `expected object data`) {
 		t.Fatalf("expected strict translator decode error, got %v", err)
+	}
+}
+
+func TestCASLProvider_ReadDeviceState_CoalescingAndCaching(t *testing.T) {
+	var readStateCalls int64
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == caslCommandPath {
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			if cmdType == "read_device_state" {
+				atomic.AddInt64(&readStateCalls, 1)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":1,"accum":1,"door":1,"online":1,"lastPingDate":1774769732941,"lines":{},"groups":{},"adapters":{}}}`))
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "token-coalesce", 1)
+	ctx := context.Background()
+	record := caslGrdObject{DeviceID: caslInt64(42)}
+
+	// 1. Concurrent calls should be coalesced by singleflight
+	var wg sync.WaitGroup
+	numConcurrent := 5
+	wg.Add(numConcurrent)
+	for i := 0; i < numConcurrent; i++ {
+		go func() {
+			defer wg.Done()
+			state, err := provider.readDeviceState(ctx, record)
+			if err != nil {
+				t.Errorf("readDeviceState failed: %v", err)
+			}
+			if state.LastPingDate.Int64() != 1774769732941 {
+				t.Errorf("unexpected state last ping date: %v", state.LastPingDate)
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Since they ran concurrently, they should have shared a singleflight
+	callsAfterConcurrent := atomic.LoadInt64(&readStateCalls)
+	if callsAfterConcurrent != 1 {
+		t.Errorf("expected concurrent requests to be coalesced to 1, got %d calls", callsAfterConcurrent)
+	}
+
+	// 2. Sequential call should hit the cache and not increase the call count
+	state, err := provider.readDeviceState(ctx, record)
+	if err != nil {
+		t.Fatalf("readDeviceState failed: %v", err)
+	}
+	if state.LastPingDate.Int64() != 1774769732941 {
+		t.Fatalf("unexpected state last ping date: %v", state.LastPingDate)
+	}
+
+	callsAfterCacheCheck := atomic.LoadInt64(&readStateCalls)
+	if callsAfterCacheCheck != 1 {
+		t.Errorf("expected sequential request within TTL to hit cache and not make HTTP call, got %d calls", callsAfterCacheCheck)
 	}
 }

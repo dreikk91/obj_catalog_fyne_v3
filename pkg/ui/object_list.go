@@ -201,33 +201,39 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 			bg := stack.Objects[0].(*canvas.Rectangle)
 			txtContainer := stack.Objects[1].(*fyne.Container)
 			txt := txtContainer.Objects[0].(*canvas.Text)
-			txt.TextStyle.Monospace = true
-
-			item, ok := panel.objectByRow(id.Row)
-			if !ok {
-				txt.Text = ""
+			if !txt.TextStyle.Monospace {
+				txt.TextStyle.Monospace = true
 				txt.Refresh()
-				bg.Hide()
-				bg.Refresh()
-				return
 			}
-
-			textColor, rowColor := panel.ViewModel.GetRowColors(item, IsDarkMode())
 
 			panel.mutex.RLock()
+			if id.Row < 0 || id.Row >= len(panel.FilteredItems) {
+				panel.mutex.RUnlock()
+				if txt.Text != "" {
+					txt.Text = ""
+					txt.Refresh()
+				}
+				if bg.Visible() {
+					bg.Hide()
+					bg.Refresh()
+				}
+				return
+			}
+			item := panel.FilteredItems[id.Row]
 			selectedRow := panel.SelectedRow
 			panel.mutex.RUnlock()
+
+			textColor, rowColor := panel.ViewModel.GetRowColors(item, IsDarkMode())
 			if id.Row == selectedRow {
-				bg.FillColor = appTheme.ColorSelection
-				bg.Show()
-				txt.Color = color.White // Білий для виділеного
-			} else {
-				// Застосовуємо колір рядка та тексту
+				rowColor = appTheme.ColorSelection
+				textColor = color.NRGBA{R: 255, G: 255, B: 255, A: 255} // White
+			}
+
+			if bg.FillColor != rowColor || !bg.Visible() {
 				bg.FillColor = rowColor
 				bg.Show()
-				txt.Color = textColor
+				bg.Refresh()
 			}
-			bg.Refresh()
 
 			var cellText string
 			switch id.Col {
@@ -240,13 +246,30 @@ func NewObjectListPanel(provider contracts.ObjectProvider) *ObjectListPanel {
 			case 3:
 				cellText = item.ContractNum
 			}
-			txt.Text = cellText
+
+			var expectedSize float32
 			if panel.lastFontSize > 0 {
-				txt.TextSize = panel.lastFontSize
+				expectedSize = panel.lastFontSize
 			} else {
-				txt.TextSize = fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
+				expectedSize = fyne.CurrentApp().Settings().Theme().Size(theme.SizeNameText)
 			}
-			txt.Refresh()
+
+			needTxtRefresh := false
+			if txt.Text != cellText {
+				txt.Text = cellText
+				needTxtRefresh = true
+			}
+			if txt.Color != textColor {
+				txt.Color = textColor
+				needTxtRefresh = true
+			}
+			if txt.TextSize != expectedSize {
+				txt.TextSize = expectedSize
+				needTxtRefresh = true
+			}
+			if needTxtRefresh {
+				txt.Refresh()
+			}
 		},
 		panel.moveSelection,
 	)
@@ -514,15 +537,15 @@ func (p *ObjectListPanel) isCurrentFilterRequest(version uint64) bool {
 }
 
 func (p *ObjectListPanel) objectByRow(row int) (models.Object, bool) {
-	if p == nil || p.FilteredData == nil || row < 0 || row >= p.FilteredData.Length() {
+	if p == nil {
 		return models.Object{}, false
 	}
-	value, err := p.FilteredData.GetValue(row)
-	if err != nil {
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+	if row < 0 || row >= len(p.FilteredItems) {
 		return models.Object{}, false
 	}
-	obj, ok := value.(models.Object)
-	return obj, ok
+	return p.FilteredItems[row], true
 }
 
 func (p *ObjectListPanel) moveSelection(delta int) bool {
@@ -621,7 +644,9 @@ func (l *objectListTableLayout) Layout(objects []fyne.CanvasObject, size fyne.Si
 		needRefresh = true
 	}
 	if needRefresh {
-		l.table.Refresh()
+		fyne.Do(func() {
+			l.table.Refresh()
+		})
 	}
 
 	for _, o := range objects {

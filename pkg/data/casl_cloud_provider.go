@@ -17,6 +17,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/models"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -113,6 +114,10 @@ type CASLCloudProvider struct {
 	alarmsRefreshing atomic.Bool
 	reconnectRunning atomic.Bool
 
+	deviceStateSF      singleflight.Group
+	deviceStateCache   map[int64]caslDeviceState
+	deviceStateCacheAt map[int64]time.Time
+
 	lastAPISuccessAt   time.Time
 	lastAPIFailureAt   time.Time
 	lastAPIErrorText   string
@@ -162,6 +167,8 @@ func NewCASLCloudProvider(baseURL string, token string, pultID int64, credential
 		eventsStartAtMs:        nowMS,
 		eventsCursorMs:         nowMS,
 		realtimeAlarmByObjID:   make(map[string]models.Alarm),
+		deviceStateCache:       make(map[int64]caslDeviceState),
+		deviceStateCacheAt:     make(map[int64]time.Time),
 	}
 	return p
 }

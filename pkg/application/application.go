@@ -8,6 +8,7 @@ import (
 	// "math/rand"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -46,13 +47,14 @@ type Application struct {
 	currentAlarmsTotal int
 
 	// Сховище даних (інтерфейс)
-	dataProvider contracts.DataProvider
-	frontendAPI  contracts.FrontendBackend
-	uiData       *backend.FrontendUIDataProvider
-	providerMu   sync.RWMutex
-	webServerMu  sync.Mutex
-	webServer    *http.Server
-	webServerURL string
+	dataProvider         contracts.DataProvider
+	frontendAPI          contracts.FrontendBackend
+	uiData               *backend.FrontendUIDataProvider
+	providerMu           sync.RWMutex
+	objectContextRequest atomic.Uint64
+	webServerMu          sync.Mutex
+	webServer            *http.Server
+	webServerURL         string
 	// Внутрішня шина подій для розв'язування UI-компонентів.
 	eventBus *eventbus.Bus
 	// Коротке вікно для об'єднання частих refresh-подій в одну.

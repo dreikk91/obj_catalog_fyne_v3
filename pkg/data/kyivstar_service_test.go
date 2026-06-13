@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"obj_catalog_fyne_v3/pkg/config"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -262,6 +263,74 @@ func TestKyivstarService_PauseSIMServices_SendsSelectedIDs(t *testing.T) {
 	}
 	if !strings.Contains(bodyText, `"action":"pause"`) {
 		t.Fatalf("request body does not contain pause action: %s", bodyText)
+	}
+}
+
+func TestKyivstarService_RebootSIM_RefreshesExpiredServerTokenOnUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	store := &kyivstarConfigStoreStub{
+		cfg: config.KyivstarConfig{
+			ClientID:     "client-id",
+			ClientSecret: "client-secret",
+			UserEmail:    "company@example.com",
+			AccessToken:  "expired-token",
+			TokenExpiry:  time.Now().Add(30 * time.Minute).Format(time.RFC3339),
+		},
+	}
+
+	var companyNumbersCalls atomic.Int32
+	var resetCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/rest/iot/company-numbers":
+			if companyNumbersCalls.Add(1) == 1 {
+				if got := r.Header.Get("Authorization"); got != "Bearer expired-token" {
+					t.Fatalf("Authorization = %q, want Bearer expired-token", got)
+				}
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer fresh-token" {
+				t.Fatalf("Authorization after refresh = %q, want Bearer fresh-token", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"content": []map[string]any{{"number": "380671234567"}},
+			})
+		case "/idp/oauth2/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token": "fresh-token",
+				"expires_in":   3600,
+			})
+		case "/rest/iot/company-numbers/reset":
+			resetCalls.Add(1)
+			if got := r.Header.Get("Authorization"); got != "Bearer fresh-token" {
+				t.Fatalf("reset Authorization = %q, want Bearer fresh-token", got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	service := NewKyivstarService(store, WithKyivstarBaseURL(server.URL))
+
+	result, err := service.RebootSIM("0671234567")
+	if err != nil {
+		t.Fatalf("RebootSIM() error = %v", err)
+	}
+	if result.MSISDN != "380671234567" {
+		t.Fatalf("MSISDN = %q, want 380671234567", result.MSISDN)
+	}
+	if got := strings.TrimSpace(store.cfg.AccessToken); got != "fresh-token" {
+		t.Fatalf("stored access token = %q, want fresh-token", got)
+	}
+	if got := companyNumbersCalls.Load(); got != 2 {
+		t.Fatalf("company-numbers calls = %d, want 2", got)
+	}
+	if got := resetCalls.Load(); got != 1 {
+		t.Fatalf("reset calls = %d, want 1", got)
 	}
 }
 

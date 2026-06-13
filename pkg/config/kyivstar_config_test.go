@@ -3,6 +3,8 @@ package config
 import (
 	"testing"
 	"time"
+
+	"fyne.io/fyne/v2/test"
 )
 
 func TestKyivstarConfig_TokenExpiryTime(t *testing.T) {
@@ -31,5 +33,25 @@ func TestKyivstarConfig_TokenUsableAt_WithoutExpiry(t *testing.T) {
 	cfg := KyivstarConfig{AccessToken: "token-without-exp"}
 	if !cfg.TokenUsableAt(time.Now()) {
 		t.Fatal("TokenUsableAt() = false, want true")
+	}
+}
+
+func TestKyivstarConfig_AutoResetWindowMinimum(t *testing.T) {
+	t.Parallel()
+
+	cfg := LoadKyivstarConfig(nil)
+	if cfg.AutoResetWindowHours != DefaultKyivstarAutoResetWindowHours {
+		t.Fatalf("default AutoResetWindowHours = %d, want %d", cfg.AutoResetWindowHours, DefaultKyivstarAutoResetWindowHours)
+	}
+
+	app := test.NewApp()
+	defer app.Quit()
+
+	cfg.AutoResetWindowHours = 0
+	SaveKyivstarConfig(app.Preferences(), cfg)
+
+	got := LoadKyivstarConfig(app.Preferences())
+	if got.AutoResetWindowHours != MinKyivstarAutoResetWindowHours {
+		t.Fatalf("AutoResetWindowHours = %d, want minimum %d", got.AutoResetWindowHours, MinKyivstarAutoResetWindowHours)
 	}
 }

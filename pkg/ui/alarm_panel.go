@@ -204,7 +204,10 @@ func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 			panel.processBtn.Enable()
 		}
 		if panel.List != nil {
-			panel.List.Refresh()
+			if prevIndex >= 0 && prevIndex != int(id) {
+				panel.List.RefreshItem(prevIndex)
+			}
+			panel.List.RefreshItem(id)
 		}
 
 		// Одинарний клік: вибираємо об'єкт (оновлюємо картку/контекст без зміни вкладки).

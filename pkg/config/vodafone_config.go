@@ -8,42 +8,71 @@ import (
 )
 
 const (
-	PrefVodafonePhone       = "vodafone.phone"
-	PrefVodafoneAccessToken = "vodafone.access_token"
-	PrefVodafoneTokenExpiry = "vodafone.token_expiry"
-	PrefVodafoneLoginMethod = "vodafone.login_method"
-	PrefVodafonePUK         = "vodafone.puk"
+	PrefVodafonePhone                = "vodafone.phone"
+	PrefVodafoneAccessToken          = "vodafone.access_token"
+	PrefVodafoneTokenExpiry          = "vodafone.token_expiry"
+	PrefVodafoneLoginMethod          = "vodafone.login_method"
+	PrefVodafonePUK                  = "vodafone.puk"
+	PrefVodafoneAutoResetEnabled     = "vodafone.auto_reset.enabled"
+	PrefVodafoneAutoResetDailyLimit  = "vodafone.auto_reset.daily_limit"
+	PrefVodafoneAutoResetWindowHours = "vodafone.auto_reset.window_hours"
+	PrefVodafoneAutoResetHistory     = "vodafone.auto_reset.history"
 
 	VodafoneLoginMethodSMS = "sms"
 	VodafoneLoginMethodPUK = "puk"
+
+	DefaultVodafoneAutoResetEnabled     = true
+	DefaultVodafoneAutoResetDailyLimit  = 2
+	DefaultVodafoneAutoResetWindowHours = 24
+	MinVodafoneAutoResetWindowHours     = 1
 )
 
 // VodafoneConfig зберігає локальні параметри авторизації Vodafone API.
 type VodafoneConfig struct {
-	Phone       string
-	AccessToken string
-	TokenExpiry string
-	LoginMethod string
-	PUK         string
+	Phone                string
+	AccessToken          string
+	TokenExpiry          string
+	LoginMethod          string
+	PUK                  string
+	AutoResetEnabled     bool
+	AutoResetDailyLimit  int
+	AutoResetWindowHours int
 }
 
 func LoadVodafoneConfig(p fyne.Preferences) VodafoneConfig {
+	if p == nil {
+		return VodafoneConfig{
+			AutoResetEnabled:     DefaultVodafoneAutoResetEnabled,
+			AutoResetDailyLimit:  DefaultVodafoneAutoResetDailyLimit,
+			AutoResetWindowHours: DefaultVodafoneAutoResetWindowHours,
+			LoginMethod:          VodafoneLoginMethodSMS,
+		}
+	}
 	cfg := VodafoneConfig{
-		Phone:       strings.TrimSpace(p.StringWithFallback(PrefVodafonePhone, "")),
-		AccessToken: strings.TrimSpace(p.StringWithFallback(PrefVodafoneAccessToken, "")),
-		TokenExpiry: strings.TrimSpace(p.StringWithFallback(PrefVodafoneTokenExpiry, "")),
-		LoginMethod: normalizeVodafoneLoginMethod(p.StringWithFallback(PrefVodafoneLoginMethod, VodafoneLoginMethodSMS)),
-		PUK:         strings.TrimSpace(p.StringWithFallback(PrefVodafonePUK, "")),
+		Phone:                strings.TrimSpace(p.StringWithFallback(PrefVodafonePhone, "")),
+		AccessToken:          strings.TrimSpace(p.StringWithFallback(PrefVodafoneAccessToken, "")),
+		TokenExpiry:          strings.TrimSpace(p.StringWithFallback(PrefVodafoneTokenExpiry, "")),
+		LoginMethod:          normalizeVodafoneLoginMethod(p.StringWithFallback(PrefVodafoneLoginMethod, VodafoneLoginMethodSMS)),
+		PUK:                  strings.TrimSpace(p.StringWithFallback(PrefVodafonePUK, "")),
+		AutoResetEnabled:     p.BoolWithFallback(PrefVodafoneAutoResetEnabled, DefaultVodafoneAutoResetEnabled),
+		AutoResetDailyLimit:  clampVodafoneAutoResetLimit(p.IntWithFallback(PrefVodafoneAutoResetDailyLimit, DefaultVodafoneAutoResetDailyLimit)),
+		AutoResetWindowHours: clampVodafoneAutoResetWindowHours(p.IntWithFallback(PrefVodafoneAutoResetWindowHours, DefaultVodafoneAutoResetWindowHours)),
 	}
 	return cfg
 }
 
 func SaveVodafoneConfig(p fyne.Preferences, cfg VodafoneConfig) {
+	if p == nil {
+		return
+	}
 	p.SetString(PrefVodafonePhone, strings.TrimSpace(cfg.Phone))
 	p.SetString(PrefVodafoneAccessToken, strings.TrimSpace(cfg.AccessToken))
 	p.SetString(PrefVodafoneTokenExpiry, strings.TrimSpace(cfg.TokenExpiry))
 	p.SetString(PrefVodafoneLoginMethod, normalizeVodafoneLoginMethod(cfg.LoginMethod))
 	p.SetString(PrefVodafonePUK, strings.TrimSpace(cfg.PUK))
+	p.SetBool(PrefVodafoneAutoResetEnabled, cfg.AutoResetEnabled)
+	p.SetInt(PrefVodafoneAutoResetDailyLimit, clampVodafoneAutoResetLimit(cfg.AutoResetDailyLimit))
+	p.SetInt(PrefVodafoneAutoResetWindowHours, clampVodafoneAutoResetWindowHours(cfg.AutoResetWindowHours))
 }
 
 func (c VodafoneConfig) TokenExpiryTime() time.Time {
@@ -73,6 +102,26 @@ func normalizeVodafoneLoginMethod(method string) string {
 	default:
 		return VodafoneLoginMethodSMS
 	}
+}
+
+func clampVodafoneAutoResetLimit(v int) int {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
+}
+
+func clampVodafoneAutoResetWindowHours(v int) int {
+	if v < MinVodafoneAutoResetWindowHours {
+		return MinVodafoneAutoResetWindowHours
+	}
+	if v > 24*30 {
+		return 24 * 30
+	}
+	return v
 }
 
 // VodafoneConfigStore абстрагує збереження локальних Vodafone налаштувань.

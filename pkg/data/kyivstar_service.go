@@ -21,7 +21,10 @@ import (
 
 const kyivstarBaseURL = "https://b2b-api.kyivstar.ua"
 
-var errKyivstarMetadataUnsupported = errors.New("kyivstar: у наданій API-специфікації немає endpoint для запису deviceName/deviceId")
+var (
+	errKyivstarMetadataUnsupported = errors.New("kyivstar: у наданій API-специфікації немає endpoint для запису deviceName/deviceId")
+	errKyivstarAuthRequired        = errors.New("kyivstar: access token протермінований, потрібна повторна авторизація")
+)
 
 type KyivstarService struct {
 	baseURL    string
@@ -224,11 +227,6 @@ func (s *KyivstarService) RebootSIM(msisdn string) (contracts.KyivstarSIMResetRe
 		return contracts.KyivstarSIMResetResult{}, errors.New("kyivstar: вкажіть email компанії у налаштуваннях")
 	}
 
-	token, err := s.ensureAuthorizedToken()
-	if err != nil {
-		return contracts.KyivstarSIMResetResult{}, err
-	}
-
 	payload := map[string]any{
 		"email":   email,
 		"numbers": []string{normalized},
@@ -238,17 +236,18 @@ func (s *KyivstarService) RebootSIM(msisdn string) (contracts.KyivstarSIMResetRe
 		return contracts.KyivstarSIMResetResult{}, fmt.Errorf("kyivstar: failed to build reset request: %w", err)
 	}
 
-	req, err := http.NewRequest(
-		http.MethodPost,
-		s.baseURL+"/rest/iot/company-numbers/reset",
-		bytes.NewReader(body),
-	)
-	if err != nil {
-		return contracts.KyivstarSIMResetResult{}, fmt.Errorf("kyivstar: failed to create reset request: %w", err)
-	}
-	s.applyBearerHeaders(req, token, "application/json")
-
-	if err := s.expectNoContent(req, http.StatusNoContent); err != nil {
+	if err := s.withAuthorizedTokenRetry(func(token string) error {
+		req, err := http.NewRequest(
+			http.MethodPost,
+			s.baseURL+"/rest/iot/company-numbers/reset",
+			bytes.NewReader(body),
+		)
+		if err != nil {
+			return fmt.Errorf("kyivstar: failed to create reset request: %w", err)
+		}
+		s.applyBearerHeaders(req, token, "application/json")
+		return s.expectNoContent(req, http.StatusNoContent)
+	}); err != nil {
 		return contracts.KyivstarSIMResetResult{}, err
 	}
 	return contracts.KyivstarSIMResetResult{
@@ -391,11 +390,6 @@ func (s *KyivstarService) lookupNumber(msisdn string) (kyivstarIOTNumber, bool, 
 }
 
 func (s *KyivstarService) fetchCompanyNumbers(numbers []string) ([]kyivstarIOTNumber, error) {
-	token, err := s.ensureAuthorizedToken()
-	if err != nil {
-		return nil, err
-	}
-
 	reqURL, err := url.Parse(s.baseURL + "/rest/iot/company-numbers")
 	if err != nil {
 		return nil, fmt.Errorf("kyivstar: failed to build company-numbers url: %w", err)
@@ -411,16 +405,17 @@ func (s *KyivstarService) fetchCompanyNumbers(numbers []string) ([]kyivstarIOTNu
 	}
 	reqURL.RawQuery = query.Encode()
 
-	req, err := http.NewRequest(http.MethodGet, reqURL.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("kyivstar: failed to create company-numbers request: %w", err)
-	}
-	s.applyBearerHeaders(req, token, "")
-
 	var page struct {
 		Content []kyivstarIOTNumber `json:"content"`
 	}
-	if err := s.doJSON(req, &page); err != nil {
+	if err := s.withAuthorizedTokenRetry(func(token string) error {
+		req, err := http.NewRequest(http.MethodGet, reqURL.String(), nil)
+		if err != nil {
+			return fmt.Errorf("kyivstar: failed to create company-numbers request: %w", err)
+		}
+		s.applyBearerHeaders(req, token, "")
+		return s.doJSON(req, &page)
+	}); err != nil {
 		return nil, err
 	}
 	return page.Content, nil
@@ -502,6 +497,22 @@ func (s *KyivstarService) ensureAuthorizedToken() (string, error) {
 	return s.fetchAccessToken()
 }
 
+func (s *KyivstarService) withAuthorizedTokenRetry(fn func(token string) error) error {
+	token, err := s.ensureAuthorizedToken()
+	if err != nil {
+		return err
+	}
+	err = fn(token)
+	if !errors.Is(err, errKyivstarAuthRequired) {
+		return err
+	}
+	token, err = s.ensureAuthorizedToken()
+	if err != nil {
+		return err
+	}
+	return fn(token)
+}
+
 func (s *KyivstarService) fetchAccessToken() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -567,6 +578,11 @@ func (s *KyivstarService) doJSON(req *http.Request, out any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		if resp.StatusCode == http.StatusUnauthorized && isKyivstarBearerRequest(req) {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = s.ClearToken()
+			return errKyivstarAuthRequired
+		}
 		return decodeKyivstarAPIError(resp)
 	}
 	if out == nil {
@@ -603,6 +619,11 @@ func (s *KyivstarService) expectNoContent(req *http.Request, expected ...int) er
 			return nil
 		}
 	}
+	if resp.StatusCode == http.StatusUnauthorized && isKyivstarBearerRequest(req) {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = s.ClearToken()
+		return errKyivstarAuthRequired
+	}
 	return decodeKyivstarAPIError(resp)
 }
 
@@ -615,6 +636,13 @@ func (s *KyivstarService) applyBearerHeaders(req *http.Request, token string, co
 	if strings.TrimSpace(contentType) != "" {
 		req.Header.Set("Content-Type", strings.TrimSpace(contentType))
 	}
+}
+
+func isKyivstarBearerRequest(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(req.Header.Get("Authorization")), "Bearer ")
 }
 
 func (s *KyivstarService) loadConfig() config.KyivstarConfig {

@@ -46,54 +46,60 @@ type settingsDialogState struct {
 	vfAuthVM *viewmodels.VodafoneAuthViewModel
 	ksAuthVM *viewmodels.KyivstarAuthViewModel
 
-	userEntry                 *widget.Entry
-	passEntry                 *widget.Entry
-	hostEntry                 *widget.Entry
-	portEntry                 *widget.Entry
-	pathEntry                 *widget.Entry
-	paramsEntry               *widget.Entry
-	firebirdEnabledCheck      *widget.Check
-	phoenixEnabledCheck       *widget.Check
-	phoenixUserEntry          *widget.Entry
-	phoenixPassEntry          *widget.Entry
-	phoenixHostEntry          *widget.Entry
-	phoenixPortEntry          *widget.Entry
-	phoenixInstanceEntry      *widget.Entry
-	phoenixDatabaseEntry      *widget.Entry
-	phoenixParamsEntry        *widget.Entry
-	caslBaseURLEntry          *widget.Entry
-	caslTokenEntry            *widget.Entry
-	caslEmailEntry            *widget.Entry
-	caslPassEntry             *widget.Entry
-	caslPultIDEntry           *widget.Entry
-	caslEnabledCheck          *widget.Check
-	vodafonePhoneEntry        *widget.Entry
-	vodafoneLoginMethodRadio  *widget.RadioGroup
-	vodafoneCodeEntry         *widget.Entry
-	vodafonePUKEntry          *widget.Entry
-	vodafoneStatusLabel       *widget.Label
-	kyivstarClientIDEntry     *widget.Entry
-	kyivstarClientSecretEntry *widget.Entry
-	kyivstarEmailEntry        *widget.Entry
-	kyivstarStatusLabel       *widget.Label
-	fontEntry                 *widget.Entry
-	fontObjEntry              *widget.Entry
-	fontEvEntry               *widget.Entry
-	fontAlmEntry              *widget.Entry
-	bottomAlarmJournalCheck   *widget.Check
-	bottomEventJournalCheck   *widget.Check
-	eventLimitEntry           *widget.Entry
-	objectLimitEntry          *widget.Entry
-	bridgeHistoryModeSelect   *widget.Select
-	eventProbeIntervalEntry   *widget.Entry
-	eventsReconcileEntry      *widget.Entry
-	alarmsReconcileEntry      *widget.Entry
-	objectsReconcileEntry     *widget.Entry
-	fallbackRefreshEntry      *widget.Entry
-	maxProbeBackoffEntry      *widget.Entry
-	schedulerHelpLabel        *widget.Label
-	exportDirEntry            *widget.Entry
-	logLevelSelect            *widget.Select
+	userEntry                    *widget.Entry
+	passEntry                    *widget.Entry
+	hostEntry                    *widget.Entry
+	portEntry                    *widget.Entry
+	pathEntry                    *widget.Entry
+	paramsEntry                  *widget.Entry
+	firebirdEnabledCheck         *widget.Check
+	phoenixEnabledCheck          *widget.Check
+	phoenixUserEntry             *widget.Entry
+	phoenixPassEntry             *widget.Entry
+	phoenixHostEntry             *widget.Entry
+	phoenixPortEntry             *widget.Entry
+	phoenixInstanceEntry         *widget.Entry
+	phoenixDatabaseEntry         *widget.Entry
+	phoenixParamsEntry           *widget.Entry
+	caslBaseURLEntry             *widget.Entry
+	caslTokenEntry               *widget.Entry
+	caslEmailEntry               *widget.Entry
+	caslPassEntry                *widget.Entry
+	caslPultIDEntry              *widget.Entry
+	caslEnabledCheck             *widget.Check
+	vodafonePhoneEntry           *widget.Entry
+	vodafoneLoginMethodRadio     *widget.RadioGroup
+	vodafoneCodeEntry            *widget.Entry
+	vodafonePUKEntry             *widget.Entry
+	vodafoneAutoResetCheck       *widget.Check
+	vodafoneAutoResetLimitEntry  *widget.Entry
+	vodafoneAutoResetWindowEntry *widget.Entry
+	vodafoneStatusLabel          *widget.Label
+	kyivstarClientIDEntry        *widget.Entry
+	kyivstarClientSecretEntry    *widget.Entry
+	kyivstarEmailEntry           *widget.Entry
+	kyivstarAutoResetCheck       *widget.Check
+	kyivstarAutoResetLimitEntry  *widget.Entry
+	kyivstarAutoResetWindowEntry *widget.Entry
+	kyivstarStatusLabel          *widget.Label
+	fontEntry                    *widget.Entry
+	fontObjEntry                 *widget.Entry
+	fontEvEntry                  *widget.Entry
+	fontAlmEntry                 *widget.Entry
+	bottomAlarmJournalCheck      *widget.Check
+	bottomEventJournalCheck      *widget.Check
+	eventLimitEntry              *widget.Entry
+	objectLimitEntry             *widget.Entry
+	bridgeHistoryModeSelect      *widget.Select
+	eventProbeIntervalEntry      *widget.Entry
+	eventsReconcileEntry         *widget.Entry
+	alarmsReconcileEntry         *widget.Entry
+	objectsReconcileEntry        *widget.Entry
+	fallbackRefreshEntry         *widget.Entry
+	maxProbeBackoffEntry         *widget.Entry
+	schedulerHelpLabel           *widget.Label
+	exportDirEntry               *widget.Entry
+	logLevelSelect               *widget.Select
 }
 
 func ShowSettingsDialog(
@@ -232,6 +238,17 @@ func (s *settingsDialogState) initCarrierFields() {
 	s.vodafonePUKEntry.SetText(strings.TrimSpace(s.vfCfg.PUK))
 	s.vodafonePUKEntry.SetPlaceHolder("PUK-код")
 
+	s.vodafoneAutoResetCheck = widget.NewCheck("Автоматично надсилати reset sim для offline MOST з Vodafone у SIM1", nil)
+	s.vodafoneAutoResetCheck.SetChecked(s.vfCfg.AutoResetEnabled)
+
+	s.vodafoneAutoResetLimitEntry = widget.NewEntry()
+	s.vodafoneAutoResetLimitEntry.SetText(strconv.Itoa(s.vfCfg.AutoResetDailyLimit))
+	s.vodafoneAutoResetLimitEntry.SetPlaceHolder(strconv.Itoa(config.DefaultVodafoneAutoResetDailyLimit))
+
+	s.vodafoneAutoResetWindowEntry = widget.NewEntry()
+	s.vodafoneAutoResetWindowEntry.SetText(strconv.Itoa(s.vfCfg.AutoResetWindowHours))
+	s.vodafoneAutoResetWindowEntry.SetPlaceHolder(strconv.Itoa(config.DefaultVodafoneAutoResetWindowHours))
+
 	s.vodafoneStatusLabel = widget.NewLabel(s.vfAuthVM.BuildStatusText(s.currentVodafoneAuthState()))
 	s.vodafoneStatusLabel.Wrapping = fyne.TextWrapWord
 	s.applyVodafoneLoginMethodState()
@@ -247,6 +264,17 @@ func (s *settingsDialogState) initCarrierFields() {
 	s.kyivstarEmailEntry = widget.NewEntry()
 	s.kyivstarEmailEntry.SetText(strings.TrimSpace(s.ksCfg.UserEmail))
 	s.kyivstarEmailEntry.SetPlaceHolder("company.user@domain.ua")
+
+	s.kyivstarAutoResetCheck = widget.NewCheck("Автоматично надсилати reset sim для offline MOST з Kyivstar у SIM1", nil)
+	s.kyivstarAutoResetCheck.SetChecked(s.ksCfg.AutoResetEnabled)
+
+	s.kyivstarAutoResetLimitEntry = widget.NewEntry()
+	s.kyivstarAutoResetLimitEntry.SetText(strconv.Itoa(s.ksCfg.AutoResetDailyLimit))
+	s.kyivstarAutoResetLimitEntry.SetPlaceHolder(strconv.Itoa(config.DefaultKyivstarAutoResetDailyLimit))
+
+	s.kyivstarAutoResetWindowEntry = widget.NewEntry()
+	s.kyivstarAutoResetWindowEntry.SetText(strconv.Itoa(s.ksCfg.AutoResetWindowHours))
+	s.kyivstarAutoResetWindowEntry.SetPlaceHolder(strconv.Itoa(config.DefaultKyivstarAutoResetWindowHours))
 
 	s.kyivstarStatusLabel = widget.NewLabel(s.ksAuthVM.BuildStatusText(s.currentKyivstarAuthState()))
 	s.kyivstarStatusLabel.Wrapping = fyne.TextWrapWord
@@ -392,6 +420,9 @@ func (s *settingsDialogState) buildVodafoneTab() fyne.CanvasObject {
 			widget.NewFormItem("Номер входу", s.vodafonePhoneEntry),
 			widget.NewFormItem("SMS/PUK для входу", s.vodafoneCodeEntry),
 			widget.NewFormItem("Збережений PUK", s.vodafonePUKEntry),
+			widget.NewFormItem("Авто reset SIM", s.vodafoneAutoResetCheck),
+			widget.NewFormItem("Ліміт за вікно", s.vodafoneAutoResetLimitEntry),
+			widget.NewFormItem("Вікно throttle, год", s.vodafoneAutoResetWindowEntry),
 		),
 		container.NewHBox(
 			widget.NewButton("Надіслати SMS", s.handleVodafoneSMSRequest),
@@ -409,6 +440,9 @@ func (s *settingsDialogState) buildKyivstarTab() fyne.CanvasObject {
 			widget.NewFormItem("Client ID", s.kyivstarClientIDEntry),
 			widget.NewFormItem("Client Secret", s.kyivstarClientSecretEntry),
 			widget.NewFormItem("Email компанії", s.kyivstarEmailEntry),
+			widget.NewFormItem("Авто reset SIM", s.kyivstarAutoResetCheck),
+			widget.NewFormItem("Ліміт за вікно", s.kyivstarAutoResetLimitEntry),
+			widget.NewFormItem("Вікно throttle, год", s.kyivstarAutoResetWindowEntry),
 		),
 		container.NewHBox(
 			widget.NewButton("Отримати токен", s.handleKyivstarTokenRefresh),
@@ -825,6 +859,9 @@ func (s *settingsDialogState) buildVodafoneConfigFromForm() config.VodafoneConfi
 	oldPUK := strings.TrimSpace(newCfg.PUK)
 	newPUK := strings.TrimSpace(s.vodafonePUKEntry.Text)
 	newCfg.PUK = newPUK
+	newCfg.AutoResetEnabled = s.vodafoneAutoResetCheck.Checked
+	newCfg.AutoResetDailyLimit = parseIntFallback(s.vodafoneAutoResetLimitEntry.Text, config.DefaultVodafoneAutoResetDailyLimit)
+	newCfg.AutoResetWindowHours = parseIntFallback(s.vodafoneAutoResetWindowEntry.Text, config.DefaultVodafoneAutoResetWindowHours)
 	if oldMethod != newCfg.NormalizedLoginMethod() || oldPUK != newPUK {
 		newCfg.AccessToken = ""
 		newCfg.TokenExpiry = ""
@@ -840,6 +877,9 @@ func (s *settingsDialogState) buildKyivstarConfigFromForm() config.KyivstarConfi
 	newCfg.ClientID = strings.TrimSpace(s.kyivstarClientIDEntry.Text)
 	newCfg.ClientSecret = strings.TrimSpace(s.kyivstarClientSecretEntry.Text)
 	newCfg.UserEmail = strings.TrimSpace(s.kyivstarEmailEntry.Text)
+	newCfg.AutoResetEnabled = s.kyivstarAutoResetCheck.Checked
+	newCfg.AutoResetDailyLimit = parseIntFallback(s.kyivstarAutoResetLimitEntry.Text, config.DefaultKyivstarAutoResetDailyLimit)
+	newCfg.AutoResetWindowHours = parseIntFallback(s.kyivstarAutoResetWindowEntry.Text, config.DefaultKyivstarAutoResetWindowHours)
 	if clientIDChanged || clientSecretChanged {
 		newCfg.AccessToken = ""
 		newCfg.TokenExpiry = ""
@@ -860,6 +900,14 @@ func parseInt(raw string) int {
 	parsed, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
 		return 0
+	}
+	return parsed
+}
+
+func parseIntFallback(raw string, fallback int) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
 	}
 	return parsed
 }

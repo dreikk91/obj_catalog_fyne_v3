@@ -3,6 +3,8 @@ package application
 import (
 	"strconv"
 
+	"fyne.io/fyne/v2"
+
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -21,6 +23,11 @@ func (a *Application) applyObjectContext(obj *models.Object, showDetailsTab bool
 		return
 	}
 
+	a.objectContextRequest.Add(1)
+	a.applyResolvedObjectContext(obj, showDetailsTab)
+}
+
+func (a *Application) applyResolvedObjectContext(obj *models.Object, showDetailsTab bool) {
 	a.currentObject = obj
 	a.updateWindowTitle()
 
@@ -37,17 +44,31 @@ func (a *Application) applyObjectContext(obj *models.Object, showDetailsTab bool
 
 // applyObjectContextByID знаходить об'єкт та застосовує його контекст до UI.
 func (a *Application) applyObjectContextByID(objectID int64, showDetailsTab bool) {
-	obj := a.resolveObjectByID(objectID)
-	if obj == nil {
+	if a == nil || objectID <= 0 {
 		return
 	}
-	a.applyObjectContext(obj, showDetailsTab)
+
+	requestID := a.objectContextRequest.Add(1)
+	go func() {
+		obj := a.resolveObjectByID(objectID)
+		if obj == nil || a.objectContextRequest.Load() != requestID {
+			return
+		}
+
+		fyne.Do(func() {
+			if a.objectContextRequest.Load() != requestID {
+				return
+			}
+			a.applyResolvedObjectContext(obj, showDetailsTab)
+		})
+	}()
 }
 
 func (a *Application) clearObjectContext() {
 	if a == nil {
 		return
 	}
+	a.objectContextRequest.Add(1)
 	a.currentObject = nil
 	a.updateWindowTitle()
 	if a.eventLog != nil {

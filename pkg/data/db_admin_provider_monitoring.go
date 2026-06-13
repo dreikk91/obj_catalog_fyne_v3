@@ -1308,7 +1308,7 @@ func (p *DBDataProvider) CollectObjectStatistics(filter AdminStatisticsFilter, l
 			COALESCE(os.TESTCONTROL1, 0) AS TESTCONTROL1,
 			COALESCE(os.TESTTIME1, 0) AS TESTTIME1,
 			COALESCE(os.GUARDSTATE1, 0) AS GUARDSTATE1,
-			COALESCE(os.ISCONNSTATE1, 0) AS ISCONNSTATE1,
+			COALESCE(ol.ISCONNSTATE1, 0) AS ISCONNSTATE1,
 			COALESCE(os.ALARMSTATE1, 0) AS ALARMSTATE1,
 			COALESCE(os.TECHALARMSTATE1, 0) AS TECHALARMSTATE1,
 			COALESCE(oi.OBJTYPEID, 0) AS OBJTYPEID,
@@ -1318,7 +1318,8 @@ func (p *DBDataProvider) CollectObjectStatistics(filter AdminStatisticsFilter, l
 			COALESCE(oi.ENG1, 0) AS ENG1,
 			COALESCE(os.BLOCKEDARMED_ON_OFF, 0) AS BLOCKEDARMED_ON_OFF
 		FROM OBJECTS_INFO oi
-		LEFT JOIN OBJECTS_STATE os ON os.OBJUIN = oi.OBJUIN
+		JOIN OBJECTS_LA ol ON ol.OBJUIN = oi.OBJUIN
+		JOIN OBJECTS_STATE os ON os.OBJUIN = oi.OBJUIN
 		LEFT JOIN OBJTYPES ot ON ot.ID = oi.OBJTYPEID
 		LEFT JOIN OBJREGS rg ON rg.ID = oi.OBJREGID
 		LEFT JOIN PPK ppk ON ppk.ID = oi.PPKID - 100
@@ -1330,9 +1331,9 @@ func (p *DBDataProvider) CollectObjectStatistics(filter AdminStatisticsFilter, l
 
 	switch filter.ConnectionMode {
 	case StatsConnectionOnline:
-		conditions = append(conditions, "COALESCE(os.ISCONNSTATE1, 0) = 1")
+		conditions = append(conditions, "COALESCE(ol.ISCONNSTATE1, 0) = 1")
 	case StatsConnectionOffline:
-		conditions = append(conditions, "COALESCE(os.ISCONNSTATE1, 0) = 0")
+		conditions = append(conditions, "COALESCE(ol.ISCONNSTATE1, 0) = 0")
 	}
 
 	switch filter.ProtocolFilter {
@@ -1345,7 +1346,7 @@ func (p *DBDataProvider) CollectObjectStatistics(filter AdminStatisticsFilter, l
 	}
 
 	if filter.ChannelCode != nil && *filter.ChannelCode >= 0 {
-		conditions = append(conditions, "COALESCE(os.OBJCHAN, oi.OBJCHAN, 0) = ?")
+		conditions = append(conditions, "COALESCE(oi.OBJCHAN, 0) = ?")
 		args = append(args, *filter.ChannelCode)
 	}
 	if filter.GuardState != nil && *filter.GuardState >= 0 {

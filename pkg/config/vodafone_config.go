@@ -3,8 +3,6 @@ package config
 import (
 	"strings"
 	"time"
-
-	"fyne.io/fyne/v2"
 )
 
 const (
@@ -39,7 +37,7 @@ type VodafoneConfig struct {
 	AutoResetWindowHours int
 }
 
-func LoadVodafoneConfig(p fyne.Preferences) VodafoneConfig {
+func LoadVodafoneConfig(p Preferences) VodafoneConfig {
 	if p == nil {
 		return VodafoneConfig{
 			AutoResetEnabled:     DefaultVodafoneAutoResetEnabled,
@@ -61,7 +59,7 @@ func LoadVodafoneConfig(p fyne.Preferences) VodafoneConfig {
 	return cfg
 }
 
-func SaveVodafoneConfig(p fyne.Preferences, cfg VodafoneConfig) {
+func SaveVodafoneConfig(p Preferences, cfg VodafoneConfig) {
 	if p == nil {
 		return
 	}
@@ -132,10 +130,10 @@ type VodafoneConfigStore interface {
 
 // PreferencesVodafoneConfigStore працює поверх Fyne Preferences.
 type PreferencesVodafoneConfigStore struct {
-	pref fyne.Preferences
+	pref Preferences
 }
 
-func NewPreferencesVodafoneConfigStore(pref fyne.Preferences) *PreferencesVodafoneConfigStore {
+func NewPreferencesVodafoneConfigStore(pref Preferences) *PreferencesVodafoneConfigStore {
 	if pref == nil {
 		return nil
 	}

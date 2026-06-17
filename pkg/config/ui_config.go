@@ -1,9 +1,5 @@
 package config
 
-import (
-	"fyne.io/fyne/v2"
-)
-
 const (
 	PrefFontSize               = "ui.font_size"
 	PrefFontSizeObjects        = "ui.font_size_objects"
@@ -104,7 +100,7 @@ func (cfg UIConfig) NormalizedBridgeAlarmHistoryMode() string {
 	return NormalizeBridgeAlarmHistoryMode(cfg.BridgeAlarmHistoryMode)
 }
 
-func LoadUIConfig(p fyne.Preferences) UIConfig {
+func LoadUIConfig(p Preferences) UIConfig {
 	fontSize := clampFontSize(float32(p.FloatWithFallback(PrefFontSize, 13.0)))
 	fontSizeObjects := clampFontSize(float32(p.FloatWithFallback(PrefFontSizeObjects, 13.0)))
 	fontSizeEvents := clampFontSize(float32(p.FloatWithFallback(PrefFontSizeEvents, 12.0)))
@@ -130,7 +126,7 @@ func LoadUIConfig(p fyne.Preferences) UIConfig {
 	}
 }
 
-func SaveUIConfig(p fyne.Preferences, cfg UIConfig) {
+func SaveUIConfig(p Preferences, cfg UIConfig) {
 	p.SetFloat(PrefFontSize, float64(clampFontSize(cfg.FontSize)))
 	p.SetFloat(PrefFontSizeObjects, float64(clampFontSize(cfg.FontSizeObjects)))
 	p.SetFloat(PrefFontSizeEvents, float64(clampFontSize(cfg.FontSizeEvents)))

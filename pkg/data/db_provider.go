@@ -877,6 +877,48 @@ func (p *DBDataProvider) GetExternalData(objectID string) (signal string, lastTe
 	return signal, lastTestMsg, lastTest, lastMsg
 }
 
+// LastGPRSTestTime returns LASTTESTTIME1 from GPRS_TC.FDB/TBL_TESTCONTROL.
+func (p *DBDataProvider) LastGPRSTestTime(ctx context.Context, objectID int) (time.Time, error) {
+	if p.db == nil {
+		return time.Time{}, fmt.Errorf("database connection is not initialized")
+	}
+	if objectID <= 0 {
+		return time.Time{}, fmt.Errorf("object ID must be positive")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	qCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	pathInfo, err := database.GetObjectDbPath(qCtx, p.db, int64(objectID))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("get object database path: %w", err)
+	}
+	if pathInfo == nil || pathInfo.Sbpdb == nil || strings.TrimSpace(*pathInfo.Sbpdb) == "" {
+		return time.Time{}, fmt.Errorf("object database path is empty")
+	}
+
+	fullPath := strings.ReplaceAll(*pathInfo.Sbpdb+"GPRS_TC.FDB", "\\", "/")
+	extDSN := p.buildExtDSN(fullPath)
+	if extDSN == "" {
+		return time.Time{}, fmt.Errorf("build GPRS_TC.FDB DSN")
+	}
+
+	tcDB, err := sqlx.Connect("firebirdsql", extDSN)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("connect GPRS_TC.FDB: %w", err)
+	}
+	defer tcDB.Close()
+
+	tcRow, err := database.GetTestControl(qCtx, tcDB, int64(objectID))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("query TBL_TESTCONTROL: %w", err)
+	}
+	return ptrToTime(tcRow.LastTestTime1), nil
+}
+
 // Допоміжна функція для побудови DSN
 func (p *DBDataProvider) buildExtDSN(fullPath string) string {
 	atIdx := strings.Index(p.baseDSN, "@")
@@ -1020,14 +1062,15 @@ func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
 		Name:          ptrToString(row.ObjShortName1),
 		Address:       ptrToString(row.Address1),
 		ContractNum:   ptrToString(row.Contract1),
-		Phone:       ptrToString(row.GsmPhone),
-		SIM1:        ptrToString(row.GsmPhone),
-		SIM2:        ptrToString(row.GsmPhone2),
-		Status:      mapStateToStatus(row.AlarmState1, row.IsConnState1),
-		StatusText:  mapStateToStatusText(row.AlarmState1, row.TechAlarmState1, row.IsConnState1),
-		GSMLevel:    0,
-		SubServerA:  subServerA,
-		SubServerB:  subServerB,
+		Phone:         ptrToString(row.GsmPhone),
+		SIM1:          ptrToString(row.GsmPhone),
+		SIM2:          ptrToString(row.GsmPhone2),
+		ObjChan:       ptrToInt(row.ObjChan),
+		Status:        mapStateToStatus(row.AlarmState1, row.IsConnState1),
+		StatusText:    mapStateToStatusText(row.AlarmState1, row.TechAlarmState1, row.IsConnState1),
+		GSMLevel:      0,
+		SubServerA:    subServerA,
+		SubServerB:    subServerB,
 
 		AlarmState:        ptrToInt64(row.AlarmState1),
 		GuardState:        guardState,

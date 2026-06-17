@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"strings"
 
-	"fyne.io/fyne/v2"
 	"github.com/rs/zerolog/log"
 	applogger "obj_catalog_fyne_v3/pkg/logger"
 )
@@ -72,7 +71,7 @@ type DBConfig struct {
 	LogLevel    string
 }
 
-func LoadDBConfig(p fyne.Preferences) DBConfig {
+func LoadDBConfig(p Preferences) DBConfig {
 	log.Debug().Msg("Завантаження налаштувань БД з преференсів...")
 	legacyMode := normalizeBackendMode(p.StringWithFallback(PrefBackendMode, BackendModeFirebird))
 	caslEnabled := p.BoolWithFallback(PrefCASLEnabled, legacyMode == BackendModeCASLCloud)
@@ -131,7 +130,7 @@ func LoadDBConfig(p fyne.Preferences) DBConfig {
 	return cfg
 }
 
-func SaveDBConfig(p fyne.Preferences, cfg DBConfig) {
+func SaveDBConfig(p Preferences, cfg DBConfig) {
 	log.Debug().Msg("Збереження налаштувань БД...")
 	p.SetString(PrefUser, cfg.User)
 	p.SetString(PrefPassword, cfg.Password)

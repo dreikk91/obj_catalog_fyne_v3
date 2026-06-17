@@ -8,7 +8,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
-	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
+	"obj_catalog_fyne_v3/pkg/utils"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +20,10 @@ import (
 
 type latestEventIDProvider interface {
 	GetLatestEventID() (int64, error)
+}
+
+type lastGPRSTestTimeProvider interface {
+	LastGPRSTestTime(ctx context.Context, objectID int) (time.Time, error)
 }
 
 type caslStatisticReportProvider interface {
@@ -424,9 +428,38 @@ func (p *CombinedDataProvider) GetObjects() []models.Object {
 	}
 
 	sort.SliceStable(objects, func(i, j int) bool {
-		return viewmodels.ObjectDisplayNumber(objects[i]) < viewmodels.ObjectDisplayNumber(objects[j])
+		return combinedObjectDisplayNumber(objects[i]) < combinedObjectDisplayNumber(objects[j])
 	})
 	return objects
+}
+
+func combinedObjectDisplayNumber(object models.Object) string {
+	if strings.TrimSpace(object.DisplayNumber) != "" {
+		return object.DisplayNumber
+	}
+	if !ids.IsCASLObjectID(object.ID) && !ids.IsPhoenixObjectID(object.ID) {
+		return strconv.Itoa(object.ID)
+	}
+	if number := combinedNumberFromPanelMark(object.PanelMark); number != "" {
+		return number
+	}
+	if number := utils.LeadingDigits(strings.TrimSpace(object.Name)); number != "" {
+		return number
+	}
+	return strconv.Itoa(object.ID)
+}
+
+func combinedNumberFromPanelMark(value string) string {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(text, "#"); idx >= 0 && idx < len(text)-1 {
+		if number := utils.LeadingDigits(strings.TrimSpace(text[idx+1:])); number != "" {
+			return number
+		}
+	}
+	return utils.LeadingDigits(text)
 }
 
 func (p *CombinedDataProvider) GetObjectByID(id string) *models.Object {
@@ -680,6 +713,18 @@ func (p *CombinedDataProvider) GetExternalData(objectID string) (signal string, 
 		return "", "", time.Time{}, time.Time{}
 	}
 	return provider.GetExternalData(objectID)
+}
+
+func (p *CombinedDataProvider) LastGPRSTestTime(ctx context.Context, objectID int) (time.Time, error) {
+	provider := p.providerForObjectID(strconv.Itoa(objectID))
+	if provider == nil {
+		return time.Time{}, errors.New("last GPRS test provider is not configured")
+	}
+	lastTestProvider, ok := provider.(lastGPRSTestTimeProvider)
+	if !ok {
+		return time.Time{}, fmt.Errorf("last GPRS test is not supported by provider for object %d", objectID)
+	}
+	return lastTestProvider.LastGPRSTestTime(ctx, objectID)
 }
 
 func (p *CombinedDataProvider) GetTestMessages(objectID string) []models.TestMessage {

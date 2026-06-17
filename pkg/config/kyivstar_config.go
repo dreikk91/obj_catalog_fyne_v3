@@ -3,8 +3,6 @@ package config
 import (
 	"strings"
 	"time"
-
-	"fyne.io/fyne/v2"
 )
 
 const (
@@ -36,7 +34,7 @@ type KyivstarConfig struct {
 	AutoResetWindowHours int
 }
 
-func LoadKyivstarConfig(p fyne.Preferences) KyivstarConfig {
+func LoadKyivstarConfig(p Preferences) KyivstarConfig {
 	if p == nil {
 		return KyivstarConfig{
 			AutoResetEnabled:     DefaultKyivstarAutoResetEnabled,
@@ -56,7 +54,7 @@ func LoadKyivstarConfig(p fyne.Preferences) KyivstarConfig {
 	}
 }
 
-func SaveKyivstarConfig(p fyne.Preferences, cfg KyivstarConfig) {
+func SaveKyivstarConfig(p Preferences, cfg KyivstarConfig) {
 	if p == nil {
 		return
 	}
@@ -114,10 +112,10 @@ type KyivstarConfigStore interface {
 
 // PreferencesKyivstarConfigStore працює поверх Fyne Preferences.
 type PreferencesKyivstarConfigStore struct {
-	pref fyne.Preferences
+	pref Preferences
 }
 
-func NewPreferencesKyivstarConfigStore(pref fyne.Preferences) *PreferencesKyivstarConfigStore {
+func NewPreferencesKyivstarConfigStore(pref Preferences) *PreferencesKyivstarConfigStore {
 	if pref == nil {
 		return nil
 	}

@@ -719,7 +719,12 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 		}),
 	)
 
-	menus := []*fyne.Menu{adminMenu}
+	utilitiesMenu := fyne.NewMenu("Утиліти",
+		fyne.NewMenuItem("Згенерувати звіт прийнятих об'єктів", func() {
+			a.generateAcceptedObjectsExcelReport()
+		}),
+	)
+	menus := []*fyne.Menu{adminMenu, utilitiesMenu}
 	if _, reportsOK := a.resolveCASLReportsProvider(); reportsOK {
 		caslMenuItems := make([]*fyne.MenuItem, 0, 8)
 		caslMenuItems = append(caslMenuItems, fyne.NewMenuItem("Звіти", func() {
@@ -862,6 +867,28 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 				a.statusLabel.SetText(a.backendStatusConnectedText())
 			}
 			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Підключення до джерел даних оновлено")
+		})
+	}()
+}
+
+func (a *Application) generateAcceptedObjectsExcelReport() {
+	provider := a.getDataProvider()
+	excelProvider, ok := provider.(contracts.ExcelReportingProvider)
+	if !ok {
+		dialogs.ShowInfoDialog(a.mainWindow, "Помилка", "Джерело даних не підтримує експорт Excel.")
+		return
+	}
+
+	filePath := `D:\goproject\obj_catalog_fyne_v3\Звіт прийнятих-знятих об’єктів (1).xlsx`
+
+	go func() {
+		err := excelProvider.GenerateAcceptedObjectsReport(filePath)
+		fyne.Do(func() {
+			if err != nil {
+				dialogs.ShowErrorDialog(a.mainWindow, "Помилка генерації звіту", err)
+				return
+			}
+			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", fmt.Sprintf("Звіт сформовано в:\n%s", filePath))
 		})
 	}()
 }

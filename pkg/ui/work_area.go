@@ -16,6 +16,7 @@ import (
 	fyneTheme "fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/rs/zerolog/log"
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	objexport "obj_catalog_fyne_v3/pkg/export"
@@ -59,10 +60,11 @@ type WorkAreaPanel struct {
 	HeaderName    *widget.Label
 	HeaderAddress *widget.Label
 	HeaderStatus  *canvas.Text
-	ExportPDFBtn  *widget.Button
-	ExportXLSXBtn *widget.Button
-	CopyExcelBtn  *widget.Button
-	Tabs          *container.AppTabs
+	ExportPDFBtn    *widget.Button
+	ExportXLSXBtn   *widget.Button
+	CopyExcelBtn    *widget.Button
+	AddToDeletedBtn *widget.Button
+	Tabs            *container.AppTabs
 
 	// Лейбли інформації про прилад
 	DeviceTypeLabel        *widget.Label
@@ -169,6 +171,77 @@ func NewWorkAreaPanel(provider contracts.WorkAreaProvider, window fyne.Window) *
 	})
 	panel.CopyExcelBtn.Disable()
 
+	panel.AddToDeletedBtn = widget.NewButton("Додати в видалені", func() {
+		if panel.CurrentObject == nil {
+			ShowToast(panel.Window, "Спочатку оберіть об'єкт")
+			return
+		}
+
+		excelProvider, ok := panel.Data.(contracts.ExcelReportingProvider)
+		if !ok {
+			dialogs.ShowInfoDialog(panel.Window, "Помилка", "Поточний провайдер не підтримує експорт в Excel.")
+			return
+		}
+
+		displayName := viewmodels.ObjectDisplayNumber(*panel.CurrentObject)
+		filePath := `D:\goproject\obj_catalog_fyne_v3\Звіт прийнятих-знятих об’єктів (1).xlsx`
+
+		dialog.ShowConfirm(
+			"Підтвердження",
+			fmt.Sprintf("Додати об'єкт №%s в звіт видалених?", displayName),
+			func(confirmed bool) {
+				if !confirmed {
+					return
+				}
+				go func() {
+					obj := *panel.CurrentObject
+					log.Info().Int("object_id", obj.ID).Msg("Starting deletion process: exporting object to PDF...")
+					zones := slices.Clone(panel.Zones)
+					contacts := slices.Clone(panel.Contacts)
+					events := slices.Clone(panel.Events)
+					eventsLoaded := panel.eventsLoadedObjectID == obj.ID
+
+					if !eventsLoaded {
+						uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+						events = panel.ViewModel.LoadObjectEvents(panel.Data, obj.ID, uiCfg.ObjectLogLimit)
+					}
+					externalData := panel.ViewModel.LoadExternalData(panel.Data, obj.ID)
+					exportData := panel.ExportVM.BuildObjectExportData(obj, zones, contacts, events, externalData)
+					uiCfg := config.LoadUIConfig(fyne.CurrentApp().Preferences())
+					exportDir := uiCfg.ExportDir
+
+					tempPDFPath, pdfErr := objexport.ExportObjectToPDF(exportData, exportDir)
+					if pdfErr != nil {
+						log.Error().Err(pdfErr).Int("object_id", obj.ID).Msg("Failed to generate PDF for deleted object")
+						fyne.Do(func() {
+							dialog.ShowError(fmt.Errorf("помилка генерації PDF: %w", pdfErr), panel.Window)
+						})
+						return
+					}
+					log.Info().Str("pdf_path", tempPDFPath).Msg("PDF generated successfully. Appending to Excel report...")
+
+					err := excelProvider.AppendObjectToDeletedReport(panel.CurrentObject, panel.Contacts, tempPDFPath, filePath)
+					fyne.Do(func() {
+						if err != nil {
+							if gdriveErr, ok := err.(*objexport.GoogleDriveUploadError); ok {
+								log.Warn().Err(gdriveErr.Err).Msg("Excel row appended, but Google Drive upload failed")
+								ShowToast(panel.Window, fmt.Sprintf("Об'єкт додано в Excel, але не завантажено на Google Drive: %v", gdriveErr.Err))
+							} else {
+								log.Error().Err(err).Msg("Failed to append object to deleted Excel report")
+								dialog.ShowError(err, panel.Window)
+							}
+							return
+						}
+						log.Info().Msg("Successfully completed deletion process: Excel updated, PDF uploaded to Google Drive")
+						ShowToast(panel.Window, "Об'єкт додано до знятих/видалених Excel та Google Drive")
+					})
+				}()
+			},
+			panel.Window,
+		)
+	})
+	panel.AddToDeletedBtn.Disable()
+
 	header := container.NewVBox(
 		container.NewBorder(nil, nil, nil, panel.CopyNameBtn, panel.HeaderName),
 		container.NewBorder(nil, nil, nil, panel.CopyAddressBtn, panel.HeaderAddress),
@@ -178,6 +251,7 @@ func NewWorkAreaPanel(provider contracts.WorkAreaProvider, window fyne.Window) *
 			panel.ExportPDFBtn,
 			panel.ExportXLSXBtn,
 			panel.CopyExcelBtn,
+			panel.AddToDeletedBtn,
 		),
 		widget.NewSeparator(),
 	)
@@ -868,6 +942,9 @@ func (w *WorkAreaPanel) SetObject(object models.Object) {
 	}
 	if w.CopyExcelBtn != nil {
 		w.CopyExcelBtn.Enable()
+	}
+	if w.AddToDeletedBtn != nil {
+		w.AddToDeletedBtn.Enable()
 	}
 
 	// Оновлюємо базову інфу

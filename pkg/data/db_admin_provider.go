@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/export"
+	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/utils"
 
 	"github.com/jmoiron/sqlx"
@@ -1963,4 +1965,14 @@ func formatDateTimePtr(t *time.Time) string {
 		return ""
 	}
 	return t.Format("2006-01-02 15:04:05")
+}
+
+// GenerateAcceptedObjectsReport generates the report for accepted objects
+func (p *DBDataProvider) GenerateAcceptedObjectsReport(filePath string) error {
+	return export.GenerateAcceptedObjectsReport(p.db, filePath)
+}
+
+// AppendObjectToDeletedReport appends an object to the deleted report
+func (p *DBDataProvider) AppendObjectToDeletedReport(obj *models.Object, contacts []models.Contact, pdfFilePath string, filePath string) error {
+	return export.AppendObjectToDeletedXLSX(obj, contacts, pdfFilePath, filePath)
 }

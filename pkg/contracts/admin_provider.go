@@ -1,8 +1,13 @@
 package contracts
 
+import (
+	"obj_catalog_fyne_v3/pkg/models"
+)
+
 // AdminProvider визначає доступний у UI адмінський функціонал.
 type AdminProvider interface {
 	AdminObjectDialogProvider
+	ExcelReportingProvider
 
 	AddObjectType(name string) error
 	UpdateObjectType(id int64, name string) error
@@ -44,4 +49,10 @@ type AdminProvider interface {
 	CollectObjectStatistics(filter AdminStatisticsFilter, limit int) ([]AdminStatisticsRow, error)
 
 	EmulateEvent(objn int64, zone int64, messageUIN int64) error
+}
+
+// ExcelReportingProvider керує експортом звітів прийнятих-знятих об'єктів в Excel.
+type ExcelReportingProvider interface {
+	GenerateAcceptedObjectsReport(filePath string) error
+	AppendObjectToDeletedReport(obj *models.Object, contacts []models.Contact, pdfFilePath string, filePath string) error
 }

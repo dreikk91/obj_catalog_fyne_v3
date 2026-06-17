@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+
 // Event cache limit to prevent excessive memory usage.
 const maxCachedEvents = 100000
 

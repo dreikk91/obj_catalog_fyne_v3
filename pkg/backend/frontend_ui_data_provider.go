@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,22 @@ func NewFrontendUIDataProvider(frontend contracts.FrontendBackend, fallback cont
 		frontend: frontend,
 		fallback: fallback,
 	}
+}
+
+// GenerateAcceptedObjectsReport delegates accepted objects report generation to the underlying data provider
+func (p *FrontendUIDataProvider) GenerateAcceptedObjectsReport(filePath string) error {
+	if reporter, ok := p.fallback.(contracts.ExcelReportingProvider); ok {
+		return reporter.GenerateAcceptedObjectsReport(filePath)
+	}
+	return fmt.Errorf("underlying data provider does not support Excel reporting")
+}
+
+// AppendObjectToDeletedReport appends an object to the deleted report
+func (p *FrontendUIDataProvider) AppendObjectToDeletedReport(obj *models.Object, contacts []models.Contact, pdfFilePath string, filePath string) error {
+	if reporter, ok := p.fallback.(contracts.ExcelReportingProvider); ok {
+		return reporter.AppendObjectToDeletedReport(obj, contacts, pdfFilePath, filePath)
+	}
+	return fmt.Errorf("underlying data provider does not support Excel reporting")
 }
 
 func (p *FrontendUIDataProvider) GetObjects() []models.Object {

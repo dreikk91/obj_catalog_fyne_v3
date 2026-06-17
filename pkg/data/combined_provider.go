@@ -973,3 +973,23 @@ func frontendSourceFromProviderName(name string) contracts.FrontendSource {
 		return contracts.FrontendSourceUnknown
 	}
 }
+
+// GenerateAcceptedObjectsReport delegates accepted objects Excel reporting to the first underlying source provider that supports it
+func (p *CombinedDataProvider) GenerateAcceptedObjectsReport(filePath string) error {
+	for _, source := range p.sources {
+		if reporter, ok := source.Provider.(contracts.ExcelReportingProvider); ok {
+			return reporter.GenerateAcceptedObjectsReport(filePath)
+		}
+	}
+	return fmt.Errorf("no source supports accepted objects report generation")
+}
+
+// AppendObjectToDeletedReport delegates deleted objects Excel reporting to the first underlying source provider that supports it
+func (p *CombinedDataProvider) AppendObjectToDeletedReport(obj *models.Object, contacts []models.Contact, pdfFilePath string, filePath string) error {
+	for _, source := range p.sources {
+		if reporter, ok := source.Provider.(contracts.ExcelReportingProvider); ok {
+			return reporter.AppendObjectToDeletedReport(obj, contacts, pdfFilePath, filePath)
+		}
+	}
+	return fmt.Errorf("no source supports appending object to deleted report")
+}

@@ -139,6 +139,7 @@ func GetObjectDetail(ctx context.Context, db *sqlx.DB, objn int64) (*ObjectDetai
 			oi.RESERVTEXT,
 			oi.GSMPHONE,
 			oi.GSMPHONE2,
+			COALESCE(oi.GSMHIDENINT, 0) AS GSMHIDENINT,
 			oi.LOCATION1,
 			ot.OBJTYPE1,
 			os.ALARMSTATE1, os.TECHALARMSTATE1,

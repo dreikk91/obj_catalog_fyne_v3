@@ -57,6 +57,7 @@ type Object struct {
 
 	SIM1                       string // Номер SIM 1
 	SIM2                       string // Номер SIM 2
+	GSMHiddenN                 int64  // Спільний номер GSMHIDENINT для пов'язаних об'єктів МОСТ
 	SubServerA                 string // Підсервер A (SBSA)
 	SubServerB                 string // Підсервер B (SBSB)
 	ObjChan                    int    // Канал зв'язку (1=Автододзвін, 5=GPRS, інше=Інший)

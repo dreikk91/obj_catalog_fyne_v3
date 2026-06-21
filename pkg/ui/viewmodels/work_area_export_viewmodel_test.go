@@ -136,3 +136,43 @@ func TestWorkAreaExportViewModel_UsesDisplayNumberForSpecialSources(t *testing.T
 		t.Fatalf("unexpected Phoenix first column: %q", firstColumn)
 	}
 }
+
+func TestWorkAreaExportViewModel_UsesGSMHiddenNumberForMOST(t *testing.T) {
+	vm := NewWorkAreaExportViewModel()
+	obj := models.Object{
+		ID:            28891,
+		DisplayNumber: "28891",
+		GSMHiddenN:    2889,
+		Name:          "MOST object",
+	}
+
+	exportData := vm.BuildObjectExportData(obj, nil, nil, nil, WorkAreaExternalData{})
+	if exportData.Number != "2889" {
+		t.Fatalf("unexpected MOST export number: %q", exportData.Number)
+	}
+
+	row := vm.BuildExcelRowTSV(obj, nil)
+	if firstColumn := strings.Split(row, "\t")[0]; firstColumn != "2889" {
+		t.Fatalf("unexpected MOST TSV first column: %q", firstColumn)
+	}
+}
+
+func TestExportObjectNumber_DoesNotUseGSMHiddenNumberForSpecialSources(t *testing.T) {
+	casl := models.Object{
+		ID:            ids.CASLObjectIDNamespaceStart + 1,
+		DisplayNumber: "1003",
+		GSMHiddenN:    2889,
+	}
+	if got := exportObjectNumber(casl); got != "1003" {
+		t.Fatalf("unexpected CASL export number: %q", got)
+	}
+
+	phoenix := models.Object{
+		ID:            ids.PhoenixObjectIDNamespaceStart + 1,
+		DisplayNumber: "L00028",
+		GSMHiddenN:    2889,
+	}
+	if got := exportObjectNumber(phoenix); got != "L00028" {
+		t.Fatalf("unexpected Phoenix export number: %q", got)
+	}
+}

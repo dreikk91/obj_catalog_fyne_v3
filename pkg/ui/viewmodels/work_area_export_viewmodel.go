@@ -3,9 +3,11 @@ package viewmodels
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	objexport "obj_catalog_fyne_v3/pkg/export"
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -23,7 +25,7 @@ func (vm *WorkAreaExportViewModel) BuildObjectExportData(
 	events []models.Event,
 	external WorkAreaExternalData,
 ) objexport.ObjectExportData {
-	displayNumber := strings.TrimSpace(ObjectDisplayNumber(obj))
+	displayNumber := exportObjectNumber(obj)
 	if displayNumber == "" {
 		displayNumber = "Немає"
 	}
@@ -112,7 +114,7 @@ func (vm *WorkAreaExportViewModel) BuildExcelRowTSV(obj models.Object, contacts 
 	}
 
 	fields := []string{
-		cleanTSV(ObjectDisplayNumber(obj)),    // собсс / номер об'єкта
+		cleanTSV(exportObjectNumber(obj)),     // собсс / номер об'єкта
 		cleanTSV(obj.LaunchDate),              // Дата підключен. до ПЦС
 		cleanTSV(obj.ContractNum),             // Дата угоди (за поточними даними: номер/ідентифікатор угоди)
 		"",                                    // Юридична назва, згідно угоди
@@ -131,6 +133,13 @@ func (vm *WorkAreaExportViewModel) BuildExcelRowTSV(obj models.Object, contacts 
 	}
 
 	return strings.Join(fields, "\t")
+}
+
+func exportObjectNumber(obj models.Object) string {
+	if !ids.IsCASLObjectID(obj.ID) && !ids.IsPhoenixObjectID(obj.ID) && obj.GSMHiddenN > 0 {
+		return strconv.FormatInt(obj.GSMHiddenN, 10)
+	}
+	return strings.TrimSpace(ObjectDisplayNumber(obj))
 }
 
 func cleanTSV(s string) string {

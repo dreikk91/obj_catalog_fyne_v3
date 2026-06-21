@@ -41,6 +41,7 @@ type ObjectDetailRow struct {
 	ReservText    *string `db:"RESERVTEXT"`
 	GsmPhone      *string `db:"GSMPHONE"`
 	GsmPhone2     *string `db:"GSMPHONE2"`
+	GsmHiddenN    *int64  `db:"GSMHIDENINT"`
 	Location1     *string `db:"LOCATION1"`
 
 	// Поле з OBJTYPES (ot)

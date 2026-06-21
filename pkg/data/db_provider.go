@@ -18,7 +18,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-
 // Event cache limit to prevent excessive memory usage.
 const maxCachedEvents = 100000
 
@@ -129,6 +128,7 @@ func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 		PanelMark:   ptrToString(row.PanelMark1),
 		SIM1:        ptrToString(row.GsmPhone),
 		SIM2:        ptrToString(row.GsmPhone2),
+		GSMHiddenN:  ptrToInt64(row.GsmHiddenN),
 		Status:      mapStateToStatus(row.AlarmState1, row.IsConnState1),
 		StatusText:  mapStateToStatusText(row.AlarmState1, row.TechAlarmState1, row.IsConnState1),
 

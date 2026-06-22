@@ -226,6 +226,7 @@ func (a *Application) startGettingEvents() {
 
 	go func() {
 		go a.startSIMAutoResetMonitor(ctx)
+		go a.startOperatorTokenRefreshMonitor(ctx)
 
 		eventProbeTicker := time.NewTicker(eventProbeInterval)
 		eventsReconcileTicker := time.NewTicker(eventsReconcileInterval)

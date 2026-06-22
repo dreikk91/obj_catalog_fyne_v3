@@ -5,6 +5,7 @@ package qtui
 import (
 	qt "github.com/mappu/miqt/qt6"
 
+	"obj_catalog_fyne_v3/pkg/ami"
 	"obj_catalog_fyne_v3/pkg/config"
 )
 
@@ -45,6 +46,32 @@ type settingsDialog struct {
 	eventLogLimit          *qt.QSpinBox
 	objectLogLimit         *qt.QSpinBox
 	exportDir              *qt.QLineEdit
+
+	vodafonePhone       *qt.QLineEdit
+	vodafoneAccessToken *qt.QLineEdit
+	vodafoneTokenExpiry *qt.QLineEdit
+	vodafoneLoginMethod *qt.QComboBox
+	vodafonePUK         *qt.QLineEdit
+	vodafoneAutoReset   *qt.QCheckBox
+	vodafoneDailyLimit  *qt.QSpinBox
+	vodafoneWindowHours *qt.QSpinBox
+
+	kyivstarClientID    *qt.QLineEdit
+	kyivstarSecret      *qt.QLineEdit
+	kyivstarEmail       *qt.QLineEdit
+	kyivstarAccessToken *qt.QLineEdit
+	kyivstarTokenExpiry *qt.QLineEdit
+	kyivstarAutoReset   *qt.QCheckBox
+	kyivstarDailyLimit  *qt.QSpinBox
+	kyivstarWindowHours *qt.QSpinBox
+
+	amiEnabled   *qt.QCheckBox
+	amiHost      *qt.QLineEdit
+	amiPort      *qt.QSpinBox
+	amiUsername  *qt.QLineEdit
+	amiSecret    *qt.QLineEdit
+	amiExtension *qt.QLineEdit
+	amiContext   *qt.QLineEdit
 }
 
 func ShowSettingsDialog(parent *qt.QWidget, prefs config.Preferences, onSaved func(config.DBConfig, config.UIConfig)) {
@@ -58,6 +85,7 @@ func ShowSettingsDialog(parent *qt.QWidget, prefs config.Preferences, onSaved fu
 	dbCfg, uiCfg := d.values()
 	config.SaveDBConfig(prefs, dbCfg)
 	config.SaveUIConfig(prefs, uiCfg)
+	d.saveOperatorAndCommandSettings()
 	if onSaved != nil {
 		onSaved(dbCfg, uiCfg)
 	}
@@ -74,6 +102,7 @@ func newSettingsDialog(parent *qt.QWidget, prefs config.Preferences) *settingsDi
 	root := qt.NewQVBoxLayout(d.dialog.QWidget)
 	tabs := qt.NewQTabWidget2()
 	tabs.AddTab(d.buildDataSourcesTab(), "Джерела даних")
+	tabs.AddTab(d.buildOperatorsTab(), "Оператори і команди")
 	tabs.AddTab(d.buildInterfaceTab(), "Інтерфейс")
 	root.AddWidget(tabs.QWidget)
 
@@ -84,6 +113,7 @@ func newSettingsDialog(parent *qt.QWidget, prefs config.Preferences) *settingsDi
 	d.dialog.SetLayout(root.QLayout)
 
 	d.load(config.LoadDBConfig(prefs), config.LoadUIConfig(prefs))
+	d.loadOperatorAndCommandSettings()
 	return d
 }
 
@@ -172,6 +202,66 @@ func (d *settingsDialog) buildInterfaceTab() *qt.QWidget {
 	return tab
 }
 
+func (d *settingsDialog) buildOperatorsTab() *qt.QWidget {
+	tab := qt.NewQWidget2()
+	layout := qt.NewQVBoxLayout(tab)
+	form := qt.NewQFormLayout2()
+
+	d.vodafonePhone = lineEdit()
+	form.AddRow3("Vodafone phone", d.vodafonePhone.QWidget)
+	d.vodafoneAccessToken = passwordEdit()
+	form.AddRow3("Vodafone token", d.vodafoneAccessToken.QWidget)
+	d.vodafoneTokenExpiry = lineEdit()
+	form.AddRow3("Vodafone token expiry", d.vodafoneTokenExpiry.QWidget)
+	d.vodafoneLoginMethod = qt.NewQComboBox2()
+	d.vodafoneLoginMethod.AddItems([]string{config.VodafoneLoginMethodSMS, config.VodafoneLoginMethodPUK})
+	form.AddRow3("Vodafone login", d.vodafoneLoginMethod.QWidget)
+	d.vodafonePUK = passwordEdit()
+	form.AddRow3("Vodafone PUK", d.vodafonePUK.QWidget)
+	d.vodafoneAutoReset = qt.NewQCheckBox3("Автоскидання SIM Vodafone")
+	form.AddRow3("Vodafone auto reset", d.vodafoneAutoReset.QWidget)
+	d.vodafoneDailyLimit = spinBox(0, 100)
+	form.AddRow3("Vodafone daily limit", d.vodafoneDailyLimit.QWidget)
+	d.vodafoneWindowHours = spinBox(config.MinVodafoneAutoResetWindowHours, 24*30)
+	form.AddRow3("Vodafone window, hours", d.vodafoneWindowHours.QWidget)
+
+	d.kyivstarClientID = lineEdit()
+	form.AddRow3("Kyivstar client ID", d.kyivstarClientID.QWidget)
+	d.kyivstarSecret = passwordEdit()
+	form.AddRow3("Kyivstar secret", d.kyivstarSecret.QWidget)
+	d.kyivstarEmail = lineEdit()
+	form.AddRow3("Kyivstar email", d.kyivstarEmail.QWidget)
+	d.kyivstarAccessToken = passwordEdit()
+	form.AddRow3("Kyivstar token", d.kyivstarAccessToken.QWidget)
+	d.kyivstarTokenExpiry = lineEdit()
+	form.AddRow3("Kyivstar token expiry", d.kyivstarTokenExpiry.QWidget)
+	d.kyivstarAutoReset = qt.NewQCheckBox3("Автоскидання SIM Kyivstar")
+	form.AddRow3("Kyivstar auto reset", d.kyivstarAutoReset.QWidget)
+	d.kyivstarDailyLimit = spinBox(0, 100)
+	form.AddRow3("Kyivstar daily limit", d.kyivstarDailyLimit.QWidget)
+	d.kyivstarWindowHours = spinBox(config.MinKyivstarAutoResetWindowHours, 24*30)
+	form.AddRow3("Kyivstar window, hours", d.kyivstarWindowHours.QWidget)
+
+	d.amiEnabled = qt.NewQCheckBox3("Увімкнути AMI-команди")
+	form.AddRow3("Asterisk AMI", d.amiEnabled.QWidget)
+	d.amiHost = lineEdit()
+	form.AddRow3("AMI host", d.amiHost.QWidget)
+	d.amiPort = spinBox(1, 65535)
+	form.AddRow3("AMI port", d.amiPort.QWidget)
+	d.amiUsername = lineEdit()
+	form.AddRow3("AMI user", d.amiUsername.QWidget)
+	d.amiSecret = passwordEdit()
+	form.AddRow3("AMI secret", d.amiSecret.QWidget)
+	d.amiExtension = lineEdit()
+	form.AddRow3("Operator extension", d.amiExtension.QWidget)
+	d.amiContext = lineEdit()
+	form.AddRow3("Dial context", d.amiContext.QWidget)
+
+	layout.AddLayout(form.QLayout)
+	tab.SetLayout(layout.QLayout)
+	return tab
+}
+
 func (d *settingsDialog) load(dbCfg config.DBConfig, uiCfg config.UIConfig) {
 	d.firebirdEnabled.SetChecked(dbCfg.FirebirdEnabled)
 	d.dbUser.SetText(dbCfg.User)
@@ -250,6 +340,68 @@ func (d *settingsDialog) values() (config.DBConfig, config.UIConfig) {
 	return dbCfg, uiCfg
 }
 
+func (d *settingsDialog) loadOperatorAndCommandSettings() {
+	vf := config.LoadVodafoneConfig(d.prefs)
+	d.vodafonePhone.SetText(vf.Phone)
+	d.vodafoneAccessToken.SetText(vf.AccessToken)
+	d.vodafoneTokenExpiry.SetText(vf.TokenExpiry)
+	setComboTextFallback(d.vodafoneLoginMethod, vf.NormalizedLoginMethod(), config.VodafoneLoginMethodSMS)
+	d.vodafonePUK.SetText(vf.PUK)
+	d.vodafoneAutoReset.SetChecked(vf.AutoResetEnabled)
+	d.vodafoneDailyLimit.SetValue(vf.AutoResetDailyLimit)
+	d.vodafoneWindowHours.SetValue(vf.AutoResetWindowHours)
+
+	ks := config.LoadKyivstarConfig(d.prefs)
+	d.kyivstarClientID.SetText(ks.ClientID)
+	d.kyivstarSecret.SetText(ks.ClientSecret)
+	d.kyivstarEmail.SetText(ks.UserEmail)
+	d.kyivstarAccessToken.SetText(ks.AccessToken)
+	d.kyivstarTokenExpiry.SetText(ks.TokenExpiry)
+	d.kyivstarAutoReset.SetChecked(ks.AutoResetEnabled)
+	d.kyivstarDailyLimit.SetValue(ks.AutoResetDailyLimit)
+	d.kyivstarWindowHours.SetValue(ks.AutoResetWindowHours)
+
+	amiEnabled, amiCfg := config.LoadAMIConfig(d.prefs)
+	d.amiEnabled.SetChecked(amiEnabled)
+	d.amiHost.SetText(amiCfg.Host)
+	d.amiPort.SetValue(amiCfg.Port)
+	d.amiUsername.SetText(amiCfg.Username)
+	d.amiSecret.SetText(amiCfg.Secret)
+	d.amiExtension.SetText(amiCfg.Extension)
+	d.amiContext.SetText(amiCfg.Context)
+}
+
+func (d *settingsDialog) saveOperatorAndCommandSettings() {
+	config.SaveVodafoneConfig(d.prefs, config.VodafoneConfig{
+		Phone:                d.vodafonePhone.Text(),
+		AccessToken:          d.vodafoneAccessToken.Text(),
+		TokenExpiry:          d.vodafoneTokenExpiry.Text(),
+		LoginMethod:          d.vodafoneLoginMethod.CurrentText(),
+		PUK:                  d.vodafonePUK.Text(),
+		AutoResetEnabled:     d.vodafoneAutoReset.IsChecked(),
+		AutoResetDailyLimit:  d.vodafoneDailyLimit.Value(),
+		AutoResetWindowHours: d.vodafoneWindowHours.Value(),
+	})
+	config.SaveKyivstarConfig(d.prefs, config.KyivstarConfig{
+		ClientID:             d.kyivstarClientID.Text(),
+		ClientSecret:         d.kyivstarSecret.Text(),
+		UserEmail:            d.kyivstarEmail.Text(),
+		AccessToken:          d.kyivstarAccessToken.Text(),
+		TokenExpiry:          d.kyivstarTokenExpiry.Text(),
+		AutoResetEnabled:     d.kyivstarAutoReset.IsChecked(),
+		AutoResetDailyLimit:  d.kyivstarDailyLimit.Value(),
+		AutoResetWindowHours: d.kyivstarWindowHours.Value(),
+	})
+	config.SaveAMIConfig(d.prefs, d.amiEnabled.IsChecked(), ami.Config{
+		Host:      d.amiHost.Text(),
+		Port:      d.amiPort.Value(),
+		Username:  d.amiUsername.Text(),
+		Secret:    d.amiSecret.Text(),
+		Extension: d.amiExtension.Text(),
+		Context:   d.amiContext.Text(),
+	})
+}
+
 func backendModeFromEnabled(cfg config.DBConfig) string {
 	switch {
 	case cfg.CASLEnabled:
@@ -286,9 +438,13 @@ func doubleSpinBox(min float64, max float64) *qt.QDoubleSpinBox {
 }
 
 func setComboText(combo *qt.QComboBox, value string) {
+	setComboTextFallback(combo, value, "info")
+}
+
+func setComboTextFallback(combo *qt.QComboBox, value string, fallback string) {
 	idx := combo.FindText(value)
 	if idx < 0 {
-		idx = combo.FindText("info")
+		idx = combo.FindText(fallback)
 	}
 	if idx >= 0 {
 		combo.SetCurrentIndex(idx)

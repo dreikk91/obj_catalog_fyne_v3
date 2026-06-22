@@ -25,14 +25,18 @@ type WorkAreaPanel struct {
 	cardNotes                *qt.QTextEdit
 	deviceVM                 *viewmodels.WorkAreaDeviceViewModel
 	zonesModel               *qt.QStandardItemModel
+	zonesFlatModel           *qt.QStandardItemModel
 	contactsModel            *qt.QStandardItemModel
 	eventsModel              *qt.QStandardItemModel
+	zonesStack               *qt.QStackedWidget
 	zonesTree                *qt.QTreeView
+	zonesTable               *qt.QTableView
 	contactsTable            *qt.QTableView
 	eventsTable              *qt.QTableView
 	autoSized                bool
 	OnEditObjectRequested    func()
 	OnSIMManagementRequested func()
+	OnDialPhoneRequested     func(phone string)
 
 	// Export fields
 	currentObject     *models.Object
@@ -81,9 +85,18 @@ func NewWorkAreaPanel() *WorkAreaPanel {
 	panel.tabs.AddTab(panel.buildObjectCardTab(), "Картка")
 	panel.zonesModel = qt.NewQStandardItemModel2(0, 6)
 	panel.zonesTree = newTree(panel.zonesModel, zoneTreeHeaders())
-	panel.tabs.AddTab(panel.zonesTree.QWidget, "Зони")
+	panel.zonesFlatModel = qt.NewQStandardItemModel2(0, 4)
+	panel.zonesTable = newTable(panel.zonesFlatModel, zoneTableHeaders())
+	panel.zonesStack = qt.NewQStackedWidget2()
+	panel.zonesStack.AddWidget(panel.zonesTable.QWidget)
+	panel.zonesStack.AddWidget(panel.zonesTree.QWidget)
+	panel.tabs.AddTab(panel.zonesStack.QWidget, "Зони")
 	panel.contactsModel = qt.NewQStandardItemModel2(0, 4)
 	panel.contactsTable = newTable(panel.contactsModel, []string{"Ім'я", "Посада", "Телефон", "Група"})
+	panel.contactsTable.SetContextMenuPolicy(qt.CustomContextMenu)
+	panel.contactsTable.OnCustomContextMenuRequested(func(pos *qt.QPoint) {
+		panel.showContactContextMenu(pos)
+	})
 	panel.tabs.AddTab(panel.contactsTable.QWidget, "Контакти")
 	panel.eventsModel = qt.NewQStandardItemModel2(0, 3)
 	panel.eventsTable = newTable(panel.eventsModel, []string{"Час", "Подія", "Опис"})
@@ -95,6 +108,48 @@ func NewWorkAreaPanel() *WorkAreaPanel {
 	layout.AddWidget(panel.tabs.QWidget)
 	panel.SetLayout(layout.QLayout)
 	return panel
+}
+
+func (panel *WorkAreaPanel) showContactContextMenu(pos *qt.QPoint) {
+	if panel == nil || panel.contactsTable == nil || panel.contactsModel == nil || pos == nil {
+		return
+	}
+	index := panel.contactsTable.IndexAt(pos)
+	if !index.IsValid() {
+		return
+	}
+	phone := panel.contactPhoneAtIndex(index)
+	if phone == "" {
+		return
+	}
+	panel.contactsTable.SelectRow(index.Row())
+
+	menu := qt.NewQMenu(panel.contactsTable.QWidget)
+	dialAction := menu.AddActionWithText("Подзвонити " + phone)
+	dialAction.OnTriggered(func() {
+		if panel.OnDialPhoneRequested != nil {
+			panel.OnDialPhoneRequested(phone)
+		}
+	})
+	copyAction := menu.AddActionWithText("Копіювати телефон")
+	copyAction.OnTriggered(func() {
+		clipboard := qt.QGuiApplication_Clipboard()
+		if clipboard != nil {
+			clipboard.SetText(phone)
+		}
+	})
+	menu.ExecWithPos(panel.contactsTable.MapToGlobalWithQPoint(pos))
+}
+
+func (panel *WorkAreaPanel) contactPhoneAtIndex(index *qt.QModelIndex) string {
+	if panel == nil || panel.contactsModel == nil || index == nil || !index.IsValid() {
+		return ""
+	}
+	phoneIndex := index.SiblingAtColumn(2)
+	if phoneIndex == nil || !phoneIndex.IsValid() {
+		return ""
+	}
+	return strings.TrimSpace(panel.contactsModel.Data(phoneIndex, int(qt.DisplayRole)).ToString())
 }
 
 func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone, contacts []models.Contact, events []models.Event) {
@@ -144,6 +199,8 @@ func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone,
 	}
 
 	setZoneRows(panel.zonesModel, zones)
+	setZoneTableRows(panel.zonesFlatModel, zones)
+	panel.updateZonesView(zones)
 	setContactRows(panel.contactsModel, contacts)
 	setEventRows(panel.eventsModel, events)
 
@@ -161,11 +218,34 @@ func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone,
 	}
 
 	if !panel.autoSized {
-		resizeTreeToContents(panel.zonesTree)
+		panel.resizeZonesView()
 		resizeTableToContents(panel.contactsTable)
 		resizeTableToContents(panel.eventsTable)
 		panel.autoSized = true
 	}
+}
+
+func (panel *WorkAreaPanel) updateZonesView(zones []models.Zone) {
+	if panel == nil || panel.zonesStack == nil {
+		return
+	}
+	if len(groupZones(zones)) <= 1 {
+		panel.zonesStack.SetCurrentWidget(panel.zonesTable.QWidget)
+	} else {
+		panel.zonesStack.SetCurrentWidget(panel.zonesTree.QWidget)
+	}
+	panel.resizeZonesView()
+}
+
+func (panel *WorkAreaPanel) resizeZonesView() {
+	if panel == nil || panel.zonesStack == nil {
+		return
+	}
+	if panel.zonesStack.CurrentWidget() == panel.zonesTable.QWidget {
+		resizeTableToContents(panel.zonesTable)
+		return
+	}
+	resizeTreeToContents(panel.zonesTree)
 }
 
 func (panel *WorkAreaPanel) SetLoading(object models.Object) {
@@ -206,20 +286,23 @@ func (panel *WorkAreaPanel) buildObjectCardTab() *qt.QWidget {
 	grid := qt.NewQGridLayout(content)
 	grid.SetHorizontalSpacing(12)
 	grid.SetVerticalSpacing(6)
-	grid.SetColumnStretch(1, 1)
-	grid.SetColumnStretch(3, 1)
-	grid.SetColumnStretch(5, 1)
+	grid.SetColumnStretch(1, 2)
+	grid.SetColumnStretch(3, 2)
 
 	row := 0
 	row = panel.addCardSection(grid, row, "Основне")
 	row = panel.addCardFields(grid, row, []string{"Номер", "Договір", "Телефон"})
-	row = panel.addCardFields(grid, row, []string{"Назва", "Район", "Адреса"})
-	row = panel.addCardFields(grid, row, []string{"Координати", "Геокодування", "Словник об'єкта"})
+	row = panel.addCardWideField(grid, row, "Назва")
+	row = panel.addCardWideField(grid, row, "Адреса")
+	row = panel.addCardWideField(grid, row, "Координати")
+	row = panel.addCardFields(grid, row, []string{"Район", "Геокодування", "Словник об'єкта"})
 
 	row = panel.addCardSection(grid, row, "Обладнання і зв'язок")
 	row = panel.addCardFields(grid, row, []string{"Прилад", "Шифр приладу", "Контроль тестів"})
-	row = panel.addCardFields(grid, row, []string{"Групи", "Взяття/Зняття", "SIM-карта"})
-	row = panel.addCardFields(grid, row, []string{"SIM 1", "SIM 2", "Живлення"})
+	row = panel.addCardWideField(grid, row, "Групи")
+	row = panel.addCardFields(grid, row, []string{"Взяття/Зняття", "SIM 1", "SIM 2"})
+	row = panel.addCardWideField(grid, row, "SIM-карта")
+	row = panel.addCardWideField(grid, row, "Живлення")
 
 	row = panel.addCardSection(grid, row, "Поточний оперативний стан")
 	row = panel.addCardFields(grid, row, []string{"Охорона", "Зв'язок", "Ост. повідомлення"})
@@ -248,6 +331,7 @@ func (panel *WorkAreaPanel) addCardWideField(grid *qt.QGridLayout, row int, labe
 	grid.AddWidget3(qt.NewQLabel3(labelText).QWidget, row, 0, 1, 1)
 	field := qt.NewQLineEdit2()
 	field.SetReadOnly(true)
+	field.SetMinimumWidth(420)
 	grid.AddWidget3(field.QWidget, row, 1, 1, 5)
 	panel.cardFields[labelText] = field
 	return row + 1
@@ -259,6 +343,7 @@ func (panel *WorkAreaPanel) addCardFields(grid *qt.QGridLayout, row int, labels 
 		grid.AddWidget3(qt.NewQLabel3(label).QWidget, row, col, 1, 1)
 		field := qt.NewQLineEdit2()
 		field.SetReadOnly(true)
+		field.SetMinimumWidth(150)
 		grid.AddWidget3(field.QWidget, row, col+1, 1, 1)
 		panel.cardFields[label] = field
 		col += 2
@@ -317,7 +402,9 @@ func (panel *WorkAreaPanel) setObjectCard(object models.Object, presentation vie
 
 func (panel *WorkAreaPanel) setCardValue(label string, value string) {
 	if field, ok := panel.cardFields[label]; ok {
-		field.SetText(emptyDash(value))
+		text := emptyDash(value)
+		field.SetText(text)
+		field.SetToolTip(text)
 	}
 }
 

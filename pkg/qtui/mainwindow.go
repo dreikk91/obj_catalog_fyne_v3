@@ -234,6 +234,7 @@ func (mw *MainWindow) tableRegistry() map[string]*qt.QTableView {
 		tables["events"] = mw.eventLog.table
 	}
 	if mw.workArea != nil {
+		tables["object_zones_flat"] = mw.workArea.zonesTable
 		tables["object_contacts"] = mw.workArea.contactsTable
 		tables["object_events"] = mw.workArea.eventsTable
 	}
@@ -306,7 +307,7 @@ func (mw *MainWindow) markTableManuallySized(key string) {
 		if mw.eventLog != nil {
 			mw.eventLog.autoSized = true
 		}
-	case "object_zones", "object_contacts", "object_events":
+	case "object_zones", "object_zones_flat", "object_contacts", "object_events":
 		if mw.workArea != nil {
 			mw.workArea.autoSized = true
 		}

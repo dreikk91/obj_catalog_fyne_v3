@@ -263,19 +263,23 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 	if !ok {
 		return
 	}
+	alarms := contextMenuAlarms(alarm, panel.selectedAlarms())
+	if len(alarms) == 1 {
+		panel.table.SelectRow(index.Row())
+	}
 
 	menu := qt.NewQMenu(panel.table.QWidget)
-	processAction := menu.AddActionWithText("Відпрацювати")
+	processAction := menu.AddActionWithText(alarmActionText("Відпрацювати", alarms))
 	processAction.OnTriggered(func() {
 		if panel.OnProcessAlarms != nil {
-			panel.OnProcessAlarms([]models.Alarm{alarm})
+			panel.OnProcessAlarms(alarms)
 		}
 	})
 
-	pickAction := menu.AddActionWithText("Взяти в роботу")
+	pickAction := menu.AddActionWithText(alarmActionText("Взяти в роботу", alarms))
 	pickAction.OnTriggered(func() {
 		if panel.OnPickAlarms != nil {
-			panel.OnPickAlarms([]models.Alarm{alarm})
+			panel.OnPickAlarms(alarms)
 		}
 	})
 
@@ -286,6 +290,25 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 	})
 
 	menu.ExecWithPos(panel.table.MapToGlobalWithQPoint(pos))
+}
+
+func contextMenuAlarms(clicked models.Alarm, selected []models.Alarm) []models.Alarm {
+	if len(selected) <= 1 {
+		return []models.Alarm{clicked}
+	}
+	for _, alarm := range selected {
+		if alarm.ID == clicked.ID {
+			return selected
+		}
+	}
+	return []models.Alarm{clicked}
+}
+
+func alarmActionText(action string, alarms []models.Alarm) string {
+	if len(alarms) <= 1 {
+		return action
+	}
+	return fmt.Sprintf("%s (%d)", action, len(alarms))
 }
 
 func (panel *AlarmPanel) alarmAtIndex(index *qt.QModelIndex) (models.Alarm, bool) {

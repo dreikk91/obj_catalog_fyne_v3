@@ -31,6 +31,14 @@ func (p *DBDataProvider) VerifyVodafoneLogin(phone string, code string) (contrac
 	return service.VerifyLogin(phone, code)
 }
 
+func (p *DBDataProvider) RefreshVodafoneToken() (contracts.VodafoneAuthState, error) {
+	service, err := p.vodafoneService()
+	if err != nil {
+		return contracts.VodafoneAuthState{}, err
+	}
+	return service.RefreshToken()
+}
+
 func (p *DBDataProvider) ClearVodafoneLogin() error {
 	service, err := p.vodafoneService()
 	if err != nil {

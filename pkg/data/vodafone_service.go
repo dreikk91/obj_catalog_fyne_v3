@@ -38,6 +38,7 @@ type VodafoneService struct {
 	store      config.VodafoneConfigStore
 
 	mu              sync.Mutex
+	authMu          sync.Mutex
 	availableSIMs   map[string]vodafoneSubscriber
 	availableSIMsAt time.Time
 	settings        map[string]vodafoneSetting
@@ -152,6 +153,13 @@ func (s *VodafoneService) VerifyLogin(phone string, code string) (contracts.Voda
 		s.saveConfig(cfg)
 	}
 	return s.loginWithPassword(msisdn, code, method)
+}
+
+func (s *VodafoneService) RefreshToken() (contracts.VodafoneAuthState, error) {
+	if _, err := s.ensureAuthorizedToken(); err != nil {
+		return contracts.VodafoneAuthState{}, err
+	}
+	return s.AuthState()
 }
 
 func (s *VodafoneService) loginWithPassword(phone string, password string, method string) (contracts.VodafoneAuthState, error) {
@@ -863,6 +871,9 @@ func (s *VodafoneService) getGuestToken() (string, error) {
 }
 
 func (s *VodafoneService) ensureAuthorizedToken() (string, error) {
+	s.authMu.Lock()
+	defer s.authMu.Unlock()
+
 	cfg := s.loadConfig()
 	if cfg.TokenUsableAt(time.Now().UTC()) {
 		return strings.TrimSpace(cfg.AccessToken), nil

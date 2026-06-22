@@ -3,6 +3,7 @@
 package qtui
 
 import (
+	"fmt"
 	"strings"
 
 	qt "github.com/mappu/miqt/qt6"
@@ -13,16 +14,17 @@ import (
 
 type ObjectListPanel struct {
 	*qt.QWidget
-	search           *qt.QLineEdit
-	statusFilter     *qt.QComboBox
-	sourceFilter     *qt.QComboBox
-	table            *qt.QTableView
-	model            *qt.QStandardItemModel
-	vm               *viewmodels.ObjectListViewModel
-	allObjects       []models.Object
-	objectsByID      map[int]models.Object
-	autoSized        bool
-	OnObjectSelected func(models.Object)
+	search            *qt.QLineEdit
+	statusFilter      *qt.QComboBox
+	sourceFilter      *qt.QComboBox
+	table             *qt.QTableView
+	model             *qt.QStandardItemModel
+	vm                *viewmodels.ObjectListViewModel
+	allObjects        []models.Object
+	objectsByID       map[int]models.Object
+	autoSized         bool
+	suppressSelection bool
+	OnObjectSelected  func(models.Object)
 }
 
 func NewObjectListPanel() *ObjectListPanel {
@@ -60,6 +62,13 @@ func NewObjectListPanel() *ObjectListPanel {
 	panel.table.HorizontalHeader().SetStretchLastSection(true)
 	panel.table.SelectionModel().OnCurrentRowChanged(func(current *qt.QModelIndex, previous *qt.QModelIndex) {
 		panel.notifyObjectSelection(current)
+	})
+	panel.table.SetContextMenuPolicy(qt.CustomContextMenu)
+	panel.table.OnCustomContextMenuRequested(func(pos *qt.QPoint) {
+		panel.showContextMenu(pos)
+	})
+	panel.table.OnDoubleClicked(func(index *qt.QModelIndex) {
+		panel.notifyObjectSelection(index)
 	})
 
 	panel.search.OnTextChanged(func(string) {
@@ -103,13 +112,21 @@ func (panel *ObjectListPanel) FocusSearch() {
 }
 
 func (panel *ObjectListPanel) notifyObjectSelection(index *qt.QModelIndex) {
-	if panel == nil || panel.OnObjectSelected == nil || index == nil || !index.IsValid() {
+	if panel == nil || panel.suppressSelection || panel.OnObjectSelected == nil || index == nil || !index.IsValid() {
 		return
 	}
-	id := index.SiblingAtColumn(0).DataWithRole(int(qt.UserRole)).ToInt()
-	if object, ok := panel.objectsByID[id]; ok {
+	if object, ok := panel.objectAtIndex(index); ok {
 		panel.OnObjectSelected(object)
 	}
+}
+
+func (panel *ObjectListPanel) objectAtIndex(index *qt.QModelIndex) (models.Object, bool) {
+	if panel == nil || panel.model == nil || index == nil || !index.IsValid() {
+		return models.Object{}, false
+	}
+	id := index.SiblingAtColumn(0).DataWithRole(int(qt.UserRole)).ToInt()
+	object, ok := panel.objectsByID[id]
+	return object, ok
 }
 
 func (panel *ObjectListPanel) applyFilters() {
@@ -185,7 +202,7 @@ func (panel *ObjectListPanel) SelectObject(id int) {
 	if selectionModel != nil {
 		currentIndex := selectionModel.CurrentIndex()
 		if currentIndex != nil && currentIndex.IsValid() {
-			currentID := indexToID(panel.model, currentIndex)
+			currentID := indexToID(currentIndex)
 			if currentID == id {
 				return
 			}
@@ -193,26 +210,101 @@ func (panel *ObjectListPanel) SelectObject(id int) {
 	}
 
 	for row := 0; row < panel.model.RowCount(qt.NewQModelIndex()); row++ {
-		index := panel.model.Index(row, 0, nil)
-		if index != nil && index.IsValid() {
-			val := panel.model.Data(index, int(qt.UserRole)).ToInt()
-			if val == id {
-				panel.table.SelectRow(row)
-				panel.table.ScrollTo(index, qt.QAbstractItemView__PositionAtCenter)
-				return
-			}
+		item := panel.model.Item(row)
+		if item == nil {
+			continue
 		}
+		if item.Data(int(qt.UserRole)).ToInt() != id {
+			continue
+		}
+
+		panel.suppressSelection = true
+		panel.table.SelectRow(row)
+		panel.suppressSelection = false
+		if index := panel.model.IndexFromItem(item); index != nil && index.IsValid() {
+			panel.table.ScrollTo(index, qt.QAbstractItemView__PositionAtCenter)
+		}
+		return
 	}
 }
 
-func indexToID(model *qt.QStandardItemModel, index *qt.QModelIndex) int {
-	if model == nil || index == nil || !index.IsValid() {
+func (panel *ObjectListPanel) showContextMenu(pos *qt.QPoint) {
+	if panel == nil || panel.table == nil || pos == nil {
+		return
+	}
+	index := panel.table.IndexAt(pos)
+	if !index.IsValid() {
+		return
+	}
+	object, ok := panel.objectAtIndex(index)
+	if !ok {
+		return
+	}
+	panel.table.SelectRow(index.Row())
+
+	menu := qt.NewQMenu(panel.table.QWidget)
+	openAction := menu.AddActionWithText("Відкрити картку")
+	openAction.OnTriggered(func() {
+		if panel.OnObjectSelected != nil {
+			panel.OnObjectSelected(object)
+		}
+	})
+
+	menu.AddSeparator()
+	copyNumberAction := menu.AddActionWithText("Копіювати номер")
+	copyNumberAction.OnTriggered(func() {
+		setClipboardText(viewmodels.ObjectDisplayNumber(object))
+	})
+
+	copyNameAction := menu.AddActionWithText("Копіювати назву")
+	copyNameAction.OnTriggered(func() {
+		setClipboardText(strings.TrimSpace(object.Name))
+	})
+
+	copyAddressAction := menu.AddActionWithText("Копіювати адресу")
+	copyAddressAction.OnTriggered(func() {
+		setClipboardText(strings.TrimSpace(object.Address))
+	})
+
+	copySummaryAction := menu.AddActionWithText("Копіювати картку рядка")
+	copySummaryAction.OnTriggered(func() {
+		setClipboardText(objectListClipboardText(object))
+	})
+
+	menu.ExecWithPos(panel.table.MapToGlobalWithQPoint(pos))
+}
+
+func objectListClipboardText(object models.Object) string {
+	parts := make([]string, 0, 3)
+	if number := strings.TrimSpace(viewmodels.ObjectDisplayNumber(object)); number != "" {
+		parts = append(parts, "№"+number)
+	}
+	if name := strings.TrimSpace(object.Name); name != "" {
+		parts = append(parts, name)
+	}
+	if address := strings.TrimSpace(object.Address); address != "" {
+		parts = append(parts, address)
+	}
+	if len(parts) > 0 {
+		return strings.Join(parts, " | ")
+	}
+	return fmt.Sprintf("ID %d", object.ID)
+}
+
+func setClipboardText(text string) {
+	clipboard := qt.QGuiApplication_Clipboard()
+	if clipboard != nil {
+		clipboard.SetText(strings.TrimSpace(text))
+	}
+}
+
+func indexToID(index *qt.QModelIndex) int {
+	if index == nil || !index.IsValid() {
 		return 0
 	}
-	rowIndex := model.Index(index.Row(), 0, nil)
+	rowIndex := index.SiblingAtColumn(0)
 	if rowIndex == nil || !rowIndex.IsValid() {
 		return 0
 	}
-	return model.Data(rowIndex, int(qt.UserRole)).ToInt()
+	return rowIndex.DataWithRole(int(qt.UserRole)).ToInt()
 }
-

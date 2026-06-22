@@ -168,6 +168,10 @@ func (frontendAdminCardBaseStub) VerifyVodafoneLogin(string, string) (contracts.
 	return contracts.VodafoneAuthState{}, nil
 }
 
+func (frontendAdminCardBaseStub) RefreshVodafoneToken() (contracts.VodafoneAuthState, error) {
+	return contracts.VodafoneAuthState{}, nil
+}
+
 func (frontendAdminCardBaseStub) ClearVodafoneLogin() error {
 	return nil
 }

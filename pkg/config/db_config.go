@@ -78,22 +78,22 @@ func LoadDBConfig(p Preferences) DBConfig {
 	firebirdEnabled := p.BoolWithFallback(PrefFirebirdEnabled, legacyMode != BackendModePhoenix)
 	phoenixEnabled := p.BoolWithFallback(PrefPhoenixEnabled, legacyMode == BackendModePhoenix)
 	cfg := DBConfig{
-		User:     p.StringWithFallback(PrefUser, "SYSDBA"),
+		User:     stringWithTrimmedFallback(p, PrefUser, "SYSDBA"),
 		Password: p.StringWithFallback(PrefPassword, "masterkey"),
-		Host:     p.StringWithFallback(PrefHost, "localhost"),
-		Port:     p.StringWithFallback(PrefPort, "3050"),
-		Path:     p.StringWithFallback(PrefPath, "C:/MOST.PM/BASE/MOST5.FDB"),
-		Params:   p.StringWithFallback(PrefParams, "charset=WIN1251&auth_plugin_name=Srp"),
+		Host:     stringWithTrimmedFallback(p, PrefHost, "localhost"),
+		Port:     stringWithTrimmedFallback(p, PrefPort, "3050"),
+		Path:     stringWithTrimmedFallback(p, PrefPath, "C:/MOST.PM/BASE/MOST5.FDB"),
+		Params:   stringWithTrimmedFallback(p, PrefParams, "charset=WIN1251&auth_plugin_name=Srp"),
 
 		FirebirdEnabled: firebirdEnabled,
 		PhoenixEnabled:  phoenixEnabled,
-		PhoenixUser:     p.StringWithFallback(PrefPhoenixUser, "sa"),
+		PhoenixUser:     stringWithTrimmedFallback(p, PrefPhoenixUser, "sa"),
 		PhoenixPassword: p.StringWithFallback(PrefPhoenixPassword, ""),
-		PhoenixHost:     p.StringWithFallback(PrefPhoenixHost, "localhost"),
-		PhoenixPort:     p.StringWithFallback(PrefPhoenixPort, ""),
-		PhoenixInstance: p.StringWithFallback(PrefPhoenixInstance, "PHOENIX4"),
-		PhoenixDatabase: p.StringWithFallback(PrefPhoenixDatabase, "Pult4DB"),
-		PhoenixParams:   p.StringWithFallback(PrefPhoenixParams, "encrypt=disable&trustservercertificate=true"),
+		PhoenixHost:     stringWithTrimmedFallback(p, PrefPhoenixHost, "localhost"),
+		PhoenixPort:     strings.TrimSpace(p.StringWithFallback(PrefPhoenixPort, "")),
+		PhoenixInstance: stringWithTrimmedFallback(p, PrefPhoenixInstance, "PHOENIX4"),
+		PhoenixDatabase: stringWithTrimmedFallback(p, PrefPhoenixDatabase, "Pult4DB"),
+		PhoenixParams:   stringWithTrimmedFallback(p, PrefPhoenixParams, "encrypt=disable&trustservercertificate=true"),
 
 		CASLEnabled: caslEnabled,
 		Mode:        legacyMode,
@@ -132,21 +132,21 @@ func LoadDBConfig(p Preferences) DBConfig {
 
 func SaveDBConfig(p Preferences, cfg DBConfig) {
 	log.Debug().Msg("Збереження налаштувань БД...")
-	p.SetString(PrefUser, cfg.User)
+	p.SetString(PrefUser, strings.TrimSpace(cfg.User))
 	p.SetString(PrefPassword, cfg.Password)
-	p.SetString(PrefHost, cfg.Host)
-	p.SetString(PrefPort, cfg.Port)
-	p.SetString(PrefPath, cfg.Path)
-	p.SetString(PrefParams, cfg.Params)
+	p.SetString(PrefHost, strings.TrimSpace(cfg.Host))
+	p.SetString(PrefPort, strings.TrimSpace(cfg.Port))
+	p.SetString(PrefPath, strings.TrimSpace(cfg.Path))
+	p.SetString(PrefParams, strings.TrimSpace(cfg.Params))
 	p.SetBool(PrefFirebirdEnabled, cfg.FirebirdEnabled)
 	p.SetBool(PrefPhoenixEnabled, cfg.PhoenixEnabled)
-	p.SetString(PrefPhoenixUser, cfg.PhoenixUser)
+	p.SetString(PrefPhoenixUser, strings.TrimSpace(cfg.PhoenixUser))
 	p.SetString(PrefPhoenixPassword, cfg.PhoenixPassword)
-	p.SetString(PrefPhoenixHost, cfg.PhoenixHost)
-	p.SetString(PrefPhoenixPort, cfg.PhoenixPort)
-	p.SetString(PrefPhoenixInstance, cfg.PhoenixInstance)
-	p.SetString(PrefPhoenixDatabase, cfg.PhoenixDatabase)
-	p.SetString(PrefPhoenixParams, cfg.PhoenixParams)
+	p.SetString(PrefPhoenixHost, strings.TrimSpace(cfg.PhoenixHost))
+	p.SetString(PrefPhoenixPort, strings.TrimSpace(cfg.PhoenixPort))
+	p.SetString(PrefPhoenixInstance, strings.TrimSpace(cfg.PhoenixInstance))
+	p.SetString(PrefPhoenixDatabase, strings.TrimSpace(cfg.PhoenixDatabase))
+	p.SetString(PrefPhoenixParams, strings.TrimSpace(cfg.PhoenixParams))
 	p.SetBool(PrefCASLEnabled, cfg.CASLEnabled)
 	p.SetString(PrefBackendMode, normalizeBackendMode(cfg.Mode))
 	p.SetString(PrefCASLBaseURL, cfg.CASLBaseURL)
@@ -160,15 +160,37 @@ func SaveDBConfig(p Preferences, cfg DBConfig) {
 
 func (c DBConfig) FirebirdDSN() string {
 	// Format: user:password@host:port/path?params
-	dsn := fmt.Sprintf("%s:%s@%s:%s/%s", c.User, c.Password, c.Host, c.Port, c.Path)
-	if c.Params != "" {
-		if !strings.HasPrefix(c.Params, "?") {
+	host := strings.TrimSpace(c.Host)
+	if host == "" {
+		host = "localhost"
+	}
+	connectHost := firebirdConnectHost(host)
+	port := strings.TrimSpace(c.Port)
+	if port == "" {
+		port = "3050"
+	}
+	path := strings.TrimSpace(c.Path)
+	if path == "" {
+		path = "C:/MOST.PM/BASE/MOST5.FDB"
+	}
+	dsn := fmt.Sprintf("%s:%s@%s:%s/%s", strings.TrimSpace(c.User), c.Password, connectHost, port, path)
+	if params := strings.TrimSpace(c.Params); params != "" {
+		if !strings.HasPrefix(params, "?") {
 			dsn += "?"
 		}
-		dsn += c.Params
+		dsn += params
 	}
-	log.Debug().Str("host", c.Host).Str("port", c.Port).Str("path", c.Path).Msg("Firebird DSN сформовано")
+	log.Debug().Str("host", connectHost).Str("configuredHost", host).Str("port", port).Str("path", path).Msg("Firebird DSN сформовано")
 	return dsn
+}
+
+func firebirdConnectHost(host string) string {
+	switch strings.ToLower(strings.TrimSpace(host)) {
+	case "", "localhost":
+		return "127.0.0.1"
+	default:
+		return strings.TrimSpace(host)
+	}
 }
 
 func (c DBConfig) PhoenixDSN() string {
@@ -250,4 +272,12 @@ func applyURLQueryParams(values url.Values, raw string) {
 		}
 		values.Set(key, strings.TrimSpace(value))
 	}
+}
+
+func stringWithTrimmedFallback(p Preferences, key string, fallback string) string {
+	value := strings.TrimSpace(p.StringWithFallback(key, fallback))
+	if value == "" {
+		return fallback
+	}
+	return value
 }

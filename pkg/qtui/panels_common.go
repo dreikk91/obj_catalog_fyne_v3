@@ -354,8 +354,25 @@ func setZoneRows(model *qt.QStandardItemModel, zones []models.Zone) {
 	}
 }
 
+func setZoneTableRows(model *qt.QStandardItemModel, zones []models.Zone) {
+	model.Clear()
+	model.SetHorizontalHeaderLabels(zoneTableHeaders())
+	for _, zone := range zones {
+		addReadOnlyRow(model, []string{
+			fmt.Sprintf("%d", zone.Number),
+			strings.TrimSpace(zone.Name),
+			strings.TrimSpace(zone.SensorType),
+			zone.GetStatusDisplay(),
+		})
+	}
+}
+
 func zoneTreeHeaders() []string {
 	return []string{"Група №", "Назва групи", "Зона №", "Назва зони", "Тип", "Стан"}
+}
+
+func zoneTableHeaders() []string {
+	return []string{"Зона №", "Назва зони", "Тип", "Стан"}
 }
 
 type zoneGroup struct {

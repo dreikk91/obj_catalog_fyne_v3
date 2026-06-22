@@ -68,3 +68,140 @@ func TestDBConfig_PhoenixDSN(t *testing.T) {
 		t.Fatalf("PhoenixDSN() = %q, want %q", got, want)
 	}
 }
+
+func TestLoadDBConfigTrimsAndFallsBackForRequiredFields(t *testing.T) {
+	t.Parallel()
+
+	prefs := memoryPreferences{
+		strings: map[string]string{
+			PrefUser:            " SYSDBA ",
+			PrefHost:            " ",
+			PrefPort:            "",
+			PrefPath:            "\t",
+			PrefParams:          " charset=WIN1251 ",
+			PrefPhoenixHost:     "",
+			PrefPhoenixInstance: " ",
+			PrefPhoenixDatabase: "\n",
+		},
+	}
+
+	cfg := LoadDBConfig(prefs)
+	if cfg.User != "SYSDBA" {
+		t.Fatalf("User = %q, want trimmed SYSDBA", cfg.User)
+	}
+	if cfg.Host != "localhost" {
+		t.Fatalf("Host = %q, want localhost fallback", cfg.Host)
+	}
+	if cfg.Port != "3050" {
+		t.Fatalf("Port = %q, want 3050 fallback", cfg.Port)
+	}
+	if cfg.Path != "C:/MOST.PM/BASE/MOST5.FDB" {
+		t.Fatalf("Path = %q, want default path fallback", cfg.Path)
+	}
+	if cfg.Params != "charset=WIN1251" {
+		t.Fatalf("Params = %q, want trimmed params", cfg.Params)
+	}
+	if cfg.PhoenixHost != "localhost" || cfg.PhoenixInstance != "PHOENIX4" || cfg.PhoenixDatabase != "Pult4DB" {
+		t.Fatalf("Phoenix fallbacks not applied: %+v", cfg)
+	}
+}
+
+func TestDBConfigFirebirdDSNUsesTrimmedHostPortAndPath(t *testing.T) {
+	t.Parallel()
+
+	cfg := DBConfig{
+		User:     " SYSDBA ",
+		Password: "masterkey",
+		Host:     " 10.32.1.101 ",
+		Port:     " 3050 ",
+		Path:     " C:/MOST.PM/BASE/MOST5.FDB ",
+		Params:   " charset=WIN1251&auth_plugin_name=Srp ",
+	}
+
+	got := cfg.FirebirdDSN()
+	want := "SYSDBA:masterkey@10.32.1.101:3050/C:/MOST.PM/BASE/MOST5.FDB?charset=WIN1251&auth_plugin_name=Srp"
+	if got != want {
+		t.Fatalf("FirebirdDSN() = %q, want %q", got, want)
+	}
+}
+
+func TestDBConfigFirebirdDSNUsesIPv4LoopbackForLocalhost(t *testing.T) {
+	t.Parallel()
+
+	cfg := DBConfig{
+		User:     "SYSDBA",
+		Password: "masterkey",
+		Host:     "localhost",
+		Port:     "3050",
+		Path:     "C:/MOST.PM/BASE/MOST5.FDB",
+	}
+
+	got := cfg.FirebirdDSN()
+	want := "SYSDBA:masterkey@127.0.0.1:3050/C:/MOST.PM/BASE/MOST5.FDB"
+	if got != want {
+		t.Fatalf("FirebirdDSN() = %q, want %q", got, want)
+	}
+}
+
+type memoryPreferences struct {
+	strings map[string]string
+	bools   map[string]bool
+	ints    map[string]int
+	floats  map[string]float64
+}
+
+func (p memoryPreferences) BoolWithFallback(key string, fallback bool) bool {
+	if value, ok := p.bools[key]; ok {
+		return value
+	}
+	return fallback
+}
+
+func (p memoryPreferences) FloatWithFallback(key string, fallback float64) float64 {
+	if value, ok := p.floats[key]; ok {
+		return value
+	}
+	return fallback
+}
+
+func (p memoryPreferences) IntWithFallback(key string, fallback int) int {
+	if value, ok := p.ints[key]; ok {
+		return value
+	}
+	return fallback
+}
+
+func (p memoryPreferences) String(key string) string {
+	return p.StringWithFallback(key, "")
+}
+
+func (p memoryPreferences) StringWithFallback(key string, fallback string) string {
+	if value, ok := p.strings[key]; ok {
+		return value
+	}
+	return fallback
+}
+
+func (p memoryPreferences) SetBool(key string, value bool) {
+	if p.bools != nil {
+		p.bools[key] = value
+	}
+}
+
+func (p memoryPreferences) SetFloat(key string, value float64) {
+	if p.floats != nil {
+		p.floats[key] = value
+	}
+}
+
+func (p memoryPreferences) SetInt(key string, value int) {
+	if p.ints != nil {
+		p.ints[key] = value
+	}
+}
+
+func (p memoryPreferences) SetString(key string, value string) {
+	if p.strings != nil {
+		p.strings[key] = value
+	}
+}

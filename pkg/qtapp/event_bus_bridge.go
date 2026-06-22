@@ -111,7 +111,9 @@ func (a *Application) flushPendingDataRefresh() {
 	if !refresh.RefreshObjects && !refresh.RefreshAlarms && !refresh.RefreshEvents {
 		return
 	}
-	a.eventBus.Publish(eventbus.TopicDataRefresh, refresh)
+	a.runOnMainThread(func() {
+		a.handleDataRefresh(refresh)
+	})
 }
 
 func mergeDataRefreshEvents(base, extra eventbus.DataRefreshEvent) eventbus.DataRefreshEvent {

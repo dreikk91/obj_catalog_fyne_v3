@@ -139,6 +139,10 @@ func (b *frontendAdminCardBridge) VerifyVodafoneLogin(phone string, code string)
 	return b.base.VerifyVodafoneLogin(phone, code)
 }
 
+func (b *frontendAdminCardBridge) RefreshVodafoneToken() (contracts.VodafoneAuthState, error) {
+	return b.base.RefreshVodafoneToken()
+}
+
 func (b *frontendAdminCardBridge) ClearVodafoneLogin() error {
 	return b.base.ClearVodafoneLogin()
 }

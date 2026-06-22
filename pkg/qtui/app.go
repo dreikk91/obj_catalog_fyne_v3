@@ -15,15 +15,16 @@ import (
 )
 
 type App struct {
-	qapp        *qt.QApplication
-	preferences config.Preferences
-	mainWindow  *MainWindow
+	qapp          *qt.QApplication
+	preferences   config.Preferences
+	mainWindow    *MainWindow
 	adminProvider contracts.AdminProvider
 
 	OnSettingsSaved    func(config.DBConfig, config.UIConfig)
 	OnRefreshRequested func()
 	OnEditObject       func()
 	OnSIMManagement    func()
+	OnDialPhone        func(phone string)
 	OnProcessAlarms    func([]models.Alarm)
 	OnPickAlarms       func([]models.Alarm)
 	OnRunOnMainThread  func(f func())
@@ -58,6 +59,11 @@ func NewApp(preferences config.Preferences) *App {
 	app.mainWindow.workArea.OnSIMManagementRequested = func() {
 		if app.OnSIMManagement != nil {
 			app.OnSIMManagement()
+		}
+	}
+	app.mainWindow.workArea.OnDialPhoneRequested = func(phone string) {
+		if app.OnDialPhone != nil {
+			app.OnDialPhone(phone)
 		}
 	}
 	app.mainWindow.alarmPanel.OnProcessAlarms = func(alarms []models.Alarm) {
@@ -157,10 +163,14 @@ func (a *App) ShowSIMManagement(object models.Object, usageText string) {
 }
 
 func (a *App) ProcessAlarmDialog(alarm models.Alarm, options []contracts.AlarmProcessingOption) (AlarmProcessInput, bool) {
+	return a.ProcessAlarmsDialog([]models.Alarm{alarm}, options)
+}
+
+func (a *App) ProcessAlarmsDialog(alarms []models.Alarm, options []contracts.AlarmProcessingOption) (AlarmProcessInput, bool) {
 	if a == nil || a.mainWindow == nil {
 		return AlarmProcessInput{}, false
 	}
-	return ShowAlarmProcessDialog(a.mainWindow.QWidget, alarm, options)
+	return ShowAlarmProcessDialogForAlarms(a.mainWindow.QWidget, alarms, options)
 }
 
 func (a *App) ShowInfo(title string, message string) {

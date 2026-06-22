@@ -36,6 +36,7 @@ type Application struct {
 	refreshCoalesceMu      sync.Mutex
 	pendingRefresh         eventbus.DataRefreshEvent
 	refreshCoalescePending bool
+	phoneDialer            contracts.PhoneDialer
 }
 
 type objectDetailsResult struct {
@@ -79,6 +80,7 @@ func NewApplication() *Application {
 	app.ui.OnRefreshRequested = app.refreshData
 	app.ui.OnEditObject = app.editCurrentObject
 	app.ui.OnSIMManagement = app.showCurrentObjectSIM
+	app.ui.OnDialPhone = app.dialPhone
 	app.ui.OnProcessAlarms = app.processAlarms
 	app.ui.OnPickAlarms = app.pickAlarms
 	app.ui.OnRunOnMainThread = app.runOnMainThread
@@ -103,6 +105,7 @@ func (a *Application) applySettings(dbCfg config.DBConfig, uiCfg config.UIConfig
 		a.runtime = nil
 	}
 	a.currentObject = nil
+	a.phoneDialer = buildAMIDialer(a.ui.Preferences())
 
 	store := preferencesConfigStore{preferences: a.ui.Preferences()}
 
@@ -280,7 +283,7 @@ func (a *Application) processAlarms(alarms []models.Alarm) {
 	ctx := context.Background()
 	options := a.alarmProcessingOptions(ctx, alarms)
 	alarm := alarms[0]
-	input, accepted := a.ui.ProcessAlarmDialog(alarm, options)
+	input, accepted := a.ui.ProcessAlarmsDialog(alarms, options)
 	if !accepted {
 		return
 	}

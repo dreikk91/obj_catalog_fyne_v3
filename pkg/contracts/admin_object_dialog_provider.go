@@ -32,6 +32,7 @@ type AdminObjectVodafoneService interface {
 	GetVodafoneAuthState() (VodafoneAuthState, error)
 	RequestVodafoneLoginSMS(phone string) error
 	VerifyVodafoneLogin(phone string, code string) (VodafoneAuthState, error)
+	RefreshVodafoneToken() (VodafoneAuthState, error)
 	ClearVodafoneLogin() error
 	GetVodafoneSIMStatus(msisdn string) (VodafoneSIMStatus, error)
 	BlockVodafoneSIM(msisdn string) (VodafoneSIMBarringResult, error)

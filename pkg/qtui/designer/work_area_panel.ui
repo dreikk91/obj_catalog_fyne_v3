@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>WorkAreaPanel</class>
+ <widget class="QWidget" name="WorkAreaPanel">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>760</width>
+    <height>520</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <item>
+    <widget class="QLabel" name="headerName">
+     <property name="text">
+      <string>Оберіть об'єкт зі списку</string>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">font-weight: 600; font-size: 12pt;</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="headerAddress">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="actionsLayout">
+     <item>
+      <widget class="QPushButton" name="editButton">
+       <property name="text">
+        <string>Редагувати</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="simButton">
+       <property name="text">
+        <string>SIM</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="actionsSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTabWidget" name="tabs">
+     <widget class="QWidget" name="cardTab">
+      <attribute name="title">
+       <string>Картка</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="cardTabLayout">
+       <item>
+        <widget class="QScrollArea" name="cardScrollArea">
+         <property name="widgetResizable">
+          <bool>true</bool>
+         </property>
+         <widget class="QWidget" name="cardScrollContent">
+          <layout class="QGridLayout" name="cardGrid">
+           <item row="0" column="0" colspan="6">
+            <widget class="QLabel" name="mainSectionLabel">
+             <property name="text">
+              <string>Основне</string>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">font-weight: bold; color: #1a73e8; padding-top: 10px;</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="numberLabel">
+             <property name="text">
+              <string>Номер</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QLineEdit" name="numberEdit">
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="2">
+            <widget class="QLabel" name="contractLabel">
+             <property name="text">
+              <string>Договір</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="3">
+            <widget class="QLineEdit" name="contractEdit">
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="0">
+            <widget class="QLabel" name="nameLabel">
+             <property name="text">
+              <string>Назва</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1" colspan="5">
+            <widget class="QLineEdit" name="nameEdit">
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="0">
+            <widget class="QLabel" name="addressLabel">
+             <property name="text">
+              <string>Адреса</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1" colspan="5">
+            <widget class="QLineEdit" name="addressEdit">
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item row="4" column="0" colspan="6">
+            <widget class="QLabel" name="equipmentSectionLabel">
+             <property name="text">
+              <string>Обладнання і зв'язок</string>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">font-weight: bold; color: #1a73e8; padding-top: 10px;</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="zonesTab">
+      <attribute name="title">
+       <string>Зони</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="zonesLayout">
+       <item>
+        <widget class="QStackedWidget" name="zonesStack">
+         <widget class="QTableView" name="zonesTable"/>
+         <widget class="QTreeView" name="zonesTree"/>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="contactsTab">
+      <attribute name="title">
+       <string>Контакти</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="contactsLayout">
+       <item>
+        <widget class="QTableView" name="contactsTable"/>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="journalTab">
+      <attribute name="title">
+       <string>Журнал</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="journalLayout">
+       <item>
+        <widget class="QTableView" name="eventsTable"/>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="exportTab">
+      <attribute name="title">
+       <string>Експорт</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="exportLayout">
+       <item>
+        <widget class="QLabel" name="exportTitle">
+         <property name="text">
+          <string>Експорт даних об'єкта</string>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">font-weight: bold; font-size: 11pt;</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="exportPdfButton">
+         <property name="text">
+          <string>Експортувати в PDF</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="exportXlsxButton">
+         <property name="text">
+          <string>Експортувати в XLSX (Excel)</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="copyExcelButton">
+         <property name="text">
+          <string>Копіювати рядок для Excel (TSV)</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="addDeletedButton">
+         <property name="text">
+          <string>Додати в звіт видалених об'єктів</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="exportSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

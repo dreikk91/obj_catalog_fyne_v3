@@ -2,7 +2,11 @@
 
 package config
 
-import qt "github.com/mappu/miqt/qt6"
+import (
+	"runtime"
+
+	qt "github.com/mappu/miqt/qt6"
+)
 
 // QtPreferences adapts QSettings to the Preferences interface used by config.
 type QtPreferences struct {
@@ -25,24 +29,51 @@ func (p *QtPreferences) FileName() string {
 }
 
 func (p *QtPreferences) BoolWithFallback(key string, fallback bool) bool {
-	if !p.settings.Contains(qkey(key)) {
+	k := qt.NewQAnyStringView3(key)
+	if !p.settings.Contains(*k) {
+		runtime.KeepAlive(k)
 		return fallback
 	}
-	return p.settings.Value(qkey(key), qt.NewQVariant8(fallback)).ToBool()
+	v := qt.NewQVariant8(fallback)
+	res := p.settings.Value(*k, v)
+	val := res.ToBool()
+
+	runtime.KeepAlive(k)
+	runtime.KeepAlive(v)
+	runtime.KeepAlive(res)
+	return val
 }
 
 func (p *QtPreferences) FloatWithFallback(key string, fallback float64) float64 {
-	if !p.settings.Contains(qkey(key)) {
+	k := qt.NewQAnyStringView3(key)
+	if !p.settings.Contains(*k) {
+		runtime.KeepAlive(k)
 		return fallback
 	}
-	return p.settings.Value(qkey(key), qt.NewQVariant9(fallback)).ToDouble()
+	v := qt.NewQVariant9(fallback)
+	res := p.settings.Value(*k, v)
+	val := res.ToDouble()
+
+	runtime.KeepAlive(k)
+	runtime.KeepAlive(v)
+	runtime.KeepAlive(res)
+	return val
 }
 
 func (p *QtPreferences) IntWithFallback(key string, fallback int) int {
-	if !p.settings.Contains(qkey(key)) {
+	k := qt.NewQAnyStringView3(key)
+	if !p.settings.Contains(*k) {
+		runtime.KeepAlive(k)
 		return fallback
 	}
-	return p.settings.Value(qkey(key), qt.NewQVariant4(fallback)).ToInt()
+	v := qt.NewQVariant4(fallback)
+	res := p.settings.Value(*k, v)
+	val := res.ToInt()
+
+	runtime.KeepAlive(k)
+	runtime.KeepAlive(v)
+	runtime.KeepAlive(res)
+	return val
 }
 
 func (p *QtPreferences) String(key string) string {
@@ -50,32 +81,57 @@ func (p *QtPreferences) String(key string) string {
 }
 
 func (p *QtPreferences) StringWithFallback(key string, fallback string) string {
-	if !p.settings.Contains(qkey(key)) {
+	k := qt.NewQAnyStringView3(key)
+	if !p.settings.Contains(*k) {
+		runtime.KeepAlive(k)
 		return fallback
 	}
-	return p.settings.Value(qkey(key), qt.NewQVariant14(fallback)).ToString()
+	v := qt.NewQVariant14(fallback)
+	res := p.settings.Value(*k, v)
+	val := res.ToString()
+
+	runtime.KeepAlive(k)
+	runtime.KeepAlive(v)
+	runtime.KeepAlive(res)
+	return val
 }
 
 func (p *QtPreferences) SetBool(key string, value bool) {
-	p.settings.SetValue(qkey(key), qt.NewQVariant8(value))
+	k := qt.NewQAnyStringView3(key)
+	v := qt.NewQVariant8(value)
+	p.settings.SetValue(*k, v)
 	p.settings.Sync()
+
+	runtime.KeepAlive(k)
+	runtime.KeepAlive(v)
 }
 
 func (p *QtPreferences) SetFloat(key string, value float64) {
-	p.settings.SetValue(qkey(key), qt.NewQVariant9(value))
+	k := qt.NewQAnyStringView3(key)
+	v := qt.NewQVariant9(value)
+	p.settings.SetValue(*k, v)
 	p.settings.Sync()
+
+	runtime.KeepAlive(k)
+	runtime.KeepAlive(v)
 }
 
 func (p *QtPreferences) SetInt(key string, value int) {
-	p.settings.SetValue(qkey(key), qt.NewQVariant4(value))
+	k := qt.NewQAnyStringView3(key)
+	v := qt.NewQVariant4(value)
+	p.settings.SetValue(*k, v)
 	p.settings.Sync()
+
+	runtime.KeepAlive(k)
+	runtime.KeepAlive(v)
 }
 
 func (p *QtPreferences) SetString(key string, value string) {
-	p.settings.SetValue(qkey(key), qt.NewQVariant14(value))
+	k := qt.NewQAnyStringView3(key)
+	v := qt.NewQVariant14(value)
+	p.settings.SetValue(*k, v)
 	p.settings.Sync()
-}
 
-func qkey(key string) qt.QAnyStringView {
-	return *qt.NewQAnyStringView3(key)
+	runtime.KeepAlive(k)
+	runtime.KeepAlive(v)
 }

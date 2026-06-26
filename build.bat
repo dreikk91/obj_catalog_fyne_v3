@@ -1,0 +1,1 @@
+powershell .\scripts\package_fyne.ps1 -InstallFyne -TargetOS windows -Output obj_catalog_fyne_v3.exe -UseUPX 

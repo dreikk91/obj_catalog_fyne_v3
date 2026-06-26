@@ -90,10 +90,22 @@ func (a *Application) handleDataRefresh(refresh eventbus.DataRefreshEvent) {
 	if a == nil || a.ui == nil {
 		return
 	}
-	a.refreshData()
-
-	if refresh.RefreshEvents && a.currentObject != nil {
-		a.applyObjectContext(*a.currentObject)
+	if !refresh.RefreshObjects && !refresh.RefreshAlarms && !refresh.RefreshEvents {
+		a.refreshData()
+		return
+	}
+	if refresh.RefreshObjects {
+		a.refreshObjects()
+	}
+	if refresh.RefreshAlarms {
+		a.refreshAlarms()
+	}
+	if refresh.RefreshEvents {
+		a.refreshEvents()
+		a.ui.RefreshCurrentObjectEvents()
+	}
+	if a.runtime != nil {
+		a.ui.SetStatus(backendStatusText(a.runtime))
 	}
 }
 

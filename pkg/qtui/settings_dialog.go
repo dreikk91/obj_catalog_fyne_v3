@@ -7,6 +7,7 @@ import (
 
 	"obj_catalog_fyne_v3/pkg/ami"
 	"obj_catalog_fyne_v3/pkg/config"
+	"obj_catalog_fyne_v3/pkg/simcommands"
 )
 
 type settingsDialog struct {
@@ -65,6 +66,24 @@ type settingsDialog struct {
 	kyivstarDailyLimit  *qt.QSpinBox
 	kyivstarWindowHours *qt.QSpinBox
 
+	omnicellEnabled             *qt.QCheckBox
+	omnicellEndpoint            *qt.QLineEdit
+	omnicellLogin               *qt.QLineEdit
+	omnicellPassword            *qt.QLineEdit
+	omnicellSource              *qt.QLineEdit
+	omnicellPrimaryAPN          *qt.QLineEdit
+	omnicellReserveAPN          *qt.QLineEdit
+	omnicellPrimaryIP           *qt.QLineEdit
+	omnicellReserveIP           *qt.QLineEdit
+	omnicellPrimaryModulePort   *qt.QSpinBox
+	omnicellReserveModulePort   *qt.QSpinBox
+	omnicellPrimaryReceiverPort *qt.QSpinBox
+	omnicellReserveReceiverPort *qt.QSpinBox
+	omnicellPrimaryInterval     *qt.QSpinBox
+	omnicellReserveInterval     *qt.QSpinBox
+	omnicellInput1Confirm       *qt.QCheckBox
+	omnicellDefaultProfile      *qt.QComboBox
+
 	amiEnabled   *qt.QCheckBox
 	amiHost      *qt.QLineEdit
 	amiPort      *qt.QSpinBox
@@ -97,7 +116,7 @@ func newSettingsDialog(parent *qt.QWidget, prefs config.Preferences) *settingsDi
 		prefs:  prefs,
 	}
 	d.dialog.SetWindowTitle("Налаштування")
-	d.dialog.Resize(720, 640)
+	d.dialog.Resize(640, 520)
 
 	root := qt.NewQVBoxLayout(d.dialog.QWidget)
 	tabs := qt.NewQTabWidget2()
@@ -120,6 +139,8 @@ func newSettingsDialog(parent *qt.QWidget, prefs config.Preferences) *settingsDi
 func (d *settingsDialog) buildDataSourcesTab() *qt.QWidget {
 	tab := qt.NewQWidget2()
 	layout := qt.NewQVBoxLayout(tab)
+	tabs := qt.NewQTabWidget2()
+	tabs.SetUsesScrollButtons(true)
 
 	form := qt.NewQFormLayout2()
 	d.firebirdEnabled = qt.NewQCheckBox3("Увімкнути БД/МІСТ")
@@ -136,7 +157,9 @@ func (d *settingsDialog) buildDataSourcesTab() *qt.QWidget {
 	form.AddRow3("Password", d.dbPassword.QWidget)
 	d.dbParams = lineEdit()
 	form.AddRow3("Params", d.dbParams.QWidget)
+	tabs.AddTab(wrapForm(form), "БД/МІСТ")
 
+	form = qt.NewQFormLayout2()
 	d.phoenixEnabled = qt.NewQCheckBox3("Увімкнути Phoenix")
 	form.AddRow3("Phoenix", d.phoenixEnabled.QWidget)
 	d.phoenixHost = lineEdit()
@@ -153,7 +176,9 @@ func (d *settingsDialog) buildDataSourcesTab() *qt.QWidget {
 	form.AddRow3("Phoenix password", d.phoenixPassword.QWidget)
 	d.phoenixParams = lineEdit()
 	form.AddRow3("Phoenix params", d.phoenixParams.QWidget)
+	tabs.AddTab(wrapForm(form), "Phoenix")
 
+	form = qt.NewQFormLayout2()
 	d.caslEnabled = qt.NewQCheckBox3("Увімкнути CASL Cloud")
 	form.AddRow3("CASL", d.caslEnabled.QWidget)
 	d.caslBaseURL = lineEdit()
@@ -169,8 +194,9 @@ func (d *settingsDialog) buildDataSourcesTab() *qt.QWidget {
 	d.logLevel = qt.NewQComboBox2()
 	d.logLevel.AddItems([]string{"debug", "info", "warn", "error"})
 	form.AddRow3("Log level", d.logLevel.QWidget)
+	tabs.AddTab(wrapForm(form), "CASL")
 
-	layout.AddLayout(form.QLayout)
+	layout.AddWidget(tabs.QWidget)
 	tab.SetLayout(layout.QLayout)
 	return tab
 }
@@ -205,6 +231,9 @@ func (d *settingsDialog) buildInterfaceTab() *qt.QWidget {
 func (d *settingsDialog) buildOperatorsTab() *qt.QWidget {
 	tab := qt.NewQWidget2()
 	layout := qt.NewQVBoxLayout(tab)
+	tabs := qt.NewQTabWidget2()
+	tabs.SetUsesScrollButtons(true)
+
 	form := qt.NewQFormLayout2()
 
 	d.vodafonePhone = lineEdit()
@@ -224,7 +253,9 @@ func (d *settingsDialog) buildOperatorsTab() *qt.QWidget {
 	form.AddRow3("Vodafone daily limit", d.vodafoneDailyLimit.QWidget)
 	d.vodafoneWindowHours = spinBox(config.MinVodafoneAutoResetWindowHours, 24*30)
 	form.AddRow3("Vodafone window, hours", d.vodafoneWindowHours.QWidget)
+	tabs.AddTab(wrapForm(form), "Vodafone")
 
+	form = qt.NewQFormLayout2()
 	d.kyivstarClientID = lineEdit()
 	form.AddRow3("Kyivstar client ID", d.kyivstarClientID.QWidget)
 	d.kyivstarSecret = passwordEdit()
@@ -241,7 +272,47 @@ func (d *settingsDialog) buildOperatorsTab() *qt.QWidget {
 	form.AddRow3("Kyivstar daily limit", d.kyivstarDailyLimit.QWidget)
 	d.kyivstarWindowHours = spinBox(config.MinKyivstarAutoResetWindowHours, 24*30)
 	form.AddRow3("Kyivstar window, hours", d.kyivstarWindowHours.QWidget)
+	tabs.AddTab(wrapForm(form), "Kyivstar")
 
+	form = qt.NewQFormLayout2()
+	d.omnicellEnabled = qt.NewQCheckBox3("Увімкнути Omnicell SMS")
+	form.AddRow3("Omnicell SMS", d.omnicellEnabled.QWidget)
+	d.omnicellEndpoint = lineEdit()
+	form.AddRow3("Omnicell endpoint", d.omnicellEndpoint.QWidget)
+	d.omnicellLogin = lineEdit()
+	form.AddRow3("Omnicell login", d.omnicellLogin.QWidget)
+	d.omnicellPassword = passwordEdit()
+	form.AddRow3("Omnicell password", d.omnicellPassword.QWidget)
+	d.omnicellSource = lineEdit()
+	form.AddRow3("Omnicell source", d.omnicellSource.QWidget)
+	d.omnicellDefaultProfile = qt.NewQComboBox2()
+	d.omnicellDefaultProfile.AddItems([]string{simcommands.ProfileMCAGSM4, simcommands.ProfileMCAGSM, simcommands.ProfileFreeSMS})
+	form.AddRow3("SMS профіль за замовчуванням", d.omnicellDefaultProfile.QWidget)
+	d.omnicellPrimaryAPN = lineEdit()
+	form.AddRow3("МЦА APN основний", d.omnicellPrimaryAPN.QWidget)
+	d.omnicellReserveAPN = lineEdit()
+	form.AddRow3("МЦА APN резервний", d.omnicellReserveAPN.QWidget)
+	d.omnicellPrimaryIP = lineEdit()
+	form.AddRow3("МЦА IP основний", d.omnicellPrimaryIP.QWidget)
+	d.omnicellReserveIP = lineEdit()
+	form.AddRow3("МЦА IP резервний", d.omnicellReserveIP.QWidget)
+	d.omnicellPrimaryModulePort = spinBox(1, 9999)
+	form.AddRow3("МЦА порт модуля основний", d.omnicellPrimaryModulePort.QWidget)
+	d.omnicellReserveModulePort = spinBox(1, 9999)
+	form.AddRow3("МЦА порт модуля резервний", d.omnicellReserveModulePort.QWidget)
+	d.omnicellPrimaryReceiverPort = spinBox(1, 9999)
+	form.AddRow3("МЦА порт ПЦПС основний", d.omnicellPrimaryReceiverPort.QWidget)
+	d.omnicellReserveReceiverPort = spinBox(1, 9999)
+	form.AddRow3("МЦА порт ПЦПС резервний", d.omnicellReserveReceiverPort.QWidget)
+	d.omnicellPrimaryInterval = spinBox(1, 240)
+	form.AddRow3("МЦА тест основний, хв", d.omnicellPrimaryInterval.QWidget)
+	d.omnicellReserveInterval = spinBox(1, 240)
+	form.AddRow3("МЦА тест резервний, хв", d.omnicellReserveInterval.QWidget)
+	d.omnicellInput1Confirm = qt.NewQCheckBox3("Вхід 1: підтвердження")
+	form.AddRow3("МЦА режим входу 1", d.omnicellInput1Confirm.QWidget)
+	tabs.AddTab(wrapForm(form), "Omnicell")
+
+	form = qt.NewQFormLayout2()
 	d.amiEnabled = qt.NewQCheckBox3("Увімкнути AMI-команди")
 	form.AddRow3("Asterisk AMI", d.amiEnabled.QWidget)
 	d.amiHost = lineEdit()
@@ -256,8 +327,9 @@ func (d *settingsDialog) buildOperatorsTab() *qt.QWidget {
 	form.AddRow3("Operator extension", d.amiExtension.QWidget)
 	d.amiContext = lineEdit()
 	form.AddRow3("Dial context", d.amiContext.QWidget)
+	tabs.AddTab(wrapForm(form), "AMI")
 
-	layout.AddLayout(form.QLayout)
+	layout.AddWidget(tabs.QWidget)
 	tab.SetLayout(layout.QLayout)
 	return tab
 }
@@ -361,6 +433,25 @@ func (d *settingsDialog) loadOperatorAndCommandSettings() {
 	d.kyivstarDailyLimit.SetValue(ks.AutoResetDailyLimit)
 	d.kyivstarWindowHours.SetValue(ks.AutoResetWindowHours)
 
+	omni := config.LoadOmnicellConfig(d.prefs)
+	d.omnicellEnabled.SetChecked(omni.Enabled)
+	d.omnicellEndpoint.SetText(omni.Endpoint)
+	d.omnicellLogin.SetText(omni.Login)
+	d.omnicellPassword.SetText(omni.Password)
+	d.omnicellSource.SetText(omni.Source)
+	setComboTextFallback(d.omnicellDefaultProfile, omni.MCADefaultMessageProfile, simcommands.ProfileMCAGSM4)
+	d.omnicellPrimaryAPN.SetText(omni.MCAPrimaryAPN)
+	d.omnicellReserveAPN.SetText(omni.MCAReserveAPN)
+	d.omnicellPrimaryIP.SetText(omni.MCAPrimaryIP)
+	d.omnicellReserveIP.SetText(omni.MCAReserveIP)
+	d.omnicellPrimaryModulePort.SetValue(omni.MCAPrimaryModulePort)
+	d.omnicellReserveModulePort.SetValue(omni.MCAReserveModulePort)
+	d.omnicellPrimaryReceiverPort.SetValue(omni.MCAPrimaryReceiverPort)
+	d.omnicellReserveReceiverPort.SetValue(omni.MCAReserveReceiverPort)
+	d.omnicellPrimaryInterval.SetValue(omni.MCAPrimaryTestInterval)
+	d.omnicellReserveInterval.SetValue(omni.MCAReserveTestInterval)
+	d.omnicellInput1Confirm.SetChecked(omni.MCAInput1ConfirmMode)
+
 	amiEnabled, amiCfg := config.LoadAMIConfig(d.prefs)
 	d.amiEnabled.SetChecked(amiEnabled)
 	d.amiHost.SetText(amiCfg.Host)
@@ -391,6 +482,25 @@ func (d *settingsDialog) saveOperatorAndCommandSettings() {
 		AutoResetEnabled:     d.kyivstarAutoReset.IsChecked(),
 		AutoResetDailyLimit:  d.kyivstarDailyLimit.Value(),
 		AutoResetWindowHours: d.kyivstarWindowHours.Value(),
+	})
+	config.SaveOmnicellConfig(d.prefs, config.OmnicellConfig{
+		Enabled:                  d.omnicellEnabled.IsChecked(),
+		Endpoint:                 d.omnicellEndpoint.Text(),
+		Login:                    d.omnicellLogin.Text(),
+		Password:                 d.omnicellPassword.Text(),
+		Source:                   d.omnicellSource.Text(),
+		MCADefaultMessageProfile: d.omnicellDefaultProfile.CurrentText(),
+		MCAPrimaryAPN:            d.omnicellPrimaryAPN.Text(),
+		MCAReserveAPN:            d.omnicellReserveAPN.Text(),
+		MCAPrimaryIP:             d.omnicellPrimaryIP.Text(),
+		MCAReserveIP:             d.omnicellReserveIP.Text(),
+		MCAPrimaryModulePort:     d.omnicellPrimaryModulePort.Value(),
+		MCAReserveModulePort:     d.omnicellReserveModulePort.Value(),
+		MCAPrimaryReceiverPort:   d.omnicellPrimaryReceiverPort.Value(),
+		MCAReserveReceiverPort:   d.omnicellReserveReceiverPort.Value(),
+		MCAPrimaryTestInterval:   d.omnicellPrimaryInterval.Value(),
+		MCAReserveTestInterval:   d.omnicellReserveInterval.Value(),
+		MCAInput1ConfirmMode:     d.omnicellInput1Confirm.IsChecked(),
 	})
 	config.SaveAMIConfig(d.prefs, d.amiEnabled.IsChecked(), ami.Config{
 		Host:      d.amiHost.Text(),
@@ -435,6 +545,16 @@ func doubleSpinBox(min float64, max float64) *qt.QDoubleSpinBox {
 	box.SetDecimals(1)
 	box.SetSingleStep(0.5)
 	return box
+}
+
+func wrapForm(form *qt.QFormLayout) *qt.QWidget {
+	content := qt.NewQWidget2()
+	content.SetLayout(form.QLayout)
+
+	scroll := qt.NewQScrollArea2()
+	scroll.SetWidgetResizable(true)
+	scroll.SetWidget(content)
+	return scroll.QWidget
 }
 
 func setComboText(combo *qt.QComboBox, value string) {

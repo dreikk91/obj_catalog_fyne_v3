@@ -75,6 +75,14 @@ func ObjectDisplayNumber(object models.Object) string {
 	return strconv.Itoa(object.ID)
 }
 
+// NumericObjectDisplayNumber returns the numeric display number when it can be parsed.
+func NumericObjectDisplayNumber(object models.Object) int {
+	if number, err := strconv.Atoi(strings.TrimSpace(ObjectDisplayNumber(object))); err == nil && number > 0 {
+		return number
+	}
+	return object.ID
+}
+
 func sourceMatchesFilter(source string, selectedSource string) bool {
 	switch NormalizeObjectSourceFilter(selectedSource) {
 	case ObjectSourcePhoenix:

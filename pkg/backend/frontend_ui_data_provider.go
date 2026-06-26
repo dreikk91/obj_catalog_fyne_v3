@@ -81,6 +81,25 @@ func (p *FrontendUIDataProvider) GetObjectByID(id string) *models.Object {
 	return &object
 }
 
+// GetObjectBaseDetails returns the object card data using one frontend details request when available.
+func (p *FrontendUIDataProvider) GetObjectBaseDetails(objectID string) (*models.Object, []models.Zone, []models.Contact) {
+	id, ok := parseObjectID(objectID)
+	if !ok {
+		return p.fallbackObjectByID(objectID), p.fallbackZones(objectID), p.fallbackEmployees(objectID)
+	}
+	details, err := p.getObjectDetails(id)
+	if err != nil {
+		return p.fallbackObjectByID(objectID), p.fallbackZones(objectID), p.fallbackEmployees(objectID)
+	}
+
+	var object models.Object
+	if fallback := p.fallbackObjectByID(objectID); fallback != nil {
+		object = *fallback
+	}
+	mergeFrontendDetails(&object, details)
+	return &object, mapModelZones(details.Zones), mapModelContacts(details.Contacts)
+}
+
 func (p *FrontendUIDataProvider) GetZones(objectID string) []models.Zone {
 	id, ok := parseObjectID(objectID)
 	if !ok {

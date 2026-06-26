@@ -18,6 +18,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/dataruntime"
 	"obj_catalog_fyne_v3/pkg/eventbus"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/omnicell"
 	"obj_catalog_fyne_v3/pkg/qtui"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
@@ -28,8 +29,15 @@ type Application struct {
 	uiData                 *backend.FrontendUIDataProvider
 	workVM                 *viewmodels.WorkAreaViewModel
 	currentObject          *models.Object
+	currentObjectZones     int
+	currentObjectContacts  int
+	currentObjectsCount    int
+	currentAlarmsCount     int
+	currentEventsCount     int
 	selectionSeq           int
-	detailTimer            *qt.QTimer
+	objectsRefreshSeq      int
+	alarmsRefreshSeq       int
+	eventsRefreshSeq       int
 	eventBus               *eventbus.Bus
 	mainThreadQueue        chan func()
 	refreshLoopCancel      context.CancelFunc
@@ -49,12 +57,15 @@ type objectDetailsResult struct {
 }
 
 func NewApplication() *Application {
-	preferences := config.NewQtPreferences("MOST", "ObjCatalogQt")
-	if filename := preferences.FileName(); strings.TrimSpace(filename) != "" {
-		log.Info().Str("settingsFile", filename).Msg("Qt UI використовує файл налаштувань")
+	ui := qtui.NewApp()
+	preferences := ui.Preferences()
+	if qtPrefs, ok := preferences.(*config.QtPreferences); ok {
+		if filename := qtPrefs.FileName(); strings.TrimSpace(filename) != "" {
+			log.Info().Str("settingsFile", filename).Msg("Qt UI використовує файл налаштувань")
+		}
 	}
 	app := &Application{
-		ui:              qtui.NewApp(preferences),
+		ui:              ui,
 		workVM:          viewmodels.NewWorkAreaViewModel(),
 		eventBus:        eventbus.NewBus(),
 		mainThreadQueue: make(chan func(), 1000),
@@ -78,8 +89,10 @@ func NewApplication() *Application {
 
 	app.ui.OnSettingsSaved = app.applySettings
 	app.ui.OnRefreshRequested = app.refreshData
+	app.ui.OnDiagnosticsRequested = app.showDiagnostics
 	app.ui.OnEditObject = app.editCurrentObject
 	app.ui.OnSIMManagement = app.showCurrentObjectSIM
+	app.ui.OnSendSIMSMS = app.sendSIMSMS
 	app.ui.OnDialPhone = app.dialPhone
 	app.ui.OnProcessAlarms = app.processAlarms
 	app.ui.OnPickAlarms = app.pickAlarms
@@ -135,23 +148,84 @@ func (a *Application) applySettings(dbCfg config.DBConfig, uiCfg config.UIConfig
 }
 
 func (a *Application) refreshData() {
+	defer traceQtOperation("refreshData")()
 	if a == nil || a.ui == nil || a.uiData == nil {
 		return
 	}
-	uiCfg := config.LoadUIConfig(a.ui.Preferences())
-	a.ui.SetObjects(a.uiData.GetObjects())
-	a.ui.SetAlarms(a.uiData.GetAlarms())
-	events := a.uiData.GetEvents()
-	if uiCfg.EventLogLimit > 0 && len(events) > uiCfg.EventLogLimit {
-		events = events[:uiCfg.EventLogLimit]
-	}
-	a.ui.SetEvents(events)
+	a.refreshObjects()
+	a.refreshAlarms()
+	a.refreshEvents()
 	if a.runtime != nil {
 		a.ui.SetStatus(backendStatusText(a.runtime))
 	}
 }
 
+func (a *Application) refreshObjects() {
+	if a == nil || a.ui == nil || a.uiData == nil {
+		return
+	}
+	provider := a.uiData
+	a.objectsRefreshSeq++
+	seq := a.objectsRefreshSeq
+	go func() {
+		defer traceQtOperation("refreshObjects")()
+		objects := provider.GetObjects()
+		a.runOnMainThread(func() {
+			if a == nil || a.ui == nil || a.uiData != provider || seq != a.objectsRefreshSeq {
+				return
+			}
+			a.currentObjectsCount = len(objects)
+			a.ui.SetObjects(objects)
+		})
+	}()
+}
+
+func (a *Application) refreshAlarms() {
+	if a == nil || a.ui == nil || a.uiData == nil {
+		return
+	}
+	provider := a.uiData
+	a.alarmsRefreshSeq++
+	seq := a.alarmsRefreshSeq
+	go func() {
+		defer traceQtOperation("refreshAlarms")()
+		alarms := provider.GetAlarms()
+		a.runOnMainThread(func() {
+			if a == nil || a.ui == nil || a.uiData != provider || seq != a.alarmsRefreshSeq {
+				return
+			}
+			a.currentAlarmsCount = len(alarms)
+			a.ui.SetAlarms(alarms)
+		})
+	}()
+}
+
+func (a *Application) refreshEvents() {
+	if a == nil || a.ui == nil || a.uiData == nil {
+		return
+	}
+	provider := a.uiData
+	uiCfg := config.LoadUIConfig(a.ui.Preferences())
+	a.eventsRefreshSeq++
+	seq := a.eventsRefreshSeq
+	go func() {
+		defer traceQtOperation("refreshEvents")()
+		events := provider.GetEvents()
+		if uiCfg.EventLogLimit > 0 && len(events) > uiCfg.EventLogLimit {
+			events = events[:uiCfg.EventLogLimit]
+		}
+		a.runOnMainThread(func() {
+			if a == nil || a.ui == nil || a.uiData != provider || seq != a.eventsRefreshSeq {
+				return
+			}
+			a.currentEventsCount = len(events)
+			a.ui.SetEvents(events)
+		})
+	}()
+}
+
 func (a *Application) applyObjectContext(object models.Object) {
+	defer traceQtOperation("selectObject")()
 	if a == nil || a.uiData == nil || a.workVM == nil {
 		return
 	}
@@ -161,29 +235,32 @@ func (a *Application) applyObjectContext(object models.Object) {
 	a.selectionSeq++
 	seq := a.selectionSeq
 	a.currentObject = &object
+	a.currentObjectZones = 0
+	a.currentObjectContacts = 0
 	a.ui.SetObjectLoading(object)
 	a.ui.SetStatus("Завантаження об'єкта: " + strconv.Itoa(object.ID) + " | " + strings.TrimSpace(object.Name))
 
 	provider := a.uiData
 	workVM := a.workVM
-	eventLimit := config.LoadUIConfig(a.ui.Preferences()).ObjectLogLimit
-	resultCh := make(chan objectDetailsResult, 1)
 	go func() {
+		defer traceQtOperation("loadObjectDetails")()
 		details := workVM.LoadObjectBaseDetails(provider, object.ID)
 		fullObject := object
 		if details.FullObject != nil {
 			fullObject = *details.FullObject
 		}
-		resultCh <- objectDetailsResult{
+		result := objectDetailsResult{
 			seq:        seq,
 			object:     fullObject,
 			zones:      details.Zones,
 			contacts:   details.Contacts,
-			events:     workVM.LoadObjectEvents(provider, object.ID, eventLimit),
+			events:     nil,
 			statusText: "Обрано об'єкт: " + strconv.Itoa(object.ID) + " | " + strings.TrimSpace(object.Name),
 		}
+		a.runOnMainThread(func() {
+			a.applyObjectDetailsResult(result)
+		})
 	}()
-	a.waitObjectDetails(resultCh)
 }
 
 func (a *Application) handleAlarmSelected(alarm models.Alarm) {
@@ -200,27 +277,16 @@ func (a *Application) handleEventSelected(event models.Event) {
 	a.reselectObject(event.ObjectID)
 }
 
-func (a *Application) waitObjectDetails(resultCh <-chan objectDetailsResult) {
-	if a.detailTimer != nil {
-		a.detailTimer.Stop()
+func (a *Application) applyObjectDetailsResult(result objectDetailsResult) {
+	defer traceQtOperation("applyObjectDetails")()
+	if a == nil || a.ui == nil || result.seq != a.selectionSeq {
+		return
 	}
-	timer := qt.NewQTimer()
-	a.detailTimer = timer
-	timer.SetInterval(25)
-	timer.OnTimeout(func() {
-		select {
-		case result := <-resultCh:
-			timer.Stop()
-			if result.seq != a.selectionSeq {
-				return
-			}
-			a.currentObject = &result.object
-			a.ui.SetObjectDetails(result.object, result.zones, result.contacts, result.events)
-			a.ui.SetStatus(result.statusText)
-		default:
-		}
-	})
-	timer.Start2()
+	a.currentObject = &result.object
+	a.currentObjectZones = len(result.zones)
+	a.currentObjectContacts = len(result.contacts)
+	a.ui.SetObjectDetails(result.object, result.zones, result.contacts, result.events)
+	a.ui.SetStatus(result.statusText)
 }
 
 func (a *Application) editCurrentObject() {
@@ -269,6 +335,52 @@ func (a *Application) showCurrentObjectSIM() {
 		return
 	}
 	a.ui.ShowSIMManagement(*a.currentObject, qtui.ObjectSIMUsageText(admin, *a.currentObject))
+}
+
+func (a *Application) sendSIMSMS(object models.Object, phone string) {
+	if a == nil || a.ui == nil {
+		return
+	}
+	cfg := config.LoadOmnicellConfig(a.ui.Preferences())
+	if !cfg.Ready() {
+		a.ui.ShowInfo("Omnicell SMS", "Omnicell SMS не налаштовано. Заповніть endpoint, login, password і source в налаштуваннях.")
+		return
+	}
+	commands, accepted := a.ui.ShowSIMSMS(object, phone, cfg)
+	if !accepted {
+		return
+	}
+	client := omnicell.NewClient(cfg)
+	a.ui.SetStatus("Надсилання SMS через Omnicell на " + strings.TrimSpace(phone))
+	go func() {
+		results := make([]string, 0, len(commands))
+		var sendErr error
+		for _, command := range commands {
+			resp, err := client.SendSMS(context.Background(), omnicell.SendRequest{
+				Phone: phone,
+				Text:  command.Text,
+			})
+			if err != nil {
+				sendErr = fmt.Errorf("%s: %w", command.Title, err)
+				break
+			}
+			line := fmt.Sprintf("%s: HTTP %d", command.Title, resp.StatusCode)
+			if strings.TrimSpace(resp.Body) != "" {
+				line += " | " + strings.TrimSpace(resp.Body)
+			}
+			results = append(results, line)
+		}
+		a.runOnMainThread(func() {
+			if sendErr != nil {
+				a.ui.ShowError("Omnicell SMS", "Не вдалося надіслати SMS: "+sendErr.Error())
+				a.ui.SetStatus("Omnicell SMS: помилка")
+				return
+			}
+			msg := fmt.Sprintf("SMS надіслано на %s.\n\n%s", phone, strings.Join(results, "\n"))
+			a.ui.ShowInfo("Omnicell SMS", msg)
+			a.ui.SetStatus("Omnicell SMS надіслано на " + strings.TrimSpace(phone))
+		})
+	}()
 }
 
 func (a *Application) processAlarms(alarms []models.Alarm) {

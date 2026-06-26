@@ -12,36 +12,48 @@ import (
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
+const (
+	prefQtEventLogPeriod          = "qt.eventLog.period"
+	prefQtEventLogSource          = "qt.eventLog.source"
+	prefQtEventLogSeverity        = "qt.eventLog.severity"
+	prefQtEventLogCurrentOnly     = "qt.eventLog.currentOnly"
+	eventLogSeverityAll           = "Всі події"
+	eventLogSeverityCritical      = "Критичні"
+	eventLogSeverityWarning       = "Попередження"
+	eventLogSeverityInformational = "Інформаційні"
+)
+
 type EventLogPanel struct {
 	*qt.QWidget
 	table              *qt.QTableView
-	model              *qt.QStandardItemModel
+	model              *eventLogTableModel
 	vm                 *viewmodels.EventLogViewModel
 	allEvents          []models.Event
 	filteredEvents     []models.Event
-	eventsByID         map[int]models.Event
 	currentObject      *models.Object
+	rowsSignature      string
+	rowsReady          bool
 	showForCurrentOnly bool
 	isPaused           bool
 	filterUpdating     bool
 	autoSized          bool
 	prefs              config.Preferences
 
-	pauseBtn      *qt.QPushButton
-	rangeSelect   *qt.QComboBox
-	sourceSelect  *qt.QComboBox
-	importantOnly *qt.QCheckBox
-	contextToggle *qt.QCheckBox
+	pauseBtn       *qt.QPushButton
+	rangeSelect    *qt.QComboBox
+	sourceSelect   *qt.QComboBox
+	severitySelect *qt.QComboBox
+	contextToggle  *qt.QCheckBox
 
 	OnEventSelected func(models.Event)
+	OnCountChanged  func(count int)
 }
 
 func NewEventLogPanel(prefs config.Preferences) *EventLogPanel {
 	panel := &EventLogPanel{
-		QWidget:    qt.NewQWidget2(),
-		vm:         viewmodels.NewEventLogViewModel(),
-		eventsByID: make(map[int]models.Event),
-		prefs:      prefs,
+		QWidget: qt.NewQWidget2(),
+		vm:      viewmodels.NewEventLogViewModel(),
+		prefs:   prefs,
 	}
 
 	layout := qt.NewQVBoxLayout(panel.QWidget)
@@ -53,8 +65,10 @@ func NewEventLogPanel(prefs config.Preferences) *EventLogPanel {
 	toolbar.AddStretch()
 
 	panel.contextToggle = qt.NewQCheckBox3("По вибраному")
+	panel.contextToggle.SetToolTip("Показувати тільки події поточного вибраного об'єкта (Ctrl+Shift+O)")
 	panel.contextToggle.OnToggled(func(checked bool) {
 		panel.showForCurrentOnly = checked
+		panel.saveFilterPrefs()
 		panel.applyFilters()
 	})
 
@@ -64,6 +78,7 @@ func NewEventLogPanel(prefs config.Preferences) *EventLogPanel {
 		if panel.filterUpdating {
 			return
 		}
+		panel.saveFilterPrefs()
 		panel.applyFilters()
 	})
 
@@ -73,34 +88,34 @@ func NewEventLogPanel(prefs config.Preferences) *EventLogPanel {
 		if panel.filterUpdating {
 			return
 		}
+		panel.saveFilterPrefs()
 		panel.applyFilters()
 	})
 
-	panel.importantOnly = qt.NewQCheckBox3("Важливі")
-	panel.importantOnly.OnToggled(func(checked bool) {
+	panel.severitySelect = qt.NewQComboBox2()
+	panel.severitySelect.AddItems([]string{eventLogSeverityAll, eventLogSeverityCritical, eventLogSeverityWarning, eventLogSeverityInformational})
+	panel.severitySelect.OnCurrentTextChanged(func(string) {
+		if panel.filterUpdating {
+			return
+		}
+		panel.saveFilterPrefs()
 		panel.applyFilters()
 	})
 
 	panel.pauseBtn = qt.NewQPushButton3("⏸ Пауза")
+	panel.pauseBtn.SetToolTip("Пауза/продовження оновлення журналу (Ctrl+P)")
 	panel.pauseBtn.OnClicked(func() {
-		panel.isPaused = !panel.isPaused
-		if panel.isPaused {
-			panel.pauseBtn.SetText("▶ Продовжити")
-		} else {
-			panel.pauseBtn.SetText("⏸ Пауза")
-			panel.applyFilters()
-		}
+		panel.TogglePause()
 	})
 
 	toolbar.AddWidget(panel.contextToggle.QWidget)
 	toolbar.AddWidget(panel.sourceSelect.QWidget)
 	toolbar.AddWidget(panel.rangeSelect.QWidget)
-	toolbar.AddWidget(panel.importantOnly.QWidget)
+	toolbar.AddWidget(panel.severitySelect.QWidget)
 	toolbar.AddWidget(panel.pauseBtn.QWidget)
 	layout.AddLayout(toolbar.QLayout)
 
-	panel.model = qt.NewQStandardItemModel2(0, 6)
-	panel.model.SetHorizontalHeaderLabels([]string{"Час", "№", "Подія", "Об'єкт", "Опис", "Джерело"})
+	panel.model = newEventLogTableModel(eventLogHeaders())
 
 	panel.table = qt.NewQTableView2()
 	panel.table.SetModel(panel.model.QAbstractItemModel)
@@ -125,6 +140,8 @@ func NewEventLogPanel(prefs config.Preferences) *EventLogPanel {
 
 	layout.AddWidget(panel.table.QWidget)
 	panel.SetLayout(layout.QLayout)
+	panel.restoreFilterPrefs()
+	panel.registerShortcuts()
 	return panel
 }
 
@@ -139,6 +156,14 @@ func (panel *EventLogPanel) SetEvents(events []models.Event) {
 	panel.applyFilters()
 }
 
+func (panel *EventLogPanel) applyColumnWidths() {
+	if panel.autoSized {
+		return
+	}
+	resizeTableToContentsWithMinimums("events", panel.table)
+	panel.autoSized = true
+}
+
 func (panel *EventLogPanel) applyFilters() {
 	if panel == nil || panel.model == nil || panel.vm == nil {
 		return
@@ -147,9 +172,9 @@ func (panel *EventLogPanel) applyFilters() {
 	if panel.rangeSelect != nil {
 		period = panel.rangeSelect.CurrentText()
 	}
-	importantOnly := false
-	if panel.importantOnly != nil {
-		importantOnly = panel.importantOnly.IsChecked()
+	severityFilter := eventLogSeverityAll
+	if panel.severitySelect != nil {
+		severityFilter = panel.severitySelect.CurrentText()
 	}
 	selectedSource := viewmodels.ObjectSourceAll
 	if panel.sourceSelect != nil {
@@ -165,7 +190,7 @@ func (panel *EventLogPanel) applyFilters() {
 		AllEvents:          panel.allEvents,
 		Period:             period,
 		SelectedSource:     selectedSource,
-		ImportantOnly:      importantOnly,
+		SeverityFilter:     severityFilter,
 		ShowForCurrentOnly: panel.showForCurrentOnly,
 		MaxEvents:          eventLogLimit,
 	}
@@ -176,6 +201,9 @@ func (panel *EventLogPanel) applyFilters() {
 	out := panel.vm.ApplyFilters(input)
 
 	panel.filteredEvents = out.Filtered
+	if panel.OnCountChanged != nil {
+		panel.OnCountChanged(out.Count)
+	}
 
 	if panel.sourceSelect != nil {
 		panel.filterUpdating = true
@@ -184,43 +212,44 @@ func (panel *EventLogPanel) applyFilters() {
 		panel.filterUpdating = false
 	}
 
-	panel.model.Clear()
-	panel.model.SetHorizontalHeaderLabels([]string{"Час", "№", "Подія", "Об'єкт", "Опис", "Джерело"})
+	signature := eventLogRowsSignature(out.Filtered)
+	if panel.rowsReady && panel.rowsSignature == signature {
+		return
+	}
+	panel.rowsSignature = signature
+	panel.rowsReady = true
+
+	var columnWidths []int
+	if panel.autoSized {
+		columnWidths = captureTableColumnWidths(panel.table)
+	}
 	if len(out.Filtered) == 0 {
-		addReadOnlyRow(panel.model, []string{"--:--", "-", "-", "Немає подій", "", ""})
+		panel.model.setRows(nil)
+		restoreTableColumnWidthsSnapshot("events", panel.table, columnWidths)
 		return
 	}
 
-	panel.eventsByID = make(map[int]models.Event, len(out.Filtered))
-	for _, event := range out.Filtered {
-		panel.eventsByID[event.ID] = event
-		textColor, rowColor := eventRowColorsBySeverity(event.VisualSeverityValue(), event.SC1)
-		addColoredReadOnlyRow(panel.model, []string{
-			event.GetDateTimeDisplay(),
-			eventObjectNumber(event),
-			event.GetTypeDisplay(),
-			strings.TrimSpace(event.ObjectName),
-			strings.TrimSpace(event.Details),
-			viewmodels.ObjectSourceByID(event.ObjectID),
-		}, event.ID, textColor, rowColor)
+	panel.model.setRows(out.Filtered)
+	if restoreTableColumnWidthsSnapshot("events", panel.table, columnWidths) {
+		return
 	}
-	if !panel.autoSized {
-		resizeTableToContents(panel.table)
-		panel.autoSized = true
+	panel.applyColumnWidths()
+}
+
+func eventLogRowsSignature(events []models.Event) string {
+	var b strings.Builder
+	for _, event := range events {
+		b.WriteString(eventRowSignature(event))
+		b.WriteByte('|')
 	}
+	return b.String()
 }
 
 func (panel *EventLogPanel) eventAtIndex(index *qt.QModelIndex) (models.Event, bool) {
 	if panel == nil || panel.model == nil || index == nil || !index.IsValid() {
 		return models.Event{}, false
 	}
-	rowIndex := panel.model.Index(index.Row(), 0, nil)
-	if rowIndex == nil || !rowIndex.IsValid() {
-		return models.Event{}, false
-	}
-	eventID := panel.model.Data(rowIndex, int(qt.UserRole)).ToInt()
-	event, ok := panel.eventsByID[eventID]
-	return event, ok
+	return panel.model.eventAt(index.Row())
 }
 
 func (panel *EventLogPanel) SetCurrentObject(obj *models.Object) {
@@ -229,6 +258,83 @@ func (panel *EventLogPanel) SetCurrentObject(obj *models.Object) {
 	}
 	panel.currentObject = obj
 	panel.applyFilters()
+}
+
+func (panel *EventLogPanel) TogglePause() {
+	if panel == nil || panel.pauseBtn == nil {
+		return
+	}
+	panel.isPaused = !panel.isPaused
+	if panel.isPaused {
+		panel.pauseBtn.SetText("▶ Продовжити")
+		return
+	}
+	panel.pauseBtn.SetText("⏸ Пауза")
+	panel.applyFilters()
+}
+
+func (panel *EventLogPanel) ToggleCurrentOnly() {
+	if panel == nil || panel.contextToggle == nil {
+		return
+	}
+	panel.contextToggle.SetChecked(!panel.contextToggle.IsChecked())
+}
+
+func (panel *EventLogPanel) registerShortcuts() {
+	if panel == nil {
+		return
+	}
+	pauseShortcut := qt.NewQShortcut2(qt.NewQKeySequence2("Ctrl+P"), panel.QObject)
+	pauseShortcut.SetContext(qt.WidgetWithChildrenShortcut)
+	pauseShortcut.OnActivated(func() {
+		panel.TogglePause()
+	})
+
+	currentOnlyShortcut := qt.NewQShortcut2(qt.NewQKeySequence2("Ctrl+Shift+O"), panel.QObject)
+	currentOnlyShortcut.SetContext(qt.WidgetWithChildrenShortcut)
+	currentOnlyShortcut.OnActivated(func() {
+		panel.ToggleCurrentOnly()
+	})
+}
+
+func (panel *EventLogPanel) restoreFilterPrefs() {
+	if panel == nil || panel.prefs == nil {
+		return
+	}
+	panel.filterUpdating = true
+	if panel.rangeSelect != nil {
+		panel.rangeSelect.SetCurrentText(panel.prefs.StringWithFallback(prefQtEventLogPeriod, "Остання година"))
+	}
+	if panel.sourceSelect != nil {
+		source := panel.prefs.StringWithFallback(prefQtEventLogSource, viewmodels.ObjectSourceAll)
+		updateComboItems(panel.sourceSelect, viewmodels.BuildObjectSourceOptions(0, 0, 0, 0), source)
+	}
+	if panel.severitySelect != nil {
+		panel.severitySelect.SetCurrentText(panel.prefs.StringWithFallback(prefQtEventLogSeverity, eventLogSeverityAll))
+	}
+	if panel.contextToggle != nil {
+		panel.contextToggle.SetChecked(panel.prefs.BoolWithFallback(prefQtEventLogCurrentOnly, false))
+		panel.showForCurrentOnly = panel.contextToggle.IsChecked()
+	}
+	panel.filterUpdating = false
+}
+
+func (panel *EventLogPanel) saveFilterPrefs() {
+	if panel == nil || panel.prefs == nil || panel.filterUpdating {
+		return
+	}
+	if panel.rangeSelect != nil {
+		panel.prefs.SetString(prefQtEventLogPeriod, panel.rangeSelect.CurrentText())
+	}
+	if panel.sourceSelect != nil {
+		panel.prefs.SetString(prefQtEventLogSource, viewmodels.NormalizeObjectSourceFilter(panel.sourceSelect.CurrentText()))
+	}
+	if panel.severitySelect != nil {
+		panel.prefs.SetString(prefQtEventLogSeverity, panel.severitySelect.CurrentText())
+	}
+	if panel.contextToggle != nil {
+		panel.prefs.SetBool(prefQtEventLogCurrentOnly, panel.contextToggle.IsChecked())
+	}
 }
 
 func (panel *EventLogPanel) showContextMenu(pos *qt.QPoint) {
@@ -261,5 +367,13 @@ func (panel *EventLogPanel) showContextMenu(pos *qt.QPoint) {
 		}
 	})
 
+	menu.AddSeparator()
+	addTableCopyActions(menu, panel.table, index)
+	menu.AddSeparator()
+	addTableColumnActions(menu, "events", panel.table, panel.prefs, func() {
+		panel.autoSized = true
+	}, func() {
+		panel.autoSized = false
+	})
 	menu.ExecWithPos(panel.table.MapToGlobalWithQPoint(pos))
 }

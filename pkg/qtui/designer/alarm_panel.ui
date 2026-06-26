@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AlarmPanel</class>
+ <widget class="QWidget" name="AlarmPanel">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>980</width>
+    <height>260</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="alarmRootLayout">
+   <property name="leftMargin">
+    <number>6</number>
+   </property>
+   <property name="topMargin">
+    <number>6</number>
+   </property>
+   <property name="rightMargin">
+    <number>6</number>
+   </property>
+   <property name="bottomMargin">
+    <number>6</number>
+   </property>
+   <item>
+    <widget class="QFrame" name="alarmRibbon">
+     <property name="styleSheet">
+      <string notr="true">QFrame { background: #fafafa; border: 1px solid #d8d8d8; border-radius: 3px; }</string>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::StyledPanel</enum>
+     </property>
+     <layout class="QHBoxLayout" name="ribbonLayout">
+      <property name="leftMargin">
+       <number>6</number>
+      </property>
+      <property name="topMargin">
+       <number>4</number>
+      </property>
+      <property name="rightMargin">
+       <number>6</number>
+      </property>
+      <property name="bottomMargin">
+       <number>4</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="statusLabel">
+        <property name="minimumSize">
+         <size>
+          <width>168</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="text">
+         <string>Тривог немає</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-weight: 700; color: #2f6b3f; border: 0; background: transparent;</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="criticalLabel">
+        <property name="minimumSize">
+         <size>
+          <width>92</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="text">
+         <string>Критичні: 0</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-weight: 700; color: #b3261e; background: #fde7e5; border: 1px solid #b3261e; border-radius: 3px; padding: 3px 6px;</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="normalLabel">
+        <property name="minimumSize">
+         <size>
+          <width>92</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="text">
+         <string>Звичайні: 0</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-weight: 700; color: #8a5a00; background: #fff2cc; border: 1px solid #8a5a00; border-radius: 3px; padding: 3px 6px;</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="groupCountLabel">
+        <property name="minimumSize">
+         <size>
+          <width>92</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="text">
+         <string>Груп: 0</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-weight: 700; color: #174ea6; background: #e8f0fe; border: 1px solid #174ea6; border-radius: 3px; padding: 3px 6px;</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="selectionLabel">
+        <property name="minimumSize">
+         <size>
+          <width>92</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="text">
+         <string>Вибрано: 0/0</string>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">font-weight: 700; color: #155724; background: #e6f4ea; border: 1px solid #155724; border-radius: 3px; padding: 3px 6px;</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="processButton">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="toolTip">
+         <string>Відпрацювати вибрані тривоги</string>
+        </property>
+        <property name="text">
+         <string>Відпрацювати</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="pickButton">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="toolTip">
+         <string>Закріпити вибрані тривоги за оператором</string>
+        </property>
+        <property name="text">
+         <string>Взяти в роботу</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="historyButton">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="toolTip">
+         <string>Показати хронологію вибраної групи</string>
+        </property>
+        <property name="text">
+         <string>Хронологія</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="hideHistoryButton">
+        <property name="toolTip">
+         <string>Сховати хронологію</string>
+        </property>
+        <property name="text">
+         <string>Сховати</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="ribbonSpacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="criticalFilterButton">
+        <property name="text">
+         <string>Критичні</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="allFilterButton">
+        <property name="text">
+         <string>Всі</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="normalFilterButton">
+        <property name="text">
+         <string>Звичайні</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QComboBox" name="sourceFilter"/>
+      </item>
+      <item>
+       <widget class="QComboBox" name="severityFilter"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QSplitter" name="alarmSplitter">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <widget class="QTableView" name="alarmGroupTable">
+      <property name="alternatingRowColors">
+       <bool>true</bool>
+      </property>
+      <property name="selectionBehavior">
+       <enum>QAbstractItemView::SelectRows</enum>
+      </property>
+      <property name="selectionMode">
+       <enum>QAbstractItemView::ExtendedSelection</enum>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">QTableView { gridline-color: #e7e7e7; selection-background-color: #174ea6; selection-color: white; } QHeaderView::section { background: #f7f7f7; border: 0; border-bottom: 1px solid #d5d5d5; padding: 5px; font-weight: 600; }</string>
+      </property>
+     </widget>
+     <widget class="QTextBrowser" name="historyBrowser">
+      <property name="visible">
+       <bool>false</bool>
+      </property>
+      <property name="html">
+       <string>&lt;!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd"&gt;&lt;html&gt;&lt;body&gt;Оберіть групу і натисніть &quot;Хронологія&quot;&lt;/body&gt;&lt;/html&gt;</string>
+      </property>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

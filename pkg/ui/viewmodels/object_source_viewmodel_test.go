@@ -96,3 +96,21 @@ func TestObjectDisplayNumber(t *testing.T) {
 		t.Fatalf("Bridge ObjectDisplayNumber = %q, want %q", got, "42")
 	}
 }
+
+func TestNumericObjectDisplayNumber(t *testing.T) {
+	casl := models.Object{
+		ID:            ids.CASLObjectIDNamespaceStart + 123,
+		DisplayNumber: "1003",
+	}
+	if got := NumericObjectDisplayNumber(casl); got != 1003 {
+		t.Fatalf("NumericObjectDisplayNumber(CASL) = %d, want 1003", got)
+	}
+
+	phoenix := models.Object{
+		ID:            ids.PhoenixObjectIDNamespaceStart + 55,
+		DisplayNumber: "L00028",
+	}
+	if got := NumericObjectDisplayNumber(phoenix); got != phoenix.ID {
+		t.Fatalf("NumericObjectDisplayNumber(non-numeric) = %d, want fallback ID %d", got, phoenix.ID)
+	}
+}

@@ -114,6 +114,29 @@ func TestEventLogViewModel_ApplyFiltersBySource(t *testing.T) {
 	}
 }
 
+func TestEventLogViewModel_ApplyFiltersBySeverity(t *testing.T) {
+	vm := NewEventLogViewModel()
+	now := time.Date(2026, 3, 29, 12, 0, 0, 0, time.Local)
+
+	out := vm.ApplyFilters(EventLogFilterInput{
+		AllEvents: []models.Event{
+			{ID: 1, ObjectID: 11, Time: now.Add(-2 * time.Minute), Type: models.EventFire},
+			{ID: 2, ObjectID: 11, Time: now.Add(-3 * time.Minute), Type: models.EventBatteryLow},
+			{ID: 3, ObjectID: 11, Time: now.Add(-4 * time.Minute), Type: models.EventArm},
+		},
+		Period:         "Всі",
+		SeverityFilter: "Попередження",
+		Now:            now,
+	})
+
+	if out.Count != 1 {
+		t.Fatalf("expected 1 warning event, got %d", out.Count)
+	}
+	if out.Filtered[0].ID != 2 {
+		t.Fatalf("expected battery warning event, got %+v", out.Filtered[0])
+	}
+}
+
 func TestEventLogViewModel_ApplyFiltersSortsNewestFirst(t *testing.T) {
 	vm := NewEventLogViewModel()
 	now := time.Date(2026, 3, 29, 12, 0, 0, 0, time.Local)

@@ -9,8 +9,10 @@ import (
 
 	qt "github.com/mappu/miqt/qt6"
 
+	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/simcommands"
 	"obj_catalog_fyne_v3/pkg/simoperator"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
@@ -98,6 +100,7 @@ func ShowSIMManagementDialog(
 	usageText string,
 	vfService contracts.AdminObjectVodafoneService,
 	ksService contracts.AdminObjectKyivstarService,
+	sendSMS func(models.Object, string),
 ) {
 	dialog := qt.NewQDialog(parent)
 	dialog.SetWindowTitle("SIM-карти об'єкта")
@@ -113,6 +116,14 @@ func ShowSIMManagementDialog(
 	sim1Layout := qt.NewQHBoxLayout(sim1Widget)
 	sim1Layout.SetContentsMargins(0, 0, 0, 0)
 	sim1Layout.AddWidget(qt.NewQLabel3(emptyDash(object.SIM1)).QWidget)
+	if strings.TrimSpace(object.SIM1) != "" && sendSMS != nil {
+		btn := qt.NewQPushButton3("SMS")
+		btn.SetToolTip("Надіслати SMS через Omnicell на SIM 1")
+		btn.OnClicked(func() {
+			sendSMS(object, object.SIM1)
+		})
+		sim1Layout.AddWidget(btn.QWidget)
+	}
 	sim1Operator := simoperator.Detect(object.SIM1)
 	if sim1Operator == simoperator.Vodafone && vfService != nil {
 		btn := qt.NewQPushButton3("Vodafone M2M")
@@ -136,6 +147,14 @@ func ShowSIMManagementDialog(
 	sim2Layout := qt.NewQHBoxLayout(sim2Widget)
 	sim2Layout.SetContentsMargins(0, 0, 0, 0)
 	sim2Layout.AddWidget(qt.NewQLabel3(emptyDash(object.SIM2)).QWidget)
+	if strings.TrimSpace(object.SIM2) != "" && sendSMS != nil {
+		btn := qt.NewQPushButton3("SMS")
+		btn.SetToolTip("Надіслати SMS через Omnicell на SIM 2")
+		btn.OnClicked(func() {
+			sendSMS(object, object.SIM2)
+		})
+		sim2Layout.AddWidget(btn.QWidget)
+	}
 	sim2Operator := simoperator.Detect(object.SIM2)
 	if sim2Operator == simoperator.Vodafone && vfService != nil {
 		btn := qt.NewQPushButton3("Vodafone M2M")
@@ -171,6 +190,167 @@ func ShowSIMManagementDialog(
 	dialog.Exec()
 }
 
+func ShowSIMSMSDialog(parent *qt.QWidget, object models.Object, phone string, cfg config.OmnicellConfig) ([]simcommands.SMSCommand, bool) {
+	dialog := qt.NewQDialog(parent)
+	dialog.SetWindowTitle("SMS на SIM")
+	dialog.Resize(720, 680)
+
+	layout := qt.NewQVBoxLayout(dialog.QWidget)
+	form := qt.NewQFormLayout2()
+	form.SetFieldGrowthPolicy(qt.QFormLayout__AllNonFixedFieldsGrow)
+	form.AddRow3("Об'єкт", qt.NewQLabel3(fmt.Sprintf("<b>%s</b> №%s", htmlEscape(strings.TrimSpace(object.Name)), viewmodels.ObjectDisplayNumber(object))).QWidget)
+	form.AddRow3("Номер", qt.NewQLabel3(htmlEscape(strings.TrimSpace(phone))).QWidget)
+
+	profile := qt.NewQComboBox2()
+	profile.AddItems([]string{simcommands.ProfileMCAGSM4, simcommands.ProfileMCAGSM, simcommands.ProfileFreeSMS})
+	setComboTextFallback(profile, cfg.MCADefaultMessageProfile, simcommands.ProfileMCAGSM4)
+	form.AddRow3("Тип", profile.QWidget)
+
+	objectNumber := spinBox(1, 999999)
+	objectNumber.SetValue(viewmodels.NumericObjectDisplayNumber(object))
+	form.AddRow3("Об'єктовий номер", objectNumber.QWidget)
+	hiddenNumber := spinBox(0, 999999)
+	hiddenNumber.SetValue(int(object.GSMHiddenN))
+	form.AddRow3("Прихований номер", hiddenNumber.QWidget)
+
+	primaryAPN := newLineEdit(cfg.MCAPrimaryAPN)
+	reserveAPN := newLineEdit(cfg.MCAReserveAPN)
+	primaryIP := newLineEdit(cfg.MCAPrimaryIP)
+	reserveIP := newLineEdit(cfg.MCAReserveIP)
+	primaryModulePort := spinBox(1, 9999)
+	reserveModulePort := spinBox(1, 9999)
+	primaryReceiverPort := spinBox(1, 9999)
+	reserveReceiverPort := spinBox(1, 9999)
+	primaryInterval := spinBox(1, 240)
+	reserveInterval := spinBox(1, 240)
+	inputConfirm := qt.NewQCheckBox3("Підтвердження")
+
+	primaryModulePort.SetValue(cfg.MCAPrimaryModulePort)
+	reserveModulePort.SetValue(cfg.MCAReserveModulePort)
+	primaryReceiverPort.SetValue(cfg.MCAPrimaryReceiverPort)
+	reserveReceiverPort.SetValue(cfg.MCAReserveReceiverPort)
+	primaryInterval.SetValue(cfg.MCAPrimaryTestInterval)
+	reserveInterval.SetValue(cfg.MCAReserveTestInterval)
+	inputConfirm.SetChecked(cfg.MCAInput1ConfirmMode)
+
+	form.AddRow3("APN основний", primaryAPN.QWidget)
+	form.AddRow3("APN резервний", reserveAPN.QWidget)
+	form.AddRow3("IP основний", primaryIP.QWidget)
+	form.AddRow3("IP резервний", reserveIP.QWidget)
+	form.AddRow3("Порт модуля основний", primaryModulePort.QWidget)
+	form.AddRow3("Порт модуля резервний", reserveModulePort.QWidget)
+	form.AddRow3("Порт ПЦПС основний", primaryReceiverPort.QWidget)
+	form.AddRow3("Порт ПЦПС резервний", reserveReceiverPort.QWidget)
+	form.AddRow3("Тест основний, хв", primaryInterval.QWidget)
+	form.AddRow3("Тест резервний, хв", reserveInterval.QWidget)
+	form.AddRow3("Вхід 1", inputConfirm.QWidget)
+
+	message := qt.NewQTextEdit2()
+	message.SetMinimumHeight(160)
+	form.AddRow3("Повідомлення", message.QWidget)
+
+	buildConfig := func() simcommands.MCAGSM4Config {
+		return simcommands.MCAGSM4Config{
+			ObjectNumber:        objectNumber.Value(),
+			HiddenNumber:        hiddenNumber.Value(),
+			PrimaryAPN:          primaryAPN.Text(),
+			ReserveAPN:          reserveAPN.Text(),
+			PrimaryIP:           primaryIP.Text(),
+			ReserveIP:           reserveIP.Text(),
+			PrimaryModulePort:   primaryModulePort.Value(),
+			ReserveModulePort:   reserveModulePort.Value(),
+			PrimaryReceiverPort: primaryReceiverPort.Value(),
+			ReserveReceiverPort: reserveReceiverPort.Value(),
+			PrimaryTestInterval: primaryInterval.Value(),
+			ReserveTestInterval: reserveInterval.Value(),
+			Input1ConfirmMode:   inputConfirm.IsChecked(),
+		}
+	}
+	buildGSMConfig := func() simcommands.MCAGSM4Config {
+		gsmCfg := simcommands.DefaultMCAGSMConfig()
+		gsmCfg.ObjectNumber = objectNumber.Value()
+		gsmCfg.HiddenNumber = hiddenNumber.Value()
+		gsmCfg.PrimaryAPN = primaryAPN.Text()
+		gsmCfg.ReserveAPN = reserveAPN.Text()
+		gsmCfg.PrimaryIP = primaryIP.Text()
+		gsmCfg.ReserveIP = reserveIP.Text()
+		return gsmCfg
+	}
+	renderPreview := func(commands []simcommands.SMSCommand) string {
+		lines := make([]string, 0, len(commands)*2)
+		for _, command := range commands {
+			lines = append(lines, command.Title+":", command.Text)
+		}
+		return strings.Join(lines, "\n")
+	}
+	updatePreview := func() {
+		switch profile.CurrentText() {
+		case simcommands.ProfileMCAGSM4:
+			message.SetReadOnly(true)
+			commands, err := simcommands.BuildMCAGSM4Messages(buildConfig())
+			if err != nil {
+				message.SetPlainText("Помилка шаблону: " + err.Error())
+				return
+			}
+			message.SetPlainText(renderPreview(commands))
+		case simcommands.ProfileMCAGSM:
+			message.SetReadOnly(true)
+			commands, err := simcommands.BuildMCAGSMMessages(buildGSMConfig())
+			if err != nil {
+				message.SetPlainText("Помилка шаблону: " + err.Error())
+				return
+			}
+			message.SetPlainText(renderPreview(commands))
+		default:
+			message.SetReadOnly(false)
+			if strings.TrimSpace(message.ToPlainText()) == "" {
+				message.SetPlaceholderText("Текст SMS")
+			}
+		}
+	}
+	profile.OnCurrentTextChanged(func(string) { updatePreview() })
+	for _, edit := range []*qt.QLineEdit{primaryAPN, reserveAPN, primaryIP, reserveIP} {
+		edit.OnTextChanged(func(string) { updatePreview() })
+	}
+	for _, spin := range []*qt.QSpinBox{objectNumber, hiddenNumber, primaryModulePort, reserveModulePort, primaryReceiverPort, reserveReceiverPort, primaryInterval, reserveInterval} {
+		spin.OnValueChanged(func(int) { updatePreview() })
+	}
+	inputConfirm.OnToggled(func(bool) { updatePreview() })
+	updatePreview()
+
+	buttons := qt.NewQDialogButtonBox4(qt.QDialogButtonBox__Ok | qt.QDialogButtonBox__Cancel)
+	buttons.OnAccepted(dialog.Accept)
+	buttons.OnRejected(dialog.Reject)
+
+	layout.AddLayout(form.QLayout)
+	layout.AddWidget(buttons.QWidget)
+	dialog.SetLayout(layout.QLayout)
+	if dialog.Exec() != int(qt.QDialog__Accepted) {
+		return nil, false
+	}
+	switch profile.CurrentText() {
+	case simcommands.ProfileMCAGSM4:
+		commands, err := simcommands.BuildMCAGSM4Messages(buildConfig())
+		if err != nil {
+			qt.QMessageBox_Critical(parent, "SMS", err.Error())
+			return nil, false
+		}
+		return commands, true
+	case simcommands.ProfileMCAGSM:
+		commands, err := simcommands.BuildMCAGSMMessages(buildGSMConfig())
+		if err != nil {
+			qt.QMessageBox_Critical(parent, "SMS", err.Error())
+			return nil, false
+		}
+		return commands, true
+	}
+	text := strings.TrimSpace(message.ToPlainText())
+	if text == "" {
+		qt.QMessageBox_Information(parent, "SMS", "Текст повідомлення порожній.")
+		return nil, false
+	}
+	return []simcommands.SMSCommand{{Title: profile.CurrentText(), Text: text}}, true
+}
 
 func newLineEdit(value string) *qt.QLineEdit {
 	edit := qt.NewQLineEdit3(strings.TrimSpace(value))

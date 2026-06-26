@@ -16,6 +16,7 @@ type frontendUIBackendStub struct {
 	events          []contracts.FrontendEventItem
 	alarms          []contracts.FrontendAlarmItem
 	objectDetailErr error
+	detailRequests  int
 }
 
 func (s *frontendUIBackendStub) Capabilities(context.Context) (contracts.FrontendCapabilities, error) {
@@ -79,6 +80,7 @@ func (s *frontendUIBackendStub) ListObjectEvents(context.Context, int, int, int)
 }
 
 func (s *frontendUIBackendStub) GetObjectDetails(context.Context, int) (contracts.FrontendObjectDetails, error) {
+	s.detailRequests++
 	if s.objectDetailErr != nil {
 		return contracts.FrontendObjectDetails{}, s.objectDetailErr
 	}
@@ -295,6 +297,46 @@ func TestFrontendUIDataProviderGetObjectByIDUsesFrontendDetailsAndPreservesGroup
 	signal, testMsg, gotLastTest, gotLastMessage := provider.GetExternalData("202")
 	if signal != "OK" || testMsg != "TEST" || !gotLastTest.Equal(lastTest) || !gotLastMessage.Equal(lastMessage) {
 		t.Fatalf("external data = (%q, %q, %v, %v)", signal, testMsg, gotLastTest, gotLastMessage)
+	}
+}
+
+func TestFrontendUIDataProviderGetObjectBaseDetailsUsesSingleFrontendDetailsRequest(t *testing.T) {
+	frontend := &frontendUIBackendStub{
+		objectDetails: contracts.FrontendObjectDetails{
+			Summary: contracts.FrontendObjectSummary{
+				ID:            202,
+				DisplayNumber: "202",
+				Name:          "Школа",
+				Address:       "Київ",
+			},
+			Zones: []contracts.FrontendZone{
+				{Number: 1, Name: "Зона 1", SensorType: "Дим", Status: "fire"},
+			},
+			Contacts: []contracts.FrontendContact{
+				{Name: "Черговий", Phone: "380002"},
+			},
+		},
+	}
+	fallback := &frontendUIFallbackStub{
+		objectByID: map[string]models.Object{
+			"202": {ID: 202, Name: "fallback"},
+		},
+	}
+
+	provider := NewFrontendUIDataProvider(frontend, fallback)
+	object, zones, contacts := provider.GetObjectBaseDetails("202")
+
+	if frontend.detailRequests != 1 {
+		t.Fatalf("detail requests = %d, want 1", frontend.detailRequests)
+	}
+	if object == nil || object.Name != "Школа" {
+		t.Fatalf("object = %+v, want frontend details", object)
+	}
+	if len(zones) != 1 || zones[0].Status != models.ZoneFire {
+		t.Fatalf("zones = %+v, want mapped frontend zones", zones)
+	}
+	if len(contacts) != 1 || contacts[0].Name != "Черговий" {
+		t.Fatalf("contacts = %+v, want mapped frontend contacts", contacts)
 	}
 }
 

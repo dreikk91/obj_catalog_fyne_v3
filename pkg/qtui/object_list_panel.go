@@ -8,8 +8,15 @@ import (
 
 	qt "github.com/mappu/miqt/qt6"
 
+	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
+)
+
+const (
+	prefQtObjectListQuery  = "qt.objectList.query"
+	prefQtObjectListStatus = "qt.objectList.status"
+	prefQtObjectListSource = "qt.objectList.source"
 )
 
 type ObjectListPanel struct {
@@ -17,22 +24,27 @@ type ObjectListPanel struct {
 	search            *qt.QLineEdit
 	statusFilter      *qt.QComboBox
 	sourceFilter      *qt.QComboBox
+	searchTimer       *qt.QTimer
 	table             *qt.QTableView
-	model             *qt.QStandardItemModel
+	model             *objectListTableModel
 	vm                *viewmodels.ObjectListViewModel
+	prefs             config.Preferences
 	allObjects        []models.Object
-	objectsByID       map[int]models.Object
+	rowsSignature     string
+	rowsReady         bool
 	autoSized         bool
 	suppressSelection bool
+	filterUpdating    bool
 	OnObjectSelected  func(models.Object)
 }
 
-func NewObjectListPanel() *ObjectListPanel {
+func NewObjectListPanel(prefs config.Preferences) *ObjectListPanel {
 	panel := &ObjectListPanel{
 		QWidget: qt.NewQWidget2(),
 		vm:      viewmodels.NewObjectListViewModel(),
+		prefs:   prefs,
 	}
-	panel.SetMinimumWidth(320)
+	panel.SetMinimumWidth(200)
 
 	layout := qt.NewQVBoxLayout(panel.QWidget)
 	title := qt.NewQLabel3("Список об'єктів")
@@ -50,8 +62,7 @@ func NewObjectListPanel() *ObjectListPanel {
 	filtersLayout.AddWidget(panel.statusFilter.QWidget)
 	filtersLayout.AddWidget(panel.sourceFilter.QWidget)
 
-	panel.model = qt.NewQStandardItemModel2(0, 3)
-	panel.model.SetHorizontalHeaderLabels([]string{"№", "Назва", "Адреса"})
+	panel.model = newObjectListTableModel(panel.vm)
 
 	panel.table = qt.NewQTableView2()
 	panel.table.SetModel(panel.model.QAbstractItemModel)
@@ -60,6 +71,10 @@ func NewObjectListPanel() *ObjectListPanel {
 	panel.table.SetSelectionBehavior(qt.QAbstractItemView__SelectRows)
 	panel.table.SetEditTriggers(qt.QAbstractItemView__NoEditTriggers)
 	panel.table.HorizontalHeader().SetStretchLastSection(true)
+	panel.table.HorizontalHeader().SetMinimumSectionSize(20)
+	for i, w := range []int{50, 250, 230} {
+		panel.table.SetColumnWidth(i, w)
+	}
 	panel.table.SelectionModel().OnCurrentRowChanged(func(current *qt.QModelIndex, previous *qt.QModelIndex) {
 		panel.notifyObjectSelection(current)
 	})
@@ -71,13 +86,22 @@ func NewObjectListPanel() *ObjectListPanel {
 		panel.notifyObjectSelection(index)
 	})
 
-	panel.search.OnTextChanged(func(string) {
+	panel.searchTimer = qt.NewQTimer()
+	panel.searchTimer.SetSingleShot(true)
+	panel.searchTimer.SetInterval(200)
+	panel.searchTimer.OnTimeout(func() {
 		panel.applyFilters()
 	})
+	panel.search.OnTextChanged(func(string) {
+		panel.saveFilterPrefs()
+		panel.scheduleSearchFilter()
+	})
 	panel.statusFilter.OnCurrentTextChanged(func(string) {
+		panel.saveFilterPrefs()
 		panel.applyFilters()
 	})
 	panel.sourceFilter.OnCurrentTextChanged(func(string) {
+		panel.saveFilterPrefs()
 		panel.applyFilters()
 	})
 
@@ -86,6 +110,7 @@ func NewObjectListPanel() *ObjectListPanel {
 	layout.AddLayout(filtersLayout.QLayout)
 	layout.AddWidget(panel.table.QWidget)
 	panel.SetLayout(layout.QLayout)
+	panel.restoreFilterPrefs()
 	panel.applyFilters()
 
 	return panel
@@ -96,10 +121,6 @@ func (panel *ObjectListPanel) SetObjects(objects []models.Object) {
 		return
 	}
 	panel.allObjects = append(panel.allObjects[:0], objects...)
-	panel.objectsByID = make(map[int]models.Object, len(objects))
-	for _, object := range objects {
-		panel.objectsByID[object.ID] = object
-	}
 	panel.applyFilters()
 }
 
@@ -109,6 +130,54 @@ func (panel *ObjectListPanel) FocusSearch() {
 	}
 	panel.search.SetFocus()
 	panel.search.SelectAll()
+}
+
+func (panel *ObjectListPanel) scheduleSearchFilter() {
+	if panel == nil {
+		return
+	}
+	if panel.searchTimer == nil {
+		panel.applyFilters()
+		return
+	}
+	panel.searchTimer.Start2()
+}
+
+func (panel *ObjectListPanel) restoreFilterPrefs() {
+	if panel == nil || panel.prefs == nil {
+		return
+	}
+	panel.filterUpdating = true
+	defer func() {
+		panel.filterUpdating = false
+	}()
+
+	if panel.search != nil {
+		panel.search.SetText(panel.prefs.StringWithFallback(prefQtObjectListQuery, ""))
+	}
+	if panel.statusFilter != nil {
+		status := panel.prefs.StringWithFallback(prefQtObjectListStatus, viewmodels.FilterAll)
+		panel.statusFilter.SetCurrentIndex(indexForNormalizedStatusFilter(panel.statusFilter, status))
+	}
+	if panel.sourceFilter != nil {
+		source := panel.prefs.StringWithFallback(prefQtObjectListSource, viewmodels.ObjectSourceAll)
+		panel.sourceFilter.SetCurrentIndex(indexForNormalizedSourceFilter(panel.sourceFilter, source))
+	}
+}
+
+func (panel *ObjectListPanel) saveFilterPrefs() {
+	if panel == nil || panel.prefs == nil || panel.filterUpdating {
+		return
+	}
+	if panel.search != nil {
+		panel.prefs.SetString(prefQtObjectListQuery, strings.TrimSpace(panel.search.Text()))
+	}
+	if panel.statusFilter != nil {
+		panel.prefs.SetString(prefQtObjectListStatus, viewmodels.NormalizeObjectListFilter(panel.statusFilter.CurrentText()))
+	}
+	if panel.sourceFilter != nil {
+		panel.prefs.SetString(prefQtObjectListSource, viewmodels.NormalizeObjectSourceFilter(panel.sourceFilter.CurrentText()))
+	}
 }
 
 func (panel *ObjectListPanel) notifyObjectSelection(index *qt.QModelIndex) {
@@ -124,9 +193,15 @@ func (panel *ObjectListPanel) objectAtIndex(index *qt.QModelIndex) (models.Objec
 	if panel == nil || panel.model == nil || index == nil || !index.IsValid() {
 		return models.Object{}, false
 	}
-	id := index.SiblingAtColumn(0).DataWithRole(int(qt.UserRole)).ToInt()
-	object, ok := panel.objectsByID[id]
-	return object, ok
+	return panel.model.objectAt(index.Row())
+}
+
+func (panel *ObjectListPanel) applyColumnWidths() {
+	if panel.autoSized {
+		return
+	}
+	resizeObjectListColumns(panel.table)
+	panel.autoSized = true
 }
 
 func (panel *ObjectListPanel) applyFilters() {
@@ -177,21 +252,43 @@ func (panel *ObjectListPanel) refreshFilterOptions(out viewmodels.ObjectListFilt
 }
 
 func (panel *ObjectListPanel) setFilteredObjects(objects []models.Object) {
-	panel.model.Clear()
-	panel.model.SetHorizontalHeaderLabels([]string{"№", "Назва", "Адреса"})
+	signature := objectRowsSignature(objects)
+	if panel.rowsReady && panel.rowsSignature == signature {
+		return
+	}
+	panel.rowsSignature = signature
+	panel.rowsReady = true
+
+	var columnWidths []int
+	if panel.autoSized {
+		columnWidths = captureTableColumnWidths(panel.table)
+	}
+	panel.model.setRows(objects)
+
+	if restoreTableColumnWidthsSnapshot("objects", panel.table, columnWidths) {
+		return
+	}
+	if len(objects) > 0 {
+		panel.applyColumnWidths()
+	}
+}
+
+func objectRowsSignature(objects []models.Object) string {
+	var b strings.Builder
 	for _, object := range objects {
-		values := []string{
+		fmt.Fprintf(
+			&b,
+			"%d:%s:%s:%s:%d:%s:%s|",
+			object.ID,
 			viewmodels.ObjectDisplayNumber(object),
 			strings.TrimSpace(object.Name),
 			strings.TrimSpace(object.Address),
-		}
-		textColor, rowColor := panel.vm.GetRowColors(object, false)
-		addColoredReadOnlyRow(panel.model, values, object.ID, textColor, rowColor)
+			object.Status,
+			strings.TrimSpace(object.StatusText),
+			viewmodels.ObjectSourceByID(object.ID),
+		)
 	}
-	if !panel.autoSized {
-		resizeObjectListColumns(panel.table)
-		panel.autoSized = true
-	}
+	return b.String()
 }
 
 func (panel *ObjectListPanel) SelectObject(id int) {
@@ -209,22 +306,17 @@ func (panel *ObjectListPanel) SelectObject(id int) {
 		}
 	}
 
-	for row := 0; row < panel.model.RowCount(qt.NewQModelIndex()); row++ {
-		item := panel.model.Item(row)
-		if item == nil {
-			continue
-		}
-		if item.Data(int(qt.UserRole)).ToInt() != id {
-			continue
-		}
-
-		panel.suppressSelection = true
-		panel.table.SelectRow(row)
-		panel.suppressSelection = false
-		if index := panel.model.IndexFromItem(item); index != nil && index.IsValid() {
-			panel.table.ScrollTo(index, qt.QAbstractItemView__PositionAtCenter)
-		}
+	row := panel.model.rowForID(id)
+	if row < 0 {
 		return
+	}
+
+	panel.suppressSelection = true
+	panel.table.SelectRow(row)
+	panel.suppressSelection = false
+	parent := qt.NewQModelIndex()
+	if index := panel.model.Index(row, 0, parent); index != nil && index.IsValid() {
+		panel.table.ScrollTo(index, qt.QAbstractItemView__PositionAtCenter)
 	}
 }
 
@@ -271,6 +363,14 @@ func (panel *ObjectListPanel) showContextMenu(pos *qt.QPoint) {
 		setClipboardText(objectListClipboardText(object))
 	})
 
+	menu.AddSeparator()
+	addTableCopyActions(menu, panel.table, index)
+	menu.AddSeparator()
+	addTableColumnActions(menu, "objects", panel.table, panel.prefs, func() {
+		panel.autoSized = true
+	}, func() {
+		panel.autoSized = false
+	})
 	menu.ExecWithPos(panel.table.MapToGlobalWithQPoint(pos))
 }
 
@@ -302,9 +402,5 @@ func indexToID(index *qt.QModelIndex) int {
 	if index == nil || !index.IsValid() {
 		return 0
 	}
-	rowIndex := index.SiblingAtColumn(0)
-	if rowIndex == nil || !rowIndex.IsValid() {
-		return 0
-	}
-	return rowIndex.DataWithRole(int(qt.UserRole)).ToInt()
+	return index.SiblingAtColumn(0).DataWithRole(int(qt.UserRole)).ToInt()
 }

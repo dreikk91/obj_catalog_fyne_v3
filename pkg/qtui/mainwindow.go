@@ -25,6 +25,8 @@ type MainWindow struct {
 	app          *App
 	mainSplitter *qt.QSplitter
 	topSplitter  *qt.QSplitter
+	bottomTabs   *qt.QTabWidget
+	persistTimer *qt.QTimer
 
 	objectList *ObjectListPanel
 	workArea   *WorkAreaPanel
@@ -33,8 +35,9 @@ type MainWindow struct {
 
 	statusLabel *qt.QLabel
 
-	OnSettingsRequested func()
-	OnRefreshRequested  func()
+	OnSettingsRequested    func()
+	OnRefreshRequested     func()
+	OnDiagnosticsRequested func()
 }
 
 func NewMainWindow(app *App) *MainWindow {
@@ -52,6 +55,7 @@ func NewMainWindow(app *App) *MainWindow {
 	mw.buildStatusBar()
 	mw.buildLayout()
 	mw.restoreTableColumnWidths()
+	mw.installTableColumnPersistence()
 	mw.registerShortcuts()
 	mw.installClosePersistence()
 
@@ -88,6 +92,12 @@ func (mw *MainWindow) buildMenuBar() {
 	viewMenu.AddActionWithText("Темна тема")
 
 	helpMenu := menuBar.AddMenuWithTitle("Допомога")
+	diagnosticsAction := helpMenu.AddActionWithText("Діагностика")
+	diagnosticsAction.OnTriggered(func() {
+		if mw.OnDiagnosticsRequested != nil {
+			mw.OnDiagnosticsRequested()
+		}
+	})
 	helpMenu.AddActionWithText("Про програму")
 
 	mw.SetMenuBar(menuBar)
@@ -111,7 +121,12 @@ func (mw *MainWindow) buildToolBar() {
 		}
 	})
 	toolbar.AddActionWithText("Експорт")
-	toolbar.AddActionWithText("Допомога")
+	diagnosticsAction := toolbar.AddActionWithText("Діагностика")
+	diagnosticsAction.OnTriggered(func() {
+		if mw.OnDiagnosticsRequested != nil {
+			mw.OnDiagnosticsRequested()
+		}
+	})
 	mw.AddToolBarWithToolbar(toolbar)
 }
 
@@ -130,26 +145,43 @@ func (mw *MainWindow) SetStatus(text string) {
 }
 
 func (mw *MainWindow) buildLayout() {
-	mw.objectList = NewObjectListPanel()
-	mw.workArea = NewWorkAreaPanel()
+	mw.objectList = NewObjectListPanel(mw.app.Preferences())
+	mw.workArea = NewWorkAreaPanel(mw.app.Preferences())
 	mw.alarmPanel = NewAlarmPanel(mw.app.Preferences())
 	mw.eventLog = NewEventLogPanel(mw.app.Preferences())
+	mw.alarmPanel.OnCountChanged = func(count int) {
+		mw.setBottomTabCount(0, "Тривоги", count)
+	}
+	mw.eventLog.OnCountChanged = func(count int) {
+		mw.setBottomTabCount(1, "Журнал подій", count)
+	}
 
 	mw.topSplitter = qt.NewQSplitter3(qt.Horizontal)
 	mw.topSplitter.AddWidget(mw.objectList.QWidget)
 	mw.topSplitter.AddWidget(mw.workArea.QWidget)
 	mw.topSplitter.SetSizes(mw.savedSplitterSizes(prefQtTopSplitterSizes, []int{360, 920}))
 
-	bottomTabs := qt.NewQTabWidget2()
-	bottomTabs.AddTab(mw.alarmPanel.QWidget, "Тривоги")
-	bottomTabs.AddTab(mw.eventLog.QWidget, "Журнал подій")
+	mw.bottomTabs = qt.NewQTabWidget2()
+	mw.bottomTabs.AddTab(mw.alarmPanel.QWidget, "Тривоги")
+	mw.bottomTabs.AddTab(mw.eventLog.QWidget, "Журнал подій")
 
 	mw.mainSplitter = qt.NewQSplitter3(qt.Vertical)
 	mw.mainSplitter.AddWidget(mw.topSplitter.QWidget)
-	mw.mainSplitter.AddWidget(bottomTabs.QWidget)
+	mw.mainSplitter.AddWidget(mw.bottomTabs.QWidget)
 	mw.mainSplitter.SetSizes(mw.savedSplitterSizes(prefQtMainSplitterSizes, []int{650, 250}))
 
 	mw.SetCentralWidget(mw.mainSplitter.QWidget)
+}
+
+func (mw *MainWindow) setBottomTabCount(index int, title string, count int) {
+	if mw == nil || mw.bottomTabs == nil {
+		return
+	}
+	if count > 0 {
+		mw.bottomTabs.SetTabText(index, title+" ("+strconv.Itoa(count)+")")
+		return
+	}
+	mw.bottomTabs.SetTabText(index, title)
 }
 
 func (mw *MainWindow) registerShortcuts() {
@@ -265,13 +297,15 @@ func (mw *MainWindow) restoreTableColumnWidths() {
 		if len(widths) != table.Model().ColumnCount(qt.NewQModelIndex()) {
 			continue
 		}
+		widths = normalizedColumnWidths(key, widths)
+		applyTableColumnMinimums(key, table)
 		for column, width := range widths {
 			if width > 0 {
 				table.SetColumnWidth(column, width)
 			}
 		}
 		table.HorizontalHeader().SetSectionResizeMode(qt.QHeaderView__Interactive)
-		table.HorizontalHeader().SetStretchLastSection(true)
+		table.HorizontalHeader().SetStretchLastSection(false)
 		mw.markTableManuallySized(key)
 	}
 	for key, tree := range mw.treeRegistry() {
@@ -282,15 +316,67 @@ func (mw *MainWindow) restoreTableColumnWidths() {
 		if len(widths) == 0 || len(widths) != tree.Model().ColumnCount(qt.NewQModelIndex()) {
 			continue
 		}
+		widths = normalizedColumnWidths(key, widths)
+		applyTreeColumnMinimums(key, tree)
 		for column, width := range widths {
 			if width > 0 {
 				tree.SetColumnWidth(column, width)
 			}
 		}
 		tree.Header().SetSectionResizeMode(qt.QHeaderView__Interactive)
-		tree.Header().SetStretchLastSection(true)
+		tree.Header().SetStretchLastSection(false)
 		mw.markTableManuallySized(key)
 	}
+}
+
+func (mw *MainWindow) installTableColumnPersistence() {
+	for key, table := range mw.tableRegistry() {
+		if table == nil || table.HorizontalHeader() == nil {
+			continue
+		}
+		tableKey := key
+		table.HorizontalHeader().OnSectionResized(func(logicalIndex int, oldSize int, newSize int) {
+			if oldSize == newSize || logicalIndex < 0 {
+				return
+			}
+			if isProgrammaticColumnResize() {
+				return
+			}
+			mw.markTableManuallySized(tableKey)
+			mw.scheduleTableColumnPersistence()
+		})
+	}
+	for key, tree := range mw.treeRegistry() {
+		if tree == nil || tree.Header() == nil {
+			continue
+		}
+		treeKey := key
+		tree.Header().OnSectionResized(func(logicalIndex int, oldSize int, newSize int) {
+			if oldSize == newSize || logicalIndex < 0 {
+				return
+			}
+			if isProgrammaticColumnResize() {
+				return
+			}
+			mw.markTableManuallySized(treeKey)
+			mw.scheduleTableColumnPersistence()
+		})
+	}
+}
+
+func (mw *MainWindow) scheduleTableColumnPersistence() {
+	if mw == nil {
+		return
+	}
+	if mw.persistTimer == nil {
+		mw.persistTimer = qt.NewQTimer()
+		mw.persistTimer.SetSingleShot(true)
+		mw.persistTimer.SetInterval(500)
+		mw.persistTimer.OnTimeout(func() {
+			mw.persistTableColumnWidths()
+		})
+	}
+	mw.persistTimer.Start2()
 }
 
 func (mw *MainWindow) markTableManuallySized(key string) {
@@ -309,7 +395,7 @@ func (mw *MainWindow) markTableManuallySized(key string) {
 		}
 	case "object_zones", "object_zones_flat", "object_contacts", "object_events":
 		if mw.workArea != nil {
-			mw.workArea.autoSized = true
+			mw.workArea.markColumnsSized(key)
 		}
 	}
 }
@@ -328,6 +414,7 @@ func (mw *MainWindow) persistTableColumnWidths() {
 		for column := 0; column < count; column++ {
 			widths = append(widths, table.ColumnWidth(column))
 		}
+		widths = normalizedColumnWidths(key, widths)
 		prefs.SetString(prefQtTablePrefix+key+".widths", encodeSizes(widths))
 	}
 	for key, tree := range mw.treeRegistry() {
@@ -339,8 +426,87 @@ func (mw *MainWindow) persistTableColumnWidths() {
 		for column := 0; column < count; column++ {
 			widths = append(widths, tree.ColumnWidth(column))
 		}
+		widths = normalizedColumnWidths(key, widths)
 		prefs.SetString(prefQtTablePrefix+key+".widths", encodeSizes(widths))
 	}
+}
+
+func normalizedColumnWidths(key string, widths []int) []int {
+	minimums := minimumColumnWidths(key)
+	if len(minimums) == 0 || len(widths) == 0 {
+		return widths
+	}
+	normalized := append([]int(nil), widths...)
+	for column := range normalized {
+		if column < len(minimums) && normalized[column] < minimums[column] {
+			normalized[column] = minimums[column]
+		}
+	}
+	return normalized
+}
+
+func applyTableColumnMinimums(key string, table *qt.QTableView) {
+	if table == nil || table.HorizontalHeader() == nil {
+		return
+	}
+	minimums := minimumColumnWidths(key)
+	if len(minimums) == 0 {
+		table.HorizontalHeader().SetMinimumSectionSize(48)
+		return
+	}
+	table.HorizontalHeader().SetMinimumSectionSize(minSliceValue(minimums, 48))
+	for column, width := range minimums {
+		table.SetColumnWidth(column, maxInt(table.ColumnWidth(column), width))
+	}
+}
+
+func applyTreeColumnMinimums(key string, tree *qt.QTreeView) {
+	if tree == nil || tree.Header() == nil {
+		return
+	}
+	minimums := minimumColumnWidths(key)
+	if len(minimums) == 0 {
+		tree.Header().SetMinimumSectionSize(48)
+		return
+	}
+	tree.Header().SetMinimumSectionSize(minSliceValue(minimums, 48))
+	for column, width := range minimums {
+		tree.SetColumnWidth(column, maxInt(tree.ColumnWidth(column), width))
+	}
+}
+
+func minimumColumnWidths(key string) []int {
+	switch key {
+	case "objects":
+		return []int{72, 190, 240}
+	case "alarms":
+		return []int{92, 70, 180, 260, 92, 92}
+	case "events":
+		return []int{120, 70, 150, 220, 280, 92}
+	case "object_zones_flat":
+		return []int{72, 180, 120, 110}
+	case "object_zones":
+		return []int{82, 170, 72, 180, 120, 110}
+	case "object_contacts":
+		return []int{160, 130, 150, 110}
+	case "object_events":
+		return []int{128, 140, 320}
+	default:
+		return nil
+	}
+}
+
+func minSliceValue(values []int, fallback int) int {
+	if len(values) == 0 {
+		return fallback
+	}
+	minimum := values[0]
+	for _, value := range values[1:] {
+		if value < minimum {
+			minimum = value
+		}
+	}
+	return minimum
 }
 
 func (mw *MainWindow) savedSplitterSizes(key string, fallback []int) []int {

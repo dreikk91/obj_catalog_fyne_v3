@@ -23,6 +23,7 @@ const (
 	phoenixStandStateText      = "СТЕНДИ"
 	phoenixDisarmedStateText   = "БЕЗ ОХОРОНИ"
 	phoenixPartialDisarmedText = "ЧАСТКОВО БЕЗ ОХОРОНИ"
+	phoenixLatestProbeTTL      = time.Second
 )
 
 type PhoenixDataProvider struct {
@@ -285,7 +286,7 @@ func (p *PhoenixDataProvider) GetLatestEventID() (int64, error) {
 	}
 
 	p.objectMu.RLock()
-	if !p.latestProbeAt.IsZero() && time.Since(p.latestProbeAt) < 10*time.Second {
+	if !p.latestProbeAt.IsZero() && time.Since(p.latestProbeAt) < phoenixLatestProbeTTL {
 		value := p.latestProbeValue
 		p.objectMu.RUnlock()
 		return value, nil

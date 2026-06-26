@@ -5,6 +5,8 @@ package qtui
 import (
 	"fmt"
 	"image/color"
+	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -21,6 +23,15 @@ type AlarmPanel struct {
 	*qt.QWidget
 	sourceFilter   *qt.QComboBox
 	severityFilter *qt.QComboBox
+	statusLabel    *qt.QLabel
+	criticalLabel  *qt.QLabel
+	normalLabel    *qt.QLabel
+	filteredLabel  *qt.QLabel
+	selectionLabel *qt.QLabel
+	processButton  *qt.QPushButton
+	pickButton     *qt.QPushButton
+	historyButton  *qt.QPushButton
+	hideHistoryBtn *qt.QPushButton
 	table          *qt.QTableView
 	model          *qt.QStandardItemModel
 	vm             *viewmodels.AlarmListViewModel
@@ -33,11 +44,29 @@ type AlarmPanel struct {
 	filterUpdating  bool
 	allAlarms       []models.Alarm
 	alarmsByID      map[int]models.Alarm
+	groupsByKey     map[string]alarmGroup
+	rowsSignature   string
+	rowsReady       bool
 	selectedAlarmID int
 
 	OnAlarmSelected func(models.Alarm)
 	OnProcessAlarms func([]models.Alarm)
 	OnPickAlarms    func([]models.Alarm)
+	OnCountChanged  func(count int)
+}
+
+type alarmGroup struct {
+	Key           string
+	Source        string
+	ObjectID      int
+	ObjectNumber  string
+	ObjectName    string
+	Address       string
+	Alarms        []models.Alarm
+	Primary       models.Alarm
+	CriticalCount int
+	LatestAt      int64
+	LatestTime    string
 }
 
 func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
@@ -46,25 +75,68 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 		vm:            viewmodels.NewAlarmListViewModel(),
 		caseHistoryVM: viewmodels.NewWorkAreaCaseHistoryViewModel(),
 		alarmsByID:    map[int]models.Alarm{},
+		groupsByKey:   map[string]alarmGroup{},
 		prefs:         prefs,
 	}
 	layout := qt.NewQVBoxLayout(panel.QWidget)
 	panel.model = qt.NewQStandardItemModel2(0, 6)
-	panel.model.SetHorizontalHeaderLabels([]string{"Час", "№", "Об'єкт", "Подія", "Пріоритет", "Джерело"})
+	panel.model.SetHorizontalHeaderLabels(alarmGroupHeaders())
 	addReadOnlyRow(panel.model, []string{"--:--", "-", "Немає активних тривог", "", "", ""})
 
+	header := qt.NewQFrame2()
+	header.SetStyleSheet(`
+		QFrame {
+			background: #fafafa;
+			border: 1px solid #d8d8d8;
+			border-radius: 3px;
+		}
+	`)
+	headerLayout := qt.NewQVBoxLayout(header.QWidget)
+	headerLayout.SetContentsMargins(6, 4, 6, 4)
+	headerLayout.SetSpacing(4)
+
 	toolbar := qt.NewQHBoxLayout2()
-	processButton := qt.NewQPushButton3("Відпрацювати")
-	processButton.OnClicked(func() {
+	panel.statusLabel = qt.NewQLabel3("Тривог немає")
+	panel.statusLabel.SetMinimumWidth(168)
+	panel.statusLabel.SetStyleSheet("font-weight: 700; color: #2f6b3f; border: 0; background: transparent;")
+	toolbar.AddWidget(panel.statusLabel.QWidget)
+
+	panel.criticalLabel = newAlarmMetricLabel("Критичні", "#b3261e", "#fde7e5")
+	panel.normalLabel = newAlarmMetricLabel("Звичайні", "#8a5a00", "#fff2cc")
+	panel.filteredLabel = newAlarmMetricLabel("Груп", "#174ea6", "#e8f0fe")
+	panel.selectionLabel = newAlarmMetricLabel("Вибрано", "#155724", "#e6f4ea")
+	toolbar.AddWidget(panel.criticalLabel.QWidget)
+	toolbar.AddWidget(panel.normalLabel.QWidget)
+	toolbar.AddWidget(panel.filteredLabel.QWidget)
+	toolbar.AddWidget(panel.selectionLabel.QWidget)
+
+	panel.processButton = qt.NewQPushButton3("Відпрацювати")
+	panel.processButton.SetToolTip("Відпрацювати вибрані тривоги")
+	panel.processButton.OnClicked(func() {
 		panel.processSelectedAlarms()
 	})
-	pickButton := qt.NewQPushButton3("Взяти в роботу")
-	pickButton.OnClicked(func() {
+	panel.pickButton = qt.NewQPushButton3("Взяти в роботу")
+	panel.pickButton.SetToolTip("Закріпити вибрані тривоги за оператором")
+	panel.pickButton.OnClicked(func() {
 		panel.pickSelectedAlarms()
 	})
-	toolbar.AddWidget(processButton.QWidget)
-	toolbar.AddWidget(pickButton.QWidget)
-	toolbar.AddStretch()
+	panel.historyButton = qt.NewQPushButton3("Хронологія")
+	panel.historyButton.SetToolTip("Показати хронологію вибраної групи")
+	panel.historyButton.OnClicked(func() {
+		panel.showSelectedHistory()
+	})
+	panel.hideHistoryBtn = qt.NewQPushButton3("Сховати")
+	panel.hideHistoryBtn.SetToolTip("Сховати хронологію")
+	panel.hideHistoryBtn.OnClicked(func() {
+		panel.hideCaseHistory()
+	})
+	panel.processButton.SetEnabled(false)
+	panel.pickButton.SetEnabled(false)
+	panel.historyButton.SetEnabled(false)
+	toolbar.AddWidget(panel.processButton.QWidget)
+	toolbar.AddWidget(panel.pickButton.QWidget)
+	toolbar.AddWidget(panel.historyButton.QWidget)
+	toolbar.AddWidget(panel.hideHistoryBtn.QWidget)
 
 	panel.sourceFilter = qt.NewQComboBox2()
 	panel.sourceFilter.AddItems(viewmodels.BuildObjectSourceOptions(0, 0, 0, 0))
@@ -82,8 +154,28 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 		}
 		panel.applyFilters()
 	})
+	criticalFilterButton := qt.NewQPushButton3("Критичні")
+	criticalFilterButton.SetToolTip("Показати тільки критичні тривоги")
+	criticalFilterButton.OnClicked(func() {
+		panel.severityFilter.SetCurrentText("Критичні")
+	})
+	allFilterButton := qt.NewQPushButton3("Всі")
+	allFilterButton.SetToolTip("Показати всі тривоги")
+	allFilterButton.OnClicked(func() {
+		panel.severityFilter.SetCurrentText("Всі тривоги")
+	})
+	normalFilterButton := qt.NewQPushButton3("Звичайні")
+	normalFilterButton.SetToolTip("Показати тільки звичайні тривоги")
+	normalFilterButton.OnClicked(func() {
+		panel.severityFilter.SetCurrentText("Звичайні")
+	})
+	toolbar.AddStretch()
+	toolbar.AddWidget(criticalFilterButton.QWidget)
+	toolbar.AddWidget(allFilterButton.QWidget)
+	toolbar.AddWidget(normalFilterButton.QWidget)
 	toolbar.AddWidget(panel.sourceFilter.QWidget)
 	toolbar.AddWidget(panel.severityFilter.QWidget)
+	headerLayout.AddLayout(toolbar.QLayout)
 
 	panel.table = qt.NewQTableView2()
 	panel.table.SetModel(panel.model.QAbstractItemModel)
@@ -93,6 +185,21 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	panel.table.SetSelectionMode(qt.QAbstractItemView__ExtendedSelection)
 	panel.table.SetEditTriggers(qt.QAbstractItemView__NoEditTriggers)
 	panel.table.HorizontalHeader().SetStretchLastSection(true)
+	panel.table.VerticalHeader().SetVisible(false)
+	panel.table.SetStyleSheet(`
+		QTableView {
+			gridline-color: #e7e7e7;
+			selection-background-color: #174ea6;
+			selection-color: white;
+		}
+		QHeaderView::section {
+			background: #f7f7f7;
+			border: 0;
+			border-bottom: 1px solid #d5d5d5;
+			padding: 5px;
+			font-weight: 600;
+		}
+	`)
 	panel.table.OnDoubleClicked(func(index *qt.QModelIndex) {
 		if alarm, ok := panel.alarmAtIndex(index); ok && panel.OnProcessAlarms != nil {
 			panel.OnProcessAlarms([]models.Alarm{alarm})
@@ -109,30 +216,153 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 			if panel.OnAlarmSelected != nil {
 				panel.OnAlarmSelected(alarm)
 			}
-			panel.loadCaseHistoryForAlarm(alarm)
+			panel.updateSelectionState()
 			return
 		}
 		panel.selectedAlarmID = 0
-		panel.clearCaseHistory()
+		panel.updateSelectionState()
+	})
+	panel.table.SelectionModel().OnSelectionChanged(func(selected *qt.QItemSelection, deselected *qt.QItemSelection) {
+		panel.updateSelectionState()
 	})
 
 	topWidget := qt.NewQWidget2()
 	topLayout := qt.NewQVBoxLayout(topWidget)
-	topLayout.AddLayout(toolbar.QLayout)
+	topLayout.AddWidget(header.QWidget)
 	topLayout.AddWidget(panel.table.QWidget)
 	topWidget.SetLayout(topLayout.QLayout)
 
 	panel.historyBrowser = qt.NewQTextBrowser(nil)
 	panel.clearCaseHistory()
+	panel.historyBrowser.SetVisible(false)
 
 	splitter := qt.NewQSplitter3(qt.Vertical)
 	splitter.AddWidget(topWidget)
 	splitter.AddWidget(panel.historyBrowser.QWidget)
-	splitter.SetSizes([]int{500, 200})
+	splitter.SetSizes([]int{900, 0})
 
 	layout.AddWidget(splitter.QWidget)
 	panel.SetLayout(layout.QLayout)
+	panel.updateRibbonStats(nil, nil)
+	panel.updateSelectionState()
 	return panel
+}
+
+func newAlarmMetricLabel(title string, color string, background string) *qt.QLabel {
+	label := qt.NewQLabel3(title + ": 0")
+	label.SetMinimumWidth(92)
+	label.SetStyleSheet(fmt.Sprintf(
+		"font-weight: 700; color: %s; background: %s; border: 1px solid %s; border-radius: 3px; padding: 3px 6px;",
+		color,
+		background,
+		color,
+	))
+	return label
+}
+
+func alarmGroupHeaders() []string {
+	return []string{"Остання", "№", "Об'єкт", "Кейс", "Пріоритет", "Джерело"}
+}
+
+func buildAlarmGroups(alarms []models.Alarm) []alarmGroup {
+	if len(alarms) == 0 {
+		return nil
+	}
+
+	byKey := make(map[string]*alarmGroup)
+	order := make([]string, 0, len(alarms))
+	for _, alarm := range alarms {
+		source := viewmodels.ObjectSourceByID(alarm.ObjectID)
+		key := source + ":" + strconv.Itoa(alarm.ObjectID)
+		group, ok := byKey[key]
+		if !ok {
+			group = &alarmGroup{
+				Key:          key,
+				Source:       source,
+				ObjectID:     alarm.ObjectID,
+				ObjectNumber: alarm.GetObjectNumberDisplay(),
+				ObjectName:   strings.TrimSpace(alarm.ObjectName),
+				Address:      strings.TrimSpace(alarm.Address),
+				Primary:      alarm,
+				LatestAt:     alarm.Time.UnixNano(),
+				LatestTime:   alarm.GetTimeDisplay(),
+			}
+			byKey[key] = group
+			order = append(order, key)
+		}
+		group.Alarms = append(group.Alarms, alarm)
+		if alarm.Time.UnixNano() > group.LatestAt {
+			group.LatestAt = alarm.Time.UnixNano()
+			group.LatestTime = alarm.GetTimeDisplay()
+		}
+		if alarm.IsCritical() {
+			group.CriticalCount++
+			if !group.Primary.IsCritical() || alarm.Time.After(group.Primary.Time) {
+				group.Primary = alarm
+			}
+		} else if group.CriticalCount == 0 && alarm.Time.After(group.Primary.Time) {
+			group.Primary = alarm
+		}
+	}
+
+	groups := make([]alarmGroup, 0, len(order))
+	for _, key := range order {
+		group := byKey[key]
+		sort.SliceStable(group.Alarms, func(i, j int) bool {
+			return group.Alarms[i].Time.After(group.Alarms[j].Time)
+		})
+		if group.ObjectName == "" {
+			group.ObjectName = "Об'єкт"
+		}
+		groups = append(groups, *group)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		leftCritical := groups[i].CriticalCount > 0
+		rightCritical := groups[j].CriticalCount > 0
+		if leftCritical != rightCritical {
+			return leftCritical
+		}
+		return groups[i].Primary.Time.After(groups[j].Primary.Time)
+	})
+	return groups
+}
+
+func alarmGroupCaseText(group alarmGroup) string {
+	if len(group.Alarms) == 0 {
+		return ""
+	}
+	parts := []string{strconv.Itoa(len(group.Alarms)) + " трив."}
+	if group.CriticalCount > 0 {
+		parts = append(parts, strconv.Itoa(group.CriticalCount)+" крит.")
+	}
+	if group.Primary.ZoneNumber > 0 {
+		parts = append(parts, "зона "+strconv.Itoa(group.Primary.ZoneNumber))
+	}
+	eventText := strings.TrimSpace(group.Primary.GetTypeDisplay())
+	if group.Primary.Details != "" {
+		eventText += " - " + strings.TrimSpace(group.Primary.Details)
+	}
+	if eventText != "" {
+		parts = append(parts, eventText)
+	}
+	return strings.Join(parts, " | ")
+}
+
+func addColoredReadOnlyGroupRow(model *qt.QStandardItemModel, values []string, groupKey string, textColor color.NRGBA, rowColor color.NRGBA) {
+	items := make([]*qt.QStandardItem, 0, len(values))
+	foreground := qt.NewQColor11(int(textColor.R), int(textColor.G), int(textColor.B), int(textColor.A)).ToQVariant()
+	background := qt.NewQColor11(int(rowColor.R), int(rowColor.G), int(rowColor.B), int(rowColor.A)).ToQVariant()
+	for idx, value := range values {
+		item := qt.NewQStandardItem2(value)
+		item.SetEditable(false)
+		item.SetData(foreground, int(qt.ForegroundRole))
+		item.SetData(background, int(qt.BackgroundRole))
+		if idx == 0 {
+			item.SetData(qt.NewQVariant14(groupKey), int(qt.UserRole))
+		}
+		items = append(items, item)
+	}
+	model.AppendRow(items)
 }
 
 func (panel *AlarmPanel) SetDataProvider(provider contracts.DataProvider) {
@@ -148,6 +378,14 @@ func (panel *AlarmPanel) SetAlarms(alarms []models.Alarm) {
 	}
 	panel.allAlarms = append(panel.allAlarms[:0], alarms...)
 	panel.applyFilters()
+}
+
+func (panel *AlarmPanel) applyColumnWidths() {
+	if panel.autoSized {
+		return
+	}
+	resizeTableToContentsWithMinimums("alarms", panel.table)
+	panel.autoSized = true
 }
 
 func (panel *AlarmPanel) applyFilters() {
@@ -170,36 +408,158 @@ func (panel *AlarmPanel) applyFilters() {
 	}
 
 	filtered := filterAlarmsBySeverity(out.FilteredAlarms, panel.currentSeverityFilter())
+	groups := buildAlarmGroups(filtered)
+	panel.updateRibbonStats(out.FilteredAlarms, groups)
+	if panel.OnCountChanged != nil {
+		panel.OnCountChanged(len(filtered))
+	}
 	panel.alarmsByID = make(map[int]models.Alarm, len(filtered))
+	panel.groupsByKey = make(map[string]alarmGroup, len(groups))
+	signature := alarmGroupRowsSignature(groups)
+	if panel.rowsReady && panel.rowsSignature == signature {
+		for _, alarm := range filtered {
+			panel.alarmsByID[alarm.ID] = alarm
+		}
+		for _, group := range groups {
+			panel.groupsByKey[group.Key] = group
+		}
+		panel.updateSelectionState()
+		return
+	}
+	panel.rowsSignature = signature
+	panel.rowsReady = true
+
+	var columnWidths []int
+	if panel.autoSized {
+		columnWidths = captureTableColumnWidths(panel.table)
+	}
 	panel.model.Clear()
-	panel.model.SetHorizontalHeaderLabels([]string{"Час", "№", "Об'єкт", "Подія", "Пріоритет", "Джерело"})
-	if len(filtered) == 0 {
+	panel.model.SetHorizontalHeaderLabels(alarmGroupHeaders())
+	if len(groups) == 0 {
 		addReadOnlyRow(panel.model, []string{"--:--", "-", "Немає активних тривог", "", "", ""})
+		panel.selectedAlarmID = 0
+		panel.hideCaseHistory()
+		restoreTableColumnWidthsSnapshot("alarms", panel.table, columnWidths)
+		panel.updateSelectionState()
 		return
 	}
 	for _, alarm := range filtered {
 		panel.alarmsByID[alarm.ID] = alarm
+	}
+	for _, group := range groups {
+		panel.groupsByKey[group.Key] = group
 		priority := "звичайна"
-		if alarm.IsCritical() {
+		if group.CriticalCount > 0 {
 			priority = "критична"
 		}
 		rowColor := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 		textColor := color.NRGBA{R: 0, G: 0, B: 0, A: 255}
-		if alarm.IsCritical() {
+		if group.CriticalCount > 0 {
 			rowColor = color.NRGBA{R: 255, G: 220, B: 220, A: 255}
 		}
-		addColoredReadOnlyRow(panel.model, []string{
-			alarm.GetTimeDisplay(),
-			alarm.GetObjectNumberDisplay(),
-			strings.TrimSpace(alarm.ObjectName),
-			alarm.GetTypeDisplay(),
+		addColoredReadOnlyGroupRow(panel.model, []string{
+			group.LatestTime,
+			group.ObjectNumber,
+			strings.TrimSpace(group.ObjectName),
+			alarmGroupCaseText(group),
 			priority,
-			viewmodels.ObjectSourceByID(alarm.ObjectID),
-		}, alarm.ID, textColor, rowColor)
+			group.Source,
+		}, group.Key, textColor, rowColor)
 	}
-	if !panel.autoSized {
-		resizeTableToContents(panel.table)
-		panel.autoSized = true
+	if restoreTableColumnWidthsSnapshot("alarms", panel.table, columnWidths) {
+		panel.updateSelectionState()
+		return
+	}
+	panel.applyColumnWidths()
+	panel.updateSelectionState()
+}
+
+func alarmGroupRowsSignature(groups []alarmGroup) string {
+	var b strings.Builder
+	for _, group := range groups {
+		fmt.Fprintf(
+			&b,
+			"%s:%d:%s:%d:%d:%s:%s:%s|",
+			group.Key,
+			group.ObjectID,
+			group.LatestTime,
+			group.CriticalCount,
+			len(group.Alarms),
+			group.ObjectNumber,
+			strings.TrimSpace(group.ObjectName),
+			alarmGroupCaseText(group),
+		)
+		for _, alarm := range group.Alarms {
+			fmt.Fprintf(&b, "%d:%d:%d:%s;", alarm.ID, alarm.Time.UnixNano(), alarm.SC1, strings.TrimSpace(alarm.Details))
+		}
+		b.WriteByte('|')
+	}
+	return b.String()
+}
+
+func (panel *AlarmPanel) updateRibbonStats(sourceFiltered []models.Alarm, groups []alarmGroup) {
+	if panel == nil {
+		return
+	}
+	criticalCount := 0
+	for _, alarm := range sourceFiltered {
+		if alarm.IsCritical() {
+			criticalCount++
+		}
+	}
+	normalCount := len(sourceFiltered) - criticalCount
+	displayedCount := len(groups)
+	if panel.statusLabel != nil {
+		switch {
+		case len(sourceFiltered) == 0:
+			panel.statusLabel.SetText("Тривог немає")
+			panel.statusLabel.SetStyleSheet("font-weight: 600; color: #2f6b3f; border: 0; background: transparent;")
+		case criticalCount > 0:
+			panel.statusLabel.SetText("Негайна увага")
+			panel.statusLabel.SetStyleSheet("font-weight: 700; color: #b3261e; border: 0; background: transparent;")
+		default:
+			panel.statusLabel.SetText("Активні події")
+			panel.statusLabel.SetStyleSheet("font-weight: 600; color: #8a5a00; border: 0; background: transparent;")
+		}
+	}
+	if panel.criticalLabel != nil {
+		panel.criticalLabel.SetText("Критичні: " + strconv.Itoa(criticalCount))
+	}
+	if panel.normalLabel != nil {
+		panel.normalLabel.SetText("Звичайні: " + strconv.Itoa(normalCount))
+	}
+	if panel.filteredLabel != nil {
+		panel.filteredLabel.SetText("Груп: " + strconv.Itoa(displayedCount))
+	}
+}
+
+func (panel *AlarmPanel) updateSelectionState() {
+	if panel == nil {
+		return
+	}
+	selectedGroups, selectedAlarms := panel.selectedGroupAndAlarmCounts()
+	if panel.selectionLabel != nil {
+		panel.selectionLabel.SetText("Вибрано: " + strconv.Itoa(selectedGroups) + "/" + strconv.Itoa(selectedAlarms))
+	}
+	hasSelection := selectedAlarms > 0
+	if panel.processButton != nil {
+		panel.processButton.SetEnabled(hasSelection)
+		if selectedAlarms > 1 {
+			panel.processButton.SetText("Відпрацювати (" + strconv.Itoa(selectedAlarms) + ")")
+		} else {
+			panel.processButton.SetText("Відпрацювати")
+		}
+	}
+	if panel.pickButton != nil {
+		panel.pickButton.SetEnabled(hasSelection)
+		if selectedAlarms > 1 {
+			panel.pickButton.SetText("Взяти в роботу (" + strconv.Itoa(selectedAlarms) + ")")
+		} else {
+			panel.pickButton.SetText("Взяти в роботу")
+		}
+	}
+	if panel.historyButton != nil {
+		panel.historyButton.SetEnabled(selectedGroups == 1)
 	}
 }
 
@@ -223,12 +583,32 @@ func (panel *AlarmPanel) selectedAlarms() []models.Alarm {
 		if index.Column() != 0 {
 			continue
 		}
-		eventID := panel.model.Data(&index, int(qt.UserRole)).ToInt()
-		if alarm, ok := panel.alarmsByID[eventID]; ok {
-			alarms = append(alarms, alarm)
+		groupKey := panel.model.Data(&index, int(qt.UserRole)).ToString()
+		if group, ok := panel.groupsByKey[groupKey]; ok {
+			alarms = append(alarms, group.Alarms...)
 		}
 	}
 	return alarms
+}
+
+func (panel *AlarmPanel) selectedGroupAndAlarmCounts() (int, int) {
+	if panel == nil || panel.table == nil || panel.model == nil {
+		return 0, 0
+	}
+	selection := panel.table.SelectionModel().SelectedRows()
+	groupCount := 0
+	alarmCount := 0
+	for _, index := range selection {
+		if index.Column() != 0 {
+			continue
+		}
+		groupKey := panel.model.Data(&index, int(qt.UserRole)).ToString()
+		if group, ok := panel.groupsByKey[groupKey]; ok {
+			groupCount++
+			alarmCount += len(group.Alarms)
+		}
+	}
+	return groupCount, alarmCount
 }
 
 func (panel *AlarmPanel) processSelectedAlarms() {
@@ -259,12 +639,12 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 	if !index.IsValid() {
 		return
 	}
-	alarm, ok := panel.alarmAtIndex(index)
+	group, ok := panel.groupAtIndex(index)
 	if !ok {
 		return
 	}
-	alarms := contextMenuAlarms(alarm, panel.selectedAlarms())
-	if len(alarms) == 1 {
+	alarms := contextMenuAlarms(group.Alarms, panel.selectedAlarms())
+	if !selectionContainsAnyAlarm(panel.selectedAlarms(), group.Alarms) {
 		panel.table.SelectRow(index.Row())
 	}
 
@@ -284,24 +664,41 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 	})
 
 	menu.AddSeparator()
-	historyAction := menu.AddActionWithText("Переглянути історію")
+	historyAction := menu.AddActionWithText("Переглянути хронологію групи")
 	historyAction.OnTriggered(func() {
-		panel.viewAlarmHistory(alarm)
+		panel.showGroupHistory(group)
 	})
 
+	menu.AddSeparator()
+	addTableCopyActions(menu, panel.table, index)
+	menu.AddSeparator()
+	addTableColumnActions(menu, "alarms", panel.table, panel.prefs, func() {
+		panel.autoSized = true
+	}, func() {
+		panel.autoSized = false
+	})
 	menu.ExecWithPos(panel.table.MapToGlobalWithQPoint(pos))
 }
 
-func contextMenuAlarms(clicked models.Alarm, selected []models.Alarm) []models.Alarm {
+func contextMenuAlarms(clicked []models.Alarm, selected []models.Alarm) []models.Alarm {
 	if len(selected) <= 1 {
-		return []models.Alarm{clicked}
+		return clicked
 	}
-	for _, alarm := range selected {
-		if alarm.ID == clicked.ID {
-			return selected
+	if selectionContainsAnyAlarm(selected, clicked) {
+		return selected
+	}
+	return clicked
+}
+
+func selectionContainsAnyAlarm(selected []models.Alarm, candidates []models.Alarm) bool {
+	for _, candidate := range candidates {
+		for _, alarm := range selected {
+			if alarm.ID == candidate.ID {
+				return true
+			}
 		}
 	}
-	return []models.Alarm{clicked}
+	return false
 }
 
 func alarmActionText(action string, alarms []models.Alarm) string {
@@ -312,16 +709,58 @@ func alarmActionText(action string, alarms []models.Alarm) string {
 }
 
 func (panel *AlarmPanel) alarmAtIndex(index *qt.QModelIndex) (models.Alarm, bool) {
+	group, ok := panel.groupAtIndex(index)
+	if !ok {
+		return models.Alarm{}, false
+	}
+	return group.Primary, true
+}
+
+func (panel *AlarmPanel) groupAtIndex(index *qt.QModelIndex) (alarmGroup, bool) {
 	if panel == nil || panel.model == nil || index == nil || !index.IsValid() {
-		return models.Alarm{}, false
+		return alarmGroup{}, false
 	}
-	rowIndex := panel.model.Index(index.Row(), 0, nil)
+	parent := qt.NewQModelIndex()
+	rowIndex := panel.model.Index(index.Row(), 0, parent)
 	if rowIndex == nil || !rowIndex.IsValid() {
-		return models.Alarm{}, false
+		runtime.KeepAlive(parent)
+		return alarmGroup{}, false
 	}
-	alarmID := panel.model.Data(rowIndex, int(qt.UserRole)).ToInt()
-	alarm, ok := panel.alarmsByID[alarmID]
-	return alarm, ok
+	groupKey := panel.model.Data(rowIndex, int(qt.UserRole)).ToString()
+	group, ok := panel.groupsByKey[groupKey]
+	runtime.KeepAlive(parent)
+	runtime.KeepAlive(rowIndex)
+	return group, ok
+}
+
+func (panel *AlarmPanel) showSelectedHistory() {
+	if panel == nil || panel.table == nil {
+		return
+	}
+	current := panel.table.SelectionModel().CurrentIndex()
+	group, ok := panel.groupAtIndex(current)
+	if !ok {
+		return
+	}
+	panel.showGroupHistory(group)
+}
+
+func (panel *AlarmPanel) showGroupHistory(group alarmGroup) {
+	if panel == nil {
+		return
+	}
+	if panel.historyBrowser != nil {
+		panel.historyBrowser.SetVisible(true)
+	}
+	panel.viewAlarmHistory(group.Primary)
+}
+
+func (panel *AlarmPanel) hideCaseHistory() {
+	if panel == nil || panel.historyBrowser == nil {
+		return
+	}
+	panel.clearCaseHistory()
+	panel.historyBrowser.SetVisible(false)
 }
 
 func (panel *AlarmPanel) loadCaseHistoryForAlarm(alarm models.Alarm) {

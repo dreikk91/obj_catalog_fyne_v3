@@ -18,7 +18,18 @@ import (
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
+var RunOnMainThread func(f func())
+var programmaticColumnResizeDepth int
+
 func runOnMainThread(f func()) {
+	if RunOnMainThread != nil {
+		RunOnMainThread(f)
+		return
+	}
+	fallbackRunOnMainThread(f)
+}
+
+func fallbackRunOnMainThread(f func()) {
 	timer := qt.NewQTimer()
 	timer.SetSingleShot(true)
 	timer.OnTimeout(func() {
@@ -26,6 +37,18 @@ func runOnMainThread(f func()) {
 		timer.Delete()
 	})
 	timer.Start(0)
+}
+
+func withProgrammaticColumnResize(f func()) {
+	programmaticColumnResizeDepth++
+	defer func() {
+		programmaticColumnResizeDepth--
+	}()
+	f()
+}
+
+func isProgrammaticColumnResize() bool {
+	return programmaticColumnResizeDepth > 0
 }
 
 func colorToHTML(c color.NRGBA) string {
@@ -475,6 +498,21 @@ func setEventRows(model *qt.QStandardItemModel, events []models.Event) {
 	}
 }
 
+func eventRowSignature(event models.Event) string {
+	return fmt.Sprintf(
+		"%d:%d:%d:%d:%d:%s:%s:%s:%s",
+		event.ID,
+		event.ObjectID,
+		event.Time.UnixNano(),
+		event.Type,
+		event.SC1,
+		strings.TrimSpace(event.TypeLabel),
+		strings.TrimSpace(event.ObjectName),
+		strings.TrimSpace(event.ObjectNumber),
+		strings.TrimSpace(event.Details),
+	)
+}
+
 func setGlobalEventRows(model *qt.QStandardItemModel, events []models.Event) {
 	model.Clear()
 	model.SetHorizontalHeaderLabels([]string{"Час", "№", "Подія", "Об'єкт", "Опис", "Джерело"})
@@ -520,6 +558,13 @@ func resizeTableToContents(table *qt.QTableView) {
 	table.HorizontalHeader().SetStretchLastSection(true)
 }
 
+func resizeTableToContentsWithMinimums(key string, table *qt.QTableView) {
+	withProgrammaticColumnResize(func() {
+		resizeTableToContents(table)
+		applyTableColumnMinimums(key, table)
+	})
+}
+
 func resizeTreeToContents(tree *qt.QTreeView) {
 	if tree == nil {
 		return
@@ -532,18 +577,165 @@ func resizeTreeToContents(tree *qt.QTreeView) {
 	tree.Header().SetStretchLastSection(true)
 }
 
+func resizeTreeToContentsWithMinimums(key string, tree *qt.QTreeView) {
+	withProgrammaticColumnResize(func() {
+		resizeTreeToContents(tree)
+		applyTreeColumnMinimums(key, tree)
+	})
+}
+
 func resizeObjectListColumns(table *qt.QTableView) {
 	if table == nil {
 		return
 	}
-	table.ResizeColumnsToContents()
-	header := table.HorizontalHeader()
-	header.SetStretchLastSection(false)
-	header.SetSectionResizeMode(qt.QHeaderView__Interactive)
-	table.SetColumnWidth(0, maxInt(table.ColumnWidth(0), 72))
-	header.SetSectionResizeMode2(0, qt.QHeaderView__ResizeToContents)
-	header.SetSectionResizeMode2(1, qt.QHeaderView__Stretch)
-	header.SetSectionResizeMode2(2, qt.QHeaderView__Stretch)
+	withProgrammaticColumnResize(func() {
+		table.ResizeColumnsToContents()
+		applyTableColumnMinimums("objects", table)
+		header := table.HorizontalHeader()
+		header.SetStretchLastSection(false)
+		header.SetSectionResizeMode(qt.QHeaderView__Interactive)
+		table.SetColumnWidth(0, maxInt(table.ColumnWidth(0), 72))
+		header.SetSectionResizeMode2(0, qt.QHeaderView__ResizeToContents)
+		header.SetSectionResizeMode2(1, qt.QHeaderView__Stretch)
+		header.SetSectionResizeMode2(2, qt.QHeaderView__Stretch)
+	})
+}
+
+func captureTableColumnWidths(table *qt.QTableView) []int {
+	if table == nil || table.Model() == nil {
+		return nil
+	}
+	count := table.Model().ColumnCount(qt.NewQModelIndex())
+	if count == 0 {
+		return nil
+	}
+	widths := make([]int, 0, count)
+	for column := 0; column < count; column++ {
+		widths = append(widths, table.ColumnWidth(column))
+	}
+	return widths
+}
+
+func restoreTableColumnWidthsSnapshot(key string, table *qt.QTableView, widths []int) bool {
+	if table == nil || table.Model() == nil || len(widths) == 0 {
+		return false
+	}
+	if table.Model().ColumnCount(qt.NewQModelIndex()) != len(widths) {
+		return false
+	}
+	withProgrammaticColumnResize(func() {
+		for column, width := range normalizedColumnWidths(key, widths) {
+			if width > 0 {
+				table.SetColumnWidth(column, width)
+			}
+		}
+		table.HorizontalHeader().SetSectionResizeMode(qt.QHeaderView__Interactive)
+		table.HorizontalHeader().SetStretchLastSection(false)
+	})
+	return true
+}
+
+func captureTreeColumnWidths(tree *qt.QTreeView) []int {
+	if tree == nil || tree.Model() == nil {
+		return nil
+	}
+	count := tree.Model().ColumnCount(qt.NewQModelIndex())
+	if count == 0 {
+		return nil
+	}
+	widths := make([]int, 0, count)
+	for column := 0; column < count; column++ {
+		widths = append(widths, tree.ColumnWidth(column))
+	}
+	return widths
+}
+
+func restoreTreeColumnWidthsSnapshot(key string, tree *qt.QTreeView, widths []int) bool {
+	if tree == nil || tree.Model() == nil || len(widths) == 0 {
+		return false
+	}
+	if tree.Model().ColumnCount(qt.NewQModelIndex()) != len(widths) {
+		return false
+	}
+	withProgrammaticColumnResize(func() {
+		for column, width := range normalizedColumnWidths(key, widths) {
+			if width > 0 {
+				tree.SetColumnWidth(column, width)
+			}
+		}
+		tree.Header().SetSectionResizeMode(qt.QHeaderView__Interactive)
+		tree.Header().SetStretchLastSection(false)
+	})
+	return true
+}
+
+func addTableColumnActions(menu *qt.QMenu, key string, table *qt.QTableView, prefs config.Preferences, markSized func(), clearSized func()) {
+	if menu == nil || table == nil {
+		return
+	}
+	autofit := menu.AddActionWithText("Підігнати колонки")
+	autofit.OnTriggered(func() {
+		resizeTableToContentsWithMinimums(key, table)
+		if markSized != nil {
+			markSized()
+		}
+		saveTableColumnPrefs(key, table, prefs)
+	})
+	reset := menu.AddActionWithText("Скинути ширини колонок")
+	reset.OnTriggered(func() {
+		if prefs != nil {
+			prefs.SetString(prefQtTablePrefix+key+".widths", "")
+		}
+		if clearSized != nil {
+			clearSized()
+		}
+		resizeTableToContentsWithMinimums(key, table)
+	})
+}
+
+func addTableCopyActions(menu *qt.QMenu, table *qt.QTableView, index *qt.QModelIndex) {
+	if menu == nil || table == nil || index == nil || !index.IsValid() {
+		return
+	}
+	cellAction := menu.AddActionWithText("Копіювати клітинку")
+	cellAction.OnTriggered(func() {
+		setClipboardText(tableCellText(index))
+	})
+	rowAction := menu.AddActionWithText("Копіювати рядок")
+	rowAction.OnTriggered(func() {
+		setClipboardText(tableRowText(table, index.Row()))
+	})
+}
+
+func tableCellText(index *qt.QModelIndex) string {
+	if index == nil || !index.IsValid() {
+		return ""
+	}
+	return strings.TrimSpace(index.DataWithRole(int(qt.DisplayRole)).ToString())
+}
+
+func tableRowText(table *qt.QTableView, row int) string {
+	if table == nil || table.Model() == nil || row < 0 {
+		return ""
+	}
+	parent := qt.NewQModelIndex()
+	count := table.Model().ColumnCount(parent)
+	values := make([]string, 0, count)
+	for column := 0; column < count; column++ {
+		index := table.Model().Index(row, column, parent)
+		if index == nil || !index.IsValid() {
+			continue
+		}
+		values = append(values, strings.TrimSpace(index.DataWithRole(int(qt.DisplayRole)).ToString()))
+	}
+	return strings.Join(values, "\t")
+}
+
+func saveTableColumnPrefs(key string, table *qt.QTableView, prefs config.Preferences) {
+	if prefs == nil || table == nil {
+		return
+	}
+	prefs.SetString(prefQtTablePrefix+key+".widths", encodeSizes(normalizedColumnWidths(key, captureTableColumnWidths(table))))
 }
 
 func maxInt(a int, b int) int {

@@ -11,7 +11,7 @@ import (
 func TestContextMenuAlarmsUsesSelectionWhenClickedAlarmIsSelected(t *testing.T) {
 	selected := []models.Alarm{{ID: 1}, {ID: 2}, {ID: 3}}
 
-	got := contextMenuAlarms(models.Alarm{ID: 2}, selected)
+	got := contextMenuAlarms([]models.Alarm{{ID: 2}, {ID: 4}}, selected)
 
 	if len(got) != len(selected) {
 		t.Fatalf("len(context alarms) = %d, want %d", len(got), len(selected))
@@ -24,10 +24,10 @@ func TestContextMenuAlarmsUsesSelectionWhenClickedAlarmIsSelected(t *testing.T) 
 }
 
 func TestContextMenuAlarmsFallsBackToClickedAlarmOutsideSelection(t *testing.T) {
-	got := contextMenuAlarms(models.Alarm{ID: 9}, []models.Alarm{{ID: 1}, {ID: 2}})
+	got := contextMenuAlarms([]models.Alarm{{ID: 9}, {ID: 10}}, []models.Alarm{{ID: 1}, {ID: 2}})
 
-	if len(got) != 1 || got[0].ID != 9 {
-		t.Fatalf("context alarms = %+v, want only clicked alarm 9", got)
+	if len(got) != 2 || got[0].ID != 9 || got[1].ID != 10 {
+		t.Fatalf("context alarms = %+v, want clicked group alarms 9 and 10", got)
 	}
 }
 

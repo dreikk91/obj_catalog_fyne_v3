@@ -17,6 +17,7 @@ type EventLogFilterInput struct {
 	AllEvents          []models.Event
 	Period             string
 	SelectedSource     string
+	SeverityFilter     string
 	ImportantOnly      bool
 	ShowForCurrentOnly bool
 	CurrentObjectID    int
@@ -79,7 +80,10 @@ eventLoop:
 			}
 		}
 
-		if input.ImportantOnly && !(event.IsCritical() || event.IsWarning()) {
+		if input.ImportantOnly && input.SeverityFilter == "" && !(event.IsCritical() || event.IsWarning()) {
+			continue
+		}
+		if !eventSeverityMatches(event, input.SeverityFilter) {
 			continue
 		}
 
@@ -115,6 +119,21 @@ eventLoop:
 		CountBridge:  countBridge,
 		CountPhoenix: countPhoenix,
 		CountCASL:    countCASL,
+	}
+}
+
+func eventSeverityMatches(event models.Event, filter string) bool {
+	switch filter {
+	case "", "Всі події":
+		return true
+	case "Критичні":
+		return event.IsCritical()
+	case "Попередження":
+		return event.IsWarning()
+	case "Інформаційні":
+		return !event.IsCritical() && !event.IsWarning()
+	default:
+		return true
 	}
 }
 

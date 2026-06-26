@@ -16,6 +16,11 @@ type WorkAreaDataProvider interface {
 	GetObjectEvents(objectID string) []models.Event
 }
 
+// WorkAreaBaseDetailsProvider can return object, zones, and contacts with one backend request.
+type WorkAreaBaseDetailsProvider interface {
+	GetObjectBaseDetails(objectID string) (fullObject *models.Object, zones []models.Zone, contacts []models.Contact)
+}
+
 // WorkAreaExternalDataProvider описує мінімальні зовнішні дані для полів сигналу/тестів.
 type WorkAreaExternalDataProvider interface {
 	GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time)
@@ -51,10 +56,19 @@ func (vm *WorkAreaViewModel) CanApplyDetails(currentObject *models.Object, reque
 func (vm *WorkAreaViewModel) LoadObjectBaseDetails(provider WorkAreaDataProvider, objectID int) WorkAreaDetails {
 	idStr := strconv.Itoa(objectID)
 
+	if optimized, ok := provider.(WorkAreaBaseDetailsProvider); ok {
+		fullObj, zones, contacts := optimized.GetObjectBaseDetails(idStr)
+		return buildWorkAreaDetails(fullObj, zones, contacts)
+	}
+
 	fullObj := provider.GetObjectByID(idStr)
 	zones := provider.GetZones(idStr)
 	contacts := provider.GetEmployees(idStr)
 
+	return buildWorkAreaDetails(fullObj, zones, contacts)
+}
+
+func buildWorkAreaDetails(fullObj *models.Object, zones []models.Zone, contacts []models.Contact) WorkAreaDetails {
 	details := WorkAreaDetails{
 		Zones:    slices.Clone(zones),
 		Contacts: slices.Clone(contacts),

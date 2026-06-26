@@ -11,6 +11,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/simcommands"
 	"obj_catalog_fyne_v3/pkg/version"
 )
 
@@ -20,19 +21,21 @@ type App struct {
 	mainWindow    *MainWindow
 	adminProvider contracts.AdminProvider
 
-	OnSettingsSaved    func(config.DBConfig, config.UIConfig)
-	OnRefreshRequested func()
-	OnEditObject       func()
-	OnSIMManagement    func()
-	OnDialPhone        func(phone string)
-	OnProcessAlarms    func([]models.Alarm)
-	OnPickAlarms       func([]models.Alarm)
-	OnRunOnMainThread  func(f func())
-	OnAlarmSelected    func(models.Alarm)
-	OnEventSelected    func(models.Event)
+	OnSettingsSaved        func(config.DBConfig, config.UIConfig)
+	OnRefreshRequested     func()
+	OnDiagnosticsRequested func()
+	OnEditObject           func()
+	OnSIMManagement        func()
+	OnSendSIMSMS           func(object models.Object, phone string)
+	OnDialPhone            func(phone string)
+	OnProcessAlarms        func([]models.Alarm)
+	OnPickAlarms           func([]models.Alarm)
+	OnRunOnMainThread      func(f func())
+	OnAlarmSelected        func(models.Alarm)
+	OnEventSelected        func(models.Event)
 }
 
-func NewApp(preferences config.Preferences) *App {
+func NewApp() *App {
 	qapp := qt.NewQApplication(os.Args)
 	qt.QCoreApplication_SetOrganizationName("MOST")
 	qt.QCoreApplication_SetApplicationName("ObjCatalogQt")
@@ -40,15 +43,29 @@ func NewApp(preferences config.Preferences) *App {
 	setNativeWindowsStyle()
 	setDefaultApplicationFont()
 
+	preferences := config.NewQtPreferences("MOST", "ObjCatalogQt")
+
 	app := &App{
 		qapp:        qapp,
 		preferences: preferences,
+	}
+	RunOnMainThread = func(f func()) {
+		if app.OnRunOnMainThread != nil {
+			app.OnRunOnMainThread(f)
+		} else {
+			fallbackRunOnMainThread(f)
+		}
 	}
 	app.mainWindow = NewMainWindow(app)
 	app.mainWindow.OnSettingsRequested = app.ShowSettings
 	app.mainWindow.OnRefreshRequested = func() {
 		if app.OnRefreshRequested != nil {
 			app.OnRefreshRequested()
+		}
+	}
+	app.mainWindow.OnDiagnosticsRequested = func() {
+		if app.OnDiagnosticsRequested != nil {
+			app.OnDiagnosticsRequested()
 		}
 	}
 	app.mainWindow.workArea.OnEditObjectRequested = func() {
@@ -159,7 +176,18 @@ func (a *App) ShowSIMManagement(object models.Object, usageText string) {
 		vf = a.adminProvider
 		ks = a.adminProvider
 	}
-	ShowSIMManagementDialog(a.mainWindow.QWidget, object, usageText, vf, ks)
+	ShowSIMManagementDialog(a.mainWindow.QWidget, object, usageText, vf, ks, func(object models.Object, phone string) {
+		if a.OnSendSIMSMS != nil {
+			a.OnSendSIMSMS(object, phone)
+		}
+	})
+}
+
+func (a *App) ShowSIMSMS(object models.Object, phone string, cfg config.OmnicellConfig) ([]simcommands.SMSCommand, bool) {
+	if a == nil || a.mainWindow == nil {
+		return nil, false
+	}
+	return ShowSIMSMSDialog(a.mainWindow.QWidget, object, phone, cfg)
 }
 
 func (a *App) ProcessAlarmDialog(alarm models.Alarm, options []contracts.AlarmProcessingOption) (AlarmProcessInput, bool) {
@@ -225,6 +253,13 @@ func (a *App) SetObjectDetails(object models.Object, zones []models.Zone, contac
 	if a.mainWindow.eventLog != nil {
 		a.mainWindow.eventLog.SetCurrentObject(&object)
 	}
+}
+
+func (a *App) RefreshCurrentObjectEvents() {
+	if a == nil || a.mainWindow == nil || a.mainWindow.workArea == nil {
+		return
+	}
+	a.mainWindow.workArea.RefreshEventsIfVisible()
 }
 
 func (a *App) SetObjectLoading(object models.Object) {

@@ -5,7 +5,6 @@ log/*
 pkg/data/mock.go1
 wasm/*
 *.zip
-obj_catalog_fyne_v3
 *.pdf
 *.xlsx
 scripts
@@ -15,7 +14,8 @@ docs
 REFACTORING_PLAN.md
 lint_results.txt
 .qwen
-*
-.log
+*.log
 dist
 node_modules
+*.json
+.tmp

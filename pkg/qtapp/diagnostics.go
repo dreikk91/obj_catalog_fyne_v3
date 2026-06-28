@@ -5,6 +5,7 @@ package qtapp
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/version"
@@ -16,7 +17,7 @@ func (a *Application) showDiagnostics() {
 	if a == nil || a.ui == nil {
 		return
 	}
-	a.ui.ShowInfo("Діагностика", a.diagnosticsText())
+	a.ui.ShowText("Діагностика", a.diagnosticsText())
 }
 
 func (a *Application) diagnosticsText() string {
@@ -55,10 +56,12 @@ func (a *Application) diagnosticsText() string {
 		b.WriteString("немає вимірів\n")
 		return b.String()
 	}
+	writeDiagnosticsSummary(&b, samples)
 	start := len(samples) - maxDiagnosticsSamples
 	if start < 0 {
 		start = 0
 	}
+	b.WriteString("\nОстанні виміри:\n")
 	for i := len(samples) - 1; i >= start; i-- {
 		sample := samples[i]
 		fmt.Fprintf(
@@ -70,4 +73,47 @@ func (a *Application) diagnosticsText() string {
 		)
 	}
 	return b.String()
+}
+
+type diagnosticsOperationStat struct {
+	count int
+	total time.Duration
+	max   time.Duration
+}
+
+func writeDiagnosticsSummary(b *strings.Builder, samples []qtPerformanceSample) {
+	if b == nil || len(samples) == 0 {
+		return
+	}
+	operations := make([]string, 0, 8)
+	stats := make(map[string]diagnosticsOperationStat, 8)
+	for _, sample := range samples {
+		stat := stats[sample.Operation]
+		if stat.count == 0 {
+			operations = append(operations, sample.Operation)
+		}
+		stat.count++
+		stat.total += sample.Elapsed
+		if sample.Elapsed > stat.max {
+			stat.max = sample.Elapsed
+		}
+		stats[sample.Operation] = stat
+	}
+
+	b.WriteString("Підсумок:\n")
+	for _, operation := range operations {
+		stat := stats[operation]
+		average := time.Duration(0)
+		if stat.count > 0 {
+			average = stat.total / time.Duration(stat.count)
+		}
+		fmt.Fprintf(
+			b,
+			"%-22s count %3d  avg %4d мс  max %4d мс\n",
+			operation,
+			stat.count,
+			average.Milliseconds(),
+			stat.max.Milliseconds(),
+		)
+	}
 }

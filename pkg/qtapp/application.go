@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	qt "github.com/mappu/miqt/qt6"
 	"github.com/rs/zerolog/log"
@@ -17,6 +18,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/dataruntime"
 	"obj_catalog_fyne_v3/pkg/eventbus"
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/omnicell"
 	"obj_catalog_fyne_v3/pkg/qtui"
@@ -90,8 +92,12 @@ func NewApplication() *Application {
 	app.ui.OnSettingsSaved = app.applySettings
 	app.ui.OnRefreshRequested = app.refreshData
 	app.ui.OnDiagnosticsRequested = app.showDiagnostics
+	app.ui.OnCreateObject = app.createObject
+	app.ui.OnCreateCASLObject = app.createCASLObject
 	app.ui.OnEditObject = app.editCurrentObject
 	app.ui.OnSIMManagement = app.showCurrentObjectSIM
+	app.ui.OnBridgeMode = app.setBridgeMonitoringMode
+	app.ui.OnCASLBlock = app.showCASLObjectBlock
 	app.ui.OnSendSIMSMS = app.sendSIMSMS
 	app.ui.OnDialPhone = app.dialPhone
 	app.ui.OnProcessAlarms = app.processAlarms
@@ -297,7 +303,15 @@ func (a *Application) editCurrentObject() {
 		a.ui.ShowInfo("Редагування об'єкта", "Оберіть об'єкт у списку.")
 		return
 	}
-	admin, ok := a.adminProvider()
+	if ids.IsCASLObjectID(a.currentObject.ID) {
+		a.openCASLObjectEditor(int64(a.currentObject.ID), false)
+		return
+	}
+	if a.runtime == nil || a.runtime.Provider == nil {
+		a.ui.ShowInfo("Редагування об'єкта", "Джерела даних ще не підключені.")
+		return
+	}
+	admin, ok := backend.AsAdminProvider(a.runtime.Provider)
 	if !ok {
 		a.ui.ShowInfo("Редагування об'єкта", "Поточне джерело даних не підтримує редагування об'єктів.")
 		return
@@ -308,7 +322,7 @@ func (a *Application) editCurrentObject() {
 		a.ui.ShowError("Редагування об'єкта", "Не вдалося завантажити картку об'єкта: "+err.Error())
 		return
 	}
-	updated, accepted := a.ui.EditObjectCard(card)
+	updated, accepted := a.ui.EditObjectCard(admin, card)
 	if !accepted {
 		return
 	}
@@ -319,6 +333,111 @@ func (a *Application) editCurrentObject() {
 	a.refreshData()
 	a.reselectObject(int(updated.ObjN))
 	a.ui.SetStatus("Картку об'єкта оновлено: " + strconv.FormatInt(updated.ObjN, 10))
+}
+
+func (a *Application) createCASLObject() {
+	a.openCASLObjectEditor(0, true)
+}
+
+func (a *Application) setBridgeMonitoringMode(object models.Object, mode contracts.DisplayBlockMode) {
+	if a == nil || a.runtime == nil || a.runtime.Provider == nil {
+		return
+	}
+	admin, ok := backend.AsAdminProvider(a.runtime.Provider)
+	if !ok {
+		a.ui.ShowInfo("Спостереження МІСТ", "Поточне джерело не підтримує зміну режиму спостереження.")
+		return
+	}
+	number := int64(viewmodels.NumericObjectDisplayNumber(object))
+	a.ui.SetStatus("Зміна режиму об'єкта МІСТ №" + strconv.FormatInt(number, 10) + "...")
+	go func() {
+		err := admin.SetDisplayBlockMode(number, mode)
+		a.runOnMainThread(func() {
+			if err != nil {
+				a.ui.ShowError("Спостереження МІСТ", err.Error())
+				return
+			}
+			a.refreshData()
+			a.ui.SetStatus("Режим об'єкта МІСТ №" + strconv.FormatInt(number, 10) + " оновлено")
+		})
+	}()
+}
+
+func (a *Application) showCASLObjectBlock(object models.Object) {
+	if a == nil || a.runtime == nil || a.runtime.Provider == nil {
+		return
+	}
+	provider, ok := a.runtime.Provider.(contracts.CASLObjectEditorProvider)
+	if !ok {
+		a.ui.ShowInfo("Блокування CASL", "Поточне джерело не підтримує блокування CASL.")
+		return
+	}
+	a.ui.SetStatus("CASL: завантаження стану блокування...")
+	a.ui.ShowCASLObjectBlock(provider, int64(object.ID), func() {
+		a.refreshData()
+		a.ui.SetStatus("Стан блокування CASL оновлено")
+	})
+}
+
+func (a *Application) openCASLObjectEditor(objectID int64, creating bool) {
+	if a == nil || a.ui == nil {
+		return
+	}
+	if a.runtime == nil || a.runtime.Provider == nil {
+		a.ui.ShowInfo("CASL", "Джерела даних ще не підключені.")
+		return
+	}
+	provider, ok := a.runtime.Provider.(contracts.CASLObjectEditorProvider)
+	if !ok {
+		a.ui.ShowInfo("CASL", "CASL editor provider недоступний.")
+		return
+	}
+	a.ui.SetStatus("CASL: завантаження редактора...")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		snapshot, err := provider.GetCASLObjectEditorSnapshot(ctx, objectID)
+		a.runOnMainThread(func() {
+			if err != nil {
+				a.ui.ShowError("CASL", "Не вдалося завантажити редактор: "+err.Error())
+				return
+			}
+			qtui.DeferOnMainThread(func() {
+				savedID, accepted := a.ui.ShowCASLObjectEditor(provider, snapshot, creating)
+				if !accepted {
+					a.ui.SetStatus("CASL: редагування скасовано")
+					return
+				}
+				a.refreshData()
+				a.ui.SetStatus("CASL: об'єкт збережено, obj_id=" + strconv.FormatInt(savedID, 10))
+			})
+		})
+	}()
+}
+
+func (a *Application) createObject() {
+	if a == nil || a.ui == nil {
+		return
+	}
+	if a.runtime == nil || a.runtime.Provider == nil {
+		a.ui.ShowInfo("Створення об'єкта", "Джерела даних ще не підключені.")
+		return
+	}
+	admin, ok := backend.AsAdminProvider(a.runtime.Provider)
+	if !ok {
+		a.ui.ShowInfo("Створення об'єкта", "Поточне джерело даних не підтримує створення об'єктів.")
+		return
+	}
+	card, warnings, accepted := a.ui.CreateObjectCard(admin)
+	if !accepted {
+		return
+	}
+	a.refreshData()
+	a.reselectObject(int(card.ObjN))
+	a.ui.SetStatus("Об'єкт створено: " + strconv.FormatInt(card.ObjN, 10))
+	if len(warnings) > 0 {
+		a.ui.ShowInfo("Створено з попередженнями", "Об'єкт створено, але частина додаткових даних не збережена:\n\n"+strings.Join(warnings, "\n"))
+	}
 }
 
 func (a *Application) showCurrentObjectSIM() {

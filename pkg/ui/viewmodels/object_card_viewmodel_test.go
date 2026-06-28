@@ -41,6 +41,41 @@ func TestObjectCardViewModel_ValidateAndBuildCard_Channel5RequiresHiddenNumber(t
 	}
 }
 
+func TestObjectCardViewModel_ValidateAndBuildCard_RequiresPositiveNumberAndName(t *testing.T) {
+	vm := NewObjectCardViewModel()
+
+	tests := []struct {
+		name  string
+		input ObjectCardInput
+	}{
+		{
+			name: "non-positive number",
+			input: ObjectCardInput{
+				ObjNRaw:     "0",
+				ShortName:   "Obj",
+				ChannelCode: 1,
+				ObjTypeID:   1,
+			},
+		},
+		{
+			name: "empty short name",
+			input: ObjectCardInput{
+				ObjNRaw:     "1234",
+				ChannelCode: 1,
+				ObjTypeID:   1,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := vm.ValidateAndBuildCard(test.input); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
 func TestObjectCardViewModel_ValidateAndBuildCard_ParsesAndBuilds(t *testing.T) {
 	vm := NewObjectCardViewModel()
 

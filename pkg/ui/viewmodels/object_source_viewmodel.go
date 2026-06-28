@@ -26,6 +26,20 @@ func ObjectSourceByID(id int) string {
 	return ObjectSourceBridge
 }
 
+// EventSourceName returns the explicit event source or falls back to its object namespace.
+func EventSourceName(event models.Event) string {
+	switch event.Source {
+	case models.EventSourceCASL:
+		return ObjectSourceCASL
+	case models.EventSourcePhoenix:
+		return ObjectSourcePhoenix
+	case models.EventSourceBridge:
+		return ObjectSourceBridge
+	default:
+		return ObjectSourceByID(event.ObjectID)
+	}
+}
+
 func NormalizeObjectSourceFilter(selected string) string {
 	clean := utils.StripCountSuffix(selected)
 	switch strings.ToLower(clean) {

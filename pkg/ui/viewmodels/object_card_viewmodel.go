@@ -86,6 +86,12 @@ func (vm *ObjectCardViewModel) ValidateAndBuildCard(input ObjectCardInput) (cont
 	if err != nil {
 		return card, fmt.Errorf("некоректний об'єктовий номер")
 	}
+	if objn <= 0 {
+		return card, fmt.Errorf("об'єктовий номер має бути більшим за нуль")
+	}
+	if strings.TrimSpace(input.ShortName) == "" {
+		return card, fmt.Errorf("вкажіть коротку назву об'єкта")
+	}
 	if input.ChannelCode <= 0 {
 		return card, fmt.Errorf("виберіть канал зв'язку")
 	}

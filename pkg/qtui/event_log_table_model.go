@@ -128,7 +128,7 @@ func eventLogCellText(event models.Event, column int) string {
 	case 4:
 		return strings.TrimSpace(event.Details)
 	case 5:
-		return viewmodels.ObjectSourceByID(event.ObjectID)
+		return viewmodels.EventSourceName(event)
 	default:
 		return ""
 	}

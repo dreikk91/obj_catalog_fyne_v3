@@ -729,6 +729,7 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 			ZoneNumber:   number,
 			Details:      details,
 			SC1:          mapCASLEventSC1(eventType),
+			Source:       models.EventSourceCASL,
 		})
 	}
 

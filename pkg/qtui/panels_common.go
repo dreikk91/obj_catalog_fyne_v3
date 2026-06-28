@@ -39,6 +39,13 @@ func fallbackRunOnMainThread(f func()) {
 	timer.Start(0)
 }
 
+// DeferOnMainThread schedules work as a separate Qt event.
+func DeferOnMainThread(f func()) {
+	if f != nil {
+		fallbackRunOnMainThread(f)
+	}
+}
+
 func withProgrammaticColumnResize(f func()) {
 	programmaticColumnResizeDepth++
 	defer func() {
@@ -500,16 +507,17 @@ func setEventRows(model *qt.QStandardItemModel, events []models.Event) {
 
 func eventRowSignature(event models.Event) string {
 	return fmt.Sprintf(
-		"%d:%d:%d:%d:%d:%s:%s:%s:%s",
+		"%d:%d:%d:%s:%d:%s:%s:%s:%s:%s",
 		event.ID,
 		event.ObjectID,
 		event.Time.UnixNano(),
-		event.Type,
+		string(event.Type),
 		event.SC1,
 		strings.TrimSpace(event.TypeLabel),
 		strings.TrimSpace(event.ObjectName),
 		strings.TrimSpace(event.ObjectNumber),
 		strings.TrimSpace(event.Details),
+		string(event.Source),
 	)
 }
 
@@ -524,7 +532,7 @@ func setGlobalEventRows(model *qt.QStandardItemModel, events []models.Event) {
 			event.GetTypeDisplay(),
 			strings.TrimSpace(event.ObjectName),
 			strings.TrimSpace(event.Details),
-			viewmodels.ObjectSourceByID(event.ObjectID),
+			viewmodels.EventSourceName(event),
 		}, event.ObjectID, textColor, rowColor)
 	}
 }

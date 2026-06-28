@@ -91,7 +91,7 @@ eventLoop:
 			continue
 		}
 
-		source := ObjectSourceByID(event.ObjectID)
+		source := EventSourceName(event)
 		countAll++
 		switch source {
 		case ObjectSourceCASL:

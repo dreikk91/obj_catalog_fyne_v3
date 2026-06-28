@@ -31,6 +31,17 @@ func TestObjectSourceHelpers(t *testing.T) {
 	}
 }
 
+func TestEventSourceNameUsesExplicitSourceForSystemEvent(t *testing.T) {
+	event := models.Event{
+		ObjectID: 0,
+		Source:   models.EventSourceCASL,
+	}
+
+	if got := EventSourceName(event); got != ObjectSourceCASL {
+		t.Fatalf("EventSourceName() = %q, want %q", got, ObjectSourceCASL)
+	}
+}
+
 func TestNormalizeObjectSourceFilter(t *testing.T) {
 	tests := []struct {
 		in   string

@@ -9,6 +9,7 @@ import (
 	qt "github.com/mappu/miqt/qt6"
 
 	"obj_catalog_fyne_v3/pkg/config"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
@@ -36,6 +37,8 @@ type ObjectListPanel struct {
 	suppressSelection bool
 	filterUpdating    bool
 	OnObjectSelected  func(models.Object)
+	OnBridgeMode      func(models.Object, contracts.DisplayBlockMode)
+	OnCASLBlock       func(models.Object)
 }
 
 func NewObjectListPanel(prefs config.Preferences) *ObjectListPanel {
@@ -343,6 +346,8 @@ func (panel *ObjectListPanel) showContextMenu(pos *qt.QPoint) {
 	})
 
 	menu.AddSeparator()
+	panel.addMonitoringActions(menu, object)
+	menu.AddSeparator()
 	copyNumberAction := menu.AddActionWithText("Копіювати номер")
 	copyNumberAction.OnTriggered(func() {
 		setClipboardText(viewmodels.ObjectDisplayNumber(object))
@@ -372,6 +377,64 @@ func (panel *ObjectListPanel) showContextMenu(pos *qt.QPoint) {
 		panel.autoSized = false
 	})
 	menu.ExecWithPos(panel.table.MapToGlobalWithQPoint(pos))
+}
+
+func (panel *ObjectListPanel) addMonitoringActions(menu *qt.QMenu, object models.Object) {
+	switch viewmodels.ObjectSourceByID(object.ID) {
+	case viewmodels.ObjectSourceBridge:
+		if panel.OnBridgeMode == nil {
+			return
+		}
+		submenu := menu.AddMenuWithTitle("Режим спостереження МІСТ")
+		current := bridgeDisplayBlockMode(object)
+		for _, option := range []struct {
+			label string
+			mode  contracts.DisplayBlockMode
+		}{
+			{label: "Активне спостереження", mode: contracts.DisplayBlockNone},
+			{label: "Тимчасово зняти зі спостереження", mode: contracts.DisplayBlockTemporaryOff},
+			{label: "Режим налагодження", mode: contracts.DisplayBlockDebug},
+		} {
+			action := submenu.AddActionWithText(option.label)
+			action.SetCheckable(true)
+			action.SetChecked(option.mode == current)
+			action.SetEnabled(option.mode != current)
+			mode := option.mode
+			label := option.label
+			action.OnTriggered(func() {
+				if qt.QMessageBox_Question(
+					panel.table.QWidget,
+					"Режим об'єкта МІСТ",
+					fmt.Sprintf("Встановити для об'єкта №%s режим «%s»?", viewmodels.ObjectDisplayNumber(object), label),
+				) == qt.QMessageBox__Yes {
+					panel.OnBridgeMode(object, mode)
+				}
+			})
+		}
+	case viewmodels.ObjectSourceCASL:
+		if panel.OnCASLBlock == nil {
+			return
+		}
+		label := "Блокувати об'єкт CASL..."
+		if object.MonitoringStatusValue() == models.MonitoringStatusBlocked {
+			label = "Керування блокуванням CASL..."
+		}
+		action := menu.AddActionWithText(label)
+		action.OnTriggered(func() {
+			panel.OnCASLBlock(object)
+		})
+	}
+}
+
+func bridgeDisplayBlockMode(object models.Object) contracts.DisplayBlockMode {
+	switch object.MonitoringStatusValue() {
+	case models.MonitoringStatusBlocked:
+		return contracts.DisplayBlockTemporaryOff
+	case models.MonitoringStatusDebug:
+		return contracts.DisplayBlockDebug
+	default:
+		return contracts.DisplayBlockNone
+	}
 }
 
 func objectListClipboardText(object models.Object) string {

@@ -35,9 +35,11 @@ type MainWindow struct {
 
 	statusLabel *qt.QLabel
 
-	OnSettingsRequested    func()
-	OnRefreshRequested     func()
-	OnDiagnosticsRequested func()
+	OnSettingsRequested     func()
+	OnRefreshRequested      func()
+	OnDiagnosticsRequested  func()
+	OnCreateObjectRequested func()
+	OnCreateCASLRequested   func()
 }
 
 func NewMainWindow(app *App) *MainWindow {
@@ -51,7 +53,6 @@ func NewMainWindow(app *App) *MainWindow {
 	mw.SetStyleSheet(NativeWindowsStyleSheet)
 
 	mw.buildMenuBar()
-	mw.buildToolBar()
 	mw.buildStatusBar()
 	mw.buildLayout()
 	mw.restoreTableColumnWidths()
@@ -65,6 +66,21 @@ func NewMainWindow(app *App) *MainWindow {
 func (mw *MainWindow) buildMenuBar() {
 	menuBar := qt.NewQMenuBar(mw.QWidget)
 	fileMenu := menuBar.AddMenuWithTitle("Файл")
+	createAction := fileMenu.AddActionWithText("Новий об'єкт МІСТ")
+	createAction.SetShortcut(qt.NewQKeySequence2("Ctrl+N"))
+	createAction.OnTriggered(func() {
+		if mw.OnCreateObjectRequested != nil {
+			mw.OnCreateObjectRequested()
+		}
+	})
+	createCASLAction := fileMenu.AddActionWithText("Новий об'єкт CASL")
+	createCASLAction.SetShortcut(qt.NewQKeySequence2("Ctrl+Shift+N"))
+	createCASLAction.OnTriggered(func() {
+		if mw.OnCreateCASLRequested != nil {
+			mw.OnCreateCASLRequested()
+		}
+	})
+	fileMenu.AddSeparator()
 	settingsAction := fileMenu.AddActionWithText("Налаштування")
 	settingsAction.SetShortcut(qt.NewQKeySequence2("Ctrl+,"))
 	settingsAction.OnTriggered(func() {
@@ -101,33 +117,6 @@ func (mw *MainWindow) buildMenuBar() {
 	helpMenu.AddActionWithText("Про програму")
 
 	mw.SetMenuBar(menuBar)
-}
-
-func (mw *MainWindow) buildToolBar() {
-	toolbar := qt.NewQToolBar4("Головна панель", mw.QWidget)
-	toolbar.SetMovable(false)
-	settingsAction := toolbar.AddActionWithText("Налаштування")
-	settingsAction.SetShortcut(qt.NewQKeySequence2("Ctrl+,"))
-	settingsAction.OnTriggered(func() {
-		if mw.OnSettingsRequested != nil {
-			mw.OnSettingsRequested()
-		}
-	})
-	refreshAction := toolbar.AddActionWithText("Оновити")
-	refreshAction.SetShortcut(qt.NewQKeySequence2("Ctrl+R"))
-	refreshAction.OnTriggered(func() {
-		if mw.OnRefreshRequested != nil {
-			mw.OnRefreshRequested()
-		}
-	})
-	toolbar.AddActionWithText("Експорт")
-	diagnosticsAction := toolbar.AddActionWithText("Діагностика")
-	diagnosticsAction.OnTriggered(func() {
-		if mw.OnDiagnosticsRequested != nil {
-			mw.OnDiagnosticsRequested()
-		}
-	})
-	mw.AddToolBarWithToolbar(toolbar)
 }
 
 func (mw *MainWindow) buildStatusBar() {

@@ -10,6 +10,7 @@ import (
 
 	"fyne.io/fyne/v2"
 
+	"obj_catalog_fyne_v3/pkg/caslobject"
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
@@ -162,58 +163,8 @@ func (vm *EditorViewModel) CommitCreationWizard() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		objID, objectID, err := vm.createDraftObject(ctx, draft.Object)
+		_, objectID, err := caslobject.CreateDraft(ctx, vm.provider, draft)
 		if err != nil {
-			fyne.Do(func() {
-				vm.setStatus("Помилка створення")
-				vm.showError(err)
-			})
-			return
-		}
-
-		deviceID, err := vm.createDraftDevice(ctx, draft.Object.Device)
-		if err != nil {
-			fyne.Do(func() {
-				vm.setStatus("Помилка створення")
-				vm.showError(err)
-			})
-			return
-		}
-
-		if err := vm.createDraftLines(ctx, deviceID, draft.Object.Device.Lines); err != nil {
-			fyne.Do(func() {
-				vm.setStatus("Помилка створення")
-				vm.showError(err)
-			})
-			return
-		}
-
-		if err := vm.createDraftObjectImages(ctx, objID, draft.Object.Images); err != nil {
-			fyne.Do(func() {
-				vm.setStatus("Помилка створення")
-				vm.showError(err)
-			})
-			return
-		}
-
-		if err := vm.createDraftRooms(ctx, objID, draft.Object.Rooms); err != nil {
-			fyne.Do(func() {
-				vm.setStatus("Помилка створення")
-				vm.showError(err)
-			})
-			return
-		}
-
-		roomMap, lineMap, err := vm.reloadCreatedMappings(ctx, objectID)
-		if err != nil {
-			fyne.Do(func() {
-				vm.setStatus("Помилка створення")
-				vm.showError(err)
-			})
-			return
-		}
-
-		if err := vm.bindDraftRooms(ctx, objID, deviceID, draft.Object.Rooms, roomMap, lineMap); err != nil {
 			fyne.Do(func() {
 				vm.setStatus("Помилка створення")
 				vm.showError(err)

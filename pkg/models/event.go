@@ -6,7 +6,14 @@ import "time"
 // EventType визначає тип події
 type EventType string
 
+// EventSource identifies the backend that produced an event.
+type EventSource string
+
 const (
+	EventSourceBridge  EventSource = "bridge"
+	EventSourcePhoenix EventSource = "phoenix"
+	EventSourceCASL    EventSource = "casl"
+
 	EventFire              EventType = "fire"               // Пожежа
 	EventBurglary          EventType = "burglary"           // Проникнення/охоронна тривога
 	EventPanic             EventType = "panic"              // Тривожна кнопка/напад
@@ -50,6 +57,7 @@ type Event struct {
 	UserName       string    // Користувач (для постановки/зняття)
 	SC1            int       // Код кольору з БД
 	VisualSeverity VisualSeverity
+	Source         EventSource
 }
 
 // GetTypeDisplay повертає текстовий опис типу події українською

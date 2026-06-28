@@ -24,8 +24,12 @@ type App struct {
 	OnSettingsSaved        func(config.DBConfig, config.UIConfig)
 	OnRefreshRequested     func()
 	OnDiagnosticsRequested func()
+	OnCreateObject         func()
+	OnCreateCASLObject     func()
 	OnEditObject           func()
 	OnSIMManagement        func()
+	OnBridgeMode           func(models.Object, contracts.DisplayBlockMode)
+	OnCASLBlock            func(models.Object)
 	OnSendSIMSMS           func(object models.Object, phone string)
 	OnDialPhone            func(phone string)
 	OnProcessAlarms        func([]models.Alarm)
@@ -68,6 +72,16 @@ func NewApp() *App {
 			app.OnDiagnosticsRequested()
 		}
 	}
+	app.mainWindow.OnCreateObjectRequested = func() {
+		if app.OnCreateObject != nil {
+			app.OnCreateObject()
+		}
+	}
+	app.mainWindow.OnCreateCASLRequested = func() {
+		if app.OnCreateCASLObject != nil {
+			app.OnCreateCASLObject()
+		}
+	}
 	app.mainWindow.workArea.OnEditObjectRequested = func() {
 		if app.OnEditObject != nil {
 			app.OnEditObject()
@@ -76,6 +90,16 @@ func NewApp() *App {
 	app.mainWindow.workArea.OnSIMManagementRequested = func() {
 		if app.OnSIMManagement != nil {
 			app.OnSIMManagement()
+		}
+	}
+	app.mainWindow.objectList.OnBridgeMode = func(object models.Object, mode contracts.DisplayBlockMode) {
+		if app.OnBridgeMode != nil {
+			app.OnBridgeMode(object, mode)
+		}
+	}
+	app.mainWindow.objectList.OnCASLBlock = func(object models.Object) {
+		if app.OnCASLBlock != nil {
+			app.OnCASLBlock(object)
 		}
 	}
 	app.mainWindow.workArea.OnDialPhoneRequested = func(phone string) {
@@ -157,11 +181,40 @@ func (a *App) ShowSettings() {
 	})
 }
 
-func (a *App) EditObjectCard(card contracts.AdminObjectCard) (contracts.AdminObjectCard, bool) {
+func (a *App) EditObjectCard(provider contracts.AdminObjectDialogProvider, card contracts.AdminObjectCard) (contracts.AdminObjectCard, bool) {
 	if a == nil || a.mainWindow == nil {
 		return card, false
 	}
-	return ShowObjectEditDialog(a.mainWindow.QWidget, card)
+	return ShowObjectEditDialog(a.mainWindow.QWidget, provider, card)
+}
+
+func (a *App) CreateObjectCard(provider contracts.AdminObjectDialogProvider) (contracts.AdminObjectCard, []string, bool) {
+	if a == nil || a.mainWindow == nil {
+		return contracts.AdminObjectCard{}, nil, false
+	}
+	return ShowObjectCreateDialog(a.mainWindow.QWidget, provider)
+}
+
+func (a *App) ShowCASLObjectEditor(
+	provider contracts.CASLObjectEditorProvider,
+	snapshot contracts.CASLObjectEditorSnapshot,
+	creating bool,
+) (int64, bool) {
+	if a == nil || a.mainWindow == nil {
+		return 0, false
+	}
+	return ShowCASLObjectDialog(a.mainWindow.QWidget, provider, snapshot, creating)
+}
+
+func (a *App) ShowCASLObjectBlock(
+	provider contracts.CASLObjectEditorProvider,
+	objectID int64,
+	onSuccess func(),
+) {
+	if a == nil || a.mainWindow == nil {
+		return
+	}
+	ShowCASLObjectBlockDialog(a.mainWindow.QWidget, provider, objectID, onSuccess)
 }
 
 func (a *App) ShowSIMManagement(object models.Object, usageText string) {
@@ -206,6 +259,13 @@ func (a *App) ShowInfo(title string, message string) {
 		return
 	}
 	qt.QMessageBox_Information(a.mainWindow.QWidget, title, strings.TrimSpace(message))
+}
+
+func (a *App) ShowText(title string, message string) {
+	if a == nil || a.mainWindow == nil {
+		return
+	}
+	ShowTextDialog(a.mainWindow.QWidget, title, message)
 }
 
 func (a *App) ShowError(title string, message string) {

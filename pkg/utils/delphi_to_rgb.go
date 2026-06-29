@@ -30,7 +30,7 @@ func defaultLightColorMapping() map[int]ColorPair {
 	// --- Критичний рівень: ніжний червоний фон, насичений червоний текст ---
 	critical := ColorPair{
 		Text: color.NRGBA{R: 198, G: 40, B: 40, A: 255},   // #C62828
-		Row:  color.NRGBA{R: 253, G: 236, B: 234, A: 255}, // #FDECEA
+		Row:  color.NRGBA{R: 255, G: 235, B: 238, A: 255}, // #FFEBEE
 	}
 
 	// --- Тривога: теплий помаранчевий фон, яскравий оранж текст ---
@@ -51,10 +51,10 @@ func defaultLightColorMapping() map[int]ColorPair {
 		Row:  color.NRGBA{R: 232, G: 245, B: 233, A: 255}, // #E8F5E9
 	}
 
-	// --- Інфо: нейтральний (білий) фон, темно-сірий текст ---
+	// --- Інфо: нейтральний сіро-блакитний фон, графітовий текст ---
 	info := ColorPair{
-		Text: color.NRGBA{R: 66, G: 66, B: 66, A: 255},    // #424242
-		Row:  color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // #FFFFFF
+		Text: color.NRGBA{R: 66, G: 73, B: 92, A: 255},    // #42495C
+		Row:  color.NRGBA{R: 239, G: 243, B: 247, A: 255}, // #EFF3F7
 	}
 
 	return map[int]ColorPair{
@@ -102,14 +102,14 @@ func defaultLightColorMapping() map[int]ColorPair {
 func defaultDarkColorMapping() map[int]ColorPair {
 	// --- Критичний рівень: темно-червоний фон, світлий червонуватий текст ---
 	critical := ColorPair{
-		Text: color.NRGBA{R: 255, G: 138, B: 128, A: 255}, // #FF8A80
-		Row:  color.NRGBA{R: 78, G: 21, B: 21, A: 255},    // #4E1515
+		Text: color.NRGBA{R: 255, G: 205, B: 210, A: 255}, // #FFCDD2
+		Row:  color.NRGBA{R: 95, G: 45, B: 50, A: 255},    // #5F2D32
 	}
 
 	// --- Тривога: темно-помаранчевий фон, світлий оранж текст ---
 	alarm := ColorPair{
-		Text: color.NRGBA{R: 255, G: 171, B: 145, A: 255}, // #FFAB91
-		Row:  color.NRGBA{R: 78, G: 44, B: 16, A: 255},    // #4E2C10
+		Text: color.NRGBA{R: 255, G: 224, B: 178, A: 255}, // #FFE0B2
+		Row:  color.NRGBA{R: 122, G: 97, B: 62, A: 255},   // #7A613E
 	}
 
 	// --- Попередження: темно-жовтий фон, світлий жовтий текст ---
@@ -126,8 +126,8 @@ func defaultDarkColorMapping() map[int]ColorPair {
 
 	// --- Інфо: нейтральний темний фон, світло-сірий текст ---
 	info := ColorPair{
-		Text: color.NRGBA{R: 189, G: 189, B: 189, A: 255}, // #BDBDBD
-		Row:  color.NRGBA{R: 44, G: 44, B: 44, A: 255},    // #2C2C2C
+		Text: color.NRGBA{R: 225, G: 225, B: 225, A: 255}, // #E1E1E1
+		Row:  color.NRGBA{R: 37, G: 43, B: 62, A: 255},    // #252B3E
 	}
 
 	return map[int]ColorPair{

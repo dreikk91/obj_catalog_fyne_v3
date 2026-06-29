@@ -86,6 +86,60 @@ func TestSelectColorNRGBA_SameGroupSharesColor_Light(t *testing.T) {
 	}
 }
 
+func TestRecoveredFrontendPaletteTokens(t *testing.T) {
+	ResetEventColorsToDefault(false)
+	ResetEventColorsToDefault(true)
+
+	tests := []struct {
+		name string
+		dark bool
+		code int
+		text color.NRGBA
+		row  color.NRGBA
+	}{
+		{
+			name: "light critical",
+			code: 1,
+			text: color.NRGBA{R: 198, G: 40, B: 40, A: 255},
+			row:  color.NRGBA{R: 255, G: 235, B: 238, A: 255},
+		},
+		{
+			name: "light info",
+			code: 6,
+			text: color.NRGBA{R: 66, G: 73, B: 92, A: 255},
+			row:  color.NRGBA{R: 239, G: 243, B: 247, A: 255},
+		},
+		{
+			name: "dark critical",
+			dark: true,
+			code: 1,
+			text: color.NRGBA{R: 255, G: 205, B: 210, A: 255},
+			row:  color.NRGBA{R: 95, G: 45, B: 50, A: 255},
+		},
+		{
+			name: "dark info",
+			dark: true,
+			code: 6,
+			text: color.NRGBA{R: 225, G: 225, B: 225, A: 255},
+			row:  color.NRGBA{R: 37, G: 43, B: 62, A: 255},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var text, row color.NRGBA
+			if test.dark {
+				text, row = SelectColorNRGBADark(test.code)
+			} else {
+				text, row = SelectColorNRGBA(test.code)
+			}
+			if text != test.text || row != test.row {
+				t.Fatalf("palette code %d = text %+v, row %+v; want text %+v, row %+v", test.code, text, row, test.text, test.row)
+			}
+		})
+	}
+}
+
 func TestSetEventTextColor_ChangesOnlyText_Light(t *testing.T) {
 	ResetEventColorsToDefault(false)
 

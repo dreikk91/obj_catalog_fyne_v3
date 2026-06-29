@@ -58,7 +58,7 @@ func TestObjectListRowColors_BridgeGreenRequiresConnectedAndGuarded(t *testing.T
 	}
 }
 
-func TestObjectListRowColors_PhoenixBlockedUsesDedicatedPalette(t *testing.T) {
+func TestObjectListRowColors_PhoenixBlockedUsesSemanticPalette(t *testing.T) {
 	item := models.Object{
 		ID:               1000000077,
 		MonitoringStatus: models.MonitoringStatusBlocked,
@@ -66,12 +66,13 @@ func TestObjectListRowColors_PhoenixBlockedUsesDedicatedPalette(t *testing.T) {
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
-	if text.R != 255 || row.R != 79 || row.G != 109 || row.B != 135 {
-		t.Fatalf("unexpected phoenix blocked colors (light): text=%+v row=%+v", text, row)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	if text != wantText || row != wantRow {
+		t.Fatalf("unexpected phoenix blocked colors: text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
 	}
 }
 
-func TestObjectListRowColors_PhoenixDisarmedUsesDedicatedPalette(t *testing.T) {
+func TestObjectListRowColors_PhoenixDisarmedUsesSemanticPalette(t *testing.T) {
 	item := models.Object{
 		ID:               1000000078,
 		MonitoringStatus: models.MonitoringStatusActive,
@@ -80,8 +81,9 @@ func TestObjectListRowColors_PhoenixDisarmedUsesDedicatedPalette(t *testing.T) {
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
-	if text.R != 255 || row.R != 67 || row.G != 156 || row.B != 199 {
-		t.Fatalf("unexpected phoenix disarmed colors (light): text=%+v row=%+v", text, row)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	if text != wantText || row != wantRow {
+		t.Fatalf("unexpected phoenix disarmed colors: text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
 	}
 }
 
@@ -96,7 +98,8 @@ func TestObjectListRowColors_PhoenixOnlineGuardedDoesNotUseYellow(t *testing.T) 
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
-	if row.R == 225 && row.G == 235 && row.B == 35 {
+	_, warningRow := utils.SelectObjectColorNRGBA(4)
+	if row == warningRow {
 		t.Fatalf("Phoenix online guarded object got colored yellow as if offline: text=%+v row=%+v", text, row)
 	}
 }
@@ -124,8 +127,9 @@ func TestObjectListRowColors_CASLAssignmentWarning(t *testing.T) {
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
-	if text.R != 255 || row.B != 168 {
-		t.Fatalf("unexpected casl assignment colors: text=%+v row=%+v", text, row)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	if text != wantText || row != wantRow {
+		t.Fatalf("unexpected CASL assignment colors: text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
 	}
 }
 

@@ -548,13 +548,7 @@ func eventObjectNumber(event models.Event) string {
 }
 
 func eventRowColors(event models.Event) (color.NRGBA, color.NRGBA) {
-	if event.IsCritical() {
-		return color.NRGBA{R: 120, G: 0, B: 0, A: 255}, color.NRGBA{R: 255, G: 225, B: 225, A: 255}
-	}
-	if event.IsWarning() {
-		return color.NRGBA{R: 80, G: 60, B: 0, A: 255}, color.NRGBA{R: 255, G: 245, B: 205, A: 255}
-	}
-	return color.NRGBA{R: 0, G: 0, B: 0, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	return eventRowColorsBySeverity(event.VisualSeverityValue(), event.SC1)
 }
 
 func resizeTableToContents(table *qt.QTableView) {

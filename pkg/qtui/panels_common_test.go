@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 func TestSC1FromVisualSeverity(t *testing.T) {
@@ -49,6 +50,36 @@ func TestObjectPowerStatusCardState(t *testing.T) {
 			got, _, _ := objectPowerStatusCardState(test.object)
 			if got != test.want {
 				t.Fatalf("objectPowerStatusCardState() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestEventRowColorsUseSemanticPalette(t *testing.T) {
+	tests := []struct {
+		name  string
+		event models.Event
+		code  int
+	}{
+		{name: "critical overrides SC1", event: models.Event{Type: models.EventBurglary, SC1: 6}, code: 1},
+		{name: "warning overrides SC1", event: models.Event{Type: models.EventPowerFail, SC1: 6}, code: 4},
+		{name: "info overrides SC1", event: models.Event{Type: models.EventNotification, SC1: 1}, code: 6},
+		{name: "normal preserves SC1", event: models.Event{Type: models.EventDisarm, SC1: 11}, code: 11},
+		{name: "normal without SC1", event: models.Event{Type: models.EventArm}, code: 10},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gotText, gotRow := eventRowColors(test.event)
+			wantText, wantRow := utils.SelectColorNRGBA(test.code)
+			if gotText != wantText || gotRow != wantRow {
+				t.Fatalf(
+					"eventRowColors() = text %+v, row %+v; want text %+v, row %+v",
+					gotText,
+					gotRow,
+					wantText,
+					wantRow,
+				)
 			}
 		})
 	}

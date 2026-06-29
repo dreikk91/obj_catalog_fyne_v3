@@ -88,8 +88,8 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	header := qt.NewQFrame2()
 	header.SetStyleSheet(`
 		QFrame {
-			background: #fafafa;
-			border: 1px solid #d8d8d8;
+			background: ` + qtSurfaceColor + `;
+			border: 1px solid ` + qtBorderColor + `;
 			border-radius: 3px;
 		}
 	`)
@@ -100,13 +100,13 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	toolbar := qt.NewQHBoxLayout2()
 	panel.statusLabel = qt.NewQLabel3("Тривог немає")
 	panel.statusLabel.SetMinimumWidth(168)
-	panel.statusLabel.SetStyleSheet("font-weight: 700; color: #2f6b3f; border: 0; background: transparent;")
+	panel.statusLabel.SetStyleSheet("font-weight: 700; color: #3D9C3B; border: 0; background: transparent;")
 	toolbar.AddWidget(panel.statusLabel.QWidget)
 
-	panel.criticalLabel = newAlarmMetricLabel("Критичні", "#b3261e", "#fde7e5")
-	panel.normalLabel = newAlarmMetricLabel("Звичайні", "#8a5a00", "#fff2cc")
-	panel.filteredLabel = newAlarmMetricLabel("Груп", "#174ea6", "#e8f0fe")
-	panel.selectionLabel = newAlarmMetricLabel("Вибрано", "#155724", "#e6f4ea")
+	panel.criticalLabel = newAlarmMetricLabel("Критичні", "#C62828", "#FFEBEE")
+	panel.normalLabel = newAlarmMetricLabel("Звичайні", "#FF8F00", "#FFF3E0")
+	panel.filteredLabel = newAlarmMetricLabel("Груп", qtPrimaryColor, qtAltSurfaceColor)
+	panel.selectionLabel = newAlarmMetricLabel("Вибрано", "#3D9C3B", "#E8F5E9")
 	toolbar.AddWidget(panel.criticalLabel.QWidget)
 	toolbar.AddWidget(panel.normalLabel.QWidget)
 	toolbar.AddWidget(panel.filteredLabel.QWidget)
@@ -198,7 +198,7 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	panel.table.SetStyleSheet(`
 		QTableView {
 			gridline-color: #e7e7e7;
-			selection-background-color: #174ea6;
+			selection-background-color: ` + qtPrimaryColor + `;
 			selection-color: white;
 		}
 		QHeaderView::section {
@@ -522,7 +522,7 @@ func (panel *AlarmPanel) updateRibbonStats(sourceFiltered []models.Alarm, groups
 		switch {
 		case len(sourceFiltered) == 0:
 			panel.statusLabel.SetText("Тривог немає")
-			panel.statusLabel.SetStyleSheet("font-weight: 600; color: #2f6b3f; border: 0; background: transparent;")
+			panel.statusLabel.SetStyleSheet("font-weight: 600; color: #3D9C3B; border: 0; background: transparent;")
 		case criticalCount > 0:
 			panel.statusLabel.SetText("Негайна увага")
 			panel.statusLabel.SetStyleSheet("font-weight: 700; color: #b3261e; border: 0; background: transparent;")
@@ -904,7 +904,7 @@ func (panel *AlarmPanel) showCaseHistoryLoading(alarm models.Alarm) {
 	if name := strings.TrimSpace(alarm.ObjectName); name != "" {
 		title += " " + name
 	}
-	panel.historyBrowser.SetHtml(fmt.Sprintf("<div style='color: #1a73e8; font-family: Segoe UI; padding: 10px;'><b>%s</b><br/>Завантаження хронології...</div>", title))
+	panel.historyBrowser.SetHtml(fmt.Sprintf("<div style='color: %s; font-family: Segoe UI; padding: 10px;'><b>%s</b><br/>Завантаження хронології...</div>", qtPrimaryColor, title))
 }
 
 func (panel *AlarmPanel) showEmptyCaseHistory(alarm models.Alarm) {
@@ -930,9 +930,9 @@ func (panel *AlarmPanel) showCaseHistorySourceMessages(alarm models.Alarm, sourc
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf(`
 		<div style="font-family: 'Segoe UI', sans-serif; font-size: 10pt; padding: 10px;">
-			<h4 style="margin: 0 0 10px 0; color: #1a73e8;">%s</h4>
+			<h4 style="margin: 0 0 10px 0; color: %s;">%s</h4>
 			<table width="100%%" cellpadding="4" cellspacing="0" style="border-collapse: collapse;">
-	`, title))
+	`, qtPrimaryColor, title))
 
 	for _, msg := range msgs {
 		textColor, rowColor := eventColorsForSC1(alarmSourceMessageSC1(msg))
@@ -967,9 +967,9 @@ func (panel *AlarmPanel) showCaseHistoryGroup(alarm models.Alarm, group viewmode
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf(`
 		<div style="font-family: 'Segoe UI', sans-serif; font-size: 10pt; padding: 10px;">
-			<h4 style="margin: 0 0 10px 0; color: #1a73e8;">%s</h4>
+			<h4 style="margin: 0 0 10px 0; color: %s;">%s</h4>
 			<table width="100%%" cellpadding="4" cellspacing="0" style="border-collapse: collapse;">
-	`, title))
+	`, qtPrimaryColor, title))
 
 	for _, event := range group.Events {
 		textColor, rowColor := eventRowColors(event)

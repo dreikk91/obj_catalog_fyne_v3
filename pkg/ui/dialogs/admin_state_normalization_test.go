@@ -5,6 +5,7 @@ import (
 
 	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 	frontendv1 "obj_catalog_fyne_v3/pkg/frontendapi/v1"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 func TestAdminDisplayBlockObjectColorsUsesNormalizedStatuses(t *testing.T) {
@@ -12,16 +13,17 @@ func TestAdminDisplayBlockObjectColorsUsesNormalizedStatuses(t *testing.T) {
 		BlockMode:        adminv1.DisplayBlockModeTemporaryOff,
 		MonitoringStatus: frontendv1.MonitoringStatusBlocked,
 	}, false)
-	if text.R != 255 || row.R != 144 {
-		t.Fatalf("blocked colors mismatch: text=%+v row=%+v", text, row)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	if text != wantText || row != wantRow {
+		t.Fatalf("blocked colors mismatch: text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
 	}
 
-	_, offlineRow := adminDisplayBlockObjectColors(adminv1.DisplayBlockObject{
+	offlineText, offlineRow := adminDisplayBlockObjectColors(adminv1.DisplayBlockObject{
 		ConnectionStatus: frontendv1.ConnectionStatusOffline,
 		GuardStatus:      frontendv1.GuardStatusGuarded,
 	}, false)
-	if offlineRow.G != 235 {
-		t.Fatalf("offline colors mismatch: row=%+v", offlineRow)
+	if offlineText != wantText || offlineRow != wantRow {
+		t.Fatalf("offline colors mismatch: text=%+v row=%+v want text=%+v row=%+v", offlineText, offlineRow, wantText, wantRow)
 	}
 }
 

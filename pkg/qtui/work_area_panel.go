@@ -990,11 +990,11 @@ func (panel *WorkAreaPanel) addStatusCard(layout *qt.QHBoxLayout, key string, ti
 	frame := qt.NewQFrame2()
 	frame.SetStyleSheet(`
 		QFrame {
-			border: 1px solid #d0d0d0;
+			border: 1px solid ` + qtBorderColor + `;
 			border-radius: 6px;
 			padding: 6px 12px;
 			min-width: 130px;
-			background: #f5f5f5;
+			background: ` + qtAltSurfaceColor + `;
 		}
 	`)
 	cardLayout := qt.NewQVBoxLayout(frame.QWidget)
@@ -1002,7 +1002,7 @@ func (panel *WorkAreaPanel) addStatusCard(layout *qt.QHBoxLayout, key string, ti
 	cardLayout.SetContentsMargins(6, 4, 6, 4)
 
 	titleLabel := qt.NewQLabel3(title)
-	titleLabel.SetStyleSheet("font-size: 9pt; color: #666; border: 0; background: transparent; padding: 0;")
+	titleLabel.SetStyleSheet("font-size: 9pt; color: " + qtMutedTextColor + "; border: 0; background: transparent; padding: 0;")
 
 	valueLabel := qt.NewQLabel3(initialValue)
 	valueLabel.SetStyleSheet("font-weight: 700; font-size: 10pt; color: #333; border: 0; background: transparent; padding: 0;")
@@ -1032,7 +1032,7 @@ func (panel *WorkAreaPanel) updateStatusIndicators(object models.Object) {
 		case models.GuardStatusDisarmed:
 			panel.setStatusCardState(card, "Знято", "#F57F17", "#FFFDE7")
 		default:
-			panel.setStatusCardState(card, "Невідомо", "#757575", "#F5F5F5")
+			panel.setStatusCardState(card, "Невідомо", qtMutedTextColor, qtAltSurfaceColor)
 		}
 	}
 
@@ -1042,9 +1042,9 @@ func (panel *WorkAreaPanel) updateStatusIndicators(object models.Object) {
 		case models.ConnectionStatusOnline:
 			panel.setStatusCardState(card, "Онлайн", "#2E7D32", "#E8F5E9")
 		case models.ConnectionStatusOffline:
-			panel.setStatusCardState(card, "Втрата зв'язку", "#C62828", "#FDECEA")
+			panel.setStatusCardState(card, "Втрата зв'язку", "#C62828", "#FFEBEE")
 		default:
-			panel.setStatusCardState(card, "Невідомо", "#757575", "#F5F5F5")
+			panel.setStatusCardState(card, "Невідомо", qtMutedTextColor, qtAltSurfaceColor)
 		}
 	}
 
@@ -1060,11 +1060,11 @@ func (panel *WorkAreaPanel) updateStatusIndicators(object models.Object) {
 		case models.MonitoringStatusActive:
 			panel.setStatusCardState(card, "Активний", "#2E7D32", "#E8F5E9")
 		case models.MonitoringStatusBlocked:
-			panel.setStatusCardState(card, "Заблоковано", "#C62828", "#FDECEA")
+			panel.setStatusCardState(card, "Заблоковано", "#C62828", "#FFEBEE")
 		case models.MonitoringStatusDebug:
 			panel.setStatusCardState(card, "Тест/Налагодження", "#F57F17", "#FFFDE7")
 		default:
-			panel.setStatusCardState(card, "Невідомо", "#757575", "#F5F5F5")
+			panel.setStatusCardState(card, "Невідомо", qtMutedTextColor, qtAltSurfaceColor)
 		}
 	}
 }
@@ -1072,11 +1072,11 @@ func (panel *WorkAreaPanel) updateStatusIndicators(object models.Object) {
 func objectPowerStatusCardState(object models.Object) (value string, textColor string, backgroundColor string) {
 	switch {
 	case object.PowerFault > 0:
-		return "Аварія 220В", "#C62828", "#FDECEA"
+		return "Аварія 220В", "#C62828", "#FFEBEE"
 	case object.AkbState > 0:
 		return "Несправність АКБ", "#F57F17", "#FFFDE7"
 	case object.PowerFault < 0 && object.AkbState < 0:
-		return "Невідомо", "#757575", "#F5F5F5"
+		return "Невідомо", qtMutedTextColor, qtAltSurfaceColor
 	default:
 		return "220В та АКБ в нормі", "#2E7D32", "#E8F5E9"
 	}

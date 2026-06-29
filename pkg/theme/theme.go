@@ -12,25 +12,25 @@ import (
 // Кольори статусів - однакові для обох тем
 var (
 	// ColorFire - червоний для пожежі/тривоги
-	ColorFire = color.NRGBA{R: 255, G: 59, B: 48, A: 255} // #FF3B30
+	ColorFire = color.NRGBA{R: 198, G: 40, B: 40, A: 255} // #C62828
 
 	// ColorFault - жовтий для несправності
-	ColorFault = color.NRGBA{R: 255, G: 204, B: 0, A: 255} // #FFCC00
+	ColorFault = color.NRGBA{R: 255, G: 143, B: 0, A: 255} // #FF8F00
 
 	// ColorNormal - зелений для норми
-	ColorNormal = color.NRGBA{R: 52, G: 199, B: 89, A: 255} // #34C759
+	ColorNormal = color.NRGBA{R: 61, G: 156, B: 59, A: 255} // #3D9C3B
 
 	// ColorInfo - синій для інформаційних повідомлень
-	ColorInfo = color.NRGBA{R: 0, G: 122, B: 255, A: 255} // #007AFF
+	ColorInfo = color.NRGBA{R: 69, G: 133, B: 188, A: 255} // #4585BC
 
 	// ColorSelection - колір виділеного рядка
-	ColorSelection = color.NRGBA{R: 0, G: 122, B: 255, A: 255} // Напівпрозорий синій
+	ColorSelection = ColorInfo
 
 	// Семантичні аліаси для UI-компонентів
-	ColorDanger       = ColorFire                                   // Деструктивні дії (видалення тощо)
-	ColorSuccess      = ColorNormal                                 // Успіх / норма
-	ColorWarning      = ColorFault                                  // Попередження / несправність
-	ColorSectionTitle = color.NRGBA{R: 142, G: 142, B: 147, A: 255} // Підзаголовки секцій (#8E8E93)
+	ColorDanger       = ColorFire                                  // Деструктивні дії (видалення тощо)
+	ColorSuccess      = ColorNormal                                // Успіх / норма
+	ColorWarning      = ColorFault                                 // Попередження / несправність
+	ColorSectionTitle = color.NRGBA{R: 96, G: 125, B: 139, A: 255} // #607D8B
 )
 
 // ================== ТЕМНА ТЕМА ==================
@@ -49,25 +49,25 @@ func NewDarkTheme(fontSize float32) fyne.Theme {
 func (t *DarkTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
 	switch name {
 	case theme.ColorNameBackground:
-		return color.NRGBA{R: 28, G: 28, B: 30, A: 255} // #1C1C1E
+		return color.NRGBA{R: 43, G: 49, B: 69, A: 255} // #2B3145
 	case theme.ColorNameButton:
-		return color.NRGBA{R: 44, G: 44, B: 46, A: 255} // #2C2C2E
+		return color.NRGBA{R: 37, G: 43, B: 62, A: 255} // #252B3E
 	case theme.ColorNameDisabledButton:
-		return color.NRGBA{R: 58, G: 58, B: 60, A: 255}
+		return color.NRGBA{R: 61, G: 68, B: 89, A: 255} // #3D4459
 	case theme.ColorNameForeground:
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255} // Білий текст
+		return color.NRGBA{R: 225, G: 225, B: 225, A: 255} // #E1E1E1
 	case theme.ColorNamePlaceHolder:
-		return color.NRGBA{R: 142, G: 142, B: 147, A: 255}
+		return color.NRGBA{R: 178, G: 192, B: 206, A: 255} // #B2C0CE
 	case theme.ColorNamePrimary:
 		return ColorInfo // Синій акцент
 	case theme.ColorNameHover:
-		return color.NRGBA{R: 58, G: 58, B: 60, A: 255}
+		return color.NRGBA{R: 61, G: 68, B: 89, A: 255}
 	case theme.ColorNameInputBackground:
-		return color.NRGBA{R: 44, G: 44, B: 46, A: 255}
+		return color.NRGBA{R: 37, G: 43, B: 62, A: 255}
 	case theme.ColorNameScrollBar:
-		return color.NRGBA{R: 99, G: 99, B: 102, A: 255}
+		return color.NRGBA{R: 91, G: 99, B: 123, A: 255} // #5B637B
 	case theme.ColorNameSeparator:
-		return color.NRGBA{R: 58, G: 58, B: 60, A: 255}
+		return color.NRGBA{R: 61, G: 68, B: 89, A: 255}
 	default:
 		return theme.DefaultTheme().Color(name, theme.VariantDark)
 	}
@@ -115,25 +115,25 @@ func NewLightTheme(fontSize float32) fyne.Theme {
 func (t *LightTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
 	switch name {
 	case theme.ColorNameBackground:
-		return color.NRGBA{R: 242, G: 242, B: 247, A: 255} // #F2F2F7
+		return color.NRGBA{R: 248, G: 249, B: 250, A: 255} // #F8F9FA
 	case theme.ColorNameButton:
 		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	case theme.ColorNameDisabledButton:
-		return color.NRGBA{R: 229, G: 229, B: 234, A: 255}
+		return color.NRGBA{R: 226, G: 230, B: 234, A: 255} // #E2E6EA
 	case theme.ColorNameForeground:
-		return color.NRGBA{R: 0, G: 0, B: 0, A: 255} // Чорний текст
+		return color.NRGBA{R: 33, G: 37, B: 41, A: 255} // #212529
 	case theme.ColorNamePlaceHolder:
-		return color.NRGBA{R: 142, G: 142, B: 147, A: 255}
+		return color.NRGBA{R: 96, G: 125, B: 139, A: 255} // #607D8B
 	case theme.ColorNamePrimary:
 		return ColorInfo // Синій акцент
 	case theme.ColorNameHover:
-		return color.NRGBA{R: 229, G: 229, B: 234, A: 255}
+		return color.NRGBA{R: 239, G: 243, B: 247, A: 255} // #EFF3F7
 	case theme.ColorNameInputBackground:
 		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 	case theme.ColorNameScrollBar:
-		return color.NRGBA{R: 174, G: 174, B: 178, A: 255}
+		return color.NRGBA{R: 178, G: 192, B: 206, A: 255} // #B2C0CE
 	case theme.ColorNameSeparator:
-		return color.NRGBA{R: 199, G: 199, B: 204, A: 255}
+		return color.NRGBA{R: 177, G: 191, B: 205, A: 255} // #B1BFCD
 	default:
 		return theme.DefaultTheme().Color(name, theme.VariantLight)
 	}

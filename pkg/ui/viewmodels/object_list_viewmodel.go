@@ -291,28 +291,6 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 		selectObjectColor = utils.SelectObjectColorNRGBADark
 	}
 
-	// Спеціальні випадки для Phoenix
-	if ids.IsPhoenixObjectID(item.ID) &&
-		item.MonitoringStatusValue() == models.MonitoringStatusBlocked &&
-		item.SeverityValue() == models.VisualSeverityNormal &&
-		item.Status == models.StatusNormal {
-		if isDark {
-			return color.NRGBA{R: 232, G: 239, B: 246, A: 255}, color.NRGBA{R: 54, G: 74, B: 92, A: 255}
-		}
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 79, G: 109, B: 135, A: 255}
-	}
-
-	if ids.IsPhoenixObjectID(item.ID) &&
-		item.MonitoringStatusValue() == models.MonitoringStatusActive &&
-		item.GuardStatusValue() == models.GuardStatusDisarmed &&
-		item.SeverityValue() == models.VisualSeverityNormal &&
-		item.Status == models.StatusNormal {
-		if isDark {
-			return color.NRGBA{R: 225, G: 244, B: 255, A: 255}, color.NRGBA{R: 37, G: 96, B: 128, A: 255}
-		}
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 67, G: 156, B: 199, A: 255}
-	}
-
 	// Пріоритети кольорів (зверху вниз):
 	// 1) блокування, 2) тривога, 3) технічна/пожежна несправність,
 	// 4) втрата зв'язку, 5) проблема приписки/конфігурації, 6) інші стани.
@@ -336,16 +314,13 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 	}
 
 	if ids.IsCASLObjectID(item.ID) && !item.HasAssignment {
-		if isDark {
-			return color.NRGBA{R: 240, G: 243, B: 255, A: 255}, color.NRGBA{R: 52, G: 70, B: 98, A: 255}
-		}
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 77, G: 112, B: 168, A: 255}
+		return selectObjectColor(4)
 	}
 
 	if !ids.IsCASLObjectID(item.ID) && !ids.IsPhoenixObjectID(item.ID) &&
 		strings.TrimSpace(item.SubServerA) == "" && strings.TrimSpace(item.SubServerB) == "" {
 		// Для МІСТ/БД підсервери мають бути заповнені.
-		return color.NRGBA{R: 210, G: 0, B: 0, A: 255}, color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		return selectObjectColor(2)
 	}
 
 	if item.GuardStatusValue() == models.GuardStatusDisarmed {

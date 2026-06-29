@@ -27,15 +27,9 @@ func adminDisplayBlockObjectColors(item adminv1.DisplayBlockObject, isDark bool)
 
 	switch item.MonitoringStatus {
 	case frontendv1.MonitoringStatusBlocked:
-		if isDark {
-			return color.NRGBA{R: 230, G: 220, B: 245, A: 255}, color.NRGBA{R: 98, G: 52, B: 125, A: 255}
-		}
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 144, G: 64, B: 196, A: 255}
+		return selectObjectColor(4)
 	case frontendv1.MonitoringStatusDebug:
-		if isDark {
-			return color.NRGBA{R: 238, G: 236, B: 195, A: 255}, color.NRGBA{R: 95, G: 96, B: 42, A: 255}
-		}
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 128, G: 128, B: 0, A: 255}
+		return selectObjectColor(6)
 	}
 
 	if item.VisualSeverity == frontendv1.VisualSeverityCritical {
@@ -45,16 +39,10 @@ func adminDisplayBlockObjectColors(item adminv1.DisplayBlockObject, isDark bool)
 		return selectObjectColor(2)
 	}
 	if item.ConnectionStatus == frontendv1.ConnectionStatusOffline {
-		if isDark {
-			return color.NRGBA{R: 255, G: 250, B: 180, A: 255}, color.NRGBA{R: 90, G: 90, B: 20, A: 255}
-		}
-		return color.NRGBA{R: 0, G: 0, B: 0, A: 255}, color.NRGBA{R: 225, G: 235, B: 35, A: 255}
+		return selectObjectColor(4)
 	}
 	if item.GuardStatus == frontendv1.GuardStatusDisarmed {
-		if isDark {
-			return color.NRGBA{R: 230, G: 230, B: 250, A: 255}, color.NRGBA{R: 100, G: 15, B: 120, A: 255}
-		}
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 170, G: 14, B: 201, A: 255}
+		return selectObjectColor(4)
 	}
 
 	return selectObjectColor(10)
@@ -143,7 +131,7 @@ func ShowDisplayBlockingDialog(parent fyne.Window, provider adminv1.DisplayBlock
 			textColor, rowColor := calcObjectColors(item)
 
 			if id.Row == selectedRow {
-				bg.FillColor = color.NRGBA{R: 33, G: 112, B: 214, A: 255}
+				bg.FillColor = color.NRGBA{R: 69, G: 133, B: 188, A: 255}
 				txt.Color = color.NRGBA{R: 255, G: 255, B: 255, A: 255}
 			} else {
 				bg.FillColor = rowColor

@@ -56,6 +56,8 @@ type Alarm struct {
 	InProgressBy              string // Хто зараз обробляє
 	InProgressUser            string // Ідентифікатор оператора, що взяв у роботу
 	IsOwnedByMe               bool   // Чи поточний оператор володіє тривогою
+	CanTakeOver               bool   // Чи дозволено перехопити тривогу в іншого оператора
+	CanProcess                bool   // Чи дозволено завершити тривогу в поточному стані
 	ResponseGroupID           string // Ідентифікатор призначеної МГР
 	IsResponseGroupDispatched bool   // Чи вислана МГР
 	IsResponseGroupArrived    bool   // Чи МГР відмічена як така, що прибула

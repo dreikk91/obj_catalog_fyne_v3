@@ -67,6 +67,33 @@ func (p *frontendTestDataProvider) ProcessAlarm(string, string, string) error {
 	return nil
 }
 
+func TestFrontendAlarmCapabilitiesBlockForeignPhoenixOwner(t *testing.T) {
+	item := mapFrontendAlarmItem(models.Alarm{
+		ObjectID:     ids.PhoenixObjectIDNamespaceStart,
+		IsInProgress: true,
+		InProgressBy: "Інший оператор",
+		IsOwnedByMe:  false,
+	})
+	if item.CanProcess {
+		t.Fatal("foreign Phoenix alarm must not be processable")
+	}
+	if item.CanTakeOver {
+		t.Fatal("Phoenix alarm takeover must not be offered")
+	}
+}
+
+func TestEnsureAlarmActionOwnershipRejectsForeignCASLAlarm(t *testing.T) {
+	err := ensureAlarmActionOwnership(models.Alarm{
+		ObjectID:     ids.CASLObjectIDNamespaceStart,
+		IsInProgress: true,
+		InProgressBy: "Оператор 2",
+		IsOwnedByMe:  false,
+	})
+	if !errors.Is(err, contracts.ErrAlarmOwnershipConflict) {
+		t.Fatalf("ownership error = %v", err)
+	}
+}
+
 type frontendTestAdminMutator struct {
 	currentCard  contracts.AdminObjectCard
 	createdCards []contracts.AdminObjectCard

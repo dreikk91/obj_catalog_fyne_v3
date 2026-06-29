@@ -21,22 +21,25 @@ type App struct {
 	mainWindow    *MainWindow
 	adminProvider contracts.AdminProvider
 
-	OnSettingsSaved        func(config.DBConfig, config.UIConfig)
-	OnRefreshRequested     func()
-	OnDiagnosticsRequested func()
-	OnCreateObject         func()
-	OnCreateCASLObject     func()
-	OnEditObject           func()
-	OnSIMManagement        func()
-	OnBridgeMode           func(models.Object, contracts.DisplayBlockMode)
-	OnCASLBlock            func(models.Object)
-	OnSendSIMSMS           func(object models.Object, phone string)
-	OnDialPhone            func(phone string)
-	OnProcessAlarms        func([]models.Alarm)
-	OnPickAlarms           func([]models.Alarm)
-	OnRunOnMainThread      func(f func())
-	OnAlarmSelected        func(models.Alarm)
-	OnEventSelected        func(models.Event)
+	OnSettingsSaved           func(config.DBConfig, config.UIConfig)
+	OnRefreshRequested        func()
+	OnDiagnosticsRequested    func()
+	OnResponseGroupsRequested func()
+	OnOperationalMapRequested func()
+	OnCreateObject            func()
+	OnCreateCASLObject        func()
+	OnEditObject              func()
+	OnSIMManagement           func()
+	OnBridgeMode              func(models.Object, contracts.DisplayBlockMode)
+	OnCASLBlock               func(models.Object)
+	OnSendSIMSMS              func(object models.Object, phone string)
+	OnDialPhone               func(phone string)
+	OnProcessAlarms           func([]models.Alarm)
+	OnPickAlarms              func([]models.Alarm)
+	OnRespondAlarm            func(models.Alarm)
+	OnRunOnMainThread         func(f func())
+	OnAlarmSelected           func(models.Alarm)
+	OnEventSelected           func(models.Event)
 }
 
 func NewApp() *App {
@@ -70,6 +73,16 @@ func NewApp() *App {
 	app.mainWindow.OnDiagnosticsRequested = func() {
 		if app.OnDiagnosticsRequested != nil {
 			app.OnDiagnosticsRequested()
+		}
+	}
+	app.mainWindow.OnResponseGroupsRequested = func() {
+		if app.OnResponseGroupsRequested != nil {
+			app.OnResponseGroupsRequested()
+		}
+	}
+	app.mainWindow.OnOperationalMapRequested = func() {
+		if app.OnOperationalMapRequested != nil {
+			app.OnOperationalMapRequested()
 		}
 	}
 	app.mainWindow.OnCreateObjectRequested = func() {
@@ -115,6 +128,11 @@ func NewApp() *App {
 	app.mainWindow.alarmPanel.OnPickAlarms = func(alarms []models.Alarm) {
 		if app.OnPickAlarms != nil {
 			app.OnPickAlarms(alarms)
+		}
+	}
+	app.mainWindow.alarmPanel.OnRespondAlarm = func(alarm models.Alarm) {
+		if app.OnRespondAlarm != nil {
+			app.OnRespondAlarm(alarm)
 		}
 	}
 	app.mainWindow.workArea.OnRunOnMainThread = func(f func()) {
@@ -254,6 +272,17 @@ func (a *App) ProcessAlarmsDialog(alarms []models.Alarm, options []contracts.Ala
 	return ShowAlarmProcessDialogForAlarms(a.mainWindow.QWidget, alarms, options)
 }
 
+func (a *App) ShowAlarmResponseDialog(
+	alarm models.Alarm,
+	groups []contracts.FrontendResponseGroup,
+	history []models.AlarmMsg,
+) (AlarmResponseInput, bool) {
+	if a == nil || a.mainWindow == nil {
+		return AlarmResponseInput{}, false
+	}
+	return ShowAlarmResponseDialog(a.mainWindow.QWidget, alarm, groups, history)
+}
+
 func (a *App) ShowInfo(title string, message string) {
 	if a == nil || a.mainWindow == nil {
 		return
@@ -266,6 +295,31 @@ func (a *App) ShowText(title string, message string) {
 		return
 	}
 	ShowTextDialog(a.mainWindow.QWidget, title, message)
+}
+
+func (a *App) ShowDiagnostics(report DiagnosticsReport) {
+	if a == nil || a.mainWindow == nil {
+		return
+	}
+	ShowDiagnosticsDialog(a.mainWindow.QWidget, report)
+}
+
+func (a *App) ShowResponseGroups(groups []contracts.FrontendResponseGroup, reload ResponseGroupsReload) {
+	if a == nil || a.mainWindow == nil {
+		return
+	}
+	ShowResponseGroupsDialog(a.mainWindow.QWidget, groups, reload)
+}
+
+func (a *App) ShowOperationalMap(
+	objects []models.Object,
+	alarms []models.Alarm,
+	groups []contracts.FrontendResponseGroup,
+) (int, bool) {
+	if a == nil || a.mainWindow == nil {
+		return 0, false
+	}
+	return ShowOperationalMapDialog(a.mainWindow.QWidget, objects, alarms, groups)
 }
 
 func (a *App) ShowError(title string, message string) {

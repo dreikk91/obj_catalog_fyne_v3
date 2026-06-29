@@ -82,14 +82,51 @@ func buildWorkAreaDetails(fullObj *models.Object, zones []models.Zone, contacts 
 
 // LoadObjectEvents повертає лише журнал подій об'єкта з урахуванням ліміту.
 func (vm *WorkAreaViewModel) LoadObjectEvents(provider WorkAreaDataProvider, objectID int, eventLimit int) []models.Event {
+	return vm.LoadObjectEventsRange(provider, objectID, eventLimit, time.Time{}, time.Time{})
+}
+
+// LoadObjectEventsRange loads and sorts an object's journal for the selected time range.
+func (vm *WorkAreaViewModel) LoadObjectEventsRange(
+	provider WorkAreaDataProvider,
+	objectID int,
+	eventLimit int,
+	from time.Time,
+	to time.Time,
+) []models.Event {
 	idStr := strconv.Itoa(objectID)
-	events := sortEventsByTimeDesc(provider.GetObjectEvents(idStr))
+	var events []models.Event
+	if ranged, ok := provider.(interface {
+		GetObjectEventsRange(string, time.Time, time.Time) []models.Event
+	}); ok && (!from.IsZero() || !to.IsZero()) {
+		events = ranged.GetObjectEventsRange(idStr, from, to)
+	} else {
+		events = provider.GetObjectEvents(idStr)
+	}
+	events = filterWorkAreaEventsRange(events, from, to)
+	events = sortEventsByTimeDesc(events)
 
 	if eventLimit > 0 && len(events) > eventLimit {
 		events = events[:eventLimit]
 	}
 
 	return slices.Clone(events)
+}
+
+func filterWorkAreaEventsRange(events []models.Event, from time.Time, to time.Time) []models.Event {
+	if from.IsZero() && to.IsZero() {
+		return events
+	}
+	result := make([]models.Event, 0, len(events))
+	for _, event := range events {
+		if !from.IsZero() && event.Time.Before(from) {
+			continue
+		}
+		if !to.IsZero() && event.Time.After(to) {
+			continue
+		}
+		result = append(result, event)
+	}
+	return result
 }
 
 func (vm *WorkAreaViewModel) LoadExternalData(provider WorkAreaExternalDataProvider, objectID int) WorkAreaExternalData {

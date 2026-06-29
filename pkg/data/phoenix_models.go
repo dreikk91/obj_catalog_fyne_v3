@@ -31,6 +31,8 @@ type phoenixObjectGroupRow struct {
 	PanelTechInfo sql.NullString `db:"additional_technical_information"`
 	Sim1Number    sql.NullString `db:"sim1_number"`
 	Sim2Number    sql.NullString `db:"sim2_number"`
+	Latitude      sql.NullString `db:"latitude"`
+	Longitude     sql.NullString `db:"longitude"`
 }
 
 type phoenixOfflinePanelRow struct {
@@ -129,9 +131,15 @@ type phoenixAvailableStateRow struct {
 }
 
 type phoenixResponseGroupRow struct {
-	GroupID     int64          `db:"group_id"`
-	Description string         `db:"description"`
-	Callsign    sql.NullString `db:"callsign"`
+	GroupID            int64          `db:"group_id"`
+	Description        string         `db:"description"`
+	Callsign           sql.NullString `db:"callsign"`
+	StatusID           sql.NullInt64  `db:"status_id"`
+	StatusText         sql.NullString `db:"status_text"`
+	PanelID            sql.NullString `db:"panel_id"`
+	Latitude           sql.NullString `db:"latitude"`
+	Longitude          sql.NullString `db:"longitude"`
+	TimeArriveToObject sql.NullTime   `db:"time_arrive_to_object"`
 }
 
 type phoenixActiveAlarmRow struct {
@@ -158,6 +166,7 @@ type phoenixActiveAlarmRow struct {
 	Line          sql.NullString `db:"line"`
 	EventParentID sql.NullInt64  `db:"event_parent_id"`
 	StateEvent    sql.NullInt64  `db:"state_event"`
+	Computer      sql.NullString `db:"computer"`
 	Priority      sql.NullInt64  `db:"priority"`
 	ObjectStatus  sql.NullInt64  `db:"object_status"`
 	UnknownObject sql.NullInt64  `db:"unknown_object"`

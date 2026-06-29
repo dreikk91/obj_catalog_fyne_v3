@@ -13,6 +13,8 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 )
 
+const caslPermanentBlockUnix int64 = 2_554_790_050
+
 // ShowCASLObjectBlockDialog loads the current CASL block state and offers the valid action.
 func ShowCASLObjectBlockDialog(
 	parent *qt.QWidget,
@@ -57,7 +59,7 @@ func showCASLObjectBlockAction(
 	if !accepted {
 		return
 	}
-	runCASLBlockMutation(parent, "Блокування об'єкта CASL...", func(ctx context.Context) error {
+	runCASLBlockMutation(parent, func(ctx context.Context) error {
 		return provider.BlockCASLDevice(ctx, request)
 	}, "Об'єкт CASL заблоковано.", onSuccess)
 }
@@ -84,14 +86,13 @@ func showCASLObjectUnblockAction(
 	if qt.QMessageBox_Question(parent, "Блокування CASL", strings.Join(details, "\n")) != qt.QMessageBox__Yes {
 		return
 	}
-	runCASLBlockMutation(parent, "Розблокування об'єкта CASL...", func(ctx context.Context) error {
+	runCASLBlockMutation(parent, func(ctx context.Context) error {
 		return provider.UnblockCASLDevice(ctx, deviceID)
 	}, "Об'єкт CASL розблоковано.", onSuccess)
 }
 
 func runCASLBlockMutation(
 	parent *qt.QWidget,
-	progress string,
 	mutation func(context.Context) error,
 	success string,
 	onSuccess func(),
@@ -113,16 +114,42 @@ func runCASLBlockMutation(
 			}
 		})
 	}()
-	_ = progress
 }
 
 func formatCASLBlockTime(unixTime int64) string {
-	if unixTime >= 2_554_790_000 {
+	if unixTime >= caslPermanentBlockUnix-50 {
 		return "безстроково"
 	}
 	return time.Unix(unixTime, 0).Local().Format("02.01.2006 15:04")
 }
 
-func caslBlockDescription(snapshot contracts.CASLObjectEditorSnapshot) string {
-	return fmt.Sprintf("№%d %s", snapshot.Object.Device.Number, strings.TrimSpace(snapshot.Object.Name))
+func buildCASLDeviceBlockRequest(
+	device contracts.CASLDeviceDetails,
+	hours int,
+	minutes int,
+	reason string,
+	permanent bool,
+	now time.Time,
+) (contracts.CASLDeviceBlockRequest, error) {
+	reason = strings.TrimSpace(reason)
+	if len([]rune(reason)) < 3 {
+		return contracts.CASLDeviceBlockRequest{}, fmt.Errorf("причина блокування має містити щонайменше 3 символи")
+	}
+	if strings.TrimSpace(device.DeviceID) == "" {
+		return contracts.CASLDeviceBlockRequest{}, fmt.Errorf("ідентифікатор приладу CASL відсутній")
+	}
+	until := caslPermanentBlockUnix
+	if !permanent {
+		durationMinutes := hours*60 + minutes
+		if durationMinutes <= 0 || durationMinutes > 24*60 {
+			return contracts.CASLDeviceBlockRequest{}, fmt.Errorf("тривалість має бути в межах від 1 хвилини до 24 годин")
+		}
+		until = now.Add(time.Duration(durationMinutes) * time.Minute).Unix()
+	}
+	return contracts.CASLDeviceBlockRequest{
+		DeviceID:     strings.TrimSpace(device.DeviceID),
+		DeviceNumber: device.Number,
+		TimeUnblock:  until,
+		Message:      reason,
+	}, nil
 }

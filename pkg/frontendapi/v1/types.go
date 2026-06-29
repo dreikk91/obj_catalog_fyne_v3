@@ -44,6 +44,15 @@ const (
 	VisualSeverityCritical VisualSeverity = "critical"
 )
 
+type ResponseGroupStatus string
+
+const (
+	ResponseGroupStatusUnknown    ResponseGroupStatus = "unknown"
+	ResponseGroupStatusFree       ResponseGroupStatus = "free"
+	ResponseGroupStatusDispatched ResponseGroupStatus = "dispatched"
+	ResponseGroupStatusArrived    ResponseGroupStatus = "arrived"
+)
+
 type SourceCapability struct {
 	Source            Source `json:"Source"`
 	DisplayName       string `json:"DisplayName"`
@@ -301,10 +310,18 @@ type ErrorResponse struct {
 }
 
 type ResponseGroup struct {
-	ID       string `json:"ID"`
-	Name     string `json:"Name"`
-	Callsign string `json:"Callsign"`
-	Phone    string `json:"Phone"`
+	ID              string              `json:"ID"`
+	Name            string              `json:"Name"`
+	Callsign        string              `json:"Callsign"`
+	Phone           string              `json:"Phone"`
+	Source          Source              `json:"Source"`
+	Status          ResponseGroupStatus `json:"Status"`
+	StatusText      string              `json:"StatusText"`
+	ObjectNumber    string              `json:"ObjectNumber"`
+	ObjectName      string              `json:"ObjectName"`
+	Latitude        string              `json:"Latitude"`
+	Longitude       string              `json:"Longitude"`
+	StatusChangedAt string              `json:"StatusChangedAt"`
 }
 
 type ResponseGroupListResponse struct {

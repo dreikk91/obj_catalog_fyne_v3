@@ -17,8 +17,44 @@ func TestObjectListRowColors_PriorityBlockedOverAlarm(t *testing.T) {
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
-	if text.R != 255 || row.R != 144 {
-		t.Fatalf("unexpected blocked colors (light): text=%+v row=%+v", text, row)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	if text != wantText || row != wantRow {
+		t.Fatalf("unexpected blocked colors (light): text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
+	}
+}
+
+func TestObjectListRowColors_BridgeDisarmedUsesSemanticPalette(t *testing.T) {
+	item := models.Object{
+		ID:               1559,
+		GuardStatus:      models.GuardStatusDisarmed,
+		ConnectionStatus: models.ConnectionStatusOnline,
+		MonitoringStatus: models.MonitoringStatusActive,
+		Status:           models.StatusNormal,
+		SubServerA:       "A",
+	}
+
+	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	if text != wantText || row != wantRow {
+		t.Fatalf("unexpected disarmed colors: text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
+	}
+}
+
+func TestObjectListRowColors_BridgeGreenRequiresConnectedAndGuarded(t *testing.T) {
+	vm := viewmodels.NewObjectListViewModel()
+	item := models.Object{
+		ID:               1559,
+		ConnectionStatus: models.ConnectionStatusUnknown,
+		GuardStatus:      models.GuardStatusGuarded,
+		MonitoringStatus: models.MonitoringStatusActive,
+		Status:           models.StatusNormal,
+		SubServerA:       "A",
+	}
+
+	_, row := vm.GetRowColors(item, false)
+	_, normalRow := utils.SelectObjectColorNRGBA(10)
+	if row == normalRow {
+		t.Fatalf("bridge object with unknown connection must not be green: %+v", row)
 	}
 }
 
@@ -72,9 +108,10 @@ func TestObjectListRowColors_OfflinePriority(t *testing.T) {
 	}
 
 	vm := viewmodels.NewObjectListViewModel()
-	_, row := vm.GetRowColors(item, false)
-	if row.G != 235 {
-		t.Fatalf("unexpected offline row color: %+v", row)
+	text, row := vm.GetRowColors(item, false)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	if text != wantText || row != wantRow {
+		t.Fatalf("unexpected offline colors: text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
 	}
 }
 
@@ -143,16 +180,24 @@ func TestObjectListRowColors_UsesNormalizedStatuses(t *testing.T) {
 		MonitoringStatus: models.MonitoringStatusBlocked,
 		Status:           models.StatusNormal,
 	}, false)
-	if text.R != 255 || row.R != 144 {
+	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	if text != wantText || row != wantRow {
 		t.Fatalf("unexpected blocked colors from normalized state: text=%+v row=%+v", text, row)
 	}
 
-	_, offlineRow := vm.GetRowColors(models.Object{
+	offlineText, offlineRow := vm.GetRowColors(models.Object{
 		ConnectionStatus: models.ConnectionStatusOffline,
 		GuardStatus:      models.GuardStatusGuarded,
 		Status:           models.StatusNormal,
 	}, false)
-	if offlineRow.G != 235 {
-		t.Fatalf("unexpected offline row color from normalized state: %+v", offlineRow)
+	wantOfflineText, wantOfflineRow := utils.SelectObjectColorNRGBA(4)
+	if offlineText != wantOfflineText || offlineRow != wantOfflineRow {
+		t.Fatalf(
+			"unexpected offline colors from normalized state: text=%+v row=%+v want text=%+v row=%+v",
+			offlineText,
+			offlineRow,
+			wantOfflineText,
+			wantOfflineRow,
+		)
 	}
 }

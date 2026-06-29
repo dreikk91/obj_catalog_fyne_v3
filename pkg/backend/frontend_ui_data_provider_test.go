@@ -15,8 +15,16 @@ type frontendUIBackendStub struct {
 	objectDetails   contracts.FrontendObjectDetails
 	events          []contracts.FrontendEventItem
 	alarms          []contracts.FrontendAlarmItem
+	responseGroups  []contracts.FrontendResponseGroup
 	objectDetailErr error
 	detailRequests  int
+
+	assignedAlarmID  int
+	assignedGroupID  string
+	arrivedAlarmID   int
+	cancelledAlarmID int
+	pickedAlarmID    int
+	processedAlarmID int
 }
 
 func (s *frontendUIBackendStub) Capabilities(context.Context) (contracts.FrontendCapabilities, error) {
@@ -39,11 +47,13 @@ func (s *frontendUIBackendStub) ListAlarmProcessingOptionsCached(context.Context
 	return nil, nil
 }
 
-func (s *frontendUIBackendStub) PickAlarm(context.Context, int, contracts.FrontendAlarmPickRequest) error {
+func (s *frontendUIBackendStub) PickAlarm(_ context.Context, alarmID int, _ contracts.FrontendAlarmPickRequest) error {
+	s.pickedAlarmID = alarmID
 	return nil
 }
 
-func (s *frontendUIBackendStub) ProcessAlarm(context.Context, int, contracts.FrontendAlarmProcessRequest) error {
+func (s *frontendUIBackendStub) ProcessAlarm(_ context.Context, alarmID int, _ contracts.FrontendAlarmProcessRequest) error {
+	s.processedAlarmID = alarmID
 	return nil
 }
 
@@ -56,18 +66,22 @@ func (s *frontendUIBackendStub) StandbyObject(context.Context, int, contracts.Fr
 }
 
 func (s *frontendUIBackendStub) ListResponseGroups(context.Context) ([]contracts.FrontendResponseGroup, error) {
-	return nil, nil
+	return s.responseGroups, nil
 }
 
-func (s *frontendUIBackendStub) AssignResponseGroup(context.Context, int, contracts.FrontendAlarmGroupActionRequest) error {
+func (s *frontendUIBackendStub) AssignResponseGroup(_ context.Context, alarmID int, request contracts.FrontendAlarmGroupActionRequest) error {
+	s.assignedAlarmID = alarmID
+	s.assignedGroupID = request.GroupID
 	return nil
 }
 
-func (s *frontendUIBackendStub) NotifyGroupArrived(context.Context, int) error {
+func (s *frontendUIBackendStub) NotifyGroupArrived(_ context.Context, alarmID int) error {
+	s.arrivedAlarmID = alarmID
 	return nil
 }
 
-func (s *frontendUIBackendStub) CancelResponseGroup(context.Context, int) error {
+func (s *frontendUIBackendStub) CancelResponseGroup(_ context.Context, alarmID int) error {
+	s.cancelledAlarmID = alarmID
 	return nil
 }
 
@@ -348,7 +362,17 @@ func TestFrontendUIDataProviderGetEventsAndAlarmsUseFrontendAndDelegateFallbackO
 			{ID: 10, ObjectID: 1, ObjectNumber: "1", ObjectName: "Obj", Time: now, TypeCode: "offline", TypeText: "НЕМАЄ ЗВ'ЯЗКУ", Details: "det", VisualSeverity: contracts.FrontendVisualSeverityWarning},
 		},
 		alarms: []contracts.FrontendAlarmItem{
-			{ID: 20, ObjectID: 1, ObjectNumber: "1", ObjectName: "Obj", Address: "Addr", Time: now, TypeCode: "fire", TypeText: "ПОЖЕЖА", Details: "alarm", ZoneNumber: 2, VisualSeverity: contracts.FrontendVisualSeverityCritical},
+			{
+				ID: 20, ObjectID: 1, ObjectNumber: "1", ObjectName: "Obj", Address: "Addr",
+				Time: now, TypeCode: "fire", TypeText: "ПОЖЕЖА", Details: "alarm", ZoneNumber: 2,
+				CanTakeOver: true, CanProcess: true,
+				ResponseGroupID: "mgr-7", IsResponseGroupDispatched: true, IsResponseGroupArrived: true,
+				VisualSeverity: contracts.FrontendVisualSeverityCritical,
+			},
+		},
+		responseGroups: []contracts.FrontendResponseGroup{
+			{ID: "mgr-7", Name: "Група 7", Source: contracts.FrontendSourceBridge},
+			{ID: "casl-3", Name: "CASL 3", Source: contracts.FrontendSourceCASL},
 		},
 	}
 	fallback := &frontendUIFallbackStub{
@@ -369,17 +393,49 @@ func TestFrontendUIDataProviderGetEventsAndAlarmsUseFrontendAndDelegateFallbackO
 	if len(alarms) != 1 || alarms[0].SC1 != 6 || alarms[0].Type != models.AlarmFire || len(alarms[0].SourceMsgs) != 1 {
 		t.Fatalf("alarms = %+v, want frontend alarm merged with fallback fields", alarms)
 	}
+	if alarms[0].ResponseGroupID != "mgr-7" || !alarms[0].IsResponseGroupDispatched || !alarms[0].IsResponseGroupArrived {
+		t.Fatalf("alarm response state = %+v, want assigned and arrived mgr-7", alarms[0])
+	}
+	if !alarms[0].CanTakeOver || !alarms[0].CanProcess {
+		t.Fatalf("alarm action capabilities were not preserved: %+v", alarms[0])
+	}
 
 	if err := provider.ProcessAlarm("20", "user", "note"); err != nil {
 		t.Fatalf("ProcessAlarm() error = %v", err)
 	}
-	if fallback.processAlarmCalls != 1 {
-		t.Fatalf("ProcessAlarm calls = %d, want 1", fallback.processAlarmCalls)
+	if frontend.processedAlarmID != 20 || fallback.processAlarmCalls != 0 {
+		t.Fatalf("ProcessAlarm route = frontend %d, fallback calls %d", frontend.processedAlarmID, fallback.processAlarmCalls)
+	}
+	if err := provider.PickAlarm(context.Background(), alarms[0], "Диспетчер"); err != nil {
+		t.Fatalf("PickAlarm() error = %v", err)
+	}
+	if frontend.pickedAlarmID != 20 {
+		t.Fatalf("picked alarm ID = %d, want 20", frontend.pickedAlarmID)
 	}
 
 	messages := provider.GetTestMessages("1")
 	if len(messages) != 1 || messages[0].Info != "T1" {
 		t.Fatalf("test messages = %+v, want delegated fallback messages", messages)
+	}
+
+	groups, err := provider.ListResponseGroupsForAlarm(context.Background(), alarms[0])
+	if err != nil || len(groups) != 1 || groups[0].ID != "mgr-7" {
+		t.Fatalf("ListResponseGroups() = %+v, %v", groups, err)
+	}
+	if err := provider.AssignResponseGroup(context.Background(), alarms[0], " mgr-7 "); err != nil {
+		t.Fatalf("AssignResponseGroup() error = %v", err)
+	}
+	if err := provider.NotifyGroupArrived(context.Background(), alarms[0]); err != nil {
+		t.Fatalf("NotifyGroupArrived() error = %v", err)
+	}
+	if err := provider.CancelResponseGroup(context.Background(), alarms[0]); err != nil {
+		t.Fatalf("CancelResponseGroup() error = %v", err)
+	}
+	if frontend.assignedAlarmID != 20 || frontend.assignedGroupID != "mgr-7" {
+		t.Fatalf("assigned response group = alarm %d group %q", frontend.assignedAlarmID, frontend.assignedGroupID)
+	}
+	if frontend.arrivedAlarmID != 20 || frontend.cancelledAlarmID != 20 {
+		t.Fatalf("response action alarm IDs = arrived %d cancelled %d", frontend.arrivedAlarmID, frontend.cancelledAlarmID)
 	}
 }
 

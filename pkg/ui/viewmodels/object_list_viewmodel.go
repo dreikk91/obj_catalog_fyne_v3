@@ -317,18 +317,10 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 	// 1) блокування, 2) тривога, 3) технічна/пожежна несправність,
 	// 4) втрата зв'язку, 5) проблема приписки/конфігурації, 6) інші стани.
 	if item.MonitoringStatusValue() == models.MonitoringStatusBlocked {
-		// Тимчасово знято із спостереження.
-		if isDark {
-			return color.NRGBA{R: 230, G: 220, B: 245, A: 255}, color.NRGBA{R: 98, G: 52, B: 125, A: 255}
-		}
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 144, G: 64, B: 196, A: 255}
+		return selectObjectColor(4) // Попередження: тимчасово знято зі спостереження.
 	}
 	if item.MonitoringStatusValue() == models.MonitoringStatusDebug {
-		// Режим налагодження.
-		if isDark {
-			return color.NRGBA{R: 238, G: 236, B: 195, A: 255}, color.NRGBA{R: 95, G: 96, B: 42, A: 255}
-		}
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 128, G: 128, B: 0, A: 255}
+		return selectObjectColor(6) // Інфо: режим налагодження.
 	}
 
 	if item.SeverityValue() == models.VisualSeverityCritical || item.Status == models.StatusFire {
@@ -340,10 +332,7 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 	}
 
 	if item.ConnectionStatusValue() == models.ConnectionStatusOffline || item.Status == models.StatusOffline {
-		if isDark {
-			return color.NRGBA{R: 255, G: 250, B: 180, A: 255}, color.NRGBA{R: 90, G: 90, B: 20, A: 255}
-		}
-		return color.NRGBA{R: 0, G: 0, B: 0, A: 255}, color.NRGBA{R: 225, G: 235, B: 35, A: 255}
+		return selectObjectColor(4)
 	}
 
 	if ids.IsCASLObjectID(item.ID) && !item.HasAssignment {
@@ -360,10 +349,14 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 	}
 
 	if item.GuardStatusValue() == models.GuardStatusDisarmed {
-		if isDark {
-			return color.NRGBA{R: 230, G: 230, B: 250, A: 255}, color.NRGBA{R: 100, G: 15, B: 120, A: 255}
-		}
-		return color.NRGBA{R: 255, G: 255, B: 255, A: 255}, color.NRGBA{R: 170, G: 14, B: 201, A: 255}
+		return selectObjectColor(4)
+	}
+
+	if !ids.IsCASLObjectID(item.ID) && !ids.IsPhoenixObjectID(item.ID) &&
+		(item.ConnectionStatusValue() != models.ConnectionStatusOnline ||
+			item.GuardStatusValue() != models.GuardStatusGuarded) {
+		// Зелений для МІСТ означає одночасно зв'язок і стан "під охороною".
+		return selectObjectColor(6)
 	}
 
 	return selectObjectColor(10)

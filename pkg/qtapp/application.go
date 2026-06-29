@@ -46,7 +46,15 @@ type Application struct {
 	refreshCoalesceMu      sync.Mutex
 	pendingRefresh         eventbus.DataRefreshEvent
 	refreshCoalescePending bool
+	responseGroupsMu       sync.Mutex
+	responseGroupsCache    map[contracts.FrontendSource]responseGroupsCacheEntry
 	phoneDialer            contracts.PhoneDialer
+}
+
+type responseGroupsCacheEntry struct {
+	loadedAt time.Time
+	provider *backend.FrontendUIDataProvider
+	groups   []contracts.FrontendResponseGroup
 }
 
 type objectDetailsResult struct {
@@ -92,6 +100,8 @@ func NewApplication() *Application {
 	app.ui.OnSettingsSaved = app.applySettings
 	app.ui.OnRefreshRequested = app.refreshData
 	app.ui.OnDiagnosticsRequested = app.showDiagnostics
+	app.ui.OnResponseGroupsRequested = app.showResponseGroups
+	app.ui.OnOperationalMapRequested = app.showOperationalMap
 	app.ui.OnCreateObject = app.createObject
 	app.ui.OnCreateCASLObject = app.createCASLObject
 	app.ui.OnEditObject = app.editCurrentObject
@@ -102,6 +112,7 @@ func NewApplication() *Application {
 	app.ui.OnDialPhone = app.dialPhone
 	app.ui.OnProcessAlarms = app.processAlarms
 	app.ui.OnPickAlarms = app.pickAlarms
+	app.ui.OnRespondAlarm = app.respondToAlarm
 	app.ui.OnRunOnMainThread = app.runOnMainThread
 	app.ui.OnAlarmSelected = app.handleAlarmSelected
 	app.ui.OnEventSelected = app.handleEventSelected
@@ -124,6 +135,9 @@ func (a *Application) applySettings(dbCfg config.DBConfig, uiCfg config.UIConfig
 		a.runtime = nil
 	}
 	a.currentObject = nil
+	a.responseGroupsMu.Lock()
+	a.responseGroupsCache = nil
+	a.responseGroupsMu.Unlock()
 	a.phoneDialer = buildAMIDialer(a.ui.Preferences())
 
 	store := preferencesConfigStore{preferences: a.ui.Preferences()}
@@ -228,6 +242,90 @@ func (a *Application) refreshEvents() {
 			a.ui.SetEvents(events)
 		})
 	}()
+}
+
+func (a *Application) showResponseGroups() {
+	if a == nil || a.ui == nil || a.uiData == nil {
+		return
+	}
+	provider := a.uiData
+	a.ui.SetStatus("Завантаження груп реагування...")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		groups, err := provider.ListResponseGroups(ctx)
+		a.runOnMainThread(func() {
+			if a == nil || a.ui == nil || a.uiData != provider {
+				return
+			}
+			if err != nil {
+				a.ui.ShowError("Групи реагування", "Не вдалося завантажити групи: "+err.Error())
+				a.ui.SetStatus("Групи реагування недоступні")
+				return
+			}
+			a.ui.SetStatus(fmt.Sprintf("Груп реагування: %d", len(groups)))
+			a.ui.ShowResponseGroups(groups, func(done func([]contracts.FrontendResponseGroup, error)) {
+				go func() {
+					refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 20*time.Second)
+					defer refreshCancel()
+					updated, refreshErr := provider.ListResponseGroups(refreshCtx)
+					a.runOnMainThread(func() {
+						if a == nil || a.ui == nil || a.uiData != provider {
+							return
+						}
+						done(updated, refreshErr)
+					})
+				}()
+			})
+		})
+	}()
+}
+
+func (a *Application) showOperationalMap() {
+	if a == nil || a.ui == nil || a.uiData == nil {
+		return
+	}
+	provider := a.uiData
+	a.ui.SetStatus("Завантаження оперативної карти...")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		objects := provider.GetObjects()
+		alarms := provider.GetAlarms()
+		locations, locationsErr := provider.ListObjectLocations(ctx)
+		groups, groupsErr := provider.ListResponseGroups(ctx)
+		a.runOnMainThread(func() {
+			if a == nil || a.ui == nil || a.uiData != provider {
+				return
+			}
+			if groupsErr != nil {
+				a.ui.SetStatus("Карта: групи реагування недоступні")
+				groups = nil
+			}
+			if locationsErr == nil {
+				applyObjectLocations(objects, locations)
+			}
+			objectID, selected := a.ui.ShowOperationalMap(objects, alarms, groups)
+			if selected {
+				a.reselectObject(objectID)
+			}
+		})
+	}()
+}
+
+func applyObjectLocations(objects []models.Object, locations []contracts.ObjectLocation) {
+	byID := make(map[int]contracts.ObjectLocation, len(locations))
+	for _, location := range locations {
+		byID[location.ObjectID] = location
+	}
+	for index := range objects {
+		location, ok := byID[objects[index].ID]
+		if !ok {
+			continue
+		}
+		objects[index].Latitude = strings.TrimSpace(location.Latitude)
+		objects[index].Longitude = strings.TrimSpace(location.Longitude)
+	}
 }
 
 func (a *Application) applyObjectContext(object models.Object) {
@@ -354,6 +452,7 @@ func (a *Application) setBridgeMonitoringMode(object models.Object, mode contrac
 		err := admin.SetDisplayBlockMode(number, mode)
 		a.runOnMainThread(func() {
 			if err != nil {
+				a.ui.SetStatus("Не вдалося змінити режим об'єкта МІСТ №" + strconv.FormatInt(number, 10))
 				a.ui.ShowError("Спостереження МІСТ", err.Error())
 				return
 			}
@@ -372,7 +471,6 @@ func (a *Application) showCASLObjectBlock(object models.Object) {
 		a.ui.ShowInfo("Блокування CASL", "Поточне джерело не підтримує блокування CASL.")
 		return
 	}
-	a.ui.SetStatus("CASL: завантаження стану блокування...")
 	a.ui.ShowCASLObjectBlock(provider, int64(object.ID), func() {
 		a.refreshData()
 		a.ui.SetStatus("Стан блокування CASL оновлено")
@@ -511,56 +609,94 @@ func (a *Application) processAlarms(alarms []models.Alarm) {
 		return
 	}
 
-	ctx := context.Background()
-	options := a.alarmProcessingOptions(ctx, alarms)
-	alarm := alarms[0]
-	input, accepted := a.ui.ProcessAlarmsDialog(alarms, options)
-	if !accepted {
-		return
-	}
-
-	const operator = "Диспетчер"
-	var successCount = 0
-	var errorMsgs []string
-
-	for _, al := range alarms {
-		var err error
-		if len(options) > 0 {
-			err = a.uiData.ProcessAlarmWithRequest(ctx, al, operator, contracts.AlarmProcessingRequest{
-				CauseCode: input.CauseCode,
-				Note:      input.Note,
-			})
-		} else {
-			err = a.uiData.ProcessAlarm(strconv.Itoa(al.ID), operator, input.Note)
-		}
-		if err != nil {
-			errorMsgs = append(errorMsgs, fmt.Sprintf("№%s: %v", al.GetObjectNumberDisplay(), err))
-		} else {
-			successCount++
-		}
-	}
-
-	a.refreshData()
-
-	if len(errorMsgs) > 0 {
-		a.ui.ShowError("Відпрацювання тривог", fmt.Sprintf("Успішно відпрацьовано: %d. Помилки:\n%s", successCount, strings.Join(errorMsgs, "\n")))
-	} else {
-		if len(alarms) > 1 {
-			a.ui.SetStatus(fmt.Sprintf("Відпрацьовано групу з %d тривог", len(alarms)))
-		} else {
-			a.ui.SetStatus("Тривогу відпрацьовано: " + alarm.GetObjectNumberDisplay() + " | " + strings.TrimSpace(alarm.GetTypeDisplay()))
-		}
-	}
+	provider := a.uiData
+	selected := append([]models.Alarm(nil), alarms...)
+	a.ui.SetStatus("Завантаження причин відпрацювання...")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		options := a.alarmProcessingOptions(provider, ctx, selected)
+		a.runOnMainThread(func() {
+			if a == nil || a.ui == nil || a.uiData != provider {
+				return
+			}
+			input, accepted := a.ui.ProcessAlarmsDialog(selected, options)
+			if !accepted {
+				a.ui.SetStatus("Відпрацювання тривоги скасовано")
+				return
+			}
+			a.executeProcessAlarms(provider, selected, options, input)
+		})
+	}()
 }
 
-func (a *Application) alarmProcessingOptions(ctx context.Context, alarms []models.Alarm) []contracts.AlarmProcessingOption {
-	if a == nil || a.uiData == nil || len(alarms) == 0 || !sameAlarmProcessingSource(alarms) {
+func (a *Application) executeProcessAlarms(
+	provider *backend.FrontendUIDataProvider,
+	alarms []models.Alarm,
+	options []contracts.AlarmProcessingOption,
+	input qtui.AlarmProcessInput,
+) {
+	if a == nil || a.ui == nil || provider == nil || len(alarms) == 0 {
+		return
+	}
+	a.ui.SetStatus("Відпрацювання тривог...")
+	go func() {
+		const operator = contracts.DefaultOperatorName
+		successCount := 0
+		errorMsgs := make([]string, 0)
+		for _, alarm := range alarms {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			var err error
+			if len(options) > 0 {
+				err = provider.ProcessAlarmWithRequest(ctx, alarm, operator, contracts.AlarmProcessingRequest{
+					CauseCode: input.CauseCode,
+					Note:      input.Note,
+				})
+			} else {
+				err = provider.ProcessAlarm(strconv.Itoa(alarm.ID), operator, input.Note)
+			}
+			cancel()
+			if err != nil {
+				errorMsgs = append(errorMsgs, fmt.Sprintf("№%s: %v", alarm.GetObjectNumberDisplay(), err))
+				continue
+			}
+			successCount++
+		}
+
+		a.runOnMainThread(func() {
+			if a == nil || a.ui == nil || a.uiData != provider {
+				return
+			}
+			for _, alarm := range alarms {
+				a.invalidateResponseGroupsCache(alarm)
+			}
+			a.refreshAlarms()
+			if len(errorMsgs) > 0 {
+				a.ui.ShowError("Відпрацювання тривог", fmt.Sprintf("Успішно відпрацьовано: %d. Помилки:\n%s", successCount, strings.Join(errorMsgs, "\n")))
+				return
+			}
+			if len(alarms) > 1 {
+				a.ui.SetStatus(fmt.Sprintf("Відпрацьовано групу з %d тривог", len(alarms)))
+				return
+			}
+			alarm := alarms[0]
+			a.ui.SetStatus("Тривогу відпрацьовано: " + alarm.GetObjectNumberDisplay() + " | " + strings.TrimSpace(alarm.GetTypeDisplay()))
+		})
+	}()
+}
+
+func (a *Application) alarmProcessingOptions(
+	provider *backend.FrontendUIDataProvider,
+	ctx context.Context,
+	alarms []models.Alarm,
+) []contracts.AlarmProcessingOption {
+	if a == nil || provider == nil || len(alarms) == 0 || !sameAlarmProcessingSource(alarms) {
 		return nil
 	}
 
 	optionSets := make([][]contracts.AlarmProcessingOption, 0, len(alarms))
 	for _, alarm := range alarms {
-		options, err := a.uiData.GetAlarmProcessingOptions(ctx, alarm)
+		options, err := provider.GetAlarmProcessingOptions(ctx, alarm)
 		if err != nil {
 			return nil
 		}
@@ -578,28 +714,186 @@ func (a *Application) pickAlarms(alarms []models.Alarm) {
 		return
 	}
 
-	const operator = "Диспетчер"
-	var successCount = 0
-	var errorMsgs []string
-
-	for _, al := range alarms {
-		if err := a.uiData.PickAlarm(context.Background(), al, operator); err != nil {
-			errorMsgs = append(errorMsgs, fmt.Sprintf("№%s: %v", al.GetObjectNumberDisplay(), err))
-		} else {
+	provider := a.uiData
+	selected := append([]models.Alarm(nil), alarms...)
+	a.ui.SetStatus("Взяття тривог у роботу...")
+	go func() {
+		const operator = contracts.DefaultOperatorName
+		successCount := 0
+		errorMsgs := make([]string, 0)
+		for _, alarm := range selected {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			err := provider.PickAlarm(ctx, alarm, operator)
+			cancel()
+			if err != nil {
+				errorMsgs = append(errorMsgs, fmt.Sprintf("№%s: %v", alarm.GetObjectNumberDisplay(), err))
+				continue
+			}
 			successCount++
 		}
+
+		a.runOnMainThread(func() {
+			if a == nil || a.ui == nil || a.uiData != provider {
+				return
+			}
+			for _, alarm := range selected {
+				a.invalidateResponseGroupsCache(alarm)
+			}
+			a.refreshAlarms()
+			if len(errorMsgs) > 0 {
+				a.ui.ShowError("Взяття тривог у роботу", fmt.Sprintf("Успішно взято: %d. Помилки:\n%s", successCount, strings.Join(errorMsgs, "\n")))
+				return
+			}
+			if len(selected) > 1 {
+				a.ui.SetStatus(fmt.Sprintf("Взято в роботу групу з %d тривог", len(selected)))
+				return
+			}
+			a.ui.SetStatus("Тривогу взято в роботу: " + selected[0].GetObjectNumberDisplay() + " | " + strings.TrimSpace(selected[0].GetTypeDisplay()))
+		})
+	}()
+}
+
+func (a *Application) respondToAlarm(alarm models.Alarm) {
+	if a == nil || a.ui == nil || a.uiData == nil {
+		return
 	}
 
-	a.refreshData()
+	provider := a.uiData
+	a.ui.SetStatus("Завантаження груп реагування...")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
 
-	if len(errorMsgs) > 0 {
-		a.ui.ShowError("Взяття тривог у роботу", fmt.Sprintf("Успішно взято: %d. Помилки:\n%s", successCount, strings.Join(errorMsgs, "\n")))
-	} else {
-		if len(alarms) > 1 {
-			a.ui.SetStatus(fmt.Sprintf("Взято в роботу групу з %d тривог", len(alarms)))
-		} else {
-			a.ui.SetStatus("Тривогу взято в роботу: " + alarms[0].GetObjectNumberDisplay() + " | " + strings.TrimSpace(alarms[0].GetTypeDisplay()))
+		groups, err := a.responseGroupsForAlarm(ctx, provider, alarm)
+		history := append([]models.AlarmMsg(nil), alarm.SourceMsgs...)
+		if len(history) == 0 {
+			history = provider.GetAlarmSourceMessages(alarm)
 		}
+		a.runOnMainThread(func() {
+			if a == nil || a.ui == nil || a.uiData != provider {
+				return
+			}
+			if err != nil {
+				a.ui.ShowError("Картка реагування", "Не вдалося завантажити групи реагування: "+err.Error())
+				a.ui.SetStatus("Групи реагування недоступні")
+				return
+			}
+
+			input, accepted := a.ui.ShowAlarmResponseDialog(alarm, groups, history)
+			if !accepted {
+				a.ui.SetStatus("Картку реагування закрито")
+				return
+			}
+			switch input.Action {
+			case qtui.AlarmResponseTake:
+				a.pickAlarms([]models.Alarm{alarm})
+			case qtui.AlarmResponseProcess:
+				a.processAlarms([]models.Alarm{alarm})
+			default:
+				a.executeAlarmResponseAction(provider, alarm, input)
+			}
+		})
+	}()
+}
+
+func (a *Application) responseGroupsForAlarm(
+	ctx context.Context,
+	provider *backend.FrontendUIDataProvider,
+	alarm models.Alarm,
+) ([]contracts.FrontendResponseGroup, error) {
+	const cacheTTL = 2 * time.Minute
+	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
+
+	a.responseGroupsMu.Lock()
+	cached, ok := a.responseGroupsCache[source]
+	if ok && cached.provider == provider && time.Since(cached.loadedAt) < cacheTTL {
+		groups := append([]contracts.FrontendResponseGroup(nil), cached.groups...)
+		a.responseGroupsMu.Unlock()
+		return groups, nil
+	}
+	a.responseGroupsMu.Unlock()
+
+	groups, err := provider.ListResponseGroupsForAlarm(ctx, alarm)
+	if err != nil {
+		return nil, err
+	}
+
+	a.responseGroupsMu.Lock()
+	if a.responseGroupsCache == nil {
+		a.responseGroupsCache = make(map[contracts.FrontendSource]responseGroupsCacheEntry)
+	}
+	a.responseGroupsCache[source] = responseGroupsCacheEntry{
+		loadedAt: time.Now(),
+		provider: provider,
+		groups:   append([]contracts.FrontendResponseGroup(nil), groups...),
+	}
+	a.responseGroupsMu.Unlock()
+	return groups, nil
+}
+
+func (a *Application) executeAlarmResponseAction(provider *backend.FrontendUIDataProvider, alarm models.Alarm, input qtui.AlarmResponseInput) {
+	if a == nil || a.ui == nil || provider == nil {
+		return
+	}
+
+	actionText := alarmResponseActionText(input.Action)
+	a.ui.SetStatus(actionText + "...")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		var err error
+		switch input.Action {
+		case qtui.AlarmResponseAssign:
+			err = provider.AssignResponseGroup(ctx, alarm, input.GroupID)
+		case qtui.AlarmResponseArrived:
+			err = provider.NotifyGroupArrived(ctx, alarm)
+		case qtui.AlarmResponseCancel:
+			err = provider.CancelResponseGroup(ctx, alarm)
+		default:
+			return
+		}
+
+		a.runOnMainThread(func() {
+			if a == nil || a.ui == nil || a.uiData != provider {
+				return
+			}
+			if err != nil {
+				a.ui.ShowError("Реагування на тривогу", actionText+": "+err.Error())
+				a.ui.SetStatus(actionText + ": помилка")
+				return
+			}
+			a.invalidateResponseGroupsCache(alarm)
+			a.refreshAlarms()
+			a.ui.SetStatus(actionText + ": виконано")
+		})
+	}()
+}
+
+func (a *Application) invalidateResponseGroupsCache(alarm models.Alarm) {
+	if a == nil {
+		return
+	}
+	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
+	a.responseGroupsMu.Lock()
+	delete(a.responseGroupsCache, source)
+	a.responseGroupsMu.Unlock()
+}
+
+func alarmResponseActionText(action qtui.AlarmResponseAction) string {
+	switch action {
+	case qtui.AlarmResponseTake:
+		return "Взяття тривоги в роботу"
+	case qtui.AlarmResponseProcess:
+		return "Відпрацювання тривоги"
+	case qtui.AlarmResponseAssign:
+		return "Направлення МГР"
+	case qtui.AlarmResponseArrived:
+		return "Фіксація прибуття МГР"
+	case qtui.AlarmResponseCancel:
+		return "Скасування МГР"
+	default:
+		return "Операція реагування"
 	}
 }
 

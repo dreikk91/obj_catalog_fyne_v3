@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -645,6 +646,77 @@ func (p *CASLCloudProvider) FetchCASLImagePreview(ctx context.Context, imageID s
 		return nil, fmt.Errorf("casl image preview unexpected http status: %d", resp.StatusCode)
 	}
 	return body, nil
+}
+
+func (p *CASLCloudProvider) GetObjectMedia(ctx context.Context, objectID int) ([]contracts.ObjectMedia, error) {
+	objID, err := p.resolveCASLEditorObjectID(ctx, int64(objectID))
+	if err != nil {
+		return nil, err
+	}
+	object, err := p.getCASLObjectFull(ctx, objID)
+	if err != nil {
+		return nil, err
+	}
+	return flattenCASLObjectMedia(object), nil
+}
+
+func flattenCASLObjectMedia(object contracts.CASLGuardObjectDetails) []contracts.ObjectMedia {
+	result := make([]contracts.ObjectMedia, 0, len(object.Images)+len(object.Rooms)*2)
+	for index, imageID := range object.Images {
+		imageID = strings.TrimSpace(imageID)
+		if imageID == "" {
+			continue
+		}
+		result = append(result, contracts.ObjectMedia{
+			ID:    imageID,
+			Kind:  contracts.ObjectMediaImage,
+			Title: fmt.Sprintf("Фото / схема об'єкта %d", index+1),
+		})
+	}
+	for _, room := range object.Rooms {
+		roomName := strings.TrimSpace(room.Name)
+		for index, imageID := range room.Images {
+			imageID = strings.TrimSpace(imageID)
+			if imageID == "" {
+				continue
+			}
+			result = append(result, contracts.ObjectMedia{
+				ID:       imageID,
+				Kind:     contracts.ObjectMediaImage,
+				Title:    fmt.Sprintf("Фото / схема приміщення %d", index+1),
+				RoomName: roomName,
+			})
+		}
+		if rtsp := strings.TrimSpace(room.RTSP); rtsp != "" {
+			result = append(result, contracts.ObjectMedia{
+				ID:       "rtsp:" + room.RoomID,
+				Kind:     contracts.ObjectMediaCamera,
+				Title:    "Камера",
+				RoomName: roomName,
+				URL:      rtsp,
+			})
+		}
+	}
+	return result
+}
+
+func (p *CASLCloudProvider) FetchObjectMedia(ctx context.Context, media contracts.ObjectMedia) ([]byte, error) {
+	if media.Kind != contracts.ObjectMediaImage {
+		return nil, fmt.Errorf("media %q is not an image", media.ID)
+	}
+	imageID := strings.TrimSpace(media.ID)
+	if strings.HasPrefix(strings.ToLower(imageID), "data:image/") {
+		comma := strings.IndexByte(imageID, ',')
+		if comma < 0 {
+			return nil, fmt.Errorf("invalid data image")
+		}
+		body, err := base64.StdEncoding.DecodeString(strings.TrimSpace(imageID[comma+1:]))
+		if err != nil {
+			return nil, fmt.Errorf("decode data image: %w", err)
+		}
+		return body, nil
+	}
+	return p.FetchCASLImagePreview(ctx, imageID)
 }
 
 func zeroToEmpty(value int64) any {

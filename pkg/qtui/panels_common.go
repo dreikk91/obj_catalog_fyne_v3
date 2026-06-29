@@ -85,16 +85,16 @@ func eventRowColorsBySeverity(severity models.VisualSeverity, sc1 int) (textColo
 func sc1FromVisualSeverity(severity models.VisualSeverity, fallback int) int {
 	switch severity {
 	case models.VisualSeverityCritical:
-		return 1
+		return 1 // → Критичний (червоний)
 	case models.VisualSeverityWarning:
-		return 2
+		return 4 // → Попередження (жовтий)
 	case models.VisualSeverityInfo:
-		return 10
+		return 6 // → Інфо (нейтральний)
 	case models.VisualSeverityNormal:
 		if fallback != 0 {
 			return fallback
 		}
-		return 10
+		return 10 // → Норма (зелений)
 	default:
 		return fallback
 	}

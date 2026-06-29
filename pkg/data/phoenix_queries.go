@@ -26,7 +26,9 @@ SELECT
 	CAST(NULL AS nvarchar(max)) AS company_memo,
 	CAST(NULL AS nvarchar(max)) AS additional_technical_information,
 	PrimarySIM.sim_number AS sim1_number,
-	SecondarySIM.sim_number AS sim2_number
+	SecondarySIM.sim_number AS sim2_number,
+	P.Latitude AS latitude,
+	P.Longtitude AS longitude
 FROM Groups G WITH (NOLOCK)
 LEFT JOIN Company C WITH (NOLOCK) ON C.ID = G.CompanyID
 LEFT JOIN (
@@ -546,6 +548,7 @@ SELECT
 	T.Line AS line,
 	T.Event_Parent_id AS event_parent_id,
 	T.StateEvent AS state_event,
+	T.Computer AS computer,
 	T.Priority AS priority,
 	Co.CompanyName AS company_name,
 	Co.Address AS company_address,
@@ -656,8 +659,19 @@ ORDER BY A.AvailableState_id
 `
 
 const phoenixResponseGroupsQuery = `
-SELECT gr.Group_id AS group_id, gr.Description AS description, gr.callsign AS callsign
+SELECT
+	gr.Group_id AS group_id,
+	gr.Description AS description,
+	gr.callsign AS callsign,
+	gr.Status_id AS status_id,
+	sgr.reason AS status_text,
+	gr.Panel_id AS panel_id,
+	COALESCE(NULLIF(LTRIM(RTRIM(mp.LastLatitude)), ''), gr.DislocationPointLat) AS latitude,
+	COALESCE(NULLIF(LTRIM(RTRIM(mp.LastLongtitude)), ''), gr.DislocationPointLon) AS longitude,
+	gr.TimeArriveToObject AS time_arrive_to_object
 FROM GroupResponse gr WITH (NOLOCK)
+LEFT JOIN StatusGroupResponse sgr WITH (NOLOCK) ON sgr.status_id = gr.Status_id
+LEFT JOIN MPhone mp WITH (NOLOCK) ON mp.Mphone_id = gr.Mphone_id
 WHERE COALESCE(gr.Disabled, 0) = 0
 ORDER BY gr.Group_id
 `
@@ -704,5 +718,38 @@ LEFT JOIN TypeCode TC WITH (NOLOCK) ON TC.idTCode = C.idTCode
 LEFT JOIN Zones Z WITH (NOLOCK) ON Z.Panel_id = A.Panel_id AND Z.Group_ = A.Group_ AND Z.Zone = A.Zone
 LEFT JOIN Company Co WITH (NOLOCK) ON Co.ID = G.CompanyID
 WHERE A.Panel_id = @p1
+ORDER BY A.Event_id DESC
+`
+
+const phoenixObjectEventsRangeQuery = `
+SELECT TOP (500)
+	A.Event_id AS event_id,
+	A.Panel_id AS panel_id,
+	A.Group_ AS group_no,
+	A.Zone AS zone_no,
+	A.TimeEvent AS time_event,
+	A.Code AS event_code,
+	C.Message AS code_message,
+	TC.idTCode AS type_code_id,
+	TC.Message AS type_code_message,
+	CASE WHEN COALESCE(C.AutoReset, 0) = 1 THEN 1 ELSE 0 END AS auto_reset,
+	CASE WHEN COALESCE(C.groupsent, 0) = 1 THEN 1 ELSE 0 END AS group_sent,
+	ISNULL(C.AccessCode, '0') AS access_code,
+	C.ContactID_Code AS contact_id_code,
+	CASE WHEN COALESCE(C.System, 0) = 1 THEN 1 ELSE 0 END AS system_flag,
+	C.zoneno AS code_zone_no,
+	G.Message AS group_name,
+	Z.Message AS zone_name,
+	Co.CompanyName AS company_name,
+	Co.Address AS company_address
+FROM vwArchives A WITH (NOLOCK)
+LEFT JOIN Groups G WITH (NOLOCK) ON G.Panel_id = A.Panel_id AND G.Group_ = A.Group_
+LEFT JOIN Code C WITH (NOLOCK) ON C.Code = A.Code AND C.CodeGroup = A.CodeGroup
+LEFT JOIN TypeCode TC WITH (NOLOCK) ON TC.idTCode = C.idTCode
+LEFT JOIN Zones Z WITH (NOLOCK) ON Z.Panel_id = A.Panel_id AND Z.Group_ = A.Group_ AND Z.Zone = A.Zone
+LEFT JOIN Company Co WITH (NOLOCK) ON Co.ID = G.CompanyID
+WHERE A.Panel_id = @p1
+  AND A.TimeEvent >= @p2
+  AND A.TimeEvent <= @p3
 ORDER BY A.Event_id DESC
 `

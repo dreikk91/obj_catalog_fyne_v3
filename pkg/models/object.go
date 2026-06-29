@@ -28,6 +28,8 @@ type Object struct {
 	DisplayNumber string
 	Name          string
 	Address       string
+	Latitude      string
+	Longitude     string
 	ContractNum   string
 	Phone         string
 	Status        ObjectStatus

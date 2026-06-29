@@ -59,6 +59,21 @@ type optimizedWorkAreaDataProviderStub struct {
 	baseRequests int
 }
 
+type rangedWorkAreaDataProviderStub struct {
+	workAreaDataProviderStub
+	rangeRequests int
+	rangeFrom     time.Time
+	rangeTo       time.Time
+}
+
+func (s *rangedWorkAreaDataProviderStub) GetObjectEventsRange(objectID string, from time.Time, to time.Time) []models.Event {
+	s.lastRequestedID = objectID
+	s.rangeRequests++
+	s.rangeFrom = from
+	s.rangeTo = to
+	return s.events
+}
+
 func (s *optimizedWorkAreaDataProviderStub) GetObjectBaseDetails(objectID string) (*models.Object, []models.Zone, []models.Contact) {
 	s.lastRequestedID = objectID
 	s.baseRequests++
@@ -151,6 +166,32 @@ func TestWorkAreaViewModel_LoadObjectEvents(t *testing.T) {
 	events[0].ID = 999
 	if stub.events[0].ID == 999 {
 		t.Fatalf("events must not alias source events slice")
+	}
+}
+
+func TestWorkAreaViewModel_LoadObjectEventsRange(t *testing.T) {
+	vm := NewWorkAreaViewModel()
+	from := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	to := from.Add(72 * time.Hour)
+	stub := &rangedWorkAreaDataProviderStub{
+		workAreaDataProviderStub: workAreaDataProviderStub{
+			events: []models.Event{
+				{ID: 1, Time: from.Add(-time.Minute)},
+				{ID: 2, Time: from.Add(time.Hour)},
+				{ID: 3, Time: to.Add(time.Minute)},
+			},
+		},
+	}
+
+	events := vm.LoadObjectEventsRange(stub, 7, 100, from, to)
+	if stub.rangeRequests != 1 || stub.eventRequests != 0 {
+		t.Fatalf("range requests = %d, fallback requests = %d", stub.rangeRequests, stub.eventRequests)
+	}
+	if !stub.rangeFrom.Equal(from) || !stub.rangeTo.Equal(to) {
+		t.Fatalf("requested range = %v..%v", stub.rangeFrom, stub.rangeTo)
+	}
+	if len(events) != 1 || events[0].ID != 2 {
+		t.Fatalf("filtered events = %+v", events)
 	}
 }
 

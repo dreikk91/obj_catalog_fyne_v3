@@ -335,6 +335,15 @@ func fallbackCASLActionDetails(row CASLObjectEvent, sourceType string) string {
 	}
 }
 
+func caslActionTypeLabel(sourceType string) string {
+	switch strings.ToLower(strings.TrimSpace(sourceType)) {
+	case "read_journal_action":
+		return "ПЕРЕГЛЯД ЖУРНАЛУ"
+	default:
+		return ""
+	}
+}
+
 func (p *CASLCloudProvider) buildSharedObjectContext(ctx context.Context) (
 	byPPK map[int64]caslEventContext,
 	byObject map[string]caslEventContext,
@@ -690,6 +699,9 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 		if details == "" {
 			details = decodeCASLEventDescription(translator, dictMap, code, contactID, number, deviceType)
 		}
+		if details == "" && isCASLActionSource(sourceType) {
+			details = fallbackCASLActionDetails(row, sourceType)
+		}
 		if details == "" {
 			switch {
 			case contactID != "" && code != "":
@@ -726,6 +738,7 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 			ObjectNumber: objectNum,
 			ObjectName:   objectName,
 			Type:         eventType,
+			TypeLabel:    caslActionTypeLabel(sourceType),
 			ZoneNumber:   number,
 			Details:      details,
 			SC1:          mapCASLEventSC1(eventType),
@@ -1560,6 +1573,22 @@ func (p *CASLCloudProvider) replaceRealtimeAlarmsSnapshot(alarms []models.Alarm)
 }
 
 func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
+	now := time.Now()
+	return p.getObjectEventsRange(objectID, now.Add(-caslObjectEventsSpan), now, true)
+}
+
+func (p *CASLCloudProvider) GetObjectEventsRange(objectID string, from time.Time, to time.Time) []models.Event {
+	now := time.Now()
+	if to.IsZero() || to.After(now) {
+		to = now
+	}
+	if from.IsZero() || !from.Before(to) {
+		from = to.Add(-caslObjectEventsSpan)
+	}
+	return p.getObjectEventsRange(objectID, from, to, false)
+}
+
+func (p *CASLCloudProvider) getObjectEventsRange(objectID string, from time.Time, to time.Time, useDefaultCache bool) []models.Event {
 	internalID, ok := parseObjectID(objectID)
 	if !ok {
 		return nil
@@ -1567,13 +1596,16 @@ func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
 
 	now := time.Now()
 
-	p.mu.RLock()
-	if ts, ok := p.cachedObjectEventsAt[internalID]; ok && now.Sub(ts) <= caslObjectEventsTTL {
-		events := append([]models.Event(nil), p.cachedObjectEvents[internalID]...)
+	if useDefaultCache {
+		p.mu.RLock()
+		ts, cached := p.cachedObjectEventsAt[internalID]
+		if cached && now.Sub(ts) <= caslObjectEventsTTL {
+			events := append([]models.Event(nil), p.cachedObjectEvents[internalID]...)
+			p.mu.RUnlock()
+			return events
+		}
 		p.mu.RUnlock()
-		return events
 	}
-	p.mu.RUnlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
 	defer cancel()
@@ -1583,7 +1615,7 @@ func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
 		return nil
 	}
 
-	rawEvents, err := p.readEventsByID(ctx, record)
+	rawEvents, err := p.readEventsByIDRange(ctx, record, from, to)
 	if err != nil {
 		log.Debug().Err(err).Int("objectID", internalID).Msg("CASL: не вдалося отримати події об'єкта")
 	}
@@ -1595,12 +1627,15 @@ func (p *CASLCloudProvider) GetObjectEvents(objectID string) []models.Event {
 		historyEvents, _ := p.mapCASLRowsToEvents(ctx, historyRows, 0)
 		events = mergeCASLObjectEvents(events, historyEvents)
 	}
+	events = filterEventsByTimeRange(events, from, to)
 	sortEvents(events)
 
-	p.mu.Lock()
-	p.cachedObjectEvents[internalID] = append([]models.Event(nil), events...)
-	p.cachedObjectEventsAt[internalID] = now
-	p.mu.Unlock()
+	if useDefaultCache {
+		p.mu.Lock()
+		p.cachedObjectEvents[internalID] = append([]models.Event(nil), events...)
+		p.cachedObjectEventsAt[internalID] = now
+		p.mu.Unlock()
+	}
 
 	return events
 }
@@ -2319,12 +2354,22 @@ func (p *CASLCloudProvider) GetLatestEventID() (int64, error) {
 }
 
 func (p *CASLCloudProvider) readEventsByID(ctx context.Context, record caslGrdObject) ([]caslObjectEvent, error) {
+	end := time.Now()
+	return p.readEventsByIDRange(ctx, record, end.Add(-caslObjectEventsSpan), end)
+}
+
+func (p *CASLCloudProvider) readEventsByIDRange(
+	ctx context.Context,
+	record caslGrdObject,
+	from time.Time,
+	to time.Time,
+) ([]caslObjectEvent, error) {
 	if strings.TrimSpace(record.ObjID) == "" || record.DeviceID.Int64() <= 0 {
 		return nil, nil
 	}
 
-	end := time.Now().UnixMilli()
-	start := end - caslObjectEventsSpan.Milliseconds()
+	end := to.UnixMilli()
+	start := from.UnixMilli()
 
 	payload := map[string]any{
 		"type":             "read_events_by_id",
@@ -2525,6 +2570,7 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 			ObjectNumber: objectNum,
 			ObjectName:   objectName,
 			Type:         eventType,
+			TypeLabel:    caslActionTypeLabel(sourceType),
 			ZoneNumber:   zoneNumber,
 			Details:      details,
 			SC1:          mapCASLEventSC1(eventType),
@@ -2540,6 +2586,14 @@ func (p *CASLCloudProvider) ListResponseGroups(ctx context.Context) ([]contracts
 	if err != nil {
 		return nil, fmt.Errorf("casl: read_mgr: %w", err)
 	}
+	activeByGroup := make(map[string]models.Alarm)
+	for _, alarm := range p.snapshotRealtimeAlarms() {
+		groupID := strings.TrimSpace(alarm.ResponseGroupID)
+		if groupID == "" || !alarm.IsResponseGroupDispatched {
+			continue
+		}
+		activeByGroup[groupID] = alarm
+	}
 	result := make([]contracts.ResponseGroup, 0, len(rows))
 	for _, row := range rows {
 		id := strings.TrimSpace(asString(row["mgr_id"]))
@@ -2547,13 +2601,46 @@ func (p *CASLCloudProvider) ListResponseGroups(ctx context.Context) ([]contracts
 		if id == "" {
 			continue
 		}
+		status := caslResponseGroupStatus(asString(row["last_act"]))
+		statusText := responseGroupStatusText(status, "")
+		objectNumber := ""
+		objectName := ""
+		if alarm, ok := activeByGroup[id]; ok {
+			objectNumber = alarm.GetObjectNumberDisplay()
+			objectName = strings.TrimSpace(alarm.ObjectName)
+			if alarm.IsResponseGroupArrived {
+				status = contracts.ResponseGroupStatusArrived
+			} else {
+				status = contracts.ResponseGroupStatusDispatched
+			}
+			statusText = responseGroupStatusText(status, "")
+		}
 		result = append(result, contracts.ResponseGroup{
-			ID:    id,
-			Name:  name,
-			Phone: strings.TrimSpace(asString(row["phone_number"])),
+			ID:              id,
+			Name:            name,
+			Phone:           strings.TrimSpace(asString(row["phone_number"])),
+			Source:          contracts.FrontendSourceCASL,
+			Status:          status,
+			StatusText:      statusText,
+			ObjectNumber:    objectNumber,
+			ObjectName:      objectName,
+			StatusChangedAt: parseCASLAnyTime(row["last_act_time"]),
 		})
 	}
 	return result, nil
+}
+
+func caslResponseGroupStatus(lastAction string) contracts.ResponseGroupStatus {
+	switch strings.ToUpper(strings.TrimSpace(lastAction)) {
+	case "GRD_OBJ_ASS_MGR":
+		return contracts.ResponseGroupStatusDispatched
+	case "GRD_OBJ_MGR_ARRIVE":
+		return contracts.ResponseGroupStatusArrived
+	case "GRD_OBJ_MGR_CANCEL", "":
+		return contracts.ResponseGroupStatusFree
+	default:
+		return contracts.ResponseGroupStatusUnknown
+	}
 }
 
 // AssignResponseGroup implements contracts.ResponseGroupProvider.

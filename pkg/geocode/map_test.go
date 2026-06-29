@@ -26,3 +26,33 @@ func TestMapSnapshotCoordinateAtCenter(t *testing.T) {
 		t.Fatalf("PNGWithMarker() invalid PNG: %v", err)
 	}
 }
+
+func TestMapSnapshotPixelAtRoundTrip(t *testing.T) {
+	snapshot := &MapSnapshot{
+		base:  image.NewRGBA(image.Rect(0, 0, 400, 300)),
+		width: 400, height: 300, zoom: 12,
+	}
+	centerX, centerY := mapWorldPoint(49.8397, 24.0297, snapshot.zoom)
+	snapshot.leftWorldX = centerX - 200
+	snapshot.topWorldY = centerY - 150
+	x, y := snapshot.PixelAt(49.8397, 24.0297)
+	if x != 200 || y != 150 {
+		t.Fatalf("center pixel = %d,%d", x, y)
+	}
+	body := snapshot.PNGWithMarkers([]MapMarker{{
+		MapPoint: MapPoint{Latitude: 49.8397, Longitude: 24.0297},
+	}})
+	if len(body) == 0 {
+		t.Fatal("PNGWithMarkers() returned no data")
+	}
+}
+
+func TestMapViewportFitsNearbyPointsAtUsefulZoom(t *testing.T) {
+	_, _, zoom := mapViewport([]MapPoint{
+		{Latitude: 49.8397, Longitude: 24.0297},
+		{Latitude: 49.85, Longitude: 24.05},
+	}, 800, 600)
+	if zoom < 10 || zoom > 16 {
+		t.Fatalf("zoom = %d", zoom)
+	}
+}

@@ -386,6 +386,32 @@ func (p *CombinedDataProvider) FetchCASLImagePreview(ctx context.Context, imageI
 	return provider.FetchCASLImagePreview(ctx, imageID)
 }
 
+func (p *CombinedDataProvider) GetObjectMedia(ctx context.Context, objectID int) ([]contracts.ObjectMedia, error) {
+	source := p.sourceForObjectID(objectID)
+	if source == nil {
+		return nil, fmt.Errorf("media source for object %d was not found", objectID)
+	}
+	provider, ok := source.Provider.(contracts.ObjectMediaProvider)
+	if !ok {
+		return nil, nil
+	}
+	return provider.GetObjectMedia(ctx, objectID)
+}
+
+func (p *CombinedDataProvider) FetchObjectMedia(ctx context.Context, media contracts.ObjectMedia) ([]byte, error) {
+	for _, source := range p.sources {
+		provider, ok := source.Provider.(contracts.ObjectMediaProvider)
+		if !ok {
+			continue
+		}
+		body, err := provider.FetchObjectMedia(ctx, media)
+		if err == nil {
+			return body, nil
+		}
+	}
+	return nil, fmt.Errorf("media %q was not found", media.ID)
+}
+
 func (p *CombinedDataProvider) ReadManagers(ctx context.Context, skip int, limit int) ([]map[string]any, error) {
 	provider, err := p.resolveAnyCASLObjectEditorProvider()
 	if err != nil {
@@ -431,6 +457,33 @@ func (p *CombinedDataProvider) GetObjects() []models.Object {
 		return combinedObjectDisplayNumber(objects[i]) < combinedObjectDisplayNumber(objects[j])
 	})
 	return objects
+}
+
+func (p *CombinedDataProvider) ListObjectLocations(ctx context.Context) ([]contracts.ObjectLocation, error) {
+	if p == nil {
+		return nil, nil
+	}
+	result := make([]contracts.ObjectLocation, 0)
+	for _, source := range p.sources {
+		if provider, ok := source.Provider.(contracts.ObjectLocationProvider); ok {
+			locations, err := provider.ListObjectLocations(ctx)
+			if err != nil {
+				log.Warn().Err(err).Str("source", source.Name).Msg("ListObjectLocations failed")
+				continue
+			}
+			result = append(result, locations...)
+			continue
+		}
+		for _, object := range source.Provider.GetObjects() {
+			if strings.TrimSpace(object.Latitude) == "" || strings.TrimSpace(object.Longitude) == "" {
+				continue
+			}
+			result = append(result, contracts.ObjectLocation{
+				ObjectID: object.ID, Latitude: object.Latitude, Longitude: object.Longitude,
+			})
+		}
+	}
+	return result, nil
 }
 
 func combinedObjectDisplayNumber(object models.Object) string {
@@ -553,6 +606,35 @@ func (p *CombinedDataProvider) GetObjectEvents(objectID string) []models.Event {
 	events := provider.GetObjectEvents(objectID)
 	sortEvents(events)
 	return events
+}
+
+func (p *CombinedDataProvider) GetObjectEventsRange(objectID string, from time.Time, to time.Time) []models.Event {
+	provider := p.providerForObjectID(objectID)
+	if provider == nil {
+		return nil
+	}
+	var events []models.Event
+	if ranged, ok := provider.(contracts.ObjectEventsRangeProvider); ok {
+		events = ranged.GetObjectEventsRange(objectID, from, to)
+	} else {
+		events = filterEventsByTimeRange(provider.GetObjectEvents(objectID), from, to)
+	}
+	sortEvents(events)
+	return events
+}
+
+func filterEventsByTimeRange(events []models.Event, from time.Time, to time.Time) []models.Event {
+	result := make([]models.Event, 0, len(events))
+	for _, event := range events {
+		if !from.IsZero() && event.Time.Before(from) {
+			continue
+		}
+		if !to.IsZero() && event.Time.After(to) {
+			continue
+		}
+		result = append(result, event)
+	}
+	return result
 }
 
 func (p *CombinedDataProvider) GetAlarmSourceMessages(alarm models.Alarm) []models.AlarmMsg {
@@ -827,6 +909,12 @@ func (p *CombinedDataProvider) ListResponseGroups(ctx context.Context) ([]contra
 		if err != nil {
 			log.Warn().Err(err).Str("source", source.Name).Msg("ListResponseGroups failed")
 			continue
+		}
+		sourceType := frontendSourceFromProviderName(source.Name)
+		for i := range groups {
+			if groups[i].Source == contracts.FrontendSourceUnknown || groups[i].Source == "" {
+				groups[i].Source = sourceType
+			}
 		}
 		result = append(result, groups...)
 	}

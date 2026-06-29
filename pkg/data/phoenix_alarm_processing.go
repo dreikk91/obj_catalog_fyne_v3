@@ -37,13 +37,32 @@ func (p *PhoenixDataProvider) PickAlarm(ctx context.Context, alarm models.Alarm,
 
 	result, err := p.db.ExecContext(ctx,
 		`UPDATE Temp SET StateEvent = @p1, Computer = @p2
-		 WHERE Panel_id = @p3 AND StateEvent IN (1, 2)`,
+		 WHERE Panel_id = @p3
+		   AND NOT EXISTS (
+				SELECT 1
+				FROM Temp ownerRow
+				WHERE ownerRow.Panel_id = @p3
+				  AND ownerRow.StateEvent IN (2, 3)
+				  AND ownerRow.Computer IS NOT NULL
+				  AND LTRIM(RTRIM(ownerRow.Computer)) <> ''
+				  AND ownerRow.Computer <> @p2
+		   )
+		   AND (
+				StateEvent = 1
+				OR (
+					StateEvent = 2
+					AND (Computer IS NULL OR LTRIM(RTRIM(Computer)) = '' OR Computer = @p2)
+				)
+		   )`,
 		phoenixStateInWork, user, panelID,
 	)
 	if err != nil {
 		return fmt.Errorf("phoenix: PickAlarm %s: %w", panelID, err)
 	}
 	n, _ := result.RowsAffected()
+	if n == 0 {
+		return p.phoenixAlarmOwnershipError(ctx, panelID, user)
+	}
 	log.Debug().Str("panelID", panelID).Str("user", user).Int64("rows", n).Msg("Phoenix PickAlarm")
 	return nil
 }
@@ -113,13 +132,32 @@ func (p *PhoenixDataProvider) ProcessAlarmWithRequest(ctx context.Context, alarm
 
 	result, err := p.db.ExecContext(ctx,
 		`UPDATE Temp SET StateEvent = @p1, Computer = @p2
-		 WHERE Panel_id = @p3 AND StateEvent IN (1, 2, 3)`,
+		 WHERE Panel_id = @p3
+		   AND StateEvent IN (1, 2, 3)
+		   AND NOT EXISTS (
+				SELECT 1
+				FROM Temp ownerRow
+				WHERE ownerRow.Panel_id = @p3
+				  AND ownerRow.StateEvent IN (2, 3)
+				  AND ownerRow.Computer IS NOT NULL
+				  AND LTRIM(RTRIM(ownerRow.Computer)) <> ''
+				  AND ownerRow.Computer <> @p2
+		   )
+		   AND (
+				StateEvent = 1
+				OR Computer IS NULL
+				OR LTRIM(RTRIM(Computer)) = ''
+				OR Computer = @p2
+		   )`,
 		stateID, user, panelID,
 	)
 	if err != nil {
 		return fmt.Errorf("phoenix: ProcessAlarmWithRequest %s: %w", panelID, err)
 	}
 	n, _ := result.RowsAffected()
+	if n == 0 {
+		return p.phoenixAlarmOwnershipError(ctx, panelID, user)
+	}
 	log.Debug().Str("panelID", panelID).Int64("stateID", stateID).Int64("rows", n).Msg("Phoenix ProcessAlarmWithRequest")
 
 	// Attach operator note to the archived event.
@@ -133,6 +171,26 @@ func (p *PhoenixDataProvider) ProcessAlarmWithRequest(ctx context.Context, alarm
 		}
 	}
 	return nil
+}
+
+func (p *PhoenixDataProvider) phoenixAlarmOwnershipError(ctx context.Context, panelID string, user string) error {
+	var owner sql.NullString
+	err := p.db.QueryRowContext(ctx,
+		`SELECT TOP 1 Computer
+		 FROM Temp WITH (NOLOCK)
+		 WHERE Panel_id = @p1 AND StateEvent IN (1, 2, 3)
+		 ORDER BY StateEvent DESC, Event_id DESC`,
+		panelID,
+	).Scan(&owner)
+	if err != nil {
+		return fmt.Errorf("phoenix: активна тривога %s не знайдена", panelID)
+	}
+	ownerText := strings.TrimSpace(nullString(owner))
+	if ownerText == "" {
+		ownerText = "інший оператор"
+	}
+	return fmt.Errorf("%w: %s (поточний власник: %s, оператор: %s)",
+		contracts.ErrAlarmOwnershipConflict, panelID, ownerText, strings.TrimSpace(user))
 }
 
 // ProcessAlarm closes the alarm without a reason (legacy / cancel path).
@@ -191,13 +249,50 @@ func (p *PhoenixDataProvider) ListResponseGroups(ctx context.Context) ([]contrac
 
 	groups := make([]contracts.ResponseGroup, 0, len(rows))
 	for _, row := range rows {
+		status := phoenixResponseGroupStatus(row.StatusID.Int64)
 		groups = append(groups, contracts.ResponseGroup{
-			ID:       strconv.FormatInt(row.GroupID, 10),
-			Name:     strings.TrimSpace(row.Description),
-			Callsign: strings.TrimSpace(nullString(row.Callsign)),
+			ID:              strconv.FormatInt(row.GroupID, 10),
+			Name:            strings.TrimSpace(row.Description),
+			Callsign:        strings.TrimSpace(nullString(row.Callsign)),
+			Source:          contracts.FrontendSourcePhoenix,
+			Status:          status,
+			StatusText:      responseGroupStatusText(status, strings.TrimSpace(nullString(row.StatusText))),
+			ObjectNumber:    strings.TrimSpace(nullString(row.PanelID)),
+			Latitude:        strings.TrimSpace(nullString(row.Latitude)),
+			Longitude:       strings.TrimSpace(nullString(row.Longitude)),
+			StatusChangedAt: nullTime(row.TimeArriveToObject),
 		})
 	}
 	return groups, nil
+}
+
+func phoenixResponseGroupStatus(statusID int64) contracts.ResponseGroupStatus {
+	switch statusID {
+	case phoenixGroupStatusFree:
+		return contracts.ResponseGroupStatusFree
+	case phoenixGroupStatusDispatched:
+		return contracts.ResponseGroupStatusDispatched
+	case phoenixGroupStatusArrived:
+		return contracts.ResponseGroupStatusArrived
+	default:
+		return contracts.ResponseGroupStatusUnknown
+	}
+}
+
+func responseGroupStatusText(status contracts.ResponseGroupStatus, sourceText string) string {
+	if sourceText = strings.TrimSpace(sourceText); sourceText != "" {
+		return sourceText
+	}
+	switch status {
+	case contracts.ResponseGroupStatusFree:
+		return "Вільна"
+	case contracts.ResponseGroupStatusDispatched:
+		return "Направлена"
+	case contracts.ResponseGroupStatusArrived:
+		return "Прибула"
+	default:
+		return "Стан невідомий"
+	}
 }
 
 // AssignResponseGroup dispatches a response group to the alarm (GroupResponse status 1→2, StateEvent 2→3).

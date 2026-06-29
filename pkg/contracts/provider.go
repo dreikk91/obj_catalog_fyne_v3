@@ -3,8 +3,9 @@ package contracts
 
 import (
 	"context"
-	"obj_catalog_fyne_v3/pkg/models"
 	"time"
+
+	"obj_catalog_fyne_v3/pkg/models"
 )
 
 // ObjectProvider визначає інтерфейс для отримання об'єктів
@@ -44,6 +45,44 @@ type WorkAreaProvider interface {
 type EventProvider interface {
 	GetEvents() []models.Event
 	GetObjectEvents(objectID string) []models.Event
+}
+
+// ObjectEventsRangeProvider optionally loads an object's events for an explicit time range.
+type ObjectEventsRangeProvider interface {
+	GetObjectEventsRange(objectID string, from time.Time, to time.Time) []models.Event
+}
+
+type ObjectMediaKind string
+
+const (
+	ObjectMediaImage  ObjectMediaKind = "image"
+	ObjectMediaCamera ObjectMediaKind = "camera"
+)
+
+// ObjectMedia describes an object photo, scheme or camera endpoint.
+type ObjectMedia struct {
+	ID       string
+	Kind     ObjectMediaKind
+	Title    string
+	RoomName string
+	URL      string
+}
+
+// ObjectMediaProvider loads object media lazily.
+type ObjectMediaProvider interface {
+	GetObjectMedia(ctx context.Context, objectID int) ([]ObjectMedia, error)
+	FetchObjectMedia(ctx context.Context, media ObjectMedia) ([]byte, error)
+}
+
+type ObjectLocation struct {
+	ObjectID  int
+	Latitude  string
+	Longitude string
+}
+
+// ObjectLocationProvider loads coordinates only when an operational map is opened.
+type ObjectLocationProvider interface {
+	ListObjectLocations(ctx context.Context) ([]ObjectLocation, error)
 }
 
 // AlarmHistoryProvider defines optional lazy chronology loading for a single alarm.
@@ -86,12 +125,29 @@ type AlarmTakeoverProvider interface {
 	PickAlarm(ctx context.Context, alarm models.Alarm, user string) error
 }
 
+type ResponseGroupStatus string
+
+const (
+	ResponseGroupStatusUnknown    ResponseGroupStatus = "unknown"
+	ResponseGroupStatusFree       ResponseGroupStatus = "free"
+	ResponseGroupStatusDispatched ResponseGroupStatus = "dispatched"
+	ResponseGroupStatusArrived    ResponseGroupStatus = "arrived"
+)
+
 // ResponseGroup описує групу реагування (МГР).
 type ResponseGroup struct {
-	ID       string
-	Name     string
-	Callsign string
-	Phone    string
+	ID              string
+	Name            string
+	Callsign        string
+	Phone           string
+	Source          FrontendSource
+	Status          ResponseGroupStatus
+	StatusText      string
+	ObjectNumber    string
+	ObjectName      string
+	Latitude        string
+	Longitude       string
+	StatusChangedAt time.Time
 }
 
 // AlarmGroupProcessProvider описує групове завершення тривог (МІСТ).

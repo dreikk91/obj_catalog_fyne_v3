@@ -4,14 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"obj_catalog_fyne_v3/pkg/models"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/ids"
+	"obj_catalog_fyne_v3/pkg/models"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
@@ -271,6 +272,25 @@ func (p *PhoenixDataProvider) GetObjectEvents(objectID string) []models.Event {
 	return events
 }
 
+func (p *PhoenixDataProvider) GetObjectEventsRange(objectID string, from time.Time, to time.Time) []models.Event {
+	panelID, ok := p.resolvePanelID(objectID)
+	if !ok {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	var rows []phoenixEventRow
+	if err := p.db.SelectContext(ctx, &rows, phoenixObjectEventsRangeQuery, panelID, from, to); err != nil {
+		log.Error().Err(err).Str("panelID", panelID).Msg("Phoenix: помилка отримання подій об'єкта за період")
+		return nil
+	}
+	events := make([]models.Event, 0, len(rows))
+	for _, row := range rows {
+		events = append(events, p.mapEventRow(row))
+	}
+	return events
+}
+
 func (p *PhoenixDataProvider) GetAlarmSourceMessages(alarm models.Alarm) []models.AlarmMsg {
 	if len(alarm.SourceMsgs) > 0 {
 		return append([]models.AlarmMsg(nil), alarm.SourceMsgs...)
@@ -407,6 +427,8 @@ func (p *PhoenixDataProvider) buildObjects(rows []phoenixObjectGroupRow) []model
 				PanelMark:     phoenixFirstNonEmpty(deviceName, panelID),
 				Name:          phoenixObjectName(panelID, row.CompanyName, row.GroupName),
 				Address:       strings.TrimSpace(nullString(row.Address)),
+				Latitude:      strings.TrimSpace(nullString(row.Latitude)),
+				Longitude:     strings.TrimSpace(nullString(row.Longitude)),
 				Phone:         strings.TrimSpace(nullString(row.Telephones)),
 				Phones1:       strings.TrimSpace(nullString(row.Telephones)),
 				Notes1: func() string {
@@ -632,6 +654,10 @@ func (p *PhoenixDataProvider) buildPhoenixActiveAlarms(rows []phoenixActiveAlarm
 			"alarm_case",
 		)
 		rowSC1 := resolvePhoenixGroupedAlarmSC1(messages, phoenixActiveAlarmMessageSC1(selected))
+		stateEvent := nullInt64(selectedRow.StateEvent)
+		operator := strings.TrimSpace(nullString(selectedRow.Computer))
+		inProgress := stateEvent == phoenixStateInWork || stateEvent == phoenixStateGroupSent
+		ownedByMe := inProgress && operator != "" && strings.EqualFold(operator, contracts.DefaultOperatorName)
 
 		alarms = append(alarms, models.Alarm{
 			ID:           alarmID,
@@ -646,6 +672,9 @@ func (p *PhoenixDataProvider) buildPhoenixActiveAlarms(rows []phoenixActiveAlarm
 			ZoneName:     strings.TrimSpace(nullString(selectedRow.ZoneName)),
 			SC1:          rowSC1,
 			SourceMsgs:   mapPhoenixActiveAlarmMessagesToAlarmMsgs(messages),
+			IsInProgress: inProgress,
+			InProgressBy: operator,
+			IsOwnedByMe:  ownedByMe,
 		})
 	}
 

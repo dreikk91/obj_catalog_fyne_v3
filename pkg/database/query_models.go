@@ -36,6 +36,7 @@ type ObjectDetailRow struct {
 	ObjShortName1 *string `db:"OBJSHORTNAME1"`
 	Address1      *string `db:"ADDRESS1"`
 	Contract1     *string `db:"CONTRACT1"`
+	Eng1          *int64  `db:"ENG1"`
 	Phones1       *string `db:"PHONES1"`
 	Notes1        *string `db:"NOTES1"`
 	ReservText    *string `db:"RESERVTEXT"`
@@ -43,14 +44,18 @@ type ObjectDetailRow struct {
 	GsmPhone2     *string `db:"GSMPHONE2"`
 	GsmHiddenN    *int64  `db:"GSMHIDENINT"`
 	Location1     *string `db:"LOCATION1"`
+	Latitude      *string `db:"LATITUDE"`
+	Longitude     *string `db:"LONGITUDE"`
 
 	// Поле з OBJTYPES (ot)
 	ObjType1 *string `db:"OBJTYPE1"`
 
 	// Поля стану
-	AlarmState1     *int64 `db:"ALARMSTATE1"`
-	TechAlarmState1 *int64 `db:"TECHALARMSTATE1"`
-	IsConnState1    *int64 `db:"ISCONNSTATE1"`
+	AlarmState1       *int64 `db:"ALARMSTATE1"`
+	GuardState1       *int64 `db:"GUARDSTATE1"`
+	TechAlarmState1   *int64 `db:"TECHALARMSTATE1"`
+	IsConnState1      *int64 `db:"ISCONNSTATE1"`
+	BlockedArmedOnOff *int16 `db:"BLOCKEDARMED_ON_OFF"`
 
 	AkbState     *int64 `db:"AKBSTATE"`
 	TestControl1 *int64 `db:"TESTCONTROL1"`

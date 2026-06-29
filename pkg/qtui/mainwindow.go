@@ -35,11 +35,13 @@ type MainWindow struct {
 
 	statusLabel *qt.QLabel
 
-	OnSettingsRequested     func()
-	OnRefreshRequested      func()
-	OnDiagnosticsRequested  func()
-	OnCreateObjectRequested func()
-	OnCreateCASLRequested   func()
+	OnSettingsRequested       func()
+	OnRefreshRequested        func()
+	OnDiagnosticsRequested    func()
+	OnResponseGroupsRequested func()
+	OnOperationalMapRequested func()
+	OnCreateObjectRequested   func()
+	OnCreateCASLRequested     func()
 }
 
 func NewMainWindow(app *App) *MainWindow {
@@ -104,6 +106,21 @@ func (mw *MainWindow) buildMenuBar() {
 	})
 
 	viewMenu := menuBar.AddMenuWithTitle("Вигляд")
+	responseGroupsAction := viewMenu.AddActionWithText("Групи реагування")
+	responseGroupsAction.SetShortcut(qt.NewQKeySequence2("Ctrl+Shift+G"))
+	responseGroupsAction.OnTriggered(func() {
+		if mw.OnResponseGroupsRequested != nil {
+			mw.OnResponseGroupsRequested()
+		}
+	})
+	operationalMapAction := viewMenu.AddActionWithText("Оперативна карта")
+	operationalMapAction.SetShortcut(qt.NewQKeySequence2("Ctrl+Shift+M"))
+	operationalMapAction.OnTriggered(func() {
+		if mw.OnOperationalMapRequested != nil {
+			mw.OnOperationalMapRequested()
+		}
+	})
+	viewMenu.AddSeparator()
 	viewMenu.AddActionWithText("Світла тема")
 	viewMenu.AddActionWithText("Темна тема")
 
@@ -185,6 +202,7 @@ func (mw *MainWindow) registerShortcuts() {
 	mw.addShortcut("Ctrl+3", func() { mw.selectWorkAreaTab(2) })
 	mw.addShortcut("Ctrl+4", func() { mw.selectWorkAreaTab(3) })
 	mw.addShortcut("Ctrl+5", func() { mw.selectWorkAreaTab(4) })
+	mw.addShortcut("Ctrl+6", func() { mw.selectWorkAreaTab(5) })
 }
 
 func (mw *MainWindow) addShortcut(sequence string, handler func()) {

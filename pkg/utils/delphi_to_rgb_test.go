@@ -5,25 +5,84 @@ import (
 	"testing"
 )
 
-func TestDefaultDisarmPaletteDiffersFromDebugPalette_Light(t *testing.T) {
+func TestSelectColorNRGBA_SemanticLevelsAreDifferent_Light(t *testing.T) {
 	ResetEventColorsToDefault(false)
 
-	_, disarm := SelectColorNRGBA(11)
-	_, partial := SelectColorNRGBA(14)
+	// Verify that all 5 semantic levels have distinct row colors.
+	_, criticalRow := SelectColorNRGBA(1) // Critical
+	_, alarmRow := SelectColorNRGBA(2)    // Alarm
+	_, warningRow := SelectColorNRGBA(4)  // Warning
+	_, normalRow := SelectColorNRGBA(10)  // Normal
+	_, infoRow := SelectColorNRGBA(6)     // Info
 
-	if disarm == partial {
-		t.Fatalf("expected disarm palette to differ from debug-like olive palette, got %+v", disarm)
+	rows := map[string]color.NRGBA{
+		"critical": criticalRow,
+		"alarm":    alarmRow,
+		"warning":  warningRow,
+		"normal":   normalRow,
+		"info":     infoRow,
+	}
+
+	names := []string{"critical", "alarm", "warning", "normal", "info"}
+	for i, a := range names {
+		for j, b := range names {
+			if i >= j {
+				continue
+			}
+			if rows[a] == rows[b] {
+				t.Errorf("semantic levels %q and %q share the same row color: %+v", a, b, rows[a])
+			}
+		}
 	}
 }
 
-func TestDefaultDisarmPaletteDiffersFromDebugPalette_Dark(t *testing.T) {
+func TestSelectColorNRGBA_SemanticLevelsAreDifferent_Dark(t *testing.T) {
 	ResetEventColorsToDefault(true)
 
-	_, disarm := SelectColorNRGBADark(11)
-	_, partial := SelectColorNRGBADark(14)
+	_, criticalRow := SelectColorNRGBADark(1)
+	_, alarmRow := SelectColorNRGBADark(2)
+	_, warningRow := SelectColorNRGBADark(4)
+	_, normalRow := SelectColorNRGBADark(10)
+	_, infoRow := SelectColorNRGBADark(6)
 
-	if disarm == partial {
-		t.Fatalf("expected dark disarm palette to differ from debug-like olive palette, got %+v", disarm)
+	rows := map[string]color.NRGBA{
+		"critical": criticalRow,
+		"alarm":    alarmRow,
+		"warning":  warningRow,
+		"normal":   normalRow,
+		"info":     infoRow,
+	}
+
+	names := []string{"critical", "alarm", "warning", "normal", "info"}
+	for i, a := range names {
+		for j, b := range names {
+			if i >= j {
+				continue
+			}
+			if rows[a] == rows[b] {
+				t.Errorf("semantic levels %q and %q share the same row color: %+v", a, b, rows[a])
+			}
+		}
+	}
+}
+
+func TestSelectColorNRGBA_SameGroupSharesColor_Light(t *testing.T) {
+	ResetEventColorsToDefault(false)
+
+	// All critical codes should share the same row color.
+	_, alarm1 := SelectColorNRGBA(1)
+	_, panic21 := SelectColorNRGBA(21)
+	_, burglary22 := SelectColorNRGBA(22)
+	_, medical23 := SelectColorNRGBA(23)
+
+	if alarm1 != panic21 {
+		t.Errorf("alarm (1) and panic (21) should share row color, got %+v vs %+v", alarm1, panic21)
+	}
+	if alarm1 != burglary22 {
+		t.Errorf("alarm (1) and burglary (22) should share row color, got %+v vs %+v", alarm1, burglary22)
+	}
+	if alarm1 != medical23 {
+		t.Errorf("alarm (1) and medical (23) should share row color, got %+v vs %+v", alarm1, medical23)
 	}
 }
 

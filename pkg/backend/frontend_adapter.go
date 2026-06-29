@@ -243,6 +243,12 @@ func (a *FrontendAdapter) PickAlarm(ctx context.Context, alarmID int, request co
 	}
 
 	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
+	if alarm.IsInProgress && alarm.IsOwnedByMe {
+		return nil
+	}
+	if alarm.IsInProgress && source != contracts.FrontendSourceCASL {
+		return fmt.Errorf("%w: %s", contracts.ErrAlarmOwnershipConflict, strings.TrimSpace(alarm.InProgressBy))
+	}
 	if advanced, ok := a.dataProvider.(contracts.AlarmTakeoverProvider); ok {
 		if err := advanced.PickAlarm(ctx, alarm, strings.TrimSpace(request.User)); err != nil {
 			return err
@@ -265,6 +271,11 @@ func (a *FrontendAdapter) ProcessAlarm(ctx context.Context, alarmID int, request
 	}
 
 	user := strings.TrimSpace(request.User)
+	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
+	if alarm.IsInProgress && !alarm.IsOwnedByMe &&
+		(source == contracts.FrontendSourceCASL || source == contracts.FrontendSourcePhoenix) {
+		return fmt.Errorf("%w: %s", contracts.ErrAlarmOwnershipConflict, strings.TrimSpace(alarm.InProgressBy))
+	}
 	note := strings.TrimSpace(request.Note)
 	if advanced, ok := a.dataProvider.(contracts.AlarmProcessingProvider); ok {
 		if err := advanced.ProcessAlarmWithRequest(ctx, alarm, user, contracts.AlarmProcessingRequest{
@@ -359,10 +370,18 @@ func (a *FrontendAdapter) ListResponseGroups(ctx context.Context) ([]contracts.F
 		result := make([]contracts.FrontendResponseGroup, 0, len(groups))
 		for _, g := range groups {
 			result = append(result, contracts.FrontendResponseGroup{
-				ID:       strings.TrimSpace(g.ID),
-				Name:     strings.TrimSpace(g.Name),
-				Callsign: strings.TrimSpace(g.Callsign),
-				Phone:    strings.TrimSpace(g.Phone),
+				ID:              strings.TrimSpace(g.ID),
+				Name:            strings.TrimSpace(g.Name),
+				Callsign:        strings.TrimSpace(g.Callsign),
+				Phone:           strings.TrimSpace(g.Phone),
+				Source:          g.Source,
+				Status:          g.Status,
+				StatusText:      strings.TrimSpace(g.StatusText),
+				ObjectNumber:    strings.TrimSpace(g.ObjectNumber),
+				ObjectName:      strings.TrimSpace(g.ObjectName),
+				Latitude:        strings.TrimSpace(g.Latitude),
+				Longitude:       strings.TrimSpace(g.Longitude),
+				StatusChangedAt: g.StatusChangedAt,
 			})
 		}
 		return result, nil
@@ -376,6 +395,9 @@ func (a *FrontendAdapter) AssignResponseGroup(ctx context.Context, alarmID int, 
 	}
 	alarm, err := a.resolveAlarmByID(alarmID)
 	if err != nil {
+		return err
+	}
+	if err := ensureAlarmActionOwnership(alarm); err != nil {
 		return err
 	}
 	if provider, ok := a.dataProvider.(contracts.ResponseGroupProvider); ok {
@@ -392,6 +414,9 @@ func (a *FrontendAdapter) NotifyGroupArrived(ctx context.Context, alarmID int) e
 	if err != nil {
 		return err
 	}
+	if err := ensureAlarmActionOwnership(alarm); err != nil {
+		return err
+	}
 	if provider, ok := a.dataProvider.(contracts.ResponseGroupProvider); ok {
 		return provider.NotifyGroupArrived(ctx, alarm)
 	}
@@ -406,10 +431,22 @@ func (a *FrontendAdapter) CancelResponseGroup(ctx context.Context, alarmID int) 
 	if err != nil {
 		return err
 	}
+	if err := ensureAlarmActionOwnership(alarm); err != nil {
+		return err
+	}
 	if provider, ok := a.dataProvider.(contracts.ResponseGroupProvider); ok {
 		return provider.CancelResponseGroup(ctx, alarm)
 	}
 	return fmt.Errorf("cancel response group is not supported for source %s", contracts.DetectFrontendSourceByObjectID(alarm.ObjectID))
+}
+
+func ensureAlarmActionOwnership(alarm models.Alarm) error {
+	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
+	if alarm.IsInProgress && !alarm.IsOwnedByMe &&
+		(source == contracts.FrontendSourceCASL || source == contracts.FrontendSourcePhoenix) {
+		return fmt.Errorf("%w: %s", contracts.ErrAlarmOwnershipConflict, strings.TrimSpace(alarm.InProgressBy))
+	}
+	return nil
 }
 
 func (a *FrontendAdapter) ListEvents(context.Context) ([]contracts.FrontendEventItem, error) {
@@ -944,26 +981,29 @@ func mapFrontendEvents(events []models.Event) []contracts.FrontendEventItem {
 func mapFrontendAlarmItem(alarm models.Alarm) contracts.FrontendAlarmItem {
 	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
 	return contracts.FrontendAlarmItem{
-		ID:                        alarm.ID,
-		Source:                    source,
-		ObjectID:                  alarm.ObjectID,
-		ObjectNumber:              alarm.GetObjectNumberDisplay(),
-		ObjectName:                strings.TrimSpace(alarm.ObjectName),
-		Address:                   strings.TrimSpace(alarm.Address),
-		Time:                      alarm.Time,
-		Details:                   strings.TrimSpace(alarm.Details),
-		TypeCode:                  string(alarm.Type),
-		TypeText:                  strings.TrimSpace(alarm.GetTypeDisplay()),
-		ZoneNumber:                alarm.ZoneNumber,
-		ZoneName:                  strings.TrimSpace(alarm.ZoneName),
-		IsProcessed:               alarm.IsProcessed,
-		ProcessedBy:               strings.TrimSpace(alarm.ProcessedBy),
-		ProcessNote:               strings.TrimSpace(alarm.ProcessNote),
-		IsInProgress:              alarm.IsInProgress,
-		InProgressBy:              strings.TrimSpace(alarm.InProgressBy),
-		IsOwnedByMe:               alarm.IsOwnedByMe,
-		CanTakeOver:               source == contracts.FrontendSourceCASL && alarm.IsInProgress && !alarm.IsOwnedByMe,
-		CanProcess:                (source != contracts.FrontendSourceCASL || !alarm.IsInProgress || alarm.IsOwnedByMe) && !alarm.IsResponseGroupDispatched,
+		ID:           alarm.ID,
+		Source:       source,
+		ObjectID:     alarm.ObjectID,
+		ObjectNumber: alarm.GetObjectNumberDisplay(),
+		ObjectName:   strings.TrimSpace(alarm.ObjectName),
+		Address:      strings.TrimSpace(alarm.Address),
+		Time:         alarm.Time,
+		Details:      strings.TrimSpace(alarm.Details),
+		TypeCode:     string(alarm.Type),
+		TypeText:     strings.TrimSpace(alarm.GetTypeDisplay()),
+		ZoneNumber:   alarm.ZoneNumber,
+		ZoneName:     strings.TrimSpace(alarm.ZoneName),
+		IsProcessed:  alarm.IsProcessed,
+		ProcessedBy:  strings.TrimSpace(alarm.ProcessedBy),
+		ProcessNote:  strings.TrimSpace(alarm.ProcessNote),
+		IsInProgress: alarm.IsInProgress,
+		InProgressBy: strings.TrimSpace(alarm.InProgressBy),
+		IsOwnedByMe:  alarm.IsOwnedByMe,
+		CanTakeOver:  source == contracts.FrontendSourceCASL && alarm.IsInProgress && !alarm.IsOwnedByMe,
+		CanProcess: (!alarm.IsInProgress ||
+			alarm.IsOwnedByMe ||
+			source == contracts.FrontendSourceBridge) &&
+			!alarm.IsResponseGroupDispatched,
 		ResponseGroupID:           strings.TrimSpace(alarm.ResponseGroupID),
 		IsResponseGroupDispatched: alarm.IsResponseGroupDispatched,
 		IsResponseGroupArrived:    alarm.IsResponseGroupArrived,

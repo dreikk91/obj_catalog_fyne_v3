@@ -96,6 +96,42 @@ func (p *DBDataProvider) GetObjects() []models.Object {
 	return objects
 }
 
+func (p *DBDataProvider) ListObjectLocations(ctx context.Context) ([]contracts.ObjectLocation, error) {
+	if p == nil || p.db == nil {
+		return nil, fmt.Errorf("object locations: база не ініціалізована")
+	}
+	type locationRow struct {
+		ObjectID  int64   `db:"OBJN"`
+		Latitude  *string `db:"LATITUDE"`
+		Longitude *string `db:"LONGITUDE"`
+	}
+	const query = `
+		SELECT gps.OBJN, gps.LATITUDE, gps.LONGITUDE
+		FROM OBJECTS_GPS gps
+		WHERE gps.ID = (
+			SELECT MAX(latest.ID)
+			FROM OBJECTS_GPS latest
+			WHERE latest.OBJN = gps.OBJN
+		)
+	`
+	var rows []locationRow
+	if err := p.db.SelectContext(ctx, &rows, p.db.Rebind(query)); err != nil {
+		return nil, fmt.Errorf("object locations: %w", err)
+	}
+	result := make([]contracts.ObjectLocation, 0, len(rows))
+	for _, row := range rows {
+		if row.ObjectID <= 0 {
+			continue
+		}
+		result = append(result, contracts.ObjectLocation{
+			ObjectID:  int(row.ObjectID),
+			Latitude:  strings.TrimSpace(ptrToString(row.Latitude)),
+			Longitude: strings.TrimSpace(ptrToString(row.Longitude)),
+		})
+	}
+	return result, nil
+}
+
 // GetObjectByID отримує базову інформацію про об'єкт
 func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 	if p.db == nil {
@@ -118,19 +154,42 @@ func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 		return nil
 	}
 
-	obj := &models.Object{
-		ID:          int(row.Objn),
-		Name:        ptrToString(row.ObjFullName1),
-		Address:     ptrToString(row.Address1),
-		ContractNum: ptrToString(row.Contract1),
-		Phone:       ptrToString(row.Phones1),
-		DeviceType:  ptrToString(row.ObjType1),
-		PanelMark:   ptrToString(row.PanelMark1),
-		SIM1:        ptrToString(row.GsmPhone),
-		SIM2:        ptrToString(row.GsmPhone2),
-		GSMHiddenN:  ptrToInt64(row.GsmHiddenN),
-		Status:      mapStateToStatus(row.AlarmState1, row.IsConnState1),
-		StatusText:  mapStateToStatusText(row.AlarmState1, row.TechAlarmState1, row.IsConnState1),
+	obj := mapObjectDetailRowToModel(*row)
+
+	log.Debug().Int("objectID", obj.ID).Str("name", obj.Name).Str("status", obj.StatusText).Msg("Деталі об'єкта завантажено")
+
+	return &obj
+}
+
+func mapObjectDetailRowToModel(row database.ObjectDetailRow) models.Object {
+	state := normalizeDBObjectState(row.GuardState1, row.IsConnState1, row.Eng1, row.BlockedArmedOnOff)
+	obj := models.Object{
+		ID:            int(row.Objn),
+		DisplayNumber: strconv.Itoa(int(row.Objn)),
+		Name:          ptrToString(row.ObjFullName1),
+		Address:       ptrToString(row.Address1),
+		Latitude:      strings.TrimSpace(ptrToString(row.Latitude)),
+		Longitude:     strings.TrimSpace(ptrToString(row.Longitude)),
+		ContractNum:   ptrToString(row.Contract1),
+		Phone:         ptrToString(row.Phones1),
+		DeviceType:    ptrToString(row.ObjType1),
+		PanelMark:     ptrToString(row.PanelMark1),
+		SIM1:          ptrToString(row.GsmPhone),
+		SIM2:          ptrToString(row.GsmPhone2),
+		GSMHiddenN:    ptrToInt64(row.GsmHiddenN),
+		Status:        mapStateToStatus(row.AlarmState1, row.IsConnState1),
+		StatusText:    mapStateToStatusText(row.AlarmState1, row.TechAlarmState1, row.IsConnState1),
+
+		AlarmState:        ptrToInt64(row.AlarmState1),
+		GuardState:        state.guardState,
+		TechAlarmState:    ptrToInt64(row.TechAlarmState1),
+		IsConnState:       state.connectionState,
+		BlockedArmedOnOff: state.blockMode,
+		GuardStatus:       state.guardStatus,
+		ConnectionStatus:  state.connectionStatus,
+		MonitoringStatus:  state.monitoringStatus,
+		IsUnderGuard:      state.guardStatus == models.GuardStatusGuarded,
+		IsConnOK:          state.connectionStatus == models.ConnectionStatusOnline,
 
 		ObjChan:    ptrToInt(row.ObjChan),
 		Phones1:    ptrToString(row.Phones1),
@@ -145,14 +204,11 @@ func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 		AutoTestHours: int(ptrToInt64(row.TestTime1)) / 60,
 	}
 
-	// Оновлюємо PowerSource на основі PowerFault
 	if obj.PowerFault > 0 {
 		obj.PowerSource = models.PowerBattery
 	} else {
 		obj.PowerSource = models.PowerMains
 	}
-
-	log.Debug().Int("objectID", obj.ID).Str("name", obj.Name).Str("status", obj.StatusText).Msg("Деталі об'єкта завантажено")
 
 	return obj
 }
@@ -332,6 +388,29 @@ func (p *DBDataProvider) GetObjectEvents(objectID string) []models.Event {
 		return nil
 	}
 
+	return mapDBEventRows(rows, int(id))
+}
+
+func (p *DBDataProvider) GetObjectEventsRange(objectID string, from time.Time, to time.Time) []models.Event {
+	if p.db == nil {
+		return nil
+	}
+	id, err := strconv.ParseInt(objectID, 10, 64)
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	row, err := database.GetObjectDetail(ctx, p.db, id)
+	if err != nil {
+		log.Error().Err(err).Int64("objn", id).Msg("Помилка отримання деталей об'єкта для журналу за період")
+		return nil
+	}
+	rows, err := database.GetObjectEventsRange(ctx, p.db, row.ObjUin, from, to)
+	if err != nil {
+		log.Error().Err(err).Int64("objn", id).Msg("Помилка отримання журналу об'єкта за період")
+		return nil
+	}
 	return mapDBEventRows(rows, int(id))
 }
 
@@ -1016,46 +1095,9 @@ func parseDBProviderObjectID(op string, raw string) (int64, bool) {
 
 // Допоміжні функції для мапінгу
 func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
-	blockMode := int16(0)
-	guardState := ptrToInt64(row.GuardState1)
+	state := normalizeDBObjectState(row.GuardState1, row.IsConnState1, row.Eng1, row.BlockedArmedOnOff)
 	subServerA := strings.TrimSpace(ptrToString(row.SBSA))
 	subServerB := strings.TrimSpace(ptrToString(row.SBSB))
-	// "Тимчасово знято із спостереження" визначається по GUARDSTATE1 = 0.
-	if guardState == 0 {
-		blockMode = 1
-	} else if ptrToInt64(row.Eng1) != 0 {
-		// Режим налагодження в цій БД визначається через OBJECTS_INFO.ENG1.
-		blockMode = 2
-	} else {
-		// Fallback для сумісності зі старими БД/клієнтами.
-		raw := ptrToInt16(row.BlockedArmedOnOff)
-		if raw == 1 || raw == 2 {
-			blockMode = raw
-		}
-	}
-	guardStatus := models.GuardStatusUnknown
-	if row.GuardState1 != nil {
-		if guardState == 0 {
-			guardStatus = models.GuardStatusDisarmed
-		} else {
-			guardStatus = models.GuardStatusGuarded
-		}
-	}
-	connectionStatus := models.ConnectionStatusUnknown
-	if row.IsConnState1 != nil {
-		if ptrToInt64(row.IsConnState1) == 0 {
-			connectionStatus = models.ConnectionStatusOffline
-		} else {
-			connectionStatus = models.ConnectionStatusOnline
-		}
-	}
-	monitoringStatus := models.MonitoringStatusActive
-	switch blockMode {
-	case 1:
-		monitoringStatus = models.MonitoringStatusBlocked
-	case 2:
-		monitoringStatus = models.MonitoringStatusDebug
-	}
 
 	return models.Object{
 		ID:            int(row.Objn),
@@ -1074,14 +1116,64 @@ func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
 		SubServerB:    subServerB,
 
 		AlarmState:        ptrToInt64(row.AlarmState1),
-		GuardState:        guardState,
+		GuardState:        state.guardState,
 		TechAlarmState:    ptrToInt64(row.TechAlarmState1),
-		IsConnState:       ptrToInt64(row.IsConnState1),
-		BlockedArmedOnOff: blockMode,
-		GuardStatus:       guardStatus,
-		ConnectionStatus:  connectionStatus,
-		MonitoringStatus:  monitoringStatus,
+		IsConnState:       state.connectionState,
+		BlockedArmedOnOff: state.blockMode,
+		GuardStatus:       state.guardStatus,
+		ConnectionStatus:  state.connectionStatus,
+		MonitoringStatus:  state.monitoringStatus,
+		IsUnderGuard:      state.guardStatus == models.GuardStatusGuarded,
+		IsConnOK:          state.connectionStatus == models.ConnectionStatusOnline,
 	}
+}
+
+type normalizedDBObjectState struct {
+	guardState       int64
+	connectionState  int64
+	blockMode        int16
+	guardStatus      models.GuardStatus
+	connectionStatus models.ConnectionStatus
+	monitoringStatus models.MonitoringStatus
+}
+
+func normalizeDBObjectState(guardState1 *int64, isConnState1 *int64, eng1 *int64, blockedArmedOnOff *int16) normalizedDBObjectState {
+	state := normalizedDBObjectState{
+		guardState:       ptrToInt64(guardState1),
+		connectionState:  ptrToInt64(isConnState1),
+		guardStatus:      models.GuardStatusUnknown,
+		connectionStatus: models.ConnectionStatusUnknown,
+		monitoringStatus: models.MonitoringStatusActive,
+	}
+
+	if guardState1 != nil {
+		if state.guardState == 0 {
+			state.guardStatus = models.GuardStatusDisarmed
+		} else {
+			state.guardStatus = models.GuardStatusGuarded
+		}
+	}
+	if isConnState1 != nil {
+		if state.connectionState == 1 {
+			state.connectionStatus = models.ConnectionStatusOnline
+		} else {
+			state.connectionStatus = models.ConnectionStatusOffline
+		}
+	}
+
+	switch {
+	case ptrToInt64(eng1) != 0:
+		state.blockMode = 2
+		state.monitoringStatus = models.MonitoringStatusDebug
+	case ptrToInt16(blockedArmedOnOff) == 1:
+		state.blockMode = 1
+		state.monitoringStatus = models.MonitoringStatusBlocked
+	case ptrToInt16(blockedArmedOnOff) == 2:
+		state.blockMode = 2
+		state.monitoringStatus = models.MonitoringStatusDebug
+	}
+
+	return state
 }
 
 func mapEventRowToModel(row database.EventRow, objID int) models.Event {

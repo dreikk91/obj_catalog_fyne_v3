@@ -102,3 +102,23 @@ func TestToObjectDetails(t *testing.T) {
 		t.Fatalf("preferred response group = %q/%q, want 1/Захід-Холдинг", got.PreferredResponseGroupID, got.PreferredResponseGroupName)
 	}
 }
+
+func TestToResponseGroupIncludesOperationalState(t *testing.T) {
+	changedAt := time.Date(2026, 6, 28, 10, 15, 0, 0, time.UTC)
+	got := ToResponseGroup(contracts.FrontendResponseGroup{
+		ID:              "7",
+		Name:            "Захід",
+		Source:          contracts.FrontendSourcePhoenix,
+		Status:          contracts.ResponseGroupStatusDispatched,
+		StatusText:      "На виїзді",
+		ObjectNumber:    "L00005",
+		ObjectName:      "Магазин",
+		StatusChangedAt: changedAt,
+	})
+	if got.Status != ResponseGroupStatusDispatched || got.ObjectNumber != "L00005" {
+		t.Fatalf("response group state = %+v", got)
+	}
+	if got.StatusChangedAt != changedAt.Format(time.RFC3339) {
+		t.Fatalf("StatusChangedAt = %q", got.StatusChangedAt)
+	}
+}

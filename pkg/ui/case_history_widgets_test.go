@@ -12,6 +12,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/models"
 	apptheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 func TestBuildCaseHistoryEventLine_LightThemePreservesContrastBackground(t *testing.T) {
@@ -46,7 +47,8 @@ func TestBuildCaseHistoryEventLine_LightThemePreservesContrastBackground(t *test
 	if !ok {
 		t.Fatalf("expected rectangle background, got %T", stack.Objects[0])
 	}
-	if got, want := color.NRGBAModel.Convert(bg.FillColor).(color.NRGBA), (color.NRGBA{R: 70, G: 120, B: 170, A: 255}); got != want {
+	wantText, wantRow := utils.SelectColorNRGBA(11)
+	if got, want := color.NRGBAModel.Convert(bg.FillColor).(color.NRGBA), wantRow; got != want {
 		t.Fatalf("unexpected background color: got %+v want %+v", got, want)
 	}
 
@@ -62,7 +64,7 @@ func TestBuildCaseHistoryEventLine_LightThemePreservesContrastBackground(t *test
 	if !ok {
 		t.Fatalf("expected canvas text, got %T", content.Objects[0])
 	}
-	if got, want := color.NRGBAModel.Convert(txt.Color).(color.NRGBA), (color.NRGBA{R: 255, G: 255, B: 255, A: 255}); got != want {
+	if got, want := color.NRGBAModel.Convert(txt.Color).(color.NRGBA), wantText; got != want {
 		t.Fatalf("unexpected text color: got %+v want %+v", got, want)
 	}
 }

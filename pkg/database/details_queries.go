@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -65,6 +66,24 @@ func GetObjectEvents(ctx context.Context, db *sqlx.DB, objuinInt int64) ([]Event
 	err := db.SelectContext(ctx, &results, db.Rebind(query), objuinInt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch events: %w", err)
+	}
+	return results, nil
+}
+
+// GetObjectEventsRange fetches events for an object within the requested time range.
+func GetObjectEventsRange(ctx context.Context, db *sqlx.DB, objuinInt int64, from time.Time, to time.Time) ([]EventRow, error) {
+	var results []EventRow
+	query := `
+		SELECT e.EVTIME1, e.ZONEN, e.INFO1, m.UKR1, m.SC1
+		FROM EVLOG e
+		JOIN MESSLIST m ON m.UIN = e.EVUIN
+		WHERE e.OBJUIN = ?
+		  AND e.EVTIME1 >= ?
+		  AND e.EVTIME1 <= ?
+		ORDER BY e.EVTIME1 DESC
+	`
+	if err := db.SelectContext(ctx, &results, db.Rebind(query), objuinInt, from, to); err != nil {
+		return nil, fmt.Errorf("failed to fetch events by time range: %w", err)
 	}
 	return results, nil
 }
@@ -134,6 +153,7 @@ func GetObjectDetail(ctx context.Context, db *sqlx.DB, objn int64) (*ObjectDetai
 			oi.OBJSHORTNAME1,
 			oi.ADDRESS1,
 			oi.CONTRACT1,
+			oi.ENG1,
 			oi.PHONES1,
 			oi.NOTES1,
 			oi.RESERVTEXT,
@@ -141,8 +161,11 @@ func GetObjectDetail(ctx context.Context, db *sqlx.DB, objn int64) (*ObjectDetai
 			oi.GSMPHONE2,
 			COALESCE(oi.GSMHIDENINT, 0) AS GSMHIDENINT,
 			oi.LOCATION1,
+			og.LATITUDE,
+			og.LONGITUDE,
 			ot.OBJTYPE1,
-			os.ALARMSTATE1, os.TECHALARMSTATE1,
+			os.ALARMSTATE1, os.GUARDSTATE1, os.TECHALARMSTATE1,
+			os.BLOCKEDARMED_ON_OFF,
 			os.AKBSTATE, os.TESTCONTROL1, os.TESTTIME1, os.POWERFAULT,
 			ol.ISCONNSTATE1,
 			oi.OBJCHAN,
@@ -154,6 +177,9 @@ func GetObjectDetail(ctx context.Context, db *sqlx.DB, objn int64) (*ObjectDetai
 		LEFT JOIN OBJECTS_STATE os ON os.OBJUIN = oi.OBJUIN
 		LEFT JOIN OBJECTS_LA ol ON ol.OBJUIN = oi.OBJUIN
 		LEFT JOIN PPK p ON oi.PPKID = p.ID + 100
+		LEFT JOIN OBJECTS_GPS og ON og.ID = (
+			SELECT MAX(og2.ID) FROM OBJECTS_GPS og2 WHERE og2.OBJUIN = oi.OBJUIN
+		)
 		WHERE
 			oi.OBJN = ?
 			`

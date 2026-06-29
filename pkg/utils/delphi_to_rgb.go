@@ -15,231 +15,158 @@ func cloneColorMapping(src map[int]ColorPair) map[int]ColorPair {
 	return maps.Clone(src)
 }
 
-// Базові (стандартні) карти кольорів для світлої теми
+// Базові (стандартні) карти кольорів для світлої теми.
+//
+// Палітра організована за 5 семантичними рівнями:
+//
+//	🔴 Критичний  — пожежа, проникнення, паніка, мед.тривога, газ
+//	🟠 Тривога    — тампер, несправність, техн.тривоги
+//	🟡 Попередження — втрата зв'язку, АКБ, живлення
+//	🟢 Норма      — постановка, зняття, тест, онлайн, часткова охорона
+//	⚪ Інфо       — відновлення, системні, сервісні
+//
+// Принципи: пастельний фон + насичений текст → контраст WCAG AA.
 func defaultLightColorMapping() map[int]ColorPair {
+	// --- Критичний рівень: ніжний червоний фон, насичений червоний текст ---
+	critical := ColorPair{
+		Text: color.NRGBA{R: 198, G: 40, B: 40, A: 255},   // #C62828
+		Row:  color.NRGBA{R: 253, G: 236, B: 234, A: 255}, // #FDECEA
+	}
+
+	// --- Тривога: теплий помаранчевий фон, яскравий оранж текст ---
+	alarm := ColorPair{
+		Text: color.NRGBA{R: 230, G: 81, B: 0, A: 255},    // #E65100
+		Row:  color.NRGBA{R: 255, G: 243, B: 224, A: 255}, // #FFF3E0
+	}
+
+	// --- Попередження: м'який жовтий фон, темний жовтий текст ---
+	warning := ColorPair{
+		Text: color.NRGBA{R: 245, G: 127, B: 23, A: 255},  // #F57F17
+		Row:  color.NRGBA{R: 255, G: 253, B: 231, A: 255}, // #FFFDE7
+	}
+
+	// --- Норма: світлий зелений фон, зелений текст ---
+	normal := ColorPair{
+		Text: color.NRGBA{R: 46, G: 125, B: 50, A: 255},   // #2E7D32
+		Row:  color.NRGBA{R: 232, G: 245, B: 233, A: 255}, // #E8F5E9
+	}
+
+	// --- Інфо: нейтральний (білий) фон, темно-сірий текст ---
+	info := ColorPair{
+		Text: color.NRGBA{R: 66, G: 66, B: 66, A: 255},    // #424242
+		Row:  color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // #FFFFFF
+	}
+
 	return map[int]ColorPair{
-		1: { // Alarm
-			Text: color.NRGBA{R: 255, G: 255, B: 128, A: 255}, // rgb(255,255,128)
-			Row:  color.NRGBA{R: 183, G: 0, B: 0, A: 255},     // rgb(183,0,0)
-		},
-		2: { // Tech alarm
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},      // rgb(0,0,0)
-			Row:  color.NRGBA{R: 250, G: 182, B: 69, A: 255}, // rgb(250,182,69)
-		},
-		3: { // PowerFail
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
-			Row:  color.NRGBA{R: 255, G: 160, B: 0, A: 255},
-		},
-		4: { // BatteryLow
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
-			Row:  color.NRGBA{R: 255, G: 230, B: 100, A: 255},
-		},
-		5: { // Restore
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
-			Row:  color.NRGBA{R: 160, G: 160, B: 164, A: 255}, // rgb(160,160,164)
-		},
-		6: { // Info
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
-			Row:  color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
-		},
-		7: { // PartArmedOn
-			Text: color.NRGBA{R: 0, G: 102, B: 51, A: 255},    // rgb(0,102,51)
-			Row:  color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
-		},
-		8: { // PartArmedOn
-			Text: color.NRGBA{R: 0, G: 102, B: 51, A: 255},    // rgb(0,102,51)
-			Row:  color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
-		},
-		9: { // Restore
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
-			Row:  color.NRGBA{R: 160, G: 160, B: 164, A: 255}, // rgb(160,160,164)
-		},
-		10: { // ArmedOn
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
-			Row:  color.NRGBA{R: 99, G: 156, B: 111, A: 255},  // rgb(99,156,111)
-		},
-		11: { // Disarmed
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
-			Row:  color.NRGBA{R: 70, G: 120, B: 170, A: 255},
-		},
-		12: { // ConnFailed
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
-			Row:  color.NRGBA{R: 255, G: 255, B: 128, A: 255}, // rgb(255,255,128)
-		},
-		13: { // Restore
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
-			Row:  color.NRGBA{R: 160, G: 160, B: 164, A: 255}, // rgb(160,160,164)
-		},
-		14: { // PartArmedOff
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
-			Row:  color.NRGBA{R: 128, G: 128, B: 0, A: 255},   // rgb(128,128,0)
-		},
-		16: { // Test
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
-			Row:  color.NRGBA{R: 70, G: 120, B: 170, A: 255},
-		},
-		17: { // Restore
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},       // rgb(0,0,0)
-			Row:  color.NRGBA{R: 160, G: 160, B: 164, A: 255}, // rgb(160,160,164)
-		},
-		18: { // PartArmedOff
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255}, // rgb(255,255,255)
-			Row:  color.NRGBA{R: 128, G: 128, B: 0, A: 255},   // rgb(128,128,0)
-		},
-		21: { // Panic
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
-			Row:  color.NRGBA{R: 130, G: 0, B: 130, A: 255},
-		},
-		22: { // Burglary
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
-			Row:  color.NRGBA{R: 166, G: 20, B: 20, A: 255},
-		},
-		23: { // Medical
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
-			Row:  color.NRGBA{R: 30, G: 90, B: 170, A: 255},
-		},
-		24: { // Gas
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
-			Row:  color.NRGBA{R: 110, G: 220, B: 210, A: 255},
-		},
-		25: { // Tamper
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
-			Row:  color.NRGBA{R: 255, G: 150, B: 70, A: 255},
-		},
-		26: { // PowerFail
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
-			Row:  color.NRGBA{R: 0, G: 0, B: 128, A: 255},
-		},
-		27: { // BatteryLow
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
-			Row:  color.NRGBA{R: 139, G: 69, B: 19, A: 255},
-		},
-		28: { // Online
-			Text: color.NRGBA{R: 0, G: 100, B: 0, A: 255},
-			Row:  color.NRGBA{R: 144, G: 238, B: 144, A: 255},
-		},
-		29: { // Offline
-			Text: color.NRGBA{R: 255, G: 255, B: 255, A: 255},
-			Row:  color.NRGBA{R: 105, G: 105, B: 105, A: 255},
-		},
-		30: { // System/Service
-			Text: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
-			Row:  color.NRGBA{R: 173, G: 216, B: 230, A: 255},
-		},
+		// === Критичний рівень ===
+		1:  critical, // Alarm (пожежна тривога)
+		21: critical, // Panic (тривожна кнопка)
+		22: critical, // Burglary (проникнення)
+		23: critical, // Medical (медична тривога)
+		24: critical, // Gas (газова тривога)
+
+		// === Тривога ===
+		2:  alarm, // Tech alarm (технічна тривога)
+		25: alarm, // Tamper (саботаж)
+		3:  alarm, // PowerFail (втрата 220В — критичне для обладнання)
+
+		// === Попередження ===
+		4:  warning, // BatteryLow (низький заряд АКБ)
+		12: warning, // ConnFailed (втрата зв'язку)
+		26: warning, // PowerFail extended (проблеми з живленням)
+		27: warning, // BatteryLow extended (стан АКБ)
+		29: warning, // Offline (прилад не на зв'язку)
+
+		// === Норма ===
+		7:  normal, // PartArmedOn (часткова постановка)
+		8:  normal, // PartArmedOn (часткова постановка)
+		10: normal, // ArmedOn (під охороною)
+		11: normal, // Disarmed (зняття з охорони)
+		14: normal, // PartArmedOff (часткове зняття)
+		16: normal, // Test (тестовий сигнал)
+		18: normal, // PartArmedOff (часткове зняття)
+		28: normal, // Online (прилад на зв'язку)
+
+		// === Інфо ===
+		5:  info, // Restore (відновлення)
+		6:  info, // Info (інформаційна подія)
+		9:  info, // Restore (відновлення)
+		13: info, // Restore (відновлення)
+		17: info, // Restore (відновлення)
+		30: info, // System/Service (системна/сервісна подія)
 	}
 }
 
-// Базові (стандартні) карти кольорів для темної теми
+// Базові (стандартні) карти кольорів для темної теми.
+// Структура аналогічна світлій темі — 5 семантичних рівнів.
 func defaultDarkColorMapping() map[int]ColorPair {
+	// --- Критичний рівень: темно-червоний фон, світлий червонуватий текст ---
+	critical := ColorPair{
+		Text: color.NRGBA{R: 255, G: 138, B: 128, A: 255}, // #FF8A80
+		Row:  color.NRGBA{R: 78, G: 21, B: 21, A: 255},    // #4E1515
+	}
+
+	// --- Тривога: темно-помаранчевий фон, світлий оранж текст ---
+	alarm := ColorPair{
+		Text: color.NRGBA{R: 255, G: 171, B: 145, A: 255}, // #FFAB91
+		Row:  color.NRGBA{R: 78, G: 44, B: 16, A: 255},    // #4E2C10
+	}
+
+	// --- Попередження: темно-жовтий фон, світлий жовтий текст ---
+	warning := ColorPair{
+		Text: color.NRGBA{R: 255, G: 213, B: 79, A: 255}, // #FFD54F
+		Row:  color.NRGBA{R: 78, G: 68, B: 16, A: 255},   // #4E4410
+	}
+
+	// --- Норма: темно-зелений фон, світлий зелений текст ---
+	normal := ColorPair{
+		Text: color.NRGBA{R: 165, G: 214, B: 167, A: 255}, // #A5D6A7
+		Row:  color.NRGBA{R: 27, G: 58, B: 27, A: 255},    // #1B3A1B
+	}
+
+	// --- Інфо: нейтральний темний фон, світло-сірий текст ---
+	info := ColorPair{
+		Text: color.NRGBA{R: 189, G: 189, B: 189, A: 255}, // #BDBDBD
+		Row:  color.NRGBA{R: 44, G: 44, B: 44, A: 255},    // #2C2C2C
+	}
+
 	return map[int]ColorPair{
-		1: { // Alarm
-			Text: color.NRGBA{R: 255, G: 200, B: 200, A: 255}, // rgb(255,200,200)
-			Row:  color.NRGBA{R: 90, G: 20, B: 20, A: 255},    // rgb(90,20,20)
-		},
-		2: { // Tech alarm
-			Text: color.NRGBA{R: 255, G: 220, B: 170, A: 255}, // rgb(255,220,170)
-			Row:  color.NRGBA{R: 80, G: 60, B: 30, A: 255},    // rgb(80,60,30)
-		},
-		3: { // PowerFail
-			Text: color.NRGBA{R: 255, G: 200, B: 150, A: 255},
-			Row:  color.NRGBA{R: 100, G: 60, B: 0, A: 255},
-		},
-		4: { // BatteryLow
-			Text: color.NRGBA{R: 255, G: 240, B: 170, A: 255},
-			Row:  color.NRGBA{R: 80, G: 80, B: 0, A: 255},
-		},
-		5: { // Restore
-			Text: color.NRGBA{R: 210, G: 210, B: 215, A: 255}, // rgb(210,210,215)
-			Row:  color.NRGBA{R: 45, G: 45, B: 50, A: 255},    // rgb(45,45,50)
-		},
-		6: { // Info
-			Text: color.NRGBA{R: 220, G: 220, B: 220, A: 255}, // rgb(220,220,220)
-			Row:  color.NRGBA{R: 30, G: 30, B: 30, A: 255},    // rgb(30,30,30)
-		},
-		7: { // PartArmedOn
-			Text: color.NRGBA{R: 170, G: 255, B: 210, A: 255}, // rgb(170,255,210)
-			Row:  color.NRGBA{R: 20, G: 70, B: 45, A: 255},    // rgb(20,70,45)
-		},
-		8: { // PartArmedOn
-			Text: color.NRGBA{R: 170, G: 255, B: 210, A: 255}, // rgb(170,255,210)
-			Row:  color.NRGBA{R: 20, G: 70, B: 45, A: 255},    // rgb(20,70,45)
-		},
-		9: { // Restore
-			Text: color.NRGBA{R: 210, G: 210, B: 215, A: 255}, // rgb(210,210,215)
-			Row:  color.NRGBA{R: 45, G: 45, B: 50, A: 255},    // rgb(45,45,50)
-		},
-		10: { // ArmedOn
-			Text: color.NRGBA{R: 200, G: 255, B: 225, A: 255}, // rgb(200,255,225)
-			Row:  color.NRGBA{R: 25, G: 85, B: 60, A: 255},    // rgb(25,85,60)
-		},
-		11: { // Disarmed
-			Text: color.NRGBA{R: 210, G: 230, B: 255, A: 255},
-			Row:  color.NRGBA{R: 35, G: 55, B: 80, A: 255},
-		},
-		12: { // ConnFailed
-			Text: color.NRGBA{R: 255, G: 245, B: 180, A: 255}, // rgb(255,245,180)
-			Row:  color.NRGBA{R: 85, G: 75, B: 30, A: 255},    // rgb(85,75,30)
-		},
-		13: { // Restore
-			Text: color.NRGBA{R: 210, G: 210, B: 215, A: 255}, // rgb(210,210,215)
-			Row:  color.NRGBA{R: 45, G: 45, B: 50, A: 255},    // rgb(45,45,50)
-		},
-		14: { // PartArmedOff
-			Text: color.NRGBA{R: 255, G: 240, B: 180, A: 255}, // rgb(255,240,180)
-			Row:  color.NRGBA{R: 90, G: 85, B: 30, A: 255},    // rgb(90,85,30)
-		},
-		16: { // Test
-			Text: color.NRGBA{R: 210, G: 230, B: 255, A: 255},
-			Row:  color.NRGBA{R: 35, G: 55, B: 80, A: 255},
-		},
-		17: { // Restore
-			Text: color.NRGBA{R: 210, G: 210, B: 215, A: 255}, // rgb(210,210,215)
-			Row:  color.NRGBA{R: 45, G: 45, B: 50, A: 255},    // rgb(45,45,50)
-		},
-		18: { // PartArmedOff
-			Text: color.NRGBA{R: 255, G: 240, B: 180, A: 255}, // rgb(255,240,180)
-			Row:  color.NRGBA{R: 90, G: 85, B: 30, A: 255},    // rgb(90,85,30)
-		},
-		21: { // Panic
-			Text: color.NRGBA{R: 255, G: 220, B: 255, A: 255},
-			Row:  color.NRGBA{R: 75, G: 25, B: 90, A: 255},
-		},
-		22: { // Burglary
-			Text: color.NRGBA{R: 255, G: 220, B: 220, A: 255},
-			Row:  color.NRGBA{R: 95, G: 30, B: 30, A: 255},
-		},
-		23: { // Medical
-			Text: color.NRGBA{R: 210, G: 235, B: 255, A: 255},
-			Row:  color.NRGBA{R: 30, G: 55, B: 85, A: 255},
-		},
-		24: { // Gas
-			Text: color.NRGBA{R: 220, G: 255, B: 245, A: 255},
-			Row:  color.NRGBA{R: 30, G: 80, B: 75, A: 255},
-		},
-		25: { // Tamper
-			Text: color.NRGBA{R: 255, G: 230, B: 190, A: 255},
-			Row:  color.NRGBA{R: 95, G: 60, B: 30, A: 255},
-		},
-		26: { // PowerFail
-			Text: color.NRGBA{R: 200, G: 200, B: 255, A: 255},
-			Row:  color.NRGBA{R: 15, G: 15, B: 70, A: 255},
-		},
-		27: { // BatteryLow
-			Text: color.NRGBA{R: 255, G: 220, B: 180, A: 255},
-			Row:  color.NRGBA{R: 70, G: 40, B: 15, A: 255},
-		},
-		28: { // Online
-			Text: color.NRGBA{R: 180, G: 255, B: 180, A: 255},
-			Row:  color.NRGBA{R: 20, G: 60, B: 20, A: 255},
-		},
-		29: { // Offline
-			Text: color.NRGBA{R: 220, G: 220, B: 220, A: 255},
-			Row:  color.NRGBA{R: 50, G: 50, B: 50, A: 255},
-		},
-		30: { // System/Service
-			Text: color.NRGBA{R: 200, G: 240, B: 255, A: 255},
-			Row:  color.NRGBA{R: 25, G: 55, B: 75, A: 255},
-		},
+		// === Критичний рівень ===
+		1:  critical, // Alarm (пожежна тривога)
+		21: critical, // Panic (тривожна кнопка)
+		22: critical, // Burglary (проникнення)
+		23: critical, // Medical (медична тривога)
+		24: critical, // Gas (газова тривога)
+
+		// === Тривога ===
+		2:  alarm, // Tech alarm (технічна тривога)
+		25: alarm, // Tamper (саботаж)
+		3:  alarm, // PowerFail (втрата 220В)
+
+		// === Попередження ===
+		4:  warning, // BatteryLow (низький заряд АКБ)
+		12: warning, // ConnFailed (втрата зв'язку)
+		26: warning, // PowerFail extended
+		27: warning, // BatteryLow extended
+		29: warning, // Offline (прилад не на зв'язку)
+
+		// === Норма ===
+		7:  normal, // PartArmedOn
+		8:  normal, // PartArmedOn
+		10: normal, // ArmedOn (під охороною)
+		11: normal, // Disarmed (зняття з охорони)
+		14: normal, // PartArmedOff
+		16: normal, // Test (тестовий сигнал)
+		18: normal, // PartArmedOff
+		28: normal, // Online (прилад на зв'язку)
+
+		// === Інфо ===
+		5:  info, // Restore (відновлення)
+		6:  info, // Info (інформаційна подія)
+		9:  info, // Restore
+		13: info, // Restore
+		17: info, // Restore
+		30: info, // System/Service
 	}
 }
 

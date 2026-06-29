@@ -1161,6 +1161,33 @@ func TestCASLProvider_MapCASLRowsToEvents_AllowsSystemActionWithoutObject(t *tes
 	}
 }
 
+func TestCASLProvider_MapCASLRowsToEvents_ReadJournalActionIsServiceEvent(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	events, _ := provider.mapCASLRowsToEvents(context.Background(), []CASLObjectEvent{
+		{
+			Type:           "user_action",
+			UserActionType: "read_journal_action",
+			UserFIO:        "Оператор",
+			Time:           time.Now().UnixMilli(),
+		},
+	}, 0)
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Type != models.EventService {
+		t.Fatalf("read journal type = %q, want service", events[0].Type)
+	}
+	if !strings.Contains(events[0].Details, "Перегляд журналу") {
+		t.Fatalf("read journal details = %q", events[0].Details)
+	}
+	if got := events[0].GetTypeDisplay(); got != "ПЕРЕГЛЯД ЖУРНАЛУ" {
+		t.Fatalf("read journal display type = %q", got)
+	}
+}
+
 func TestMapCASLObjectEvents_PPKDetailsMatchOriginalCASL(t *testing.T) {
 	t.Parallel()
 
@@ -2150,7 +2177,8 @@ func TestCASLProvider_ObjectDetailsEndpoints(t *testing.T) {
 		t.Fatalf("unexpected contact phone: %q", contacts[0].Phone)
 	}
 
-	events := provider.GetObjectEvents(objectID)
+	eventTime := time.UnixMilli(1774769226380)
+	events := provider.GetObjectEventsRange(objectID, eventTime.Add(-time.Hour), eventTime.Add(time.Hour))
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
@@ -2333,7 +2361,8 @@ func TestCASLProvider_GetObjectEvents_IncludesGeneralTapeItemHistory(t *testing.
 	}
 
 	objectID := strconv.Itoa(objects[0].ID)
-	events := provider.GetObjectEvents(objectID)
+	historyTime := time.UnixMilli(1775479716847)
+	events := provider.GetObjectEventsRange(objectID, historyTime.Add(-time.Hour), historyTime.Add(time.Hour))
 	if len(events) != 4 {
 		t.Fatalf("expected 4 case history events, got %d", len(events))
 	}

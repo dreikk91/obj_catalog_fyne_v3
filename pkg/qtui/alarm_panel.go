@@ -30,6 +30,7 @@ type AlarmPanel struct {
 	selectionLabel *qt.QLabel
 	processButton  *qt.QPushButton
 	pickButton     *qt.QPushButton
+	responseButton *qt.QPushButton
 	historyButton  *qt.QPushButton
 	hideHistoryBtn *qt.QPushButton
 	table          *qt.QTableView
@@ -52,6 +53,7 @@ type AlarmPanel struct {
 	OnAlarmSelected func(models.Alarm)
 	OnProcessAlarms func([]models.Alarm)
 	OnPickAlarms    func([]models.Alarm)
+	OnRespondAlarm  func(models.Alarm)
 	OnCountChanged  func(count int)
 }
 
@@ -120,6 +122,11 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	panel.pickButton.OnClicked(func() {
 		panel.pickSelectedAlarms()
 	})
+	panel.responseButton = qt.NewQPushButton3("Реагування")
+	panel.responseButton.SetToolTip("Відкрити картку реагування та керування МГР")
+	panel.responseButton.OnClicked(func() {
+		panel.respondToSelectedAlarm()
+	})
 	panel.historyButton = qt.NewQPushButton3("Хронологія")
 	panel.historyButton.SetToolTip("Показати хронологію вибраної групи")
 	panel.historyButton.OnClicked(func() {
@@ -132,9 +139,11 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	})
 	panel.processButton.SetEnabled(false)
 	panel.pickButton.SetEnabled(false)
+	panel.responseButton.SetEnabled(false)
 	panel.historyButton.SetEnabled(false)
 	toolbar.AddWidget(panel.processButton.QWidget)
 	toolbar.AddWidget(panel.pickButton.QWidget)
+	toolbar.AddWidget(panel.responseButton.QWidget)
 	toolbar.AddWidget(panel.historyButton.QWidget)
 	toolbar.AddWidget(panel.hideHistoryBtn.QWidget)
 
@@ -201,8 +210,12 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 		}
 	`)
 	panel.table.OnDoubleClicked(func(index *qt.QModelIndex) {
-		if alarm, ok := panel.alarmAtIndex(index); ok && panel.OnProcessAlarms != nil {
-			panel.OnProcessAlarms([]models.Alarm{alarm})
+		if alarm, ok := panel.alarmAtIndex(index); ok {
+			if panel.OnRespondAlarm != nil {
+				panel.OnRespondAlarm(alarm)
+			} else if panel.OnProcessAlarms != nil {
+				panel.OnProcessAlarms([]models.Alarm{alarm})
+			}
 		}
 	})
 	panel.table.SetContextMenuPolicy(qt.CustomContextMenu)
@@ -452,11 +465,7 @@ func (panel *AlarmPanel) applyFilters() {
 		if group.CriticalCount > 0 {
 			priority = "критична"
 		}
-		rowColor := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
-		textColor := color.NRGBA{R: 0, G: 0, B: 0, A: 255}
-		if group.CriticalCount > 0 {
-			rowColor = color.NRGBA{R: 255, G: 220, B: 220, A: 255}
-		}
+		textColor, rowColor := eventRowColorsBySeverity(group.Primary.VisualSeverityValue(), group.Primary.SC1)
 		addColoredReadOnlyGroupRow(panel.model, []string{
 			group.LatestTime,
 			group.ObjectNumber,
@@ -538,12 +547,13 @@ func (panel *AlarmPanel) updateSelectionState() {
 		return
 	}
 	selectedGroups, selectedAlarms := panel.selectedGroupAndAlarmCounts()
+	alarms := panel.selectedAlarms()
 	if panel.selectionLabel != nil {
 		panel.selectionLabel.SetText("Вибрано: " + strconv.Itoa(selectedGroups) + "/" + strconv.Itoa(selectedAlarms))
 	}
 	hasSelection := selectedAlarms > 0
 	if panel.processButton != nil {
-		panel.processButton.SetEnabled(hasSelection)
+		panel.processButton.SetEnabled(hasSelection && canProcessAlarms(alarms))
 		if selectedAlarms > 1 {
 			panel.processButton.SetText("Відпрацювати (" + strconv.Itoa(selectedAlarms) + ")")
 		} else {
@@ -551,12 +561,15 @@ func (panel *AlarmPanel) updateSelectionState() {
 		}
 	}
 	if panel.pickButton != nil {
-		panel.pickButton.SetEnabled(hasSelection)
+		panel.pickButton.SetEnabled(hasSelection && canTakeAlarms(alarms))
 		if selectedAlarms > 1 {
 			panel.pickButton.SetText("Взяти в роботу (" + strconv.Itoa(selectedAlarms) + ")")
 		} else {
 			panel.pickButton.SetText("Взяти в роботу")
 		}
+	}
+	if panel.responseButton != nil {
+		panel.responseButton.SetEnabled(selectedGroups == 1)
 	}
 	if panel.historyButton != nil {
 		panel.historyButton.SetEnabled(selectedGroups == 1)
@@ -631,6 +644,18 @@ func (panel *AlarmPanel) pickSelectedAlarms() {
 	}
 }
 
+func (panel *AlarmPanel) respondToSelectedAlarm() {
+	if panel == nil || panel.OnRespondAlarm == nil {
+		return
+	}
+	index := panel.table.CurrentIndex()
+	alarm, ok := panel.alarmAtIndex(index)
+	if !ok {
+		return
+	}
+	panel.OnRespondAlarm(alarm)
+}
+
 func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 	if panel == nil || panel.table == nil || pos == nil {
 		return
@@ -650,6 +675,7 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 
 	menu := qt.NewQMenu(panel.table.QWidget)
 	processAction := menu.AddActionWithText(alarmActionText("Відпрацювати", alarms))
+	processAction.SetEnabled(canProcessAlarms(alarms))
 	processAction.OnTriggered(func() {
 		if panel.OnProcessAlarms != nil {
 			panel.OnProcessAlarms(alarms)
@@ -657,11 +683,20 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 	})
 
 	pickAction := menu.AddActionWithText(alarmActionText("Взяти в роботу", alarms))
+	pickAction.SetEnabled(canTakeAlarms(alarms))
 	pickAction.OnTriggered(func() {
 		if panel.OnPickAlarms != nil {
 			panel.OnPickAlarms(alarms)
 		}
 	})
+
+	if panel.OnRespondAlarm != nil {
+		responseAction := menu.AddActionWithText("Відкрити картку реагування")
+		responseAction.SetEnabled(len(group.Alarms) > 0)
+		responseAction.OnTriggered(func() {
+			panel.OnRespondAlarm(group.Primary)
+		})
+	}
 
 	menu.AddSeparator()
 	historyAction := menu.AddActionWithText("Переглянути хронологію групи")
@@ -678,6 +713,30 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 		panel.autoSized = false
 	})
 	menu.ExecWithPos(panel.table.MapToGlobalWithQPoint(pos))
+}
+
+func canProcessAlarms(alarms []models.Alarm) bool {
+	if len(alarms) == 0 {
+		return false
+	}
+	for _, alarm := range alarms {
+		if !alarm.CanProcess {
+			return false
+		}
+	}
+	return true
+}
+
+func canTakeAlarms(alarms []models.Alarm) bool {
+	if len(alarms) == 0 {
+		return false
+	}
+	for _, alarm := range alarms {
+		if alarm.IsInProgress && !alarm.CanTakeOver {
+			return false
+		}
+	}
+	return true
 }
 
 func contextMenuAlarms(clicked []models.Alarm, selected []models.Alarm) []models.Alarm {

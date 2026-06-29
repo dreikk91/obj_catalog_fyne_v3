@@ -395,10 +395,18 @@ func formatTimestamp(value time.Time) string {
 
 func ToResponseGroup(item contracts.FrontendResponseGroup) ResponseGroup {
 	return ResponseGroup{
-		ID:       item.ID,
-		Name:     item.Name,
-		Callsign: item.Callsign,
-		Phone:    item.Phone,
+		ID:              item.ID,
+		Name:            item.Name,
+		Callsign:        item.Callsign,
+		Phone:           item.Phone,
+		Source:          Source(item.Source),
+		Status:          ResponseGroupStatus(item.Status),
+		StatusText:      item.StatusText,
+		ObjectNumber:    item.ObjectNumber,
+		ObjectName:      item.ObjectName,
+		Latitude:        item.Latitude,
+		Longitude:       item.Longitude,
+		StatusChangedAt: formatTimestamp(item.StatusChangedAt),
 	}
 }
 

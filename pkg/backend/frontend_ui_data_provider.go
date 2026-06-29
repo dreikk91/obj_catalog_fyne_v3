@@ -180,6 +180,27 @@ func (p *FrontendUIDataProvider) GetObjectEvents(objectID string) []models.Event
 	return result
 }
 
+func (p *FrontendUIDataProvider) GetObjectEventsRange(objectID string, from time.Time, to time.Time) []models.Event {
+	if ranged, ok := p.fallback.(contracts.ObjectEventsRangeProvider); ok {
+		return ranged.GetObjectEventsRange(objectID, from, to)
+	}
+	return filterObjectEventsRange(p.GetObjectEvents(objectID), from, to)
+}
+
+func filterObjectEventsRange(events []models.Event, from time.Time, to time.Time) []models.Event {
+	result := make([]models.Event, 0, len(events))
+	for _, event := range events {
+		if !from.IsZero() && event.Time.Before(from) {
+			continue
+		}
+		if !to.IsZero() && event.Time.After(to) {
+			continue
+		}
+		result = append(result, event)
+	}
+	return result
+}
+
 func (p *FrontendUIDataProvider) GetAlarms() []models.Alarm {
 	items, err := p.listAlarms()
 	if err != nil {
@@ -201,7 +222,16 @@ func (p *FrontendUIDataProvider) GetAlarms() []models.Alarm {
 }
 
 func (p *FrontendUIDataProvider) ProcessAlarm(id string, user string, note string) error {
-	if p == nil || p.fallback == nil {
+	if p == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	if alarmID, err := strconv.Atoi(strings.TrimSpace(id)); err == nil && p.frontend != nil {
+		return p.frontend.ProcessAlarm(context.Background(), alarmID, contracts.FrontendAlarmProcessRequest{
+			User: user,
+			Note: note,
+		})
+	}
+	if p.fallback == nil {
 		return contracts.ErrFrontendBackendUnavailable
 	}
 	return p.fallback.ProcessAlarm(id, user, note)
@@ -231,6 +261,30 @@ func (p *FrontendUIDataProvider) GetActiveAlarmSourceMessages(alarm models.Alarm
 	return provider.GetActiveAlarmSourceMessages(alarm)
 }
 
+func (p *FrontendUIDataProvider) GetObjectMedia(ctx context.Context, objectID int) ([]contracts.ObjectMedia, error) {
+	provider, ok := p.fallback.(contracts.ObjectMediaProvider)
+	if !ok {
+		return nil, nil
+	}
+	return provider.GetObjectMedia(ctx, objectID)
+}
+
+func (p *FrontendUIDataProvider) FetchObjectMedia(ctx context.Context, media contracts.ObjectMedia) ([]byte, error) {
+	provider, ok := p.fallback.(contracts.ObjectMediaProvider)
+	if !ok {
+		return nil, contracts.ErrFrontendBackendUnavailable
+	}
+	return provider.FetchObjectMedia(ctx, media)
+}
+
+func (p *FrontendUIDataProvider) ListObjectLocations(ctx context.Context) ([]contracts.ObjectLocation, error) {
+	provider, ok := p.fallback.(contracts.ObjectLocationProvider)
+	if !ok {
+		return nil, nil
+	}
+	return provider.ListObjectLocations(ctx)
+}
+
 func (p *FrontendUIDataProvider) GetAlarmProcessingOptions(ctx context.Context, alarm models.Alarm) ([]contracts.AlarmProcessingOption, error) {
 	provider, ok := p.fallback.(contracts.AlarmProcessingProvider)
 	if !ok {
@@ -240,19 +294,70 @@ func (p *FrontendUIDataProvider) GetAlarmProcessingOptions(ctx context.Context, 
 }
 
 func (p *FrontendUIDataProvider) ProcessAlarmWithRequest(ctx context.Context, alarm models.Alarm, user string, request contracts.AlarmProcessingRequest) error {
-	provider, ok := p.fallback.(contracts.AlarmProcessingProvider)
-	if !ok {
+	if p == nil || p.frontend == nil {
 		return contracts.ErrFrontendBackendUnavailable
 	}
-	return provider.ProcessAlarmWithRequest(ctx, alarm, user, request)
+	return p.frontend.ProcessAlarm(ctx, alarm.ID, contracts.FrontendAlarmProcessRequest{
+		User:      strings.TrimSpace(user),
+		CauseCode: strings.TrimSpace(request.CauseCode),
+		Note:      strings.TrimSpace(request.Note),
+	})
 }
 
 func (p *FrontendUIDataProvider) PickAlarm(ctx context.Context, alarm models.Alarm, user string) error {
-	provider, ok := p.fallback.(contracts.AlarmTakeoverProvider)
-	if !ok {
+	if p == nil || p.frontend == nil {
 		return contracts.ErrFrontendBackendUnavailable
 	}
-	return provider.PickAlarm(ctx, alarm, user)
+	return p.frontend.PickAlarm(ctx, alarm.ID, contracts.FrontendAlarmPickRequest{User: strings.TrimSpace(user)})
+}
+
+func (p *FrontendUIDataProvider) ListResponseGroupsForAlarm(ctx context.Context, alarm models.Alarm) ([]contracts.FrontendResponseGroup, error) {
+	groups, err := p.ListResponseGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
+	filtered := make([]contracts.FrontendResponseGroup, 0, len(groups))
+	for _, group := range groups {
+		if group.Source == "" || group.Source == contracts.FrontendSourceUnknown || group.Source == source {
+			filtered = append(filtered, group)
+		}
+	}
+	return filtered, nil
+}
+
+func (p *FrontendUIDataProvider) ListResponseGroups(ctx context.Context) ([]contracts.FrontendResponseGroup, error) {
+	if p == nil || p.frontend == nil {
+		return nil, contracts.ErrFrontendBackendUnavailable
+	}
+	groups, err := p.frontend.ListResponseGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return groups, nil
+}
+
+func (p *FrontendUIDataProvider) AssignResponseGroup(ctx context.Context, alarm models.Alarm, groupID string) error {
+	if p == nil || p.frontend == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	return p.frontend.AssignResponseGroup(ctx, alarm.ID, contracts.FrontendAlarmGroupActionRequest{
+		GroupID: strings.TrimSpace(groupID),
+	})
+}
+
+func (p *FrontendUIDataProvider) NotifyGroupArrived(ctx context.Context, alarm models.Alarm) error {
+	if p == nil || p.frontend == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	return p.frontend.NotifyGroupArrived(ctx, alarm.ID)
+}
+
+func (p *FrontendUIDataProvider) CancelResponseGroup(ctx context.Context, alarm models.Alarm) error {
+	if p == nil || p.frontend == nil {
+		return contracts.ErrFrontendBackendUnavailable
+	}
+	return p.frontend.CancelResponseGroup(ctx, alarm.ID)
 }
 
 func (p *FrontendUIDataProvider) listObjects() ([]contracts.FrontendObjectSummary, error) {
@@ -418,6 +523,11 @@ func mergeFrontendAlarm(alarm *models.Alarm, item contracts.FrontendAlarmItem) {
 	alarm.IsInProgress = item.IsInProgress
 	alarm.InProgressBy = strings.TrimSpace(item.InProgressBy)
 	alarm.IsOwnedByMe = item.IsOwnedByMe
+	alarm.CanTakeOver = item.CanTakeOver
+	alarm.CanProcess = item.CanProcess
+	alarm.ResponseGroupID = strings.TrimSpace(item.ResponseGroupID)
+	alarm.IsResponseGroupDispatched = item.IsResponseGroupDispatched
+	alarm.IsResponseGroupArrived = item.IsResponseGroupArrived
 	alarm.VisualSeverity = modelVisualSeverity(item.VisualSeverity)
 	if alarm.SC1 == 0 {
 		alarm.SC1 = modelSC1FromSeverity(item.VisualSeverity)

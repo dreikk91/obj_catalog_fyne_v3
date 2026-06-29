@@ -1879,39 +1879,52 @@ func showCASLLineDialog(
 
 func showCASLBlockDialog(parent *qt.QWidget, device contracts.CASLDeviceDetails) (contracts.CASLDeviceBlockRequest, bool) {
 	dialog := qt.NewQDialog(parent)
-	dialog.SetWindowTitle("Блокування приладу CASL")
+	dialog.SetWindowTitle("Блокування об'єкта CASL")
 	hours := newSpinBox(0, 0, 24)
 	minutes := newSpinBox(30, 0, 59)
 	unlimited := qt.NewQCheckBox3("Безстрокове блокування")
 	reason := qt.NewQTextEdit2()
 	reason.SetMinimumHeight(90)
+	status := qt.NewQLabel3("")
+	status.SetWordWrap(true)
+	unlimited.OnStateChanged(func(_ int) {
+		hours.SetEnabled(!unlimited.IsChecked())
+		minutes.SetEnabled(!unlimited.IsChecked())
+		status.SetText("")
+	})
 	form := qt.NewQFormLayout2()
 	form.AddRow3("Години", hours.QWidget)
 	form.AddRow3("Хвилини", minutes.QWidget)
 	form.AddRow3("", unlimited.QWidget)
 	form.AddRow3("Причина", reason.QWidget)
 	buttons := qt.NewQDialogButtonBox4(qt.QDialogButtonBox__Ok | qt.QDialogButtonBox__Cancel)
-	buttons.OnAccepted(dialog.Accept)
+	var request contracts.CASLDeviceBlockRequest
+	buttons.OnAccepted(func() {
+		result, err := buildCASLDeviceBlockRequest(
+			device,
+			hours.Value(),
+			minutes.Value(),
+			reason.ToPlainText(),
+			unlimited.IsChecked(),
+			time.Now(),
+		)
+		if err != nil {
+			status.SetText(err.Error())
+			return
+		}
+		request = result
+		dialog.Accept()
+	})
 	buttons.OnRejected(dialog.Reject)
 	layout := qt.NewQVBoxLayout(dialog.QWidget)
 	layout.AddLayout(form.QLayout)
+	layout.AddWidget(status.QWidget)
 	layout.AddWidget(buttons.QWidget)
 	dialog.SetLayout(layout.QLayout)
 	if dialog.Exec() != int(qt.QDialog__Accepted) {
 		return contracts.CASLDeviceBlockRequest{}, false
 	}
-	message := strings.TrimSpace(reason.ToPlainText())
-	if len([]rune(message)) < 3 {
-		qt.QMessageBox_Information(parent, "CASL", "Причина блокування має містити щонайменше 3 символи.")
-		return contracts.CASLDeviceBlockRequest{}, false
-	}
-	until := time.Now().Add(time.Duration(hours.Value())*time.Hour + time.Duration(minutes.Value())*time.Minute).Unix()
-	if unlimited.IsChecked() {
-		until = 2554790050
-	}
-	return contracts.CASLDeviceBlockRequest{
-		DeviceID: device.DeviceID, DeviceNumber: device.Number, TimeUnblock: until, Message: message,
-	}, true
+	return request, true
 }
 
 func showCASLCoordinatesDialog(parent *qt.QWidget, initialAddress string, initialLat string, initialLon string) (string, string, bool) {

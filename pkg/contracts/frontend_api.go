@@ -12,7 +12,10 @@ var (
 	ErrUnsupportedFrontendSource  = errors.New("frontend source is not supported")
 	ErrMissingLegacyObjectPayload = errors.New("legacy object payload is required")
 	ErrMissingCASLObjectPayload   = errors.New("casl object payload is required")
+	ErrAlarmOwnershipConflict     = errors.New("alarm is being processed by another operator")
 )
+
+const DefaultOperatorName = "Диспетчер"
 
 type FrontendSource string
 
@@ -206,10 +209,18 @@ type FrontendAlarmProcessingOption struct {
 }
 
 type FrontendResponseGroup struct {
-	ID       string
-	Name     string
-	Callsign string
-	Phone    string
+	ID              string
+	Name            string
+	Callsign        string
+	Phone           string
+	Source          FrontendSource
+	Status          ResponseGroupStatus
+	StatusText      string
+	ObjectNumber    string
+	ObjectName      string
+	Latitude        string
+	Longitude       string
+	StatusChangedAt time.Time
 }
 
 type FrontendAlarmProcessRequest struct {

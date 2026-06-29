@@ -29,7 +29,7 @@ const (
 	caslAPIHealthGrace    = 90 * time.Second
 	caslUsersCacheTTL     = 5 * time.Minute
 	caslObjectEventsTTL   = 10 * time.Second
-	caslObjectEventsSpan  = 7 * 24 * time.Hour
+	caslObjectEventsSpan  = 3 * 24 * time.Hour
 	caslJournalEventsSpan = 72 * time.Hour
 	caslStatsSpan         = 30 * 24 * time.Hour
 	caslObjectsStatTTL    = 20 * time.Second
@@ -994,4 +994,3 @@ func (p *CASLCloudProvider) ExecuteDeviceCommand(ctx context.Context, deviceNumb
 	}
 	return resp, nil
 }
-

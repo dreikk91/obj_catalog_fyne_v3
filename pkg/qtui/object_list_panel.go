@@ -281,13 +281,14 @@ func objectRowsSignature(objects []models.Object) string {
 	for _, object := range objects {
 		fmt.Fprintf(
 			&b,
-			"%d:%s:%s:%s:%d:%s:%s|",
+			"%d:%s:%s:%s:%d:%s:%s:%s|",
 			object.ID,
 			viewmodels.ObjectDisplayNumber(object),
 			strings.TrimSpace(object.Name),
 			strings.TrimSpace(object.Address),
 			object.Status,
 			strings.TrimSpace(object.StatusText),
+			object.MonitoringStatusValue(),
 			viewmodels.ObjectSourceByID(object.ID),
 		)
 	}
@@ -346,8 +347,9 @@ func (panel *ObjectListPanel) showContextMenu(pos *qt.QPoint) {
 	})
 
 	menu.AddSeparator()
-	panel.addMonitoringActions(menu, object)
-	menu.AddSeparator()
+	if panel.addMonitoringActions(menu, object) {
+		menu.AddSeparator()
+	}
 	copyNumberAction := menu.AddActionWithText("Копіювати номер")
 	copyNumberAction.OnTriggered(func() {
 		setClipboardText(viewmodels.ObjectDisplayNumber(object))
@@ -379,11 +381,11 @@ func (panel *ObjectListPanel) showContextMenu(pos *qt.QPoint) {
 	menu.ExecWithPos(panel.table.MapToGlobalWithQPoint(pos))
 }
 
-func (panel *ObjectListPanel) addMonitoringActions(menu *qt.QMenu, object models.Object) {
+func (panel *ObjectListPanel) addMonitoringActions(menu *qt.QMenu, object models.Object) bool {
 	switch viewmodels.ObjectSourceByID(object.ID) {
 	case viewmodels.ObjectSourceBridge:
 		if panel.OnBridgeMode == nil {
-			return
+			return false
 		}
 		submenu := menu.AddMenuWithTitle("Режим спостереження МІСТ")
 		current := bridgeDisplayBlockMode(object)
@@ -411,9 +413,10 @@ func (panel *ObjectListPanel) addMonitoringActions(menu *qt.QMenu, object models
 				}
 			})
 		}
+		return true
 	case viewmodels.ObjectSourceCASL:
 		if panel.OnCASLBlock == nil {
-			return
+			return false
 		}
 		label := "Блокувати об'єкт CASL..."
 		if object.MonitoringStatusValue() == models.MonitoringStatusBlocked {
@@ -423,7 +426,9 @@ func (panel *ObjectListPanel) addMonitoringActions(menu *qt.QMenu, object models
 		action.OnTriggered(func() {
 			panel.OnCASLBlock(object)
 		})
+		return true
 	}
+	return false
 }
 
 func bridgeDisplayBlockMode(object models.Object) contracts.DisplayBlockMode {

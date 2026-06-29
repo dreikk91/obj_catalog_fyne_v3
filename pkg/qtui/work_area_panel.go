@@ -3,6 +3,7 @@
 package qtui
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -18,6 +19,13 @@ import (
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
+// statusCard represents a single colored indicator card in the object card header.
+type statusCard struct {
+	frame *qt.QFrame
+	title *qt.QLabel
+	value *qt.QLabel
+}
+
 type WorkAreaPanel struct {
 	*qt.QWidget
 	tabs                     *qt.QTabWidget
@@ -25,16 +33,22 @@ type WorkAreaPanel struct {
 	headerAddress            *qt.QLabel
 	cardFields               map[string]*qt.QLineEdit
 	cardNotes                *qt.QTextEdit
+	statusCards              map[string]*statusCard
 	deviceVM                 *viewmodels.WorkAreaDeviceViewModel
 	zonesModel               *qt.QStandardItemModel
 	zonesFlatModel           *qt.QStandardItemModel
 	contactsModel            *qt.QStandardItemModel
 	eventsModel              *qt.QStandardItemModel
+	eventsRange              *qt.QComboBox
 	zonesStack               *qt.QStackedWidget
 	zonesTree                *qt.QTreeView
 	zonesTable               *qt.QTableView
 	contactsTable            *qt.QTableView
 	eventsTable              *qt.QTableView
+	mediaList                *qt.QListWidget
+	mediaPreview             *qt.QLabel
+	mediaStatus              *qt.QLabel
+	mediaOpenButton          *qt.QPushButton
 	columnAutoSized          map[string]bool
 	columnManualSized        map[string]bool
 	OnEditObjectRequested    func()
@@ -48,11 +62,17 @@ type WorkAreaPanel struct {
 	events                []models.Event
 	eventsLoadedObjectID  int
 	eventsLoadingObjectID int
+	eventsLoadSeq         int
 	eventsRowsSignature   string
 	eventsRowsReady       bool
 	eventsCacheMu         sync.Mutex
 	eventsCache           map[int]objectEventsCacheEntry
 	eventsCacheOrder      []int
+	media                 []contracts.ObjectMedia
+	mediaImageCache       map[string][]byte
+	mediaLoadedObjectID   int
+	mediaLoadingObjectID  int
+	mediaLoadSeq          int
 	dataProvider          contracts.DataProvider
 	prefs                 config.Preferences
 	viewModel             *viewmodels.WorkAreaViewModel
@@ -67,6 +87,7 @@ type WorkAreaPanel struct {
 const (
 	objectEventsCacheLimit = 8
 	objectEventsCacheTTL   = 2 * time.Minute
+	prefQtObjectEventsDays = "qt.objectEvents.rangeDays"
 )
 
 type objectEventsCacheEntry struct {
@@ -76,12 +97,13 @@ type objectEventsCacheEntry struct {
 
 func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 	panel := &WorkAreaPanel{
-		QWidget:     qt.NewQWidget2(),
-		deviceVM:    viewmodels.NewWorkAreaDeviceViewModel(),
-		viewModel:   viewmodels.NewWorkAreaViewModel(),
-		exportVM:    viewmodels.NewWorkAreaExportViewModel(),
-		prefs:       prefs,
-		eventsCache: map[int]objectEventsCacheEntry{},
+		QWidget:         qt.NewQWidget2(),
+		deviceVM:        viewmodels.NewWorkAreaDeviceViewModel(),
+		viewModel:       viewmodels.NewWorkAreaViewModel(),
+		exportVM:        viewmodels.NewWorkAreaExportViewModel(),
+		prefs:           prefs,
+		eventsCache:     map[int]objectEventsCacheEntry{},
+		mediaImageCache: map[string][]byte{},
 	}
 	layout := qt.NewQVBoxLayout(panel.QWidget)
 	panel.headerName = qt.NewQLabel3("Оберіть об'єкт зі списку")
@@ -126,11 +148,15 @@ func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 	panel.eventsModel = qt.NewQStandardItemModel2(0, 3)
 	panel.eventsTable = newTable(panel.eventsModel, []string{"Час", "Подія", "Опис"})
 	panel.installTableColumnContextMenu("object_events", panel.eventsTable)
-	panel.tabs.AddTab(panel.eventsTable.QWidget, "Журнал")
+	panel.tabs.AddTab(panel.buildEventsTab(), "Журнал")
+	panel.tabs.AddTab(panel.buildMediaTab(), "Медіа")
 	panel.tabs.AddTab(panel.buildExportTab(), "Експорт")
 	panel.tabs.OnCurrentChanged(func(index int) {
-		if panel.tabs.TabText(index) == "Журнал" {
+		switch panel.tabs.TabText(index) {
+		case "Журнал":
 			panel.loadEventsForCurrentObject()
+		case "Медіа":
+			panel.loadMediaForCurrentObject(false)
 		}
 	})
 	layout.AddWidget(panel.headerName.QWidget)
@@ -139,6 +165,128 @@ func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 	layout.AddWidget(panel.tabs.QWidget)
 	panel.SetLayout(layout.QLayout)
 	return panel
+}
+
+func (panel *WorkAreaPanel) buildMediaTab() *qt.QWidget {
+	content := qt.NewQWidget2()
+	layout := qt.NewQVBoxLayout(content)
+
+	panel.mediaStatus = qt.NewQLabel3("Оберіть об'єкт")
+	panel.mediaStatus.SetStyleSheet("color: #555;")
+	layout.AddWidget(panel.mediaStatus.QWidget)
+
+	panel.mediaList = qt.NewQListWidget2()
+	panel.mediaList.SetMinimumWidth(260)
+	panel.mediaPreview = qt.NewQLabel3("Оберіть фото, схему або камеру")
+	panel.mediaPreview.SetAlignment(qt.AlignCenter)
+	panel.mediaPreview.SetWordWrap(true)
+	panel.mediaPreview.SetMinimumSize2(420, 260)
+	panel.mediaPreview.SetStyleSheet("background: #f6f6f6; border: 1px solid #d8d8d8;")
+
+	splitter := qt.NewQSplitter3(qt.Horizontal)
+	splitter.AddWidget(panel.mediaList.QWidget)
+	splitter.AddWidget(panel.mediaPreview.QWidget)
+	splitter.SetSizes([]int{280, 650})
+	layout.AddWidget(splitter.QWidget)
+
+	actions := qt.NewQHBoxLayout2()
+	refreshButton := qt.NewQPushButton3("Оновити")
+	refreshButton.OnClicked(func() { panel.loadMediaForCurrentObject(true) })
+	panel.mediaOpenButton = qt.NewQPushButton3("Відкрити")
+	panel.mediaOpenButton.SetEnabled(false)
+	panel.mediaOpenButton.OnClicked(panel.openSelectedMedia)
+	actions.AddWidget(refreshButton.QWidget)
+	actions.AddWidget(panel.mediaOpenButton.QWidget)
+	actions.AddStretch()
+	layout.AddLayout(actions.QLayout)
+
+	panel.mediaList.OnCurrentRowChanged(func(int) {
+		panel.showSelectedMedia()
+	})
+	content.SetLayout(layout.QLayout)
+	return content
+}
+
+func (panel *WorkAreaPanel) buildEventsTab() *qt.QWidget {
+	content := qt.NewQWidget2()
+	layout := qt.NewQVBoxLayout(content)
+	toolbar := qt.NewQHBoxLayout2()
+	toolbar.AddWidget(qt.NewQLabel3("Період").QWidget)
+	panel.eventsRange = qt.NewQComboBox2()
+	for _, option := range []struct {
+		label string
+		days  int
+	}{
+		{label: "Останні 24 години", days: 1},
+		{label: "Останні 3 дні", days: 3},
+		{label: "Останні 7 днів", days: 7},
+		{label: "Останні 30 днів", days: 30},
+		{label: "Останні 90 днів", days: 90},
+	} {
+		panel.eventsRange.AddItem3(option.label, qt.NewQVariant4(option.days))
+	}
+	selectedDays := 3
+	if panel.prefs != nil {
+		selectedDays = panel.prefs.IntWithFallback(prefQtObjectEventsDays, 3)
+	}
+	panel.setObjectEventRangeDays(selectedDays)
+	panel.eventsRange.OnCurrentIndexChanged(func(_ int) {
+		panel.objectEventRangeChanged()
+	})
+	toolbar.AddWidget(panel.eventsRange.QWidget)
+	toolbar.AddStretch()
+	layout.AddLayout(toolbar.QLayout)
+	layout.AddWidget(panel.eventsTable.QWidget)
+	content.SetLayout(layout.QLayout)
+	return content
+}
+
+func (panel *WorkAreaPanel) setObjectEventRangeDays(days int) {
+	if panel == nil || panel.eventsRange == nil {
+		return
+	}
+	for index := 0; index < panel.eventsRange.Count(); index++ {
+		if panel.eventsRange.ItemData(index).ToInt() == days {
+			panel.eventsRange.SetCurrentIndex(index)
+			return
+		}
+	}
+	panel.eventsRange.SetCurrentIndex(1)
+}
+
+func (panel *WorkAreaPanel) objectEventRangeDays() int {
+	if panel == nil || panel.eventsRange == nil || panel.eventsRange.CurrentIndex() < 0 {
+		return 3
+	}
+	days := panel.eventsRange.ItemData(panel.eventsRange.CurrentIndex()).ToInt()
+	if days <= 0 {
+		return 3
+	}
+	return days
+}
+
+func (panel *WorkAreaPanel) objectEventRange(now time.Time) (time.Time, time.Time) {
+	return now.Add(-time.Duration(panel.objectEventRangeDays()) * 24 * time.Hour), now
+}
+
+func (panel *WorkAreaPanel) objectEventRangeChanged() {
+	if panel == nil {
+		return
+	}
+	if panel.prefs != nil {
+		panel.prefs.SetInt(prefQtObjectEventsDays, panel.objectEventRangeDays())
+	}
+	panel.eventsLoadSeq++
+	panel.eventsLoadedObjectID = 0
+	panel.eventsLoadingObjectID = 0
+	panel.eventsRowsReady = false
+	panel.eventsCacheMu.Lock()
+	panel.eventsCache = map[int]objectEventsCacheEntry{}
+	panel.eventsCacheOrder = nil
+	panel.eventsCacheMu.Unlock()
+	if panel.tabs != nil && panel.tabs.TabText(panel.tabs.CurrentIndex()) == "Журнал" {
+		panel.loadEventsForCurrentObjectWithMode(true)
+	}
 }
 
 func (panel *WorkAreaPanel) showContactContextMenu(pos *qt.QPoint) {
@@ -300,6 +448,9 @@ func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone,
 		panel.eventsRowsReady = false
 	}
 	panel.eventsLoadingObjectID = 0
+	if previousObjectID != object.ID {
+		panel.clearMediaState()
+	}
 	if keepLoadedEvents {
 		panel.eventsRowsSignature = previousEventsSignature
 		panel.eventsRowsReady = previousEventsRowsReady
@@ -318,8 +469,8 @@ func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone,
 				if panel.currentObject == nil || panel.currentObject.ID != id {
 					return
 				}
-				panel.setCardValue("Тест-сигнал", externalData.TestMessage)
-				panel.setCardValue("Рівень сигналу", externalData.Signal)
+				panel.setCardValue("Тест-повідомлення", externalData.TestMessage)
+				panel.setCardValue("Якість зв'язку", externalData.Signal)
 
 				lastTestStr := "—"
 				if !externalData.LastTest.IsZero() {
@@ -331,7 +482,7 @@ func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone,
 				if !externalData.LastMessage.IsZero() {
 					lastMsgStr = externalData.LastMessage.Format("02.01.2006 15:04:05")
 				}
-				panel.setCardValue("Ост. повідомлення", lastMsgStr)
+				panel.setCardValue("Остання подія", lastMsgStr)
 			}
 
 			if panel.OnRunOnMainThread != nil {
@@ -370,6 +521,9 @@ func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone,
 			panel.restoreTableWidthsIfCaptured("object_events", panel.eventsTable, eventsWidths)
 			panel.eventsRowsReady = false
 		}
+	}
+	if panel.tabs.TabText(panel.tabs.CurrentIndex()) == "Медіа" {
+		panel.loadMediaForCurrentObject(false)
 	}
 
 	if panel.exportPDFBtn != nil {
@@ -508,6 +662,7 @@ func (panel *WorkAreaPanel) SetLoading(object models.Object) {
 	panel.eventsLoadingObjectID = 0
 	panel.eventsRowsSignature = ""
 	panel.eventsRowsReady = false
+	panel.clearMediaState()
 
 	panel.clearObjectDetails()
 
@@ -529,44 +684,300 @@ func (panel *WorkAreaPanel) SetLoading(object models.Object) {
 	panel.setObjectCard(object, panel.deviceVM.BuildObjectPresentation(object))
 }
 
+func (panel *WorkAreaPanel) clearMediaState() {
+	if panel == nil {
+		return
+	}
+	panel.mediaLoadSeq++
+	panel.media = nil
+	panel.mediaImageCache = map[string][]byte{}
+	panel.mediaLoadedObjectID = 0
+	panel.mediaLoadingObjectID = 0
+	if panel.mediaList != nil {
+		panel.mediaList.Clear()
+	}
+	if panel.mediaPreview != nil {
+		panel.mediaPreview.SetPixmap(qt.NewQPixmap())
+		panel.mediaPreview.SetText("Оберіть фото, схему або камеру")
+	}
+	if panel.mediaStatus != nil {
+		panel.mediaStatus.SetText("Медіа ще не завантажено")
+	}
+	if panel.mediaOpenButton != nil {
+		panel.mediaOpenButton.SetEnabled(false)
+	}
+}
+
+func (panel *WorkAreaPanel) loadMediaForCurrentObject(force bool) {
+	if panel == nil || panel.currentObject == nil || panel.dataProvider == nil {
+		return
+	}
+	provider, ok := panel.dataProvider.(contracts.ObjectMediaProvider)
+	if !ok {
+		panel.mediaStatus.SetText("Поточне джерело не підтримує медіа")
+		return
+	}
+	objectID := panel.currentObject.ID
+	if !force && (panel.mediaLoadedObjectID == objectID || panel.mediaLoadingObjectID == objectID) {
+		return
+	}
+	panel.mediaLoadingObjectID = objectID
+	panel.mediaLoadSeq++
+	seq := panel.mediaLoadSeq
+	panel.mediaStatus.SetText("Завантаження медіа...")
+	panel.mediaList.Clear()
+	panel.mediaPreview.SetPixmap(qt.NewQPixmap())
+	panel.mediaPreview.SetText("Завантаження...")
+	panel.mediaOpenButton.SetEnabled(false)
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		media, err := provider.GetObjectMedia(ctx, objectID)
+		panel.runOnMainThread(func() {
+			if seq != panel.mediaLoadSeq || panel.currentObject == nil || panel.currentObject.ID != objectID {
+				return
+			}
+			panel.mediaLoadingObjectID = 0
+			if err != nil {
+				panel.mediaStatus.SetText("Помилка завантаження: " + strings.TrimSpace(err.Error()))
+				panel.mediaPreview.SetText("Не вдалося завантажити медіа")
+				return
+			}
+			panel.media = append(panel.media[:0], media...)
+			panel.mediaLoadedObjectID = objectID
+			panel.fillMediaList()
+		})
+	}()
+}
+
+func (panel *WorkAreaPanel) fillMediaList() {
+	panel.mediaList.Clear()
+	for _, media := range panel.media {
+		prefix := "Фото / схема"
+		if media.Kind == contracts.ObjectMediaCamera {
+			prefix = "Камера"
+		}
+		text := prefix + ": " + strings.TrimSpace(media.Title)
+		if room := strings.TrimSpace(media.RoomName); room != "" {
+			text += " | " + room
+		}
+		panel.mediaList.AddItem(text)
+	}
+	panel.mediaStatus.SetText(fmt.Sprintf("Медіа: %d", len(panel.media)))
+	if len(panel.media) == 0 {
+		panel.mediaPreview.SetText("Для цього об'єкта медіа не знайдено")
+		return
+	}
+	panel.mediaList.SetCurrentRow(0)
+}
+
+func (panel *WorkAreaPanel) selectedMedia() (contracts.ObjectMedia, bool) {
+	if panel == nil || panel.mediaList == nil {
+		return contracts.ObjectMedia{}, false
+	}
+	row := panel.mediaList.CurrentRow()
+	if row < 0 || row >= len(panel.media) {
+		return contracts.ObjectMedia{}, false
+	}
+	return panel.media[row], true
+}
+
+func (panel *WorkAreaPanel) showSelectedMedia() {
+	media, ok := panel.selectedMedia()
+	if !ok {
+		panel.mediaOpenButton.SetEnabled(false)
+		return
+	}
+	panel.mediaOpenButton.SetEnabled(true)
+	if media.Kind == contracts.ObjectMediaCamera {
+		panel.mediaPreview.SetPixmap(qt.NewQPixmap())
+		panel.mediaPreview.SetText(strings.TrimSpace(media.URL))
+		return
+	}
+	provider, ok := panel.dataProvider.(contracts.ObjectMediaProvider)
+	if !ok {
+		return
+	}
+	panel.mediaLoadSeq++
+	seq := panel.mediaLoadSeq
+	objectID := panel.currentObject.ID
+	panel.mediaPreview.SetPixmap(qt.NewQPixmap())
+	panel.mediaPreview.SetText("Завантаження зображення...")
+	if body := panel.mediaImageCache[media.ID]; len(body) > 0 {
+		panel.showMediaPreviewBody(body)
+		return
+	}
+	go func(selected contracts.ObjectMedia) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		body, err := provider.FetchObjectMedia(ctx, selected)
+		panel.runOnMainThread(func() {
+			if seq != panel.mediaLoadSeq || panel.currentObject == nil || panel.currentObject.ID != objectID {
+				return
+			}
+			if err != nil {
+				panel.mediaPreview.SetText("Не вдалося завантажити: " + strings.TrimSpace(err.Error()))
+				return
+			}
+			if len(body) == 0 {
+				panel.mediaPreview.SetText("Порожнє зображення")
+				return
+			}
+			panel.mediaImageCache[selected.ID] = append([]byte(nil), body...)
+			panel.showMediaPreviewBody(body)
+		})
+	}(media)
+}
+
+func (panel *WorkAreaPanel) showMediaPreviewBody(body []byte) {
+	if len(body) == 0 {
+		panel.mediaPreview.SetText("Порожнє зображення")
+		return
+	}
+	pixmap := qt.NewQPixmap()
+	if !pixmap.LoadFromData(&body[0], uint(len(body))) {
+		panel.mediaPreview.SetText("Невідомий формат зображення")
+		return
+	}
+	panel.mediaPreview.SetText("")
+	panel.mediaPreview.SetPixmap(pixmap.Scaled(760, 500))
+}
+
+func (panel *WorkAreaPanel) openSelectedMedia() {
+	media, ok := panel.selectedMedia()
+	if !ok {
+		return
+	}
+	if media.Kind == contracts.ObjectMediaCamera {
+		if target := strings.TrimSpace(media.URL); target != "" {
+			qt.QDesktopServices_OpenUrl(qt.NewQUrl3(target))
+		}
+		return
+	}
+	provider, ok := panel.dataProvider.(contracts.ObjectMediaProvider)
+	if !ok {
+		return
+	}
+	if body := panel.mediaImageCache[media.ID]; len(body) > 0 {
+		showCASLImagePreview(panel.QWidget, body)
+		return
+	}
+	objectID := panel.currentObject.ID
+	go func(selected contracts.ObjectMedia) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		body, err := provider.FetchObjectMedia(ctx, selected)
+		panel.runOnMainThread(func() {
+			if panel.currentObject == nil || panel.currentObject.ID != objectID {
+				return
+			}
+			if err != nil {
+				qt.QMessageBox_Critical(panel.QWidget, "Медіа", err.Error())
+				return
+			}
+			panel.mediaImageCache[selected.ID] = append([]byte(nil), body...)
+			showCASLImagePreview(panel.QWidget, body)
+		})
+	}(media)
+}
+
+func (panel *WorkAreaPanel) runOnMainThread(f func()) {
+	if panel.OnRunOnMainThread != nil {
+		panel.OnRunOnMainThread(f)
+		return
+	}
+	f()
+}
+
 func (panel *WorkAreaPanel) buildObjectCardTab() *qt.QWidget {
 	panel.cardFields = make(map[string]*qt.QLineEdit)
+	panel.statusCards = make(map[string]*statusCard)
 	panel.cardNotes = qt.NewQTextEdit2()
 	panel.cardNotes.SetReadOnly(true)
 	panel.cardNotes.SetMinimumHeight(72)
 	panel.cardNotes.SetMaximumHeight(120)
 
 	content := qt.NewQWidget2()
-	grid := qt.NewQGridLayout(content)
-	grid.SetHorizontalSpacing(12)
-	grid.SetVerticalSpacing(6)
-	grid.SetColumnStretch(1, 2)
-	grid.SetColumnStretch(3, 2)
+	mainLayout := qt.NewQVBoxLayout(content)
+	mainLayout.SetSpacing(8)
 
+	// --- Status indicators (colored cards at the top) ---
+	statusRow := qt.NewQHBoxLayout2()
+	statusRow.SetSpacing(8)
+	panel.addStatusCard(statusRow, "guard", "Охорона", "—")
+	panel.addStatusCard(statusRow, "connection", "Зв'язок", "—")
+	panel.addStatusCard(statusRow, "power", "Живлення", "—")
+	panel.addStatusCard(statusRow, "monitoring", "Моніторинг", "—")
+	statusRow.AddStretch()
+	mainLayout.AddLayout(statusRow.QLayout)
+
+	// --- Section: Основна інформація ---
+	basicGroup := qt.NewQGroupBox3("📋 Основна інформація")
+	basicGrid := qt.NewQGridLayout(basicGroup.QWidget)
+	basicGrid.SetHorizontalSpacing(12)
+	basicGrid.SetVerticalSpacing(6)
+	basicGrid.SetColumnStretch(1, 2)
+	basicGrid.SetColumnStretch(3, 2)
 	row := 0
-	row = panel.addCardSection(grid, row, "Основне")
-	row = panel.addCardFields(grid, row, []string{"Номер", "Договір", "Телефон"})
-	row = panel.addCardWideField(grid, row, "Назва")
-	row = panel.addCardWideField(grid, row, "Адреса")
-	row = panel.addCardWideField(grid, row, "Координати")
-	row = panel.addCardFields(grid, row, []string{"Район", "Геокодування", "Словник об'єкта"})
+	row = panel.addCardFields(basicGrid, row, []string{"Номер", "Договір", "Телефон"})
+	row = panel.addCardWideField(basicGrid, row, "Назва")
+	row = panel.addCardWideField(basicGrid, row, "Адреса")
+	row = panel.addCardWideField(basicGrid, row, "Координати")
+	row = panel.addCardFields(basicGrid, row, []string{"Район", "Геокодування", "Словник об'єкта"})
+	_ = row
+	mainLayout.AddWidget(basicGroup.QWidget)
 
-	row = panel.addCardSection(grid, row, "Обладнання і зв'язок")
-	row = panel.addCardFields(grid, row, []string{"Прилад", "Шифр приладу", "Контроль тестів"})
-	row = panel.addCardWideField(grid, row, "Групи")
-	row = panel.addCardFields(grid, row, []string{"Взяття/Зняття", "SIM 1", "SIM 2"})
-	row = panel.addCardWideField(grid, row, "SIM-карта")
-	row = panel.addCardWideField(grid, row, "Живлення")
+	// --- Section: Обладнання та зв'язок ---
+	deviceGroup := qt.NewQGroupBox3("📡 Обладнання та зв'язок")
+	deviceGrid := qt.NewQGridLayout(deviceGroup.QWidget)
+	deviceGrid.SetHorizontalSpacing(12)
+	deviceGrid.SetVerticalSpacing(6)
+	deviceGrid.SetColumnStretch(1, 2)
+	deviceGrid.SetColumnStretch(3, 2)
+	row = 0
+	row = panel.addCardFieldWithTooltip(deviceGrid, row, 0, "Прилад", "Тип приймально-контрольного приладу на об'єкті")
+	row = panel.addCardFieldWithTooltip(deviceGrid, row-1, 2, "Модель ППК", "Марка та модель приймально-контрольного приладу")
+	row = panel.addCardFieldWithTooltip(deviceGrid, row-1, 4, "Період тесту", "Як часто прилад відправляє тестовий сигнал на пульт")
+	row = panel.addCardWideField(deviceGrid, row, "Групи")
+	row = panel.addCardFieldWithTooltip(deviceGrid, row, 0, "Стан охорони", "Поточний стан постановки/зняття з охорони")
+	row = panel.addCardFieldWithTooltip(deviceGrid, row-1, 2, "SIM 1", "Основний номер SIM-карти приладу")
+	row = panel.addCardFieldWithTooltip(deviceGrid, row-1, 4, "SIM 2", "Резервний номер SIM-карти приладу")
+	row = panel.addCardWideField(deviceGrid, row, "SIM-карта")
+	row = panel.addCardWideField(deviceGrid, row, "Живлення")
+	_ = row
+	mainLayout.AddWidget(deviceGroup.QWidget)
 
-	row = panel.addCardSection(grid, row, "Поточний оперативний стан")
-	row = panel.addCardFields(grid, row, []string{"Охорона", "Зв'язок", "Ост. повідомлення"})
-	row = panel.addCardFields(grid, row, []string{"АКБ", "Канал", "Тест-сигнал"})
-	row = panel.addCardFields(grid, row, []string{"Рівень сигналу", "Останній тест", "Напрямок"})
+	// --- Section: Оперативний стан ---
+	stateGroup := qt.NewQGroupBox3("⚡ Оперативний стан")
+	stateGrid := qt.NewQGridLayout(stateGroup.QWidget)
+	stateGrid.SetHorizontalSpacing(12)
+	stateGrid.SetVerticalSpacing(6)
+	stateGrid.SetColumnStretch(1, 2)
+	stateGrid.SetColumnStretch(3, 2)
+	row = 0
+	row = panel.addCardFieldWithTooltip(stateGrid, row, 0, "Охорона (стан)", "Поточний стан охорони об'єкта")
+	row = panel.addCardFieldWithTooltip(stateGrid, row-1, 2, "Зв'язок (стан)", "Стан зв'язку приладу з пультом")
+	row = panel.addCardFieldWithTooltip(stateGrid, row-1, 4, "Остання подія", "Час отримання останнього повідомлення від приладу")
+	row = panel.addCardFieldWithTooltip(stateGrid, row, 0, "Батарея (АКБ)", "Стан акумуляторної батареї резервного живлення")
+	row = panel.addCardFieldWithTooltip(stateGrid, row-1, 2, "Канал зв'язку", "Тип каналу зв'язку приладу з пультом (GPRS, автододзвін тощо)")
+	row = panel.addCardFieldWithTooltip(stateGrid, row-1, 4, "Тест-повідомлення", "Останнє тестове повідомлення від приладу")
+	row = panel.addCardFieldWithTooltip(stateGrid, row, 0, "Якість зв'язку", "Рівень GSM-сигналу приладу")
+	row = panel.addCardFieldWithTooltip(stateGrid, row-1, 2, "Останній тест", "Дата та час останнього тестового сигналу")
+	row = panel.addCardFieldWithTooltip(stateGrid, row-1, 4, "Напрямок", "Напрямок підключення на пульті")
+	_ = row
+	mainLayout.AddWidget(stateGroup.QWidget)
 
-	row = panel.addCardSection(grid, row, "Додатково")
-	grid.AddWidget3(qt.NewQLabel3("Примітки").QWidget, row, 0, 1, 1)
-	grid.AddWidget3(panel.cardNotes.QWidget, row, 1, 1, 5)
-	row++
+	// --- Section: Додатково ---
+	notesGroup := qt.NewQGroupBox3("📝 Додатково")
+	notesLayout := qt.NewQVBoxLayout(notesGroup.QWidget)
+	notesLabel := qt.NewQLabel3("Примітки")
+	notesLabel.SetToolTip("Нотатки та коментарі щодо об'єкта")
+	notesLayout.AddWidget(notesLabel.QWidget)
+	notesLayout.AddWidget(panel.cardNotes.QWidget)
+	mainLayout.AddWidget(notesGroup.QWidget)
+
+	mainLayout.AddStretch()
 
 	scroll := qt.NewQScrollArea2()
 	scroll.SetWidgetResizable(true)
@@ -574,11 +985,121 @@ func (panel *WorkAreaPanel) buildObjectCardTab() *qt.QWidget {
 	return scroll.QWidget
 }
 
-func (panel *WorkAreaPanel) addCardSection(grid *qt.QGridLayout, row int, title string) int {
-	label := qt.NewQLabel3(title)
-	label.SetStyleSheet("font-weight: bold; color: #1a73e8; padding-top: 10px;")
-	grid.AddWidget3(label.QWidget, row, 0, 1, 6)
-	return row + 1
+// addStatusCard creates a colored status indicator card.
+func (panel *WorkAreaPanel) addStatusCard(layout *qt.QHBoxLayout, key string, title string, initialValue string) {
+	frame := qt.NewQFrame2()
+	frame.SetStyleSheet(`
+		QFrame {
+			border: 1px solid #d0d0d0;
+			border-radius: 6px;
+			padding: 6px 12px;
+			min-width: 130px;
+			background: #f5f5f5;
+		}
+	`)
+	cardLayout := qt.NewQVBoxLayout(frame.QWidget)
+	cardLayout.SetSpacing(2)
+	cardLayout.SetContentsMargins(6, 4, 6, 4)
+
+	titleLabel := qt.NewQLabel3(title)
+	titleLabel.SetStyleSheet("font-size: 9pt; color: #666; border: 0; background: transparent; padding: 0;")
+
+	valueLabel := qt.NewQLabel3(initialValue)
+	valueLabel.SetStyleSheet("font-weight: 700; font-size: 10pt; color: #333; border: 0; background: transparent; padding: 0;")
+
+	cardLayout.AddWidget(titleLabel.QWidget)
+	cardLayout.AddWidget(valueLabel.QWidget)
+	layout.AddWidget(frame.QWidget)
+
+	panel.statusCards[key] = &statusCard{
+		frame: frame,
+		title: titleLabel,
+		value: valueLabel,
+	}
+}
+
+// updateStatusIndicators updates the status cards with the current object state.
+func (panel *WorkAreaPanel) updateStatusIndicators(object models.Object) {
+	if panel == nil || panel.statusCards == nil {
+		return
+	}
+
+	// Guard status
+	if card, ok := panel.statusCards["guard"]; ok {
+		switch object.GuardStatusValue() {
+		case models.GuardStatusGuarded:
+			panel.setStatusCardState(card, "Під охороною", "#2E7D32", "#E8F5E9")
+		case models.GuardStatusDisarmed:
+			panel.setStatusCardState(card, "Знято", "#F57F17", "#FFFDE7")
+		default:
+			panel.setStatusCardState(card, "Невідомо", "#757575", "#F5F5F5")
+		}
+	}
+
+	// Connection status
+	if card, ok := panel.statusCards["connection"]; ok {
+		switch object.ConnectionStatusValue() {
+		case models.ConnectionStatusOnline:
+			panel.setStatusCardState(card, "Онлайн", "#2E7D32", "#E8F5E9")
+		case models.ConnectionStatusOffline:
+			panel.setStatusCardState(card, "Втрата зв'язку", "#C62828", "#FDECEA")
+		default:
+			panel.setStatusCardState(card, "Невідомо", "#757575", "#F5F5F5")
+		}
+	}
+
+	// Power status
+	if card, ok := panel.statusCards["power"]; ok {
+		value, textColor, backgroundColor := objectPowerStatusCardState(object)
+		panel.setStatusCardState(card, value, textColor, backgroundColor)
+	}
+
+	// Monitoring status
+	if card, ok := panel.statusCards["monitoring"]; ok {
+		switch object.MonitoringStatusValue() {
+		case models.MonitoringStatusActive:
+			panel.setStatusCardState(card, "Активний", "#2E7D32", "#E8F5E9")
+		case models.MonitoringStatusBlocked:
+			panel.setStatusCardState(card, "Заблоковано", "#C62828", "#FDECEA")
+		case models.MonitoringStatusDebug:
+			panel.setStatusCardState(card, "Тест/Налагодження", "#F57F17", "#FFFDE7")
+		default:
+			panel.setStatusCardState(card, "Невідомо", "#757575", "#F5F5F5")
+		}
+	}
+}
+
+func objectPowerStatusCardState(object models.Object) (value string, textColor string, backgroundColor string) {
+	switch {
+	case object.PowerFault > 0:
+		return "Аварія 220В", "#C62828", "#FDECEA"
+	case object.AkbState > 0:
+		return "Несправність АКБ", "#F57F17", "#FFFDE7"
+	case object.PowerFault < 0 && object.AkbState < 0:
+		return "Невідомо", "#757575", "#F5F5F5"
+	default:
+		return "220В та АКБ в нормі", "#2E7D32", "#E8F5E9"
+	}
+}
+
+func (panel *WorkAreaPanel) setStatusCardState(card *statusCard, value string, textColor string, bgColor string) {
+	if card == nil {
+		return
+	}
+	card.value.SetText(value)
+	card.value.SetStyleSheet(fmt.Sprintf(
+		"font-weight: 700; font-size: 10pt; color: %s; border: 0; background: transparent; padding: 0;",
+		textColor,
+	))
+	card.frame.SetStyleSheet(fmt.Sprintf(`
+		QFrame {
+			border: 1px solid %s;
+			border-radius: 6px;
+			padding: 6px 12px;
+			min-width: 130px;
+			background: %s;
+		}
+	`, textColor, bgColor))
 }
 
 func (panel *WorkAreaPanel) addCardWideField(grid *qt.QGridLayout, row int, labelText string) int {
@@ -605,7 +1126,22 @@ func (panel *WorkAreaPanel) addCardFields(grid *qt.QGridLayout, row int, labels 
 	return row + 1
 }
 
+// addCardFieldWithTooltip adds a single labeled field at a specific grid position with a tooltip.
+func (panel *WorkAreaPanel) addCardFieldWithTooltip(grid *qt.QGridLayout, row int, col int, labelText string, tooltip string) int {
+	lbl := qt.NewQLabel3(labelText)
+	lbl.SetToolTip(tooltip)
+	grid.AddWidget3(lbl.QWidget, row, col, 1, 1)
+	field := qt.NewQLineEdit2()
+	field.SetReadOnly(true)
+	field.SetMinimumWidth(150)
+	field.SetToolTip(tooltip)
+	grid.AddWidget3(field.QWidget, row, col+1, 1, 1)
+	panel.cardFields[labelText] = field
+	return row + 1
+}
+
 func (panel *WorkAreaPanel) setObjectCard(object models.Object, presentation viewmodels.WorkAreaDevicePresentation) {
+	// --- Основна інформація ---
 	panel.setCardValue("Номер", viewmodels.ObjectDisplayNumber(object))
 	panel.setCardValue("Договір", object.ContractNum)
 	panel.setCardValue("Телефон", presentation.PhoneCopyText)
@@ -618,31 +1154,33 @@ func (panel *WorkAreaPanel) setObjectCard(object models.Object, presentation vie
 	panel.setCardValue("Геокодування", "")
 	panel.setCardValue("Словник об'єкта", "")
 
+	// --- Обладнання та зв'язок ---
 	panel.setCardValue("Прилад", trimPresentationPrefix(presentation.DeviceTypeText))
-	panel.setCardValue("Шифр приладу", trimPresentationPrefix(presentation.PanelMarkText))
-	panel.setCardValue("Контроль тестів", trimPresentationPrefix(presentation.TestControlText))
+	panel.setCardValue("Модель ППК", trimPresentationPrefix(presentation.PanelMarkText))
+	panel.setCardValue("Період тесту", trimPresentationPrefix(presentation.TestControlText))
 
 	panel.setCardValue("Групи", trimPresentationPrefix(presentation.GroupsText))
-	panel.setCardValue("Взяття/Зняття", trimPresentationPrefix(presentation.GuardText))
+	panel.setCardValue("Стан охорони", trimPresentationPrefix(presentation.GuardText))
 	panel.setCardValue("SIM-карта", trimPresentationPrefix(presentation.SIMText))
 
 	panel.setCardValue("SIM 1", trimPresentationPrefix(presentation.SIM1Text))
 	panel.setCardValue("SIM 2", trimPresentationPrefix(presentation.SIM2Text))
 	panel.setCardValue("Живлення", trimPresentationPrefix(presentation.PowerText))
 
-	panel.setCardValue("Охорона", objectCardGuardText(object, presentation))
-	panel.setCardValue("Зв'язок", objectCardConnectionText(object, presentation))
+	// --- Оперативний стан ---
+	panel.setCardValue("Охорона (стан)", objectCardGuardText(object, presentation))
+	panel.setCardValue("Зв'язок (стан)", objectCardConnectionText(object, presentation))
 
 	lastMsgStr := "—"
 	if !object.LastMessageTime.IsZero() {
 		lastMsgStr = object.LastMessageTime.Format("02.01.2006 15:04:05")
 	}
-	panel.setCardValue("Ост. повідомлення", lastMsgStr)
+	panel.setCardValue("Остання подія", lastMsgStr)
 
-	panel.setCardValue("АКБ", trimPresentationPrefix(presentation.AkbText))
-	panel.setCardValue("Канал", trimPresentationPrefix(presentation.ChannelText))
-	panel.setCardValue("Тест-сигнал", "Завантаження...")
-	panel.setCardValue("Рівень сигналу", object.SignalStrength)
+	panel.setCardValue("Батарея (АКБ)", trimPresentationPrefix(presentation.AkbText))
+	panel.setCardValue("Канал зв'язку", trimPresentationPrefix(presentation.ChannelText))
+	panel.setCardValue("Тест-повідомлення", "Завантаження...")
+	panel.setCardValue("Якість зв'язку", object.SignalStrength)
 
 	lastTestStr := "—"
 	if !object.LastTestTime.IsZero() {
@@ -652,6 +1190,9 @@ func (panel *WorkAreaPanel) setObjectCard(object models.Object, presentation vie
 	panel.setCardValue("Напрямок", "")
 
 	panel.cardNotes.SetPlainText(emptyDash(object.Notes1))
+
+	// Update status indicator cards
+	panel.updateStatusIndicators(object)
 }
 
 func (panel *WorkAreaPanel) clearObjectDetails() {
@@ -989,10 +1530,16 @@ func (panel *WorkAreaPanel) loadEventsForCurrentObjectWithMode(force bool) {
 
 	eventLimit := config.LoadUIConfig(panel.uiPreferences()).ObjectLogLimit
 	panel.eventsLoadingObjectID = objectID
+	panel.eventsLoadSeq++
+	loadSeq := panel.eventsLoadSeq
+	from, to := panel.objectEventRange(time.Now())
 
-	go func(id int) {
-		events := panel.viewModel.LoadObjectEvents(panel.dataProvider, id, eventLimit)
+	go func(id int, seq int, rangeStart time.Time, rangeEnd time.Time) {
+		events := panel.viewModel.LoadObjectEventsRange(panel.dataProvider, id, eventLimit, rangeStart, rangeEnd)
 		updateUI := func() {
+			if seq != panel.eventsLoadSeq {
+				return
+			}
 			if panel.eventsLoadingObjectID == id {
 				panel.eventsLoadingObjectID = 0
 			}
@@ -1009,7 +1556,7 @@ func (panel *WorkAreaPanel) loadEventsForCurrentObjectWithMode(force bool) {
 		} else {
 			updateUI()
 		}
-	}(objectID)
+	}(objectID, loadSeq, from, to)
 }
 
 func (panel *WorkAreaPanel) loadObjectEventsForExport(objectID int) []models.Event {
@@ -1020,7 +1567,8 @@ func (panel *WorkAreaPanel) loadObjectEventsForExport(objectID int) []models.Eve
 		return events
 	}
 	eventLimit := config.LoadUIConfig(panel.uiPreferences()).ObjectLogLimit
-	events := panel.viewModel.LoadObjectEvents(panel.dataProvider, objectID, eventLimit)
+	from, to := panel.objectEventRange(time.Now())
+	events := panel.viewModel.LoadObjectEventsRange(panel.dataProvider, objectID, eventLimit, from, to)
 	panel.storeObjectEvents(objectID, events)
 	return events
 }

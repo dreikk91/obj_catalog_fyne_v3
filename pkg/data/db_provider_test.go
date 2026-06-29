@@ -241,6 +241,33 @@ func TestMapObjectRowToModel_PreservesSIMPhones(t *testing.T) {
 	}
 }
 
+func TestMapObjectDetailRowToModel_NormalizesBridgeState(t *testing.T) {
+	t.Parallel()
+
+	guarded := int64(1)
+	connected := int64(1)
+	powerOK := int64(0)
+	batteryOK := int64(0)
+	row := database.ObjectDetailRow{
+		Objn:         1559,
+		GuardState1:  &guarded,
+		IsConnState1: &connected,
+		PowerFault:   &powerOK,
+		AkbState:     &batteryOK,
+	}
+
+	obj := mapObjectDetailRowToModel(row)
+	if obj.GuardStatus != models.GuardStatusGuarded || !obj.IsUnderGuard || obj.GuardState != 1 {
+		t.Fatalf("guard state was not normalized: %+v", obj)
+	}
+	if obj.ConnectionStatus != models.ConnectionStatusOnline || !obj.IsConnOK || obj.IsConnState != 1 {
+		t.Fatalf("connection state was not normalized: %+v", obj)
+	}
+	if obj.PowerSource != models.PowerMains {
+		t.Fatalf("PowerSource = %v, want mains", obj.PowerSource)
+	}
+}
+
 func ptrTime(v time.Time) *time.Time {
 	return &v
 }

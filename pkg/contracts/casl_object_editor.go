@@ -331,6 +331,7 @@ type CASLObjectEditorProvider interface {
 	UpdateCASLDeviceLine(ctx context.Context, update CASLDeviceLineMutation) error
 	CreateCASLDeviceLine(ctx context.Context, create CASLDeviceLineMutation) error
 	AddCASLLineToRoom(ctx context.Context, binding CASLLineToRoomBinding) error
+	RemoveCASLLineFromRoom(ctx context.Context, binding CASLLineToRoomBinding) error
 	AddCASLUserToRoom(ctx context.Context, request CASLAddUserToRoomRequest) error
 	RemoveCASLUserFromRoom(ctx context.Context, request CASLRemoveUserFromRoomRequest) error
 	UpdateCASLRoomUserPriorities(ctx context.Context, objectID int64, items []CASLRoomUserPriority) error

@@ -661,7 +661,7 @@ func TestMapCASLObjectStatusState(t *testing.T) {
 	}
 }
 
-func TestMapCASLGrdObjectToObject_UsesGeoZoneAsPreferredResponseGroup(t *testing.T) {
+func TestMapCASLGrdObjectToObjectUsesGeoZoneResponseGroups(t *testing.T) {
 	t.Parallel()
 
 	obj := mapCASLGrdObjectToObject(caslGrdObject{
@@ -670,18 +670,32 @@ func TestMapCASLGrdObjectToObject_UsesGeoZoneAsPreferredResponseGroup(t *testing
 		Address:        "Львів",
 		Status:         "Включено",
 		DeviceNumber:   10005,
-		GeoZoneID:      1,
+		GeoZoneID:      99,
 		StartDate:      1669154400000,
 		Contract:       "C-1",
 		Description:    "Опис",
 		ReactingPultID: "1",
 	}, nil)
 
-	if obj.PreferredResponseGroupID != "1" {
-		t.Fatalf("PreferredResponseGroupID = %q, want 1", obj.PreferredResponseGroupID)
+	groups := buildCASLGeoZoneResponseGroups(
+		[]map[string]any{{"geo_zone_id": float64(99), "mgrs": []any{"11", float64(12)}}},
+		[]map[string]any{
+			{"mgr_id": "11", "name": "ГМР Спарта 1"},
+			{"mgr_id": float64(12), "name": "ГМР Спарта 2"},
+		},
+	)
+	applyCASLResponseGroups(&obj, 99, groups)
+	if obj.PreferredResponseGroupID != "11, 12" {
+		t.Fatalf("PreferredResponseGroupID = %q, want 11, 12", obj.PreferredResponseGroupID)
+	}
+	if obj.PreferredResponseGroupName != "ГМР Спарта 1, ГМР Спарта 2" {
+		t.Fatalf("PreferredResponseGroupName = %q", obj.PreferredResponseGroupName)
 	}
 	if obj.Description1 != "Опис" {
 		t.Fatalf("Description1 = %q, want %q", obj.Description1, "Опис")
+	}
+	if obj.Location1 != "" {
+		t.Fatalf("Location1 = %q, must not duplicate the address", obj.Location1)
 	}
 }
 

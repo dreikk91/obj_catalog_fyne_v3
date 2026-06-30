@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -744,14 +745,13 @@ func (s *caslObjectDialogState) readForms() error {
 
 func (s *caslObjectDialogState) saveExisting(ctx context.Context) (int64, error) {
 	object := s.snapshot.Object
-	if err := s.provider.UpdateCASLObject(ctx, contracts.CASLGuardObjectUpdate{
-		ObjID: object.ObjID, Name: object.Name, Address: object.Address, Long: object.Long, Lat: object.Lat,
-		Description: object.Description, Contract: object.Contract, ManagerID: object.ManagerID, Note: object.Note,
-		StartDate: object.StartDate, Status: object.ObjectStatus, ObjectType: object.ObjectType, IDRequest: object.IDRequest,
-		ReactingPultID: object.ReactingPultID, GeoZoneID: object.GeoZoneID, BusinessCoeff: object.BusinessCoeff,
-	}); err != nil {
-		return 0, fmt.Errorf("об'єкт: %w", err)
+	objectUpdate := caslObjectUpdateFromDetails(object)
+	if !reflect.DeepEqual(caslObjectUpdateFromDetails(s.original), objectUpdate) {
+		if err := s.provider.UpdateCASLObject(ctx, objectUpdate); err != nil {
+			return 0, fmt.Errorf("об'єкт: %w", err)
+		}
 	}
+
 	device := object.Device
 	if device.Number != s.original.Device.Number {
 		inUse, err := s.provider.IsCASLDeviceNumberInUse(ctx, device.Number)
@@ -762,15 +762,14 @@ func (s *caslObjectDialogState) saveExisting(ctx context.Context) (int64, error)
 			return 0, fmt.Errorf("номер приладу %d вже зайнятий", device.Number)
 		}
 	}
-	if err := s.provider.UpdateCASLDevice(ctx, contracts.CASLDeviceUpdate{
-		DeviceID: device.DeviceID, Number: device.Number, Name: device.Name, DeviceType: device.Type,
-		Timeout: device.Timeout, SIM1: device.SIM1, SIM2: device.SIM2, TechnicianID: device.TechnicianID,
-		Units: device.Units, Requisites: device.Requisites, ChangeDate: device.ChangeDate,
-		ReglamentDate: device.ReglamentDate, MoreAlarmTime: device.MoreAlarmTime,
-		IgnoringAlarmTime: device.IgnoringAlarmTime, LicenceKey: device.LicenceKey, PasswRemote: device.PasswRemote,
-	}); err != nil {
-		return 0, fmt.Errorf("прилад: %w", err)
+	deviceUpdate := caslDeviceUpdateFromDetails(device)
+	if !reflect.DeepEqual(caslDeviceUpdateFromDetails(s.original.Device), deviceUpdate) {
+		if err := s.provider.UpdateCASLDevice(ctx, deviceUpdate); err != nil {
+			return 0, fmt.Errorf("прилад: %w", err)
+		}
 	}
+
+	createdRoom := false
 	for _, room := range object.Rooms {
 		if strings.HasPrefix(room.RoomID, "draft-room-") {
 			if err := s.provider.CreateCASLRoom(ctx, contracts.CASLRoomCreate{
@@ -778,6 +777,11 @@ func (s *caslObjectDialogState) saveExisting(ctx context.Context) (int64, error)
 			}); err != nil {
 				return 0, fmt.Errorf("приміщення %q: %w", room.Name, err)
 			}
+			createdRoom = true
+			continue
+		}
+		originalRoom, found := caslRoomByID(s.original.Rooms, room.RoomID)
+		if found && caslRoomMetadataEqual(originalRoom, room) {
 			continue
 		}
 		if err := s.provider.UpdateCASLRoom(ctx, contracts.CASLRoomUpdate{
@@ -786,50 +790,189 @@ func (s *caslObjectDialogState) saveExisting(ctx context.Context) (int64, error)
 			return 0, fmt.Errorf("приміщення %q: %w", room.Name, err)
 		}
 	}
+
 	for _, line := range device.Lines {
 		mutation := contracts.CASLDeviceLineMutation{
 			DeviceID: device.DeviceID, LineID: line.LineID, LineNumber: line.LineNumber,
 			GroupNumber: line.GroupNumber, AdapterType: line.AdapterType, AdapterNumber: line.AdapterNumber,
 			Description: line.Description, LineType: line.LineType, IsBlocked: line.IsBlocked,
 		}
-		if line.LineID == nil {
+		originalLine, found := caslOriginalLine(line, s.original.Device.Lines)
+		if !found {
 			if err := s.provider.CreateCASLDeviceLine(ctx, mutation); err != nil {
 				return 0, fmt.Errorf("зона #%d: %w", line.LineNumber, err)
 			}
-		} else if err := s.provider.UpdateCASLDeviceLine(ctx, mutation); err != nil {
-			return 0, fmt.Errorf("зона #%d: %w", line.LineNumber, err)
+		} else if !caslLineDefinitionEqual(originalLine, line) {
+			if err := s.provider.UpdateCASLDeviceLine(ctx, mutation); err != nil {
+				return 0, fmt.Errorf("зона #%d: %w", line.LineNumber, err)
+			}
 		}
 	}
-	reloaded, err := s.provider.GetCASLObjectEditorSnapshot(ctx, parseCASLObjectID(object.ObjID))
-	if err != nil {
-		return 0, fmt.Errorf("оновлення зв'язків: %w", err)
+
+	roomIDsByName := make(map[string]string, len(object.Rooms))
+	for _, room := range object.Rooms {
+		if !strings.HasPrefix(room.RoomID, "draft-room-") {
+			roomIDsByName[strings.ToLower(strings.TrimSpace(room.Name))] = room.RoomID
+		}
 	}
-	roomIDsByName := make(map[string]string, len(reloaded.Object.Rooms))
-	for _, room := range reloaded.Object.Rooms {
-		roomIDsByName[strings.ToLower(strings.TrimSpace(room.Name))] = room.RoomID
+	if createdRoom {
+		reloaded, err := s.provider.GetCASLObjectEditorSnapshot(ctx, parseCASLObjectID(object.ObjID))
+		if err != nil {
+			return 0, fmt.Errorf("оновлення приміщень: %w", err)
+		}
+		for _, room := range reloaded.Object.Rooms {
+			roomIDsByName[strings.ToLower(strings.TrimSpace(room.Name))] = room.RoomID
+		}
 	}
+
 	for _, line := range device.Lines {
-		roomName := s.roomName(line.RoomID)
-		if strings.TrimSpace(roomName) == "" {
+		desiredRoomID := strings.TrimSpace(line.RoomID)
+		if desiredRoomID == "" {
+			desiredRoomID = caslRoomIDForLine(object.Rooms, line.LineNumber)
+		}
+		if strings.HasPrefix(desiredRoomID, "draft-room-") {
+			desiredRoomID = roomIDsByName[strings.ToLower(strings.TrimSpace(s.roomName(line.RoomID)))]
+		}
+		originalLine, existed := caslOriginalLine(line, s.original.Device.Lines)
+		originalRoomID := ""
+		originalLineNumber := line.LineNumber
+		if existed {
+			originalLineNumber = originalLine.LineNumber
+			originalRoomID = caslRoomIDForLine(s.original.Rooms, originalLineNumber)
+			if originalRoomID == "" {
+				originalRoomID = strings.TrimSpace(originalLine.RoomID)
+			}
+		}
+		bindingChanged := !existed || originalRoomID != desiredRoomID || originalLineNumber != line.LineNumber
+		if !bindingChanged {
 			continue
 		}
-		roomID := roomIDsByName[strings.ToLower(strings.TrimSpace(roomName))]
-		if roomID == "" {
-			return 0, fmt.Errorf("не знайдено room_id для %q", roomName)
+		if originalRoomID != "" {
+			if err := s.provider.RemoveCASLLineFromRoom(ctx, contracts.CASLLineToRoomBinding{
+				ObjID: object.ObjID, DeviceID: device.DeviceID, LineNumber: originalLineNumber, RoomID: originalRoomID,
+			}); err != nil {
+				return 0, fmt.Errorf("відв'язка зони #%d: %w", originalLineNumber, err)
+			}
+		}
+		if desiredRoomID == "" {
+			continue
 		}
 		if err := s.provider.AddCASLLineToRoom(ctx, contracts.CASLLineToRoomBinding{
-			ObjID: object.ObjID, DeviceID: device.DeviceID, LineNumber: line.LineNumber, RoomID: roomID,
+			ObjID: object.ObjID, DeviceID: device.DeviceID, LineNumber: line.LineNumber, RoomID: desiredRoomID,
 		}); err != nil {
 			return 0, fmt.Errorf("прив'язка зони #%d: %w", line.LineNumber, err)
 		}
 	}
-	if err := s.saveRoomUsers(ctx, roomIDsByName); err != nil {
-		return 0, err
+
+	if caslRoomUsersChanged(s.original.Rooms, object.Rooms) {
+		if err := s.saveRoomUsers(ctx, roomIDsByName); err != nil {
+			return 0, err
+		}
 	}
-	if err := s.saveImages(ctx, roomIDsByName); err != nil {
-		return 0, err
+	if caslImagesChanged(s.original, object) {
+		if err := s.saveImages(ctx, roomIDsByName); err != nil {
+			return 0, err
+		}
 	}
 	return parseRequiredInt64(object.ObjID, "CASL повернув некоректний obj_id")
+}
+
+func caslObjectUpdateFromDetails(object contracts.CASLGuardObjectDetails) contracts.CASLGuardObjectUpdate {
+	return contracts.CASLGuardObjectUpdate{
+		ObjID: object.ObjID, Name: object.Name, Address: object.Address, Long: object.Long, Lat: object.Lat,
+		Description: object.Description, Contract: object.Contract, ManagerID: object.ManagerID, Note: object.Note,
+		StartDate: object.StartDate, Status: object.ObjectStatus, ObjectType: object.ObjectType, IDRequest: object.IDRequest,
+		ReactingPultID: object.ReactingPultID, GeoZoneID: object.GeoZoneID, BusinessCoeff: object.BusinessCoeff,
+	}
+}
+
+func caslDeviceUpdateFromDetails(device contracts.CASLDeviceDetails) contracts.CASLDeviceUpdate {
+	return contracts.CASLDeviceUpdate{
+		DeviceID: device.DeviceID, Number: device.Number, Name: device.Name, DeviceType: device.Type,
+		Timeout: device.Timeout, SIM1: device.SIM1, SIM2: device.SIM2, TechnicianID: device.TechnicianID,
+		Units: device.Units, Requisites: device.Requisites, ChangeDate: device.ChangeDate,
+		ReglamentDate: device.ReglamentDate, MoreAlarmTime: device.MoreAlarmTime,
+		IgnoringAlarmTime: device.IgnoringAlarmTime, LicenceKey: device.LicenceKey, PasswRemote: device.PasswRemote,
+	}
+}
+
+func caslRoomByID(rooms []contracts.CASLRoomDetails, roomID string) (contracts.CASLRoomDetails, bool) {
+	for _, room := range rooms {
+		if room.RoomID == roomID {
+			return room, true
+		}
+	}
+	return contracts.CASLRoomDetails{}, false
+}
+
+func caslRoomIDForLine(rooms []contracts.CASLRoomDetails, lineNumber int) string {
+	for _, room := range rooms {
+		for _, line := range room.Lines {
+			if line.LineNumber == lineNumber {
+				return strings.TrimSpace(room.RoomID)
+			}
+		}
+	}
+	return ""
+}
+
+func caslRoomMetadataEqual(left, right contracts.CASLRoomDetails) bool {
+	return strings.TrimSpace(left.Name) == strings.TrimSpace(right.Name) &&
+		strings.TrimSpace(left.Description) == strings.TrimSpace(right.Description) &&
+		strings.TrimSpace(left.RTSP) == strings.TrimSpace(right.RTSP)
+}
+
+func caslOriginalLine(line contracts.CASLDeviceLineDetails, originals []contracts.CASLDeviceLineDetails) (contracts.CASLDeviceLineDetails, bool) {
+	for _, original := range originals {
+		if line.LineID != nil && original.LineID != nil && *line.LineID == *original.LineID {
+			return original, true
+		}
+	}
+	for _, original := range originals {
+		if original.LineNumber == line.LineNumber {
+			return original, true
+		}
+	}
+	return contracts.CASLDeviceLineDetails{}, false
+}
+
+func caslLineDefinitionEqual(left, right contracts.CASLDeviceLineDetails) bool {
+	return left.LineNumber == right.LineNumber &&
+		left.GroupNumber == right.GroupNumber &&
+		strings.TrimSpace(left.AdapterType) == strings.TrimSpace(right.AdapterType) &&
+		left.AdapterNumber == right.AdapterNumber &&
+		strings.TrimSpace(left.Description) == strings.TrimSpace(right.Description) &&
+		strings.TrimSpace(left.LineType) == strings.TrimSpace(right.LineType) &&
+		left.IsBlocked == right.IsBlocked
+}
+
+func caslRoomUsersChanged(original, current []contracts.CASLRoomDetails) bool {
+	for _, room := range current {
+		if strings.HasPrefix(room.RoomID, "draft-room-") && len(room.Users) > 0 {
+			return true
+		}
+		previous, found := caslRoomByID(original, room.RoomID)
+		if !found || !reflect.DeepEqual(previous.Users, room.Users) {
+			return true
+		}
+	}
+	return false
+}
+
+func caslImagesChanged(original, current contracts.CASLGuardObjectDetails) bool {
+	if !reflect.DeepEqual(original.Images, current.Images) {
+		return true
+	}
+	for _, room := range current.Rooms {
+		previous, found := caslRoomByID(original.Rooms, room.RoomID)
+		if !found {
+			return len(room.Images) > 0
+		}
+		if !reflect.DeepEqual(previous.Images, room.Images) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *caslObjectDialogState) refreshRooms() {

@@ -50,11 +50,16 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 	activeAlarms := p.loadCASLActiveAlarmIndex(context.Background())
 	enrichCtx, enrichCancel := withCASLRequestTimeout(context.Background())
 	defer enrichCancel()
+	var geoZoneGroups map[string]caslGeoZoneResponseGroups
+	if caslRecordsNeedResponseGroups(records) {
+		geoZoneGroups = p.loadCASLGeoZoneResponseGroups(enrichCtx)
+	}
 
 	objects := make([]models.Object, 0, len(records))
 	for _, record := range records {
 		device, hasDevice := p.resolveDeviceForObject(record)
 		obj := mapCASLGrdObjectToObject(record, selectCASLDevice(hasDevice, device))
+		applyCASLResponseGroups(&obj, record.GeoZoneID.Int64(), geoZoneGroups)
 		p.enrichCASLObjectWithDeviceMeta(enrichCtx, &obj, hasDevice, device)
 		if hasDevice {
 			applyCASLObjectDeviceConnectivityState(&obj, device)
@@ -131,6 +136,9 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 	device, hasDevice := p.resolveDeviceForObject(record)
 	obj := mapCASLGrdObjectToObject(record, selectCASLDevice(hasDevice, device))
 	enrichCtx, enrichCancel := withCASLRequestTimeout(context.Background())
+	if record.GeoZoneID.Int64() > 0 {
+		applyCASLResponseGroups(&obj, record.GeoZoneID.Int64(), p.loadCASLGeoZoneResponseGroups(enrichCtx))
+	}
 	p.enrichCASLObjectWithDeviceMeta(enrichCtx, &obj, hasDevice, device)
 	enrichCancel()
 	if hasDevice {
@@ -840,14 +848,7 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 		AutoTestHours:  autoTestHours,
 		Description1:   description,
 		Notes1:         notes,
-		Location1:      address,
 		LaunchDate:     launchDate,
-		PreferredResponseGroupID: func() string {
-			if geoZoneID := record.GeoZoneID.Int64(); geoZoneID > 0 {
-				return strconv.FormatInt(geoZoneID, 10)
-			}
-			return ""
-		}(),
 		BlockedArmedOnOff: func() int16 {
 			if blocked {
 				return 1
@@ -855,6 +856,122 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 			return 0
 		}(),
 	}
+}
+
+type caslGeoZoneResponseGroups struct {
+	IDs   []string
+	Names []string
+}
+
+func (p *CASLCloudProvider) loadCASLGeoZoneResponseGroups(ctx context.Context) map[string]caslGeoZoneResponseGroups {
+	p.mu.RLock()
+	if len(p.cachedGeoZoneGroups) > 0 && time.Since(p.cachedGeoZoneGroupsAt) < caslResponseGroupsTTL {
+		groups := cloneCASLGeoZoneResponseGroups(p.cachedGeoZoneGroups)
+		p.mu.RUnlock()
+		return groups
+	}
+	p.mu.RUnlock()
+
+	geoZones, err := p.ReadGeoZones(ctx)
+	if err != nil {
+		log.Debug().Err(err).Msg("CASL: не вдалося завантажити геозони ГМР")
+		return nil
+	}
+	managers, err := p.ReadManagers(ctx, 0, caslReadLimit)
+	if err != nil {
+		log.Debug().Err(err).Msg("CASL: не вдалося завантажити назви ГМР")
+		return nil
+	}
+	groups := buildCASLGeoZoneResponseGroups(geoZones, managers)
+	p.mu.Lock()
+	p.cachedGeoZoneGroups = cloneCASLGeoZoneResponseGroups(groups)
+	p.cachedGeoZoneGroupsAt = time.Now()
+	p.mu.Unlock()
+	return groups
+}
+
+func caslRecordsNeedResponseGroups(records []caslGrdObject) bool {
+	for _, record := range records {
+		if record.GeoZoneID.Int64() > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func buildCASLGeoZoneResponseGroups(
+	geoZones []map[string]any,
+	managers []map[string]any,
+) map[string]caslGeoZoneResponseGroups {
+	managerNames := make(map[string]string, len(managers))
+	for _, manager := range managers {
+		id := strings.TrimSpace(asString(manager["mgr_id"]))
+		if id != "" {
+			managerNames[id] = strings.TrimSpace(asString(manager["name"]))
+		}
+	}
+
+	result := make(map[string]caslGeoZoneResponseGroups, len(geoZones))
+	for _, geoZone := range geoZones {
+		geoZoneID := strings.TrimSpace(asString(geoZone["geo_zone_id"]))
+		if geoZoneID == "" {
+			continue
+		}
+		ids := caslValueIDs(geoZone["mgrs"])
+		names := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if name := managerNames[id]; name != "" {
+				names = append(names, name)
+			} else {
+				names = append(names, id)
+			}
+		}
+		result[geoZoneID] = caslGeoZoneResponseGroups{IDs: ids, Names: names}
+	}
+	return result
+}
+
+func caslValueIDs(value any) []string {
+	values, ok := value.([]any)
+	if !ok {
+		if typed, typedOK := value.([]string); typedOK {
+			return append([]string(nil), typed...)
+		}
+		return nil
+	}
+	ids := make([]string, 0, len(values))
+	for _, raw := range values {
+		if id := strings.TrimSpace(asString(raw)); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func applyCASLResponseGroups(
+	object *models.Object,
+	geoZoneID int64,
+	groups map[string]caslGeoZoneResponseGroups,
+) {
+	if object == nil {
+		return
+	}
+	group := groups[strconv.FormatInt(geoZoneID, 10)]
+	object.PreferredResponseGroupID = strings.Join(group.IDs, ", ")
+	object.PreferredResponseGroupName = strings.Join(group.Names, ", ")
+}
+
+func cloneCASLGeoZoneResponseGroups(
+	source map[string]caslGeoZoneResponseGroups,
+) map[string]caslGeoZoneResponseGroups {
+	result := make(map[string]caslGeoZoneResponseGroups, len(source))
+	for id, group := range source {
+		result[id] = caslGeoZoneResponseGroups{
+			IDs:   append([]string(nil), group.IDs...),
+			Names: append([]string(nil), group.Names...),
+		}
+	}
+	return result
 }
 
 func caslTimeoutMinutes(timeoutSeconds int64) int64 {

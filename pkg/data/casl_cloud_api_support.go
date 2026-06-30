@@ -282,6 +282,11 @@ func (p *CASLCloudProvider) ReadManagers(ctx context.Context, skip int, limit in
 	return p.readCommandDataAsMaps(ctx, payload, true)
 }
 
+// ReadGeoZones calls read_geo_zones command.
+func (p *CASLCloudProvider) ReadGeoZones(ctx context.Context) ([]map[string]any, error) {
+	return p.readCommandDataAsMaps(ctx, map[string]any{"type": "read_geo_zones"}, true)
+}
+
 // ReadConnections calls read_connections command.
 func (p *CASLCloudProvider) ReadConnections(ctx context.Context, skip int, limit int) ([]map[string]any, error) {
 	payload := map[string]any{"type": "read_connections", "skip": normalizePage(skip), "limit": normalizeLimit(limit)}
@@ -570,7 +575,6 @@ func (p *CASLCloudProvider) ReadEventsJournalNoRelogin(ctx context.Context, req 
 	}
 	return result, nil
 }
-
 
 // ReadBasketCount exposes read_count_in_basket command.
 func (p *CASLCloudProvider) ReadBasketCount(ctx context.Context) (int, error) {

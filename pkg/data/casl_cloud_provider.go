@@ -33,6 +33,7 @@ const (
 	caslJournalEventsSpan = 72 * time.Hour
 	caslStatsSpan         = 30 * 24 * time.Hour
 	caslObjectsStatTTL    = 20 * time.Second
+	caslResponseGroupsTTL = 5 * time.Minute
 	caslDictionaryTTL     = 15 * time.Minute
 	caslTranslatorTTL     = 15 * time.Minute
 	caslProbeEventsSpan   = 2 * time.Minute
@@ -82,6 +83,9 @@ type CASLCloudProvider struct {
 
 	cachedUsers   map[string]caslUser
 	cachedUsersAt time.Time
+
+	cachedGeoZoneGroups   map[string]caslGeoZoneResponseGroups
+	cachedGeoZoneGroupsAt time.Time
 
 	cachedObjectEvents   map[int][]models.Event
 	cachedObjectEventsAt map[int]time.Time

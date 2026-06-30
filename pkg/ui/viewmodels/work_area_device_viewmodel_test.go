@@ -82,6 +82,31 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoneFallback(t *testin
 	}
 }
 
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PreservesMultipleBridgePhones(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		Phones1: "067-111-22-33; 050-444-55-66 / 032-700-00-00",
+	})
+
+	if presentation.PhoneCopyText != "067-111-22-33; 050-444-55-66 / 032-700-00-00" {
+		t.Fatalf("multiple bridge phones were changed: %q", presentation.PhoneCopyText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoenixContactField(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:      ids.PhoenixObjectIDNamespaceStart + 35,
+		Phones1: "ГМР 3, тел. 067-123-45-67",
+	})
+
+	if presentation.PhoneCopyText != "ГМР 3, тел. 067-123-45-67" {
+		t.Fatalf("Phoenix contact/GMR field = %q", presentation.PhoneCopyText)
+	}
+}
+
 func TestWorkAreaDeviceViewModel_BuildObjectPresentation_NoGuard(t *testing.T) {
 	vm := NewWorkAreaDeviceViewModel()
 
@@ -214,6 +239,25 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLFallbacks(t *testin
 	}
 	if presentation.GroupsText != "🔐 Групи: —" {
 		t.Fatalf("unexpected groups fallback: %q", presentation.GroupsText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLCoordinatesAndDescription(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:           ids.CASLObjectIDNamespaceStart + 25,
+		Latitude:     "49.8397",
+		Longitude:    "24.0297",
+		Description1: "Адміністративно-складські приміщення",
+		Location1:    "не повинно замінити координати",
+	})
+
+	if presentation.CoordinatesText != "49.8397, 24.0297" {
+		t.Fatalf("CoordinatesText = %q", presentation.CoordinatesText)
+	}
+	if presentation.DescriptionText != "Адміністративно-складські приміщення" {
+		t.Fatalf("DescriptionText = %q", presentation.DescriptionText)
 	}
 }
 

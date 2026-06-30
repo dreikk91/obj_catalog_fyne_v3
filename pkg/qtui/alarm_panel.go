@@ -114,11 +114,19 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 
 	panel.processButton = qt.NewQPushButton3("Відпрацювати")
 	panel.processButton.SetToolTip("Відпрацювати вибрані тривоги")
+	panel.processButton.SetStyleSheet(`
+		QPushButton { background: #2E7D32; color: white; border: 1px solid #256829; border-radius: 3px; font-weight: 700; }
+		QPushButton:disabled { background: #D8E1E6; color: #8796A1; border-color: #C4D0D8; }
+	`)
 	panel.processButton.OnClicked(func() {
 		panel.processSelectedAlarms()
 	})
 	panel.pickButton = qt.NewQPushButton3("Взяти в роботу")
 	panel.pickButton.SetToolTip("Закріпити вибрані тривоги за оператором")
+	panel.pickButton.SetStyleSheet(`
+		QPushButton { background: #1E78B4; color: white; border: 1px solid #176496; border-radius: 3px; font-weight: 700; }
+		QPushButton:disabled { background: #D8E1E6; color: #8796A1; border-color: #C4D0D8; }
+	`)
 	panel.pickButton.OnClicked(func() {
 		panel.pickSelectedAlarms()
 	})
@@ -562,11 +570,7 @@ func (panel *AlarmPanel) updateSelectionState() {
 	}
 	if panel.pickButton != nil {
 		panel.pickButton.SetEnabled(hasSelection && canTakeAlarms(alarms))
-		if selectedAlarms > 1 {
-			panel.pickButton.SetText("Взяти в роботу (" + strconv.Itoa(selectedAlarms) + ")")
-		} else {
-			panel.pickButton.SetText("Взяти в роботу")
-		}
+		panel.pickButton.SetText(alarmActionText(alarmPickActionVerb(alarms), alarms))
 	}
 	if panel.responseButton != nil {
 		panel.responseButton.SetEnabled(selectedGroups == 1)
@@ -639,9 +643,24 @@ func (panel *AlarmPanel) pickSelectedAlarms() {
 		return
 	}
 	alarms := panel.selectedAlarms()
-	if len(alarms) > 0 {
-		panel.OnPickAlarms(alarms)
+	panel.pickAlarmsWithConfirmation(alarms)
+}
+
+func (panel *AlarmPanel) pickAlarmsWithConfirmation(alarms []models.Alarm) {
+	if panel == nil || panel.OnPickAlarms == nil || len(alarms) == 0 {
+		return
 	}
+	if alarmsRequireTakeover(alarms) {
+		answer := qt.QMessageBox_Question(
+			panel.QWidget,
+			"Перехоплення тривоги CASL",
+			"Тривогу вже обробляє інший оператор. Перехопити її?",
+		)
+		if answer != qt.QMessageBox__Yes {
+			return
+		}
+	}
+	panel.OnPickAlarms(alarms)
 }
 
 func (panel *AlarmPanel) respondToSelectedAlarm() {
@@ -682,12 +701,10 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 		}
 	})
 
-	pickAction := menu.AddActionWithText(alarmActionText("Взяти в роботу", alarms))
+	pickAction := menu.AddActionWithText(alarmActionText(alarmPickActionVerb(alarms), alarms))
 	pickAction.SetEnabled(canTakeAlarms(alarms))
 	pickAction.OnTriggered(func() {
-		if panel.OnPickAlarms != nil {
-			panel.OnPickAlarms(alarms)
-		}
+		panel.pickAlarmsWithConfirmation(alarms)
 	})
 
 	if panel.OnRespondAlarm != nil {
@@ -737,6 +754,22 @@ func canTakeAlarms(alarms []models.Alarm) bool {
 		}
 	}
 	return true
+}
+
+func alarmsRequireTakeover(alarms []models.Alarm) bool {
+	for _, alarm := range alarms {
+		if alarm.IsInProgress && !alarm.IsOwnedByMe && alarm.CanTakeOver {
+			return true
+		}
+	}
+	return false
+}
+
+func alarmPickActionVerb(alarms []models.Alarm) string {
+	if alarmsRequireTakeover(alarms) {
+		return "Перехопити"
+	}
+	return "Взяти в роботу"
 }
 
 func contextMenuAlarms(clicked []models.Alarm, selected []models.Alarm) []models.Alarm {

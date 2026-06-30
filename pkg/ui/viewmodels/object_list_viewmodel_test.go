@@ -145,6 +145,52 @@ func TestObjectListViewModel_ApplyFilters_BySourceAndSIMSearch(t *testing.T) {
 	}
 }
 
+func TestObjectListViewModel_ApplyFilters_SearchesRequiredObjectFields(t *testing.T) {
+	t.Parallel()
+
+	vm := NewObjectListViewModel()
+	target := models.Object{
+		ID:            28597,
+		DisplayNumber: "28597",
+		Name:          "Приміщення ТзОВ Пролог ТД Адміністративно складські приміщення",
+		Address:       "Львівська обл., Яворівський район",
+		ContractNum:   "ДГ-7788",
+		SIM1:          "+38 (067) 123-45-67",
+		SIM2:          "+38 (050) 765-43-21",
+	}
+	objects := []models.Object{
+		target,
+		{ID: 100, DisplayNumber: "100", Name: "Інший об'єкт", Address: "Інша адреса"},
+	}
+
+	tests := []string{
+		"28597",
+		"пролог",
+		"ПРОЛОГ",
+		"ПрОлОг",
+		"яворівський",
+		"ЯВОРІВСЬКИЙ",
+		"0671234567",
+		"0507654321",
+		"ДГ-7788",
+		"дг-7788",
+	}
+	for _, query := range tests {
+		query := query
+		t.Run(query, func(t *testing.T) {
+			out := vm.ApplyFilters(ObjectListFilterInput{
+				AllObjects:    objects,
+				Query:         query,
+				CurrentFilter: FilterAll,
+				CurrentSource: ObjectSourceAll,
+			})
+			if len(out.Filtered) != 1 || out.Filtered[0].ID != target.ID {
+				t.Fatalf("query %q returned %+v", query, out.Filtered)
+			}
+		})
+	}
+}
+
 func TestObjectListViewModel_ApplyFilters_DoesNotAutoSelectOnInitialLoad(t *testing.T) {
 	vm := NewObjectListViewModel()
 	all := []models.Object{

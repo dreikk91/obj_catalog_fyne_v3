@@ -602,6 +602,9 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 	if err := provider.AddCASLLineToRoom(ctx, contracts.CASLLineToRoomBinding{ObjID: "29", DeviceID: "28", RoomID: "36", LineNumber: 5}); err != nil {
 		t.Fatalf("AddCASLLineToRoom failed: %v", err)
 	}
+	if err := provider.RemoveCASLLineFromRoom(ctx, contracts.CASLLineToRoomBinding{ObjID: "29", DeviceID: "28", RoomID: "36", LineNumber: 5}); err != nil {
+		t.Fatalf("RemoveCASLLineFromRoom failed: %v", err)
+	}
 	if err := provider.AddCASLUserToRoom(ctx, contracts.CASLAddUserToRoomRequest{ObjID: "29", RoomID: "36", UserID: "41", Priority: 1}); err != nil {
 		t.Fatalf("AddCASLUserToRoom failed: %v", err)
 	}
@@ -656,6 +659,7 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 		"update_device_line",
 		"create_device_line",
 		"add_line_to_room",
+		"remove_line_from_room",
 		"add_user_to_room",
 		"remove_user_from_room",
 		"create_image",

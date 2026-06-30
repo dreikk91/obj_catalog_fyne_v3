@@ -322,6 +322,14 @@ func (p *CombinedDataProvider) AddCASLLineToRoom(ctx context.Context, binding co
 	return provider.AddCASLLineToRoom(ctx, binding)
 }
 
+func (p *CombinedDataProvider) RemoveCASLLineFromRoom(ctx context.Context, binding contracts.CASLLineToRoomBinding) error {
+	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(binding.ObjID))
+	if err != nil {
+		return err
+	}
+	return provider.RemoveCASLLineFromRoom(ctx, binding)
+}
+
 func (p *CombinedDataProvider) AddCASLUserToRoom(ctx context.Context, request contracts.CASLAddUserToRoomRequest) error {
 	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(request.ObjID))
 	if err != nil {

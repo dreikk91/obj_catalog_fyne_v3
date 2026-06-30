@@ -5,7 +5,9 @@ package qtui
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +37,14 @@ type WorkAreaPanel struct {
 	cardNotes                *qt.QTextEdit
 	statusCards              map[string]*statusCard
 	deviceVM                 *viewmodels.WorkAreaDeviceViewModel
+	overviewVM               *viewmodels.WorkAreaOverviewViewModel
+	overviewFacts            map[string]*qt.QLabel
+	overviewMetrics          map[string]*qt.QLabel
+	overviewContactsModel    *qt.QStandardItemModel
+	overviewContactsTable    *qt.QTableView
+	overviewZonesLayout      *qt.QGridLayout
+	mapCoordinates           *qt.QLabel
+	mapButton                *qt.QPushButton
 	zonesModel               *qt.QStandardItemModel
 	zonesFlatModel           *qt.QStandardItemModel
 	contactsModel            *qt.QStandardItemModel
@@ -99,6 +109,7 @@ func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 	panel := &WorkAreaPanel{
 		QWidget:         qt.NewQWidget2(),
 		deviceVM:        viewmodels.NewWorkAreaDeviceViewModel(),
+		overviewVM:      viewmodels.NewWorkAreaOverviewViewModel(),
 		viewModel:       viewmodels.NewWorkAreaViewModel(),
 		exportVM:        viewmodels.NewWorkAreaExportViewModel(),
 		prefs:           prefs,
@@ -107,9 +118,10 @@ func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 	}
 	layout := qt.NewQVBoxLayout(panel.QWidget)
 	panel.headerName = qt.NewQLabel3("Оберіть об'єкт зі списку")
-	panel.headerName.SetStyleSheet("font-weight: 600; font-size: 12pt;")
+	panel.headerName.SetStyleSheet("font-weight: 700; font-size: 15pt; color: #172B3A; padding: 2px 0;")
 	panel.headerAddress = qt.NewQLabel3("")
 	panel.headerAddress.SetWordWrap(true)
+	panel.headerAddress.SetStyleSheet("color: " + qtMutedTextColor + "; font-size: 10pt; padding-bottom: 4px;")
 	actionsLayout := qt.NewQHBoxLayout2()
 	editButton := qt.NewQPushButton3("Редагувати")
 	editButton.OnClicked(func() {
@@ -127,7 +139,7 @@ func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 	actionsLayout.AddWidget(simButton.QWidget)
 	actionsLayout.AddStretch()
 	panel.tabs = qt.NewQTabWidget2()
-	panel.tabs.AddTab(panel.buildObjectCardTab(), "Картка")
+	panel.tabs.AddTab(panel.buildOverviewTab(), "Огляд")
 	panel.zonesModel = qt.NewQStandardItemModel2(0, 6)
 	panel.zonesTree = newTree(panel.zonesModel, zoneTreeHeaders())
 	panel.installTreeColumnContextMenu("object_zones", panel.zonesTree)
@@ -137,6 +149,7 @@ func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 	panel.zonesStack = qt.NewQStackedWidget2()
 	panel.zonesStack.AddWidget(panel.zonesTable.QWidget)
 	panel.zonesStack.AddWidget(panel.zonesTree.QWidget)
+	panel.tabs.AddTab(panel.buildObjectCardTab(), "Деталі")
 	panel.tabs.AddTab(panel.zonesStack.QWidget, "Зони")
 	panel.contactsModel = qt.NewQStandardItemModel2(0, 4)
 	panel.contactsTable = newTable(panel.contactsModel, []string{"Ім'я", "Посада", "Телефон", "Група"})
@@ -150,6 +163,7 @@ func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 	panel.installTableColumnContextMenu("object_events", panel.eventsTable)
 	panel.tabs.AddTab(panel.buildEventsTab(), "Журнал")
 	panel.tabs.AddTab(panel.buildMediaTab(), "Медіа")
+
 	panel.tabs.AddTab(panel.buildExportTab(), "Експорт")
 	panel.tabs.OnCurrentChanged(func(index int) {
 		switch panel.tabs.TabText(index) {
@@ -165,6 +179,133 @@ func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 	layout.AddWidget(panel.tabs.QWidget)
 	panel.SetLayout(layout.QLayout)
 	return panel
+}
+
+func (panel *WorkAreaPanel) buildOverviewTab() *qt.QWidget {
+	panel.statusCards = make(map[string]*statusCard)
+	panel.overviewFacts = make(map[string]*qt.QLabel)
+	panel.overviewMetrics = make(map[string]*qt.QLabel)
+
+	content := qt.NewQWidget2()
+	layout := qt.NewQVBoxLayout(content)
+	layout.SetContentsMargins(10, 10, 10, 10)
+	layout.SetSpacing(9)
+
+	statusRow := qt.NewQHBoxLayout2()
+	statusRow.SetSpacing(8)
+	panel.addStatusCard(statusRow, "guard", "ОХОРОНА", "—")
+	panel.addStatusCard(statusRow, "connection", "ЗВ'ЯЗОК", "—")
+	panel.addStatusCard(statusRow, "power", "ЖИВЛЕННЯ", "—")
+	panel.addStatusCard(statusRow, "monitoring", "МОНІТОРИНГ", "—")
+	layout.AddLayout(statusRow.QLayout)
+
+	metricsRow := qt.NewQHBoxLayout2()
+	metricsRow.SetSpacing(8)
+	panel.addOverviewMetric(metricsRow, "groups", "ГРУПИ")
+	panel.addOverviewMetric(metricsRow, "zones", "ЗОНИ")
+	panel.addOverviewMetric(metricsRow, "contacts", "ВІДПОВІДАЛЬНІ")
+	metricsRow.AddStretch()
+	layout.AddLayout(metricsRow.QLayout)
+
+	operationalGroup := qt.NewQGroupBox3("Оперативні дані")
+	operationalGrid := qt.NewQGridLayout(operationalGroup.QWidget)
+	operationalGrid.SetHorizontalSpacing(14)
+	operationalGrid.SetVerticalSpacing(7)
+	operationalGrid.SetColumnStretch(1, 1)
+	operationalGrid.SetColumnStretch(3, 1)
+	panel.addOverviewFact(operationalGrid, 0, 0, "Прилад", "device")
+	panel.addOverviewFact(operationalGrid, 0, 2, "Канал", "channel")
+	panel.addOverviewFact(operationalGrid, 1, 0, "Остання подія", "lastEvent")
+	panel.addOverviewFact(operationalGrid, 1, 2, "Останній тест", "lastTest")
+	panel.addOverviewFact(operationalGrid, 2, 0, "Рівень сигналу", "signal")
+	panel.addOverviewFact(operationalGrid, 2, 2, "Контроль тесту", "testControl")
+	panel.addOverviewWideFact(operationalGrid, 3, "Контакт / ГМР", "phone")
+	panel.addOverviewWideFact(operationalGrid, 4, "Група реагування", "responseGroup")
+	panel.addOverviewWideFact(operationalGrid, 5, "Розташування", "location")
+	panel.addOverviewWideFact(operationalGrid, 6, "Додаткова інформація", "additionalInfo")
+	layout.AddWidget(operationalGroup.QWidget)
+
+	tables := qt.NewQSplitter3(qt.Horizontal)
+
+	contactsGroup := qt.NewQGroupBox3("Відповідальні особи")
+	contactsLayout := qt.NewQVBoxLayout(contactsGroup.QWidget)
+	panel.overviewContactsModel = qt.NewQStandardItemModel2(0, 3)
+	panel.overviewContactsTable = newTable(panel.overviewContactsModel, []string{"Особа", "Телефон", "Роль / група"})
+	panel.overviewContactsTable.VerticalHeader().SetVisible(false)
+	panel.overviewContactsTable.SetMaximumHeight(180)
+	panel.overviewContactsTable.OnDoubleClicked(func(index *qt.QModelIndex) {
+		if index == nil || !index.IsValid() || panel.OnDialPhoneRequested == nil {
+			return
+		}
+		phone := strings.TrimSpace(panel.overviewContactsModel.Data(index.SiblingAtColumn(1), int(qt.DisplayRole)).ToString())
+		if phone != "" && phone != "—" {
+			panel.OnDialPhoneRequested(phone)
+		}
+	})
+	contactsLayout.AddWidget(panel.overviewContactsTable.QWidget)
+	tables.AddWidget(contactsGroup.QWidget)
+
+	zonesGroup := qt.NewQGroupBox3("Стан зон")
+	zonesLayout := qt.NewQVBoxLayout(zonesGroup.QWidget)
+	zonesContent := qt.NewQWidget2()
+	panel.overviewZonesLayout = qt.NewQGridLayout(zonesContent)
+	panel.overviewZonesLayout.SetContentsMargins(4, 4, 4, 4)
+	panel.overviewZonesLayout.SetHorizontalSpacing(4)
+	panel.overviewZonesLayout.SetVerticalSpacing(4)
+	zonesScroll := qt.NewQScrollArea2()
+	zonesScroll.SetWidgetResizable(true)
+	zonesScroll.SetMaximumHeight(180)
+	zonesScroll.SetWidget(zonesContent)
+	zonesLayout.AddWidget(zonesScroll.QWidget)
+	tables.AddWidget(zonesGroup.QWidget)
+	tables.SetSizes([]int{560, 420})
+
+	layout.AddWidget(tables.QWidget)
+	layout.AddStretch()
+
+	scroll := qt.NewQScrollArea2()
+	scroll.SetWidgetResizable(true)
+	scroll.SetWidget(content)
+	return scroll.QWidget
+}
+
+func (panel *WorkAreaPanel) addOverviewMetric(layout *qt.QHBoxLayout, key string, title string) {
+	frame := qt.NewQFrame2()
+	frame.SetStyleSheet("QFrame { background: #F1F5F9; border: 1px solid #CBD5E1; border-radius: 4px; }")
+	frameLayout := qt.NewQHBoxLayout(frame.QWidget)
+	frameLayout.SetContentsMargins(10, 5, 10, 5)
+	value := qt.NewQLabel3("0")
+	value.SetStyleSheet("font-weight: 800; font-size: 15pt; color: #172B3A; border: 0; background: transparent;")
+	label := qt.NewQLabel3(title)
+	label.SetStyleSheet("font-weight: 700; font-size: 8pt; color: " + qtMutedTextColor + "; border: 0; background: transparent;")
+	frameLayout.AddWidget(value.QWidget)
+	frameLayout.AddWidget(label.QWidget)
+	layout.AddWidget(frame.QWidget)
+	panel.overviewMetrics[key] = value
+}
+
+func (panel *WorkAreaPanel) addOverviewFact(grid *qt.QGridLayout, row int, col int, title string, key string) {
+	titleLabel := qt.NewQLabel3(title)
+	titleLabel.SetStyleSheet("color: " + qtMutedTextColor + "; font-size: 9pt;")
+	value := qt.NewQLabel3("—")
+	value.SetWordWrap(true)
+	value.SetTextInteractionFlags(qt.TextSelectableByMouse)
+	value.SetStyleSheet("font-weight: 600; color: #172B3A;")
+	grid.AddWidget3(titleLabel.QWidget, row, col, 1, 1)
+	grid.AddWidget3(value.QWidget, row, col+1, 1, 1)
+	panel.overviewFacts[key] = value
+}
+
+func (panel *WorkAreaPanel) addOverviewWideFact(grid *qt.QGridLayout, row int, title string, key string) {
+	titleLabel := qt.NewQLabel3(title)
+	titleLabel.SetStyleSheet("color: " + qtMutedTextColor + "; font-size: 9pt;")
+	value := qt.NewQLabel3("—")
+	value.SetWordWrap(true)
+	value.SetTextInteractionFlags(qt.TextSelectableByMouse)
+	value.SetStyleSheet("font-weight: 600; color: #172B3A;")
+	grid.AddWidget3(titleLabel.QWidget, row, 0, 1, 1)
+	grid.AddWidget3(value.QWidget, row, 1, 1, 3)
+	panel.overviewFacts[key] = value
 }
 
 func (panel *WorkAreaPanel) buildMediaTab() *qt.QWidget {
@@ -461,6 +602,7 @@ func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone,
 
 	presentation := panel.deviceVM.BuildObjectPresentation(object)
 	panel.setObjectCard(object, presentation)
+	panel.setOperationalOverview(object, zones, contacts, presentation)
 
 	if panel.dataProvider != nil {
 		go func(id int) {
@@ -471,18 +613,21 @@ func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone,
 				}
 				panel.setCardValue("Тест-повідомлення", externalData.TestMessage)
 				panel.setCardValue("Якість зв'язку", externalData.Signal)
+				panel.setOverviewFact("signal", externalData.Signal)
 
 				lastTestStr := "—"
 				if !externalData.LastTest.IsZero() {
 					lastTestStr = externalData.LastTest.Format("02.01.2006 15:04:05")
 				}
 				panel.setCardValue("Останній тест", lastTestStr)
+				panel.setOverviewFact("lastTest", lastTestStr)
 
 				lastMsgStr := "—"
 				if !externalData.LastMessage.IsZero() {
 					lastMsgStr = externalData.LastMessage.Format("02.01.2006 15:04:05")
 				}
 				panel.setCardValue("Остання подія", lastMsgStr)
+				panel.setOverviewFact("lastEvent", lastMsgStr)
 			}
 
 			if panel.OnRunOnMainThread != nil {
@@ -552,6 +697,9 @@ func (panel *WorkAreaPanel) updateZonesView(zones []models.Zone) {
 		panel.zonesStack.SetCurrentWidget(panel.zonesTable.QWidget)
 	} else {
 		panel.zonesStack.SetCurrentWidget(panel.zonesTree.QWidget)
+		// Replacing the model rows collapses the tree. Expand it for every
+		// multi-group object, even when column widths were sized earlier.
+		panel.zonesTree.ExpandAll()
 	}
 	panel.resizeZonesViewIfNeeded(len(zones) > 0)
 }
@@ -681,7 +829,9 @@ func (panel *WorkAreaPanel) SetLoading(object models.Object) {
 
 	panel.headerName.SetText(strings.TrimSpace(object.Name) + " (№" + viewmodels.ObjectDisplayNumber(object) + ")")
 	panel.headerAddress.SetText(workAreaHeaderAddress(object))
-	panel.setObjectCard(object, panel.deviceVM.BuildObjectPresentation(object))
+	presentation := panel.deviceVM.BuildObjectPresentation(object)
+	panel.setObjectCard(object, presentation)
+	panel.setOperationalOverview(object, nil, nil, presentation)
 }
 
 func (panel *WorkAreaPanel) clearMediaState() {
@@ -892,7 +1042,6 @@ func (panel *WorkAreaPanel) runOnMainThread(f func()) {
 
 func (panel *WorkAreaPanel) buildObjectCardTab() *qt.QWidget {
 	panel.cardFields = make(map[string]*qt.QLineEdit)
-	panel.statusCards = make(map[string]*statusCard)
 	panel.cardNotes = qt.NewQTextEdit2()
 	panel.cardNotes.SetReadOnly(true)
 	panel.cardNotes.SetMinimumHeight(72)
@@ -902,34 +1051,25 @@ func (panel *WorkAreaPanel) buildObjectCardTab() *qt.QWidget {
 	mainLayout := qt.NewQVBoxLayout(content)
 	mainLayout.SetSpacing(8)
 
-	// --- Status indicators (colored cards at the top) ---
-	statusRow := qt.NewQHBoxLayout2()
-	statusRow.SetSpacing(8)
-	panel.addStatusCard(statusRow, "guard", "Охорона", "—")
-	panel.addStatusCard(statusRow, "connection", "Зв'язок", "—")
-	panel.addStatusCard(statusRow, "power", "Живлення", "—")
-	panel.addStatusCard(statusRow, "monitoring", "Моніторинг", "—")
-	statusRow.AddStretch()
-	mainLayout.AddLayout(statusRow.QLayout)
-
 	// --- Section: Основна інформація ---
-	basicGroup := qt.NewQGroupBox3("📋 Основна інформація")
+	basicGroup := qt.NewQGroupBox3("Основна інформація")
 	basicGrid := qt.NewQGridLayout(basicGroup.QWidget)
 	basicGrid.SetHorizontalSpacing(12)
 	basicGrid.SetVerticalSpacing(6)
 	basicGrid.SetColumnStretch(1, 2)
 	basicGrid.SetColumnStretch(3, 2)
 	row := 0
-	row = panel.addCardFields(basicGrid, row, []string{"Номер", "Договір", "Телефон"})
+	row = panel.addCardFields(basicGrid, row, []string{"Номер", "Договір"})
 	row = panel.addCardWideField(basicGrid, row, "Назва")
 	row = panel.addCardWideField(basicGrid, row, "Адреса")
-	row = panel.addCardWideField(basicGrid, row, "Координати")
-	row = panel.addCardFields(basicGrid, row, []string{"Район", "Геокодування", "Словник об'єкта"})
+	row = panel.addCardWideField(basicGrid, row, "Контакт / ГМР")
+	row = panel.addCardWideField(basicGrid, row, "Опис об'єкта")
+	row = panel.addCardWideField(basicGrid, row, "Розташування")
 	_ = row
 	mainLayout.AddWidget(basicGroup.QWidget)
 
 	// --- Section: Обладнання та зв'язок ---
-	deviceGroup := qt.NewQGroupBox3("📡 Обладнання та зв'язок")
+	deviceGroup := qt.NewQGroupBox3("Обладнання та зв'язок")
 	deviceGrid := qt.NewQGridLayout(deviceGroup.QWidget)
 	deviceGrid.SetHorizontalSpacing(12)
 	deviceGrid.SetVerticalSpacing(6)
@@ -949,7 +1089,7 @@ func (panel *WorkAreaPanel) buildObjectCardTab() *qt.QWidget {
 	mainLayout.AddWidget(deviceGroup.QWidget)
 
 	// --- Section: Оперативний стан ---
-	stateGroup := qt.NewQGroupBox3("⚡ Оперативний стан")
+	stateGroup := qt.NewQGroupBox3("Технічний стан")
 	stateGrid := qt.NewQGridLayout(stateGroup.QWidget)
 	stateGrid.SetHorizontalSpacing(12)
 	stateGrid.SetVerticalSpacing(6)
@@ -968,14 +1108,24 @@ func (panel *WorkAreaPanel) buildObjectCardTab() *qt.QWidget {
 	_ = row
 	mainLayout.AddWidget(stateGroup.QWidget)
 
-	// --- Section: Додатково ---
-	notesGroup := qt.NewQGroupBox3("📝 Додатково")
+	// --- Section: Додаткова інформація ---
+	notesGroup := qt.NewQGroupBox3("Додаткова інформація")
 	notesLayout := qt.NewQVBoxLayout(notesGroup.QWidget)
-	notesLabel := qt.NewQLabel3("Примітки")
-	notesLabel.SetToolTip("Нотатки та коментарі щодо об'єкта")
-	notesLayout.AddWidget(notesLabel.QWidget)
 	notesLayout.AddWidget(panel.cardNotes.QWidget)
 	mainLayout.AddWidget(notesGroup.QWidget)
+
+	locationGroup := qt.NewQGroupBox3("Координати і карта")
+	locationLayout := qt.NewQHBoxLayout(locationGroup.QWidget)
+	panel.mapCoordinates = qt.NewQLabel3("Координати не вказані")
+	panel.mapCoordinates.SetTextInteractionFlags(qt.TextSelectableByMouse)
+	panel.mapCoordinates.SetStyleSheet("color: " + qtMutedTextColor + ";")
+	panel.mapButton = qt.NewQPushButton3("Відкрити карту")
+	panel.mapButton.SetEnabled(false)
+	panel.mapButton.OnClicked(panel.openCurrentObjectMap)
+	locationLayout.AddWidget(panel.mapCoordinates.QWidget)
+	locationLayout.AddStretch()
+	locationLayout.AddWidget(panel.mapButton.QWidget)
+	mainLayout.AddWidget(locationGroup.QWidget)
 
 	mainLayout.AddStretch()
 
@@ -1144,15 +1294,13 @@ func (panel *WorkAreaPanel) setObjectCard(object models.Object, presentation vie
 	// --- Основна інформація ---
 	panel.setCardValue("Номер", viewmodels.ObjectDisplayNumber(object))
 	panel.setCardValue("Договір", object.ContractNum)
-	panel.setCardValue("Телефон", presentation.PhoneCopyText)
+	panel.setCardValue("Контакт / ГМР", presentation.PhoneCopyText)
 
 	panel.setCardValue("Назва", strings.TrimSpace(object.Name))
-	panel.setCardValue("Район", "")
 	panel.setCardValue("Адреса", strings.TrimSpace(object.Address))
 
-	panel.setCardValue("Координати", object.Location1)
-	panel.setCardValue("Геокодування", "")
-	panel.setCardValue("Словник об'єкта", "")
+	panel.setCardValue("Опис об'єкта", presentation.DescriptionText)
+	panel.setCardValue("Розташування", object.Location1)
 
 	// --- Обладнання та зв'язок ---
 	panel.setCardValue("Прилад", trimPresentationPrefix(presentation.DeviceTypeText))
@@ -1190,9 +1338,185 @@ func (panel *WorkAreaPanel) setObjectCard(object models.Object, presentation vie
 	panel.setCardValue("Напрямок", "")
 
 	panel.cardNotes.SetPlainText(emptyDash(object.Notes1))
+	panel.setMapLocation(object)
 
 	// Update status indicator cards
 	panel.updateStatusIndicators(object)
+}
+
+func (panel *WorkAreaPanel) setMapLocation(object models.Object) {
+	if panel == nil || panel.mapCoordinates == nil || panel.mapButton == nil {
+		return
+	}
+	latitude := strings.TrimSpace(object.Latitude)
+	longitude := strings.TrimSpace(object.Longitude)
+	if latitude == "" || longitude == "" {
+		panel.mapCoordinates.SetText("Координати не вказані")
+		panel.mapButton.SetEnabled(false)
+		return
+	}
+	panel.mapCoordinates.SetText(latitude + ", " + longitude)
+	panel.mapButton.SetEnabled(true)
+}
+
+func (panel *WorkAreaPanel) openCurrentObjectMap() {
+	if panel == nil || panel.currentObject == nil {
+		return
+	}
+	latitude := strings.TrimSpace(panel.currentObject.Latitude)
+	longitude := strings.TrimSpace(panel.currentObject.Longitude)
+	if latitude == "" || longitude == "" {
+		return
+	}
+	query := url.QueryEscape(latitude + "," + longitude)
+	qt.QDesktopServices_OpenUrl(qt.NewQUrl3("https://www.google.com/maps/search/?api=1&query=" + query))
+}
+
+func (panel *WorkAreaPanel) setOperationalOverview(
+	object models.Object,
+	zones []models.Zone,
+	contacts []models.Contact,
+	presentation viewmodels.WorkAreaDevicePresentation,
+) {
+	if panel == nil || panel.overviewVM == nil {
+		return
+	}
+	overview := panel.overviewVM.Build(object, zones, contacts, presentation)
+
+	panel.setOverviewFact("device", overview.Device)
+	panel.setOverviewFact("channel", overview.Channel)
+	panel.setOverviewFact("signal", overview.Signal)
+	panel.setOverviewFact("lastEvent", overview.LastEvent)
+	panel.setOverviewFact("lastTest", overview.LastTest)
+	panel.setOverviewFact("testControl", overview.TestControl)
+	panel.setOverviewFact("phone", overview.Phone)
+	panel.setOverviewFact("responseGroup", overview.ResponseGroup)
+	panel.setOverviewFact("location", overview.Location)
+	panel.setOverviewFact("additionalInfo", overview.AdditionalInfo)
+	panel.setOverviewMetric("groups", overview.GroupCount)
+	panel.setOverviewMetric("zones", overview.ZoneCount)
+	panel.setOverviewMetric("contacts", overview.ContactCount)
+	panel.setOverviewContacts(overview.PriorityContacts)
+	panel.setOverviewZoneStates(zones)
+	panel.updateStatusIndicators(object)
+}
+
+func (panel *WorkAreaPanel) setOverviewFact(key string, value string) {
+	if panel == nil || panel.overviewFacts == nil {
+		return
+	}
+	if label := panel.overviewFacts[key]; label != nil {
+		label.SetText(emptyDash(value))
+		label.SetToolTip(emptyDash(value))
+	}
+}
+
+func (panel *WorkAreaPanel) setOverviewMetric(key string, value int) {
+	if panel == nil || panel.overviewMetrics == nil {
+		return
+	}
+	if label := panel.overviewMetrics[key]; label != nil {
+		label.SetText(strconv.Itoa(value))
+	}
+}
+
+func (panel *WorkAreaPanel) setOverviewContacts(contacts []models.Contact) {
+	if panel == nil || panel.overviewContactsModel == nil {
+		return
+	}
+	panel.overviewContactsModel.Clear()
+	panel.overviewContactsModel.SetHorizontalHeaderLabels([]string{"Особа", "Телефон", "Роль / група"})
+	if len(contacts) == 0 {
+		addReadOnlyRow(panel.overviewContactsModel, []string{"Відповідальних не вказано", "", ""})
+		return
+	}
+	for _, contact := range contacts {
+		role := contactPositionText(contact)
+		if group := strings.TrimSpace(contact.GroupName); group != "" {
+			if role != "" && role != "—" {
+				role += " / "
+			}
+			role += group
+		}
+		addReadOnlyRow(panel.overviewContactsModel, []string{
+			emptyDash(contact.Name),
+			emptyDash(contact.Phone),
+			emptyDash(role),
+		})
+	}
+	panel.overviewContactsTable.ResizeColumnsToContents()
+	panel.overviewContactsTable.HorizontalHeader().SetStretchLastSection(true)
+}
+
+func (panel *WorkAreaPanel) setOverviewZoneStates(zones []models.Zone) {
+	if panel == nil || panel.overviewZonesLayout == nil {
+		return
+	}
+	for {
+		item := panel.overviewZonesLayout.TakeAt(0)
+		if item == nil {
+			break
+		}
+		if widget := item.Widget(); widget != nil {
+			widget.Hide()
+			widget.Delete()
+		}
+	}
+	if len(zones) == 0 {
+		empty := qt.NewQLabel3("Дані про зони відсутні")
+		empty.SetStyleSheet("color: " + qtMutedTextColor + "; padding: 8px;")
+		panel.overviewZonesLayout.AddWidget3(empty.QWidget, 0, 0, 1, 1)
+		return
+	}
+
+	const columns = 4
+	for index := range zones {
+		zone := zones[index]
+		label := qt.NewQLabel3(fmt.Sprintf("%d.%s", zone.Number, overviewZoneStatusText(zone)))
+		label.SetAlignment(qt.AlignCenter)
+		label.SetFixedSize2(88, 34)
+		label.SetToolTip(fmt.Sprintf("Зона №%d: %s\n%s", zone.Number, zone.GetStatusDisplay(), emptyDash(zone.Name)))
+		label.SetStyleSheet(overviewZoneStyle(zone))
+		panel.overviewZonesLayout.AddWidget3(label.QWidget, index/columns, index%columns, 1, 1)
+	}
+}
+
+func overviewZoneStatusText(zone models.Zone) string {
+	if zone.IsBypassed {
+		return "Відкл."
+	}
+	switch zone.Status {
+	case models.ZoneNormal:
+		return "Норм."
+	case models.ZoneAlarm:
+		return "Трив."
+	case models.ZoneFire:
+		return "Пож."
+	case models.ZoneBreak:
+		return "Обр."
+	case models.ZoneShort:
+		return "КЗ"
+	default:
+		return "—"
+	}
+}
+
+func overviewZoneStyle(zone models.Zone) string {
+	background := "#718096"
+	if zone.IsBypassed {
+		background = "#D79218"
+	} else {
+		switch zone.Status {
+		case models.ZoneNormal:
+			background = "#3C9360"
+		case models.ZoneAlarm, models.ZoneFire:
+			background = "#C53B32"
+		case models.ZoneBreak, models.ZoneShort:
+			background = "#D79218"
+		}
+	}
+	return "font-weight: 700; color: white; background: " + background +
+		"; border: 1px solid rgba(0, 0, 0, 35); border-radius: 2px; padding: 2px;"
 }
 
 func (panel *WorkAreaPanel) clearObjectDetails() {

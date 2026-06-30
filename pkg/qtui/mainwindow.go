@@ -165,7 +165,7 @@ func (mw *MainWindow) buildLayout() {
 	mw.topSplitter = qt.NewQSplitter3(qt.Horizontal)
 	mw.topSplitter.AddWidget(mw.objectList.QWidget)
 	mw.topSplitter.AddWidget(mw.workArea.QWidget)
-	mw.topSplitter.SetSizes(mw.savedSplitterSizes(prefQtTopSplitterSizes, []int{360, 920}))
+	mw.topSplitter.SetSizes(mw.savedSplitterSizes(prefQtTopSplitterSizes, []int{320, 1040}))
 
 	mw.bottomTabs = qt.NewQTabWidget2()
 	mw.bottomTabs.AddTab(mw.alarmPanel.QWidget, "Тривоги")
@@ -174,7 +174,7 @@ func (mw *MainWindow) buildLayout() {
 	mw.mainSplitter = qt.NewQSplitter3(qt.Vertical)
 	mw.mainSplitter.AddWidget(mw.topSplitter.QWidget)
 	mw.mainSplitter.AddWidget(mw.bottomTabs.QWidget)
-	mw.mainSplitter.SetSizes(mw.savedSplitterSizes(prefQtMainSplitterSizes, []int{650, 250}))
+	mw.mainSplitter.SetSizes(mw.savedSplitterSizes(prefQtMainSplitterSizes, []int{590, 310}))
 
 	mw.SetCentralWidget(mw.mainSplitter.QWidget)
 }
@@ -203,6 +203,7 @@ func (mw *MainWindow) registerShortcuts() {
 	mw.addShortcut("Ctrl+4", func() { mw.selectWorkAreaTab(3) })
 	mw.addShortcut("Ctrl+5", func() { mw.selectWorkAreaTab(4) })
 	mw.addShortcut("Ctrl+6", func() { mw.selectWorkAreaTab(5) })
+	mw.addShortcut("Ctrl+7", func() { mw.selectWorkAreaTab(6) })
 }
 
 func (mw *MainWindow) addShortcut(sequence string, handler func()) {
@@ -221,10 +222,10 @@ func (mw *MainWindow) selectWorkAreaTab(index int) {
 func (mw *MainWindow) restoreWindowSize() {
 	prefs := mw.preferences()
 	if prefs == nil {
-		mw.Resize(1280, 900)
+		mw.Resize(1440, 900)
 		return
 	}
-	width := prefs.IntWithFallback(prefQtWindowWidth, 1280)
+	width := prefs.IntWithFallback(prefQtWindowWidth, 1440)
 	height := prefs.IntWithFallback(prefQtWindowHeight, 900)
 	if width < 800 {
 		width = 800

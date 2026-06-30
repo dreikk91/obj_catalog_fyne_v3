@@ -241,6 +241,29 @@ func TestMapObjectRowToModel_PreservesSIMPhones(t *testing.T) {
 	}
 }
 
+func TestMapObjectRowToModel_UsesFullNameWithShortNameFallback(t *testing.T) {
+	t.Parallel()
+
+	fullName := "Приміщення ТзОВ Пролог ТД Адміністративно складські приміщення"
+	shortName := "Адміністративні приміщення"
+	obj := mapObjectRowToModel(database.ObjectInfoRow{
+		Objn:          28597,
+		ObjFullName1:  &fullName,
+		ObjShortName1: &shortName,
+	})
+	if obj.Name != fullName {
+		t.Fatalf("Name = %q, want full name %q", obj.Name, fullName)
+	}
+
+	obj = mapObjectRowToModel(database.ObjectInfoRow{
+		Objn:          28597,
+		ObjShortName1: &shortName,
+	})
+	if obj.Name != shortName {
+		t.Fatalf("Name = %q, want short-name fallback %q", obj.Name, shortName)
+	}
+}
+
 func TestMapObjectDetailRowToModel_NormalizesBridgeState(t *testing.T) {
 	t.Parallel()
 
@@ -265,6 +288,22 @@ func TestMapObjectDetailRowToModel_NormalizesBridgeState(t *testing.T) {
 	}
 	if obj.PowerSource != models.PowerMains {
 		t.Fatalf("PowerSource = %v, want mains", obj.PowerSource)
+	}
+}
+
+func TestMapObjectDetailRowToModel_UsesPanelAsDeviceInsteadOfObjectType(t *testing.T) {
+	t.Parallel()
+
+	objectType := "Магазин"
+	panelMark := "Тірас-16П"
+	obj := mapObjectDetailRowToModel(database.ObjectDetailRow{
+		Objn:       1559,
+		ObjType1:   &objectType,
+		PanelMark1: &panelMark,
+	})
+
+	if obj.DeviceType != panelMark || obj.PanelMark != panelMark {
+		t.Fatalf("device fields = %q / %q, want panel %q", obj.DeviceType, obj.PanelMark, panelMark)
 	}
 }
 

@@ -114,6 +114,20 @@ func TestAlarmActionCapabilitiesRequireEverySelectedAlarm(t *testing.T) {
 	}
 }
 
+func TestAlarmPickActionShowsCASLTakeover(t *testing.T) {
+	alarms := []models.Alarm{{
+		IsInProgress: true,
+		IsOwnedByMe:  false,
+		CanTakeOver:  true,
+	}}
+	if got := alarmPickActionVerb(alarms); got != "Перехопити" {
+		t.Fatalf("alarmPickActionVerb() = %q", got)
+	}
+	if !alarmsRequireTakeover(alarms) {
+		t.Fatal("foreign CASL alarm must require takeover confirmation")
+	}
+}
+
 func TestSelectableResponseGroupsExcludesBusyGroups(t *testing.T) {
 	groups := []contracts.FrontendResponseGroup{
 		{ID: "free", Status: contracts.ResponseGroupStatusFree},

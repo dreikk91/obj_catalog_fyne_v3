@@ -163,6 +163,11 @@ func (p *DBDataProvider) GetObjectByID(idStr string) *models.Object {
 
 func mapObjectDetailRowToModel(row database.ObjectDetailRow) models.Object {
 	state := normalizeDBObjectState(row.GuardState1, row.IsConnState1, row.Eng1, row.BlockedArmedOnOff)
+	panelMark := strings.TrimSpace(ptrToString(row.PanelMark1))
+	deviceType := panelMark
+	if deviceType == "" {
+		deviceType = strings.TrimSpace(ptrToString(row.PpkName))
+	}
 	obj := models.Object{
 		ID:            int(row.Objn),
 		DisplayNumber: strconv.Itoa(int(row.Objn)),
@@ -172,8 +177,8 @@ func mapObjectDetailRowToModel(row database.ObjectDetailRow) models.Object {
 		Longitude:     strings.TrimSpace(ptrToString(row.Longitude)),
 		ContractNum:   ptrToString(row.Contract1),
 		Phone:         ptrToString(row.Phones1),
-		DeviceType:    ptrToString(row.ObjType1),
-		PanelMark:     ptrToString(row.PanelMark1),
+		DeviceType:    deviceType,
+		PanelMark:     panelMark,
 		SIM1:          ptrToString(row.GsmPhone),
 		SIM2:          ptrToString(row.GsmPhone2),
 		GSMHiddenN:    ptrToInt64(row.GsmHiddenN),
@@ -1098,11 +1103,15 @@ func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
 	state := normalizeDBObjectState(row.GuardState1, row.IsConnState1, row.Eng1, row.BlockedArmedOnOff)
 	subServerA := strings.TrimSpace(ptrToString(row.SBSA))
 	subServerB := strings.TrimSpace(ptrToString(row.SBSB))
+	objectName := strings.TrimSpace(ptrToString(row.ObjFullName1))
+	if objectName == "" {
+		objectName = strings.TrimSpace(ptrToString(row.ObjShortName1))
+	}
 
 	return models.Object{
 		ID:            int(row.Objn),
 		DisplayNumber: strconv.Itoa(int(row.Objn)),
-		Name:          ptrToString(row.ObjShortName1),
+		Name:          objectName,
 		Address:       ptrToString(row.Address1),
 		ContractNum:   ptrToString(row.Contract1),
 		Phone:         ptrToString(row.GsmPhone),

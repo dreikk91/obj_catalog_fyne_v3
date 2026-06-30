@@ -35,6 +35,8 @@ type WorkAreaDevicePresentation struct {
 	TestControlText  string
 	NotesText        string
 	NotesCopyText    string
+	CoordinatesText  string
+	DescriptionText  string
 	LocationText     string
 	LocationCopyText string
 }
@@ -152,6 +154,8 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 	if ids.IsCASLObjectID(obj.ID) || phone == "" {
 		phone = "—"
 	}
+	coordinates := buildWorkAreaCoordinates(obj)
+	description := emptyWorkAreaValue(obj.Description1)
 
 	return WorkAreaDevicePresentation{
 		DeviceTypeText:   "🔧 Тип: " + deviceType,
@@ -176,8 +180,25 @@ func (vm *WorkAreaDeviceViewModel) BuildObjectPresentation(obj models.Object) Wo
 		TestControlText:  "⏲️ Контроль тесту: " + testCtrlText,
 		NotesText:        obj.Notes1,
 		NotesCopyText:    obj.Notes1,
+		CoordinatesText:  coordinates,
+		DescriptionText:  description,
 		LocationText:     obj.Location1,
 		LocationCopyText: obj.Location1,
+	}
+}
+
+func buildWorkAreaCoordinates(obj models.Object) string {
+	latitude := strings.TrimSpace(obj.Latitude)
+	longitude := strings.TrimSpace(obj.Longitude)
+	switch {
+	case latitude != "" && longitude != "":
+		return latitude + ", " + longitude
+	case latitude != "":
+		return latitude
+	case longitude != "":
+		return longitude
+	default:
+		return emptyWorkAreaValue(obj.Location1)
 	}
 }
 

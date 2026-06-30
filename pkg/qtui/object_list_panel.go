@@ -54,7 +54,7 @@ func NewObjectListPanel(prefs config.Preferences) *ObjectListPanel {
 	title.SetStyleSheet("font-weight: 600; font-size: 11pt; padding: 4px 0;")
 
 	panel.search = qt.NewQLineEdit2()
-	panel.search.SetPlaceholderText("Пошук за назвою, адресою або номером")
+	panel.search.SetPlaceholderText("Номер, назва, адреса, SIM або договір")
 	panel.search.SetClearButtonEnabled(true)
 
 	filtersLayout := qt.NewQHBoxLayout2()

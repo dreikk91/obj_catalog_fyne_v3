@@ -464,6 +464,21 @@ func (p *CASLCloudProvider) AddCASLLineToRoom(ctx context.Context, binding contr
 	return nil
 }
 
+func (p *CASLCloudProvider) RemoveCASLLineFromRoom(ctx context.Context, binding contracts.CASLLineToRoomBinding) error {
+	payload := map[string]any{
+		"type":        "remove_line_from_room",
+		"obj_id":      strings.TrimSpace(binding.ObjID),
+		"device_id":   strings.TrimSpace(binding.DeviceID),
+		"line_number": binding.LineNumber,
+		"room_id":     strings.TrimSpace(binding.RoomID),
+	}
+	if _, err := p.ExecuteCASLCommand(ctx, payload, true); err != nil {
+		return err
+	}
+	p.invalidateCASLEditorCaches()
+	return nil
+}
+
 func (p *CASLCloudProvider) AddCASLUserToRoom(ctx context.Context, request contracts.CASLAddUserToRoomRequest) error {
 	payload := map[string]any{
 		"type":     "add_user_to_room",

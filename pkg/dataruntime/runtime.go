@@ -17,6 +17,8 @@ import (
 type managedDBResource struct {
 	db           *sqlx.DB
 	healthCancel context.CancelFunc
+	source       contracts.FrontendSource
+	health       *database.ConnectionHealth
 }
 
 // ConfigStore provides operator settings for Bridge SIM API actions.
@@ -33,6 +35,12 @@ type Runtime struct {
 	CASLEnabled     bool
 
 	managedDBs []managedDBResource
+}
+
+// SourceHealth reports the latest known connectivity state of an enabled source.
+type SourceHealth struct {
+	Source contracts.FrontendSource
+	Status contracts.FrontendSourceHealthStatus
 }
 
 // New builds the configured backend without importing the GUI application layer.
@@ -65,9 +73,12 @@ func New(cfg config.DBConfig, store ConfigStore, verifyConnectivity bool) (*Runt
 				return nil, fmt.Errorf("firebird ping failed: %w", err)
 			}
 		}
+		healthCancel, health := database.StartNamedHealthCheckWithStatus(db, "БД/МІСТ")
 		runtime.managedDBs = append(runtime.managedDBs, managedDBResource{
 			db:           db,
-			healthCancel: database.StartNamedHealthCheck(db, "БД/МІСТ"),
+			healthCancel: healthCancel,
+			source:       contracts.FrontendSourceBridge,
+			health:       health,
 		})
 		sources = append(sources, data.ProviderSource{
 			Name: "bridge",
@@ -101,9 +112,12 @@ func New(cfg config.DBConfig, store ConfigStore, verifyConnectivity bool) (*Runt
 				return nil, fmt.Errorf("phoenix ping failed: %w", err)
 			}
 		}
+		healthCancel, health := database.StartNamedHealthCheckWithStatus(db, "Phoenix")
 		runtime.managedDBs = append(runtime.managedDBs, managedDBResource{
 			db:           db,
-			healthCancel: database.StartNamedHealthCheck(db, "Phoenix"),
+			healthCancel: healthCancel,
+			source:       contracts.FrontendSourcePhoenix,
+			health:       health,
 		})
 		sources = append(sources, data.ProviderSource{
 			Name:         "phoenix",
@@ -130,6 +144,52 @@ func New(cfg config.DBConfig, store ConfigStore, verifyConnectivity bool) (*Runt
 
 	runtime.Provider = data.NewMultiSourceDataProvider(sources...)
 	return runtime, nil
+}
+
+// SourceHealth returns a snapshot of the latest health state for enabled sources.
+func (r *Runtime) SourceHealth() []SourceHealth {
+	if r == nil {
+		return nil
+	}
+
+	healthBySource := make(map[contracts.FrontendSource]contracts.FrontendSourceHealthStatus, 3)
+	for _, resource := range r.managedDBs {
+		checked, online := resource.health.Status()
+		status := contracts.FrontendSourceHealthStatusUnknown
+		if checked {
+			status = contracts.FrontendSourceHealthStatusOffline
+			if online {
+				status = contracts.FrontendSourceHealthStatusOnline
+			}
+		}
+		healthBySource[resource.source] = status
+	}
+
+	if capabilityProvider, ok := r.Provider.(interface {
+		FrontendSourceCapabilities() []contracts.FrontendSourceCapability
+	}); ok {
+		for _, capability := range capabilityProvider.FrontendSourceCapabilities() {
+			if capability.HealthStatus != "" {
+				healthBySource[capability.Source] = capability.HealthStatus
+			}
+		}
+	}
+
+	result := make([]SourceHealth, 0, 3)
+	appendSource := func(enabled bool, source contracts.FrontendSource) {
+		if !enabled {
+			return
+		}
+		status, ok := healthBySource[source]
+		if !ok || status == "" {
+			status = contracts.FrontendSourceHealthStatusUnknown
+		}
+		result = append(result, SourceHealth{Source: source, Status: status})
+	}
+	appendSource(r.FirebirdEnabled, contracts.FrontendSourceBridge)
+	appendSource(r.PhoenixEnabled, contracts.FrontendSourcePhoenix)
+	appendSource(r.CASLEnabled, contracts.FrontendSourceCASL)
+	return result
 }
 
 // Close shuts down provider background work and closes opened databases.

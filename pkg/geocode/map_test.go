@@ -2,11 +2,23 @@ package geocode
 
 import (
 	"bytes"
+	"context"
 	"image"
+	"image/color"
 	"image/png"
+	"io"
 	"math"
+	"net/http"
+	"sync/atomic"
 	"testing"
+	"time"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 func TestMapSnapshotCoordinateAtCenter(t *testing.T) {
 	snapshot := &MapSnapshot{
@@ -54,5 +66,73 @@ func TestMapViewportFitsNearbyPointsAtUsefulZoom(t *testing.T) {
 	}, 800, 600)
 	if zoom < 10 || zoom > 16 {
 		t.Fatalf("zoom = %d", zoom)
+	}
+}
+
+func TestBuildFallbackMapSnapshotForPoints(t *testing.T) {
+	points := []MapPoint{
+		{Latitude: 49.8397, Longitude: 24.0297},
+		{Latitude: 49.85, Longitude: 24.05},
+	}
+	snapshot, err := BuildFallbackMapSnapshotForPoints(points, 800, 600)
+	if err != nil {
+		t.Fatalf("BuildFallbackMapSnapshotForPoints() error = %v", err)
+	}
+	body := snapshot.PNGWithMarkers([]MapMarker{
+		{MapPoint: points[0], Color: color.RGBA{R: 198, G: 40, B: 40, A: 255}},
+		{MapPoint: points[1], Color: color.RGBA{R: 61, G: 156, B: 59, A: 255}},
+	})
+	if len(body) == 0 {
+		t.Fatal("fallback snapshot returned no PNG data")
+	}
+	if _, err := png.Decode(bytes.NewReader(body)); err != nil {
+		t.Fatalf("fallback snapshot returned invalid PNG: %v", err)
+	}
+}
+
+func TestLoadMapSnapshotDownloadsTilesWithBoundedConcurrency(t *testing.T) {
+	var tile bytes.Buffer
+	if err := png.Encode(&tile, image.NewRGBA(image.Rect(0, 0, tileSize, tileSize))); err != nil {
+		t.Fatalf("encode tile: %v", err)
+	}
+	tileBody := tile.Bytes()
+
+	originalClient := httpClient
+	var active atomic.Int32
+	var maximum atomic.Int32
+	httpClient = &http.Client{
+		Timeout: time.Second,
+		Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			current := active.Add(1)
+			for {
+				previous := maximum.Load()
+				if current <= previous || maximum.CompareAndSwap(previous, current) {
+					break
+				}
+			}
+			time.Sleep(10 * time.Millisecond)
+			active.Add(-1)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewReader(tileBody)),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+	mapTileCache.Lock()
+	clear(mapTileCache.tiles)
+	mapTileCache.Unlock()
+	t.Cleanup(func() {
+		httpClient = originalClient
+		mapTileCache.Lock()
+		clear(mapTileCache.tiles)
+		mapTileCache.Unlock()
+	})
+
+	if _, err := LoadMapSnapshot(context.Background(), 49.8397, 24.0297, 820, 620, 13); err != nil {
+		t.Fatalf("LoadMapSnapshot() error = %v", err)
+	}
+	if got := maximum.Load(); got < 2 || got > mapTileDownloadLimit {
+		t.Fatalf("maximum concurrent downloads = %d, want 2..%d", got, mapTileDownloadLimit)
 	}
 }

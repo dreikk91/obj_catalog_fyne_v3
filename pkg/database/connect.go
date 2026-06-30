@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -11,6 +12,32 @@ import (
 	_ "github.com/nakagami/firebirdsql" // Драйвер Firebird
 	zlog "github.com/rs/zerolog/log"
 )
+
+// ConnectionHealth is the latest result of an active database connectivity check.
+type ConnectionHealth struct {
+	state atomic.Uint32
+}
+
+const (
+	connectionHealthUnchecked uint32 = iota
+	connectionHealthOnline
+	connectionHealthOffline
+)
+
+// Status reports whether a connectivity check has completed and whether it succeeded.
+func (h *ConnectionHealth) Status() (checked bool, online bool) {
+	if h == nil {
+		return false, false
+	}
+	switch h.state.Load() {
+	case connectionHealthOnline:
+		return true, true
+	case connectionHealthOffline:
+		return true, false
+	default:
+		return false, false
+	}
+}
 
 func InitDB(connStr string) (*sqlx.DB, error) {
 	return InitNamedDB("firebirdsql", connStr, "Firebird")
@@ -57,6 +84,13 @@ func StartHealthCheck(db *sqlx.DB) context.CancelFunc {
 }
 
 func StartNamedHealthCheck(db *sqlx.DB, label string) context.CancelFunc {
+	cancel, _ := StartNamedHealthCheckWithStatus(db, label)
+	return cancel
+}
+
+// StartNamedHealthCheckWithStatus monitors a database and exposes the latest
+// connectivity result. The first check runs immediately.
+func StartNamedHealthCheckWithStatus(db *sqlx.DB, label string) (context.CancelFunc, *ConnectionHealth) {
 	dbLabel := strings.TrimSpace(label)
 	if dbLabel == "" {
 		dbLabel = "database"
@@ -64,20 +98,27 @@ func StartNamedHealthCheck(db *sqlx.DB, label string) context.CancelFunc {
 
 	zlog.Info().Str("label", dbLabel).Msg("Запуск моніторингу здоров'я БД (перевірка кожні 30 сек)...")
 	ctx, cancel := context.WithCancel(context.Background())
+	health := &ConnectionHealth{}
 	go func() {
 		checkCount := 0
 		failCount := 0
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
-			select {
-			case <-ctx.Done():
-				zlog.Info().Str("label", dbLabel).Msg("Зупинка моніторингу здоров'я БД")
-				return
-			case <-ticker.C:
-			}
 			checkCount++
-			if err := db.Ping(); err != nil {
+			pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+			err := db.PingContext(pingCtx)
+			pingCancel()
+			if err == nil {
+				health.state.Store(connectionHealthOnline)
+			} else {
+				health.state.Store(connectionHealthOffline)
+			}
+			if err != nil {
+				if ctx.Err() != nil {
+					zlog.Info().Str("label", dbLabel).Msg("Зупинка моніторингу здоров'я БД")
+					return
+				}
 				if err.Error() == "sql: database is closed" {
 					zlog.Info().Str("label", dbLabel).Msg("Моніторинг БД зупинено: з'єднання закрито")
 					return
@@ -107,7 +148,14 @@ func StartNamedHealthCheck(db *sqlx.DB, label string) context.CancelFunc {
 				}
 				zlog.Debug().Str("label", dbLabel).Int("checkNumber", checkCount).Msg("Перевірка здоров'я БД - OK")
 			}
+
+			select {
+			case <-ctx.Done():
+				zlog.Info().Str("label", dbLabel).Msg("Зупинка моніторингу здоров'я БД")
+				return
+			case <-ticker.C:
+			}
 		}
 	}()
-	return cancel
+	return cancel, health
 }

@@ -36,6 +36,14 @@ type operationalMapItem struct {
 	MarkerColor color.RGBA
 }
 
+type operationalMapRenderResult struct {
+	seq           int64
+	pointCount    int
+	body          []byte
+	loadErr       error
+	usingFallback bool
+}
+
 func ShowOperationalMapDialog(
 	parent *qt.QWidget,
 	objects []models.Object,
@@ -54,12 +62,16 @@ func ShowOperationalMapDialog(
 	showAlarms.SetChecked(true)
 	showGroups.SetChecked(true)
 	status := qt.NewQLabel3("")
-	status.SetStyleSheet("color: #555;")
+	status.SetStyleSheet("color: " + qtMutedTextColor + ";")
+	retryButton := qt.NewQPushButton3("Повторити")
+	retryButton.SetToolTip("Повторити завантаження тайлів OpenStreetMap")
+	retryButton.QWidget.SetVisible(false)
 	toolbar.AddWidget(showObjects.QWidget)
 	toolbar.AddWidget(showAlarms.QWidget)
 	toolbar.AddWidget(showGroups.QWidget)
 	toolbar.AddStretch()
 	toolbar.AddWidget(status.QWidget)
+	toolbar.AddWidget(retryButton.QWidget)
 	layout.AddLayout(toolbar.QLayout)
 
 	list := qt.NewQListWidget2()
@@ -67,7 +79,8 @@ func ShowOperationalMapDialog(
 	mapLabel := qt.NewQLabel3("Підготовка карти...")
 	mapLabel.SetAlignment(qt.AlignCenter)
 	mapLabel.SetMinimumSize2(760, 560)
-	mapLabel.SetStyleSheet("background: #f5f5f5; border: 1px solid #cfcfcf;")
+	mapLabel.SetWordWrap(true)
+	mapLabel.SetStyleSheet("background: " + qtAltSurfaceColor + "; border: 1px solid " + qtBorderColor + "; color: " + qtMutedTextColor + ";")
 
 	splitter := qt.NewQSplitter3(qt.Horizontal)
 	splitter.AddWidget(list.QWidget)
@@ -81,19 +94,66 @@ func ShowOperationalMapDialog(
 	dialog.SetLayout(layout.QLayout)
 
 	var (
-		renderSeq atomic.Int64
-		closed    atomic.Bool
-		items     []operationalMapItem
-		selected  int
+		renderSeq    atomic.Int64
+		closed       atomic.Bool
+		items        []operationalMapItem
+		selected     int
+		renderCancel context.CancelFunc
 	)
+	renderResults := make(chan operationalMapRenderResult, 4)
+	resultTimer := qt.NewQTimer()
+	resultTimer.SetInterval(50)
+	resultTimer.OnTimeout(func() {
+		for {
+			select {
+			case result := <-renderResults:
+				if closed.Load() || result.seq != renderSeq.Load() {
+					continue
+				}
+				pixmap := qt.NewQPixmap()
+				if len(result.body) == 0 || !pixmap.LoadFromData(&result.body[0], uint(len(result.body))) {
+					status.SetText("Помилка формування карти")
+					mapLabel.SetText("Не вдалося сформувати карту")
+					if result.loadErr != nil {
+						mapLabel.SetToolTip(strings.TrimSpace(result.loadErr.Error()))
+					}
+					retryButton.QWidget.SetVisible(true)
+					continue
+				}
+				mapLabel.SetText("")
+				mapLabel.SetPixmap(pixmap)
+				if result.usingFallback {
+					status.SetText(fmt.Sprintf("Точок: %d | схематична карта — OpenStreetMap недоступна", result.pointCount))
+					mapLabel.SetToolTip(strings.TrimSpace(result.loadErr.Error()))
+					retryButton.QWidget.SetVisible(true)
+					continue
+				}
+				status.SetText(fmt.Sprintf("Точок: %d | червоні: тривоги | зелені: МГР | сині: об'єкти", result.pointCount))
+			default:
+				return
+			}
+		}
+	})
+	resultTimer.Start2()
 	dialog.OnFinished(func(int) {
 		closed.Store(true)
 		renderSeq.Add(1)
+		if renderCancel != nil {
+			renderCancel()
+		}
+		resultTimer.Stop()
 	})
-	render := func() {
+	var render func()
+	render = func() {
+		if renderCancel != nil {
+			renderCancel()
+		}
 		seq := renderSeq.Add(1)
 		items = buildOperationalMapItems(objects, alarms, groups, showObjects.IsChecked(), showAlarms.IsChecked(), showGroups.IsChecked())
 		list.Clear()
+		retryButton.QWidget.SetVisible(false)
+		mapLabel.SetToolTip("")
+		mapLabel.SetPixmap(qt.NewQPixmap())
 		for _, item := range items {
 			text := item.Title
 			if strings.TrimSpace(item.Details) != "" {
@@ -103,11 +163,11 @@ func ShowOperationalMapDialog(
 		}
 		if len(items) == 0 {
 			status.SetText("Немає точок із координатами")
-			mapLabel.SetPixmap(qt.NewQPixmap())
 			mapLabel.SetText("Для вибраних категорій немає координат")
 			return
 		}
-		status.SetText(fmt.Sprintf("Точок: %d | завантаження карти...", len(items)))
+		status.SetText(fmt.Sprintf("Точок: %d | завантаження OpenStreetMap...", len(items)))
+		mapLabel.SetText("Завантаження карти…")
 		points := make([]geocode.MapPoint, 0, len(items))
 		markers := make([]geocode.MapMarker, 0, len(items))
 		for _, item := range items {
@@ -115,35 +175,40 @@ func ShowOperationalMapDialog(
 			points = append(points, point)
 			markers = append(markers, geocode.MapMarker{MapPoint: point, Color: item.MarkerColor})
 		}
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		renderCancel = cancel
+		go func(ctx context.Context, cancel context.CancelFunc) {
 			defer cancel()
-			snapshot, err := geocode.LoadMapSnapshotForPoints(ctx, points, 820, 620)
+			snapshot, loadErr := geocode.LoadMapSnapshotForPoints(ctx, points, 820, 620)
+			usingFallback := false
+			if loadErr != nil {
+				fallback, fallbackErr := geocode.BuildFallbackMapSnapshotForPoints(points, 820, 620)
+				if fallbackErr == nil {
+					snapshot = fallback
+					usingFallback = true
+				} else {
+					loadErr = fmt.Errorf("%v; резервна карта: %w", loadErr, fallbackErr)
+				}
+			}
 			var body []byte
-			if err == nil {
+			if snapshot != nil {
 				body = snapshot.PNGWithMarkers(markers)
 			}
-			runOnMainThread(func() {
-				if closed.Load() || seq != renderSeq.Load() {
-					return
-				}
-				if err != nil {
-					status.SetText("Помилка карти")
-					mapLabel.SetText(strings.TrimSpace(err.Error()))
-					return
-				}
-				pixmap := qt.NewQPixmap()
-				if len(body) == 0 || !pixmap.LoadFromData(&body[0], uint(len(body))) {
-					mapLabel.SetText("Не вдалося сформувати карту")
-					return
-				}
-				mapLabel.SetText("")
-				mapLabel.SetPixmap(pixmap)
-				status.SetText(fmt.Sprintf("Точок: %d | червоні: тривоги | зелені: МГР", len(items)))
-			})
-		}()
+			result := operationalMapRenderResult{
+				seq:           seq,
+				pointCount:    len(points),
+				body:          body,
+				loadErr:       loadErr,
+				usingFallback: usingFallback,
+			}
+			select {
+			case renderResults <- result:
+			default:
+			}
+		}(ctx, cancel)
 	}
 
+	retryButton.OnClicked(func() { render() })
 	showObjects.OnToggled(func(bool) { render() })
 	showAlarms.OnToggled(func(bool) { render() })
 	showGroups.OnToggled(func(bool) { render() })
@@ -158,6 +223,7 @@ func ShowOperationalMapDialog(
 
 	render()
 	accepted := dialog.Exec() == int(qt.QDialog__Accepted) && selected > 0
+	resultTimer.Delete()
 	return selected, accepted
 }
 
@@ -179,21 +245,44 @@ func buildOperationalMapItems(
 	alarmObjects := make(map[int]struct{}, len(alarms))
 
 	if includeAlarms {
+		type alarmSummary struct {
+			primary models.Alarm
+			count   int
+		}
+		summaries := make(map[int]alarmSummary, len(alarms))
+		order := make([]int, 0, len(alarms))
 		for _, alarm := range alarms {
 			object, ok := objectsByID[alarm.ObjectID]
 			if !ok {
 				continue
 			}
-			lat, lon, ok := parseOperationalCoordinates(object.Latitude, object.Longitude)
-			if !ok {
+			if _, _, valid := parseOperationalCoordinates(object.Latitude, object.Longitude); !valid {
 				continue
 			}
+			summary, exists := summaries[object.ID]
+			if !exists {
+				order = append(order, object.ID)
+				summary.primary = alarm
+			} else if preferOperationalMapAlarm(alarm, summary.primary) {
+				summary.primary = alarm
+			}
+			summary.count++
+			summaries[object.ID] = summary
+		}
+		for _, objectID := range order {
+			object := objectsByID[objectID]
+			summary := summaries[objectID]
+			lat, lon, _ := parseOperationalCoordinates(object.Latitude, object.Longitude)
 			alarmObjects[object.ID] = struct{}{}
+			details := summary.primary.GetTypeDisplay()
+			if summary.count > 1 {
+				details += fmt.Sprintf(" · %d активних подій", summary.count)
+			}
 			result = append(result, operationalMapItem{
 				Kind: operationalMapAlarm, ObjectID: object.ID,
-				Title:   "Тривога №" + alarm.GetObjectNumberDisplay() + " " + strings.TrimSpace(object.Name),
-				Details: alarm.GetTypeDisplay(), Latitude: lat, Longitude: lon,
-				MarkerColor: color.RGBA{R: 205, G: 35, B: 35, A: 255},
+				Title:   "Тривога №" + summary.primary.GetObjectNumberDisplay() + " " + strings.TrimSpace(object.Name),
+				Details: details, Latitude: lat, Longitude: lon,
+				MarkerColor: color.RGBA{R: 198, G: 40, B: 40, A: 255},
 			})
 		}
 	}
@@ -210,7 +299,7 @@ func buildOperationalMapItems(
 				Kind: operationalMapObject, ObjectID: object.ID,
 				Title: "Об'єкт №" + objectDisplayNumberForMap(object), Details: strings.TrimSpace(object.Name),
 				Latitude: lat, Longitude: lon,
-				MarkerColor: color.RGBA{R: 35, G: 95, B: 180, A: 255},
+				MarkerColor: color.RGBA{R: 69, G: 133, B: 188, A: 255},
 			})
 		}
 	}
@@ -230,11 +319,35 @@ func buildOperationalMapItems(
 				Title:    "МГР " + responseGroupDisplayName(group),
 				Details:  responseGroupDisplayStatus(group),
 				Latitude: lat, Longitude: lon,
-				MarkerColor: color.RGBA{R: 25, G: 135, B: 70, A: 255},
+				MarkerColor: color.RGBA{R: 61, G: 156, B: 59, A: 255},
 			})
 		}
 	}
 	return result
+}
+
+func preferOperationalMapAlarm(candidate models.Alarm, current models.Alarm) bool {
+	candidatePriority := operationalMapAlarmPriority(candidate.VisualSeverityValue())
+	currentPriority := operationalMapAlarmPriority(current.VisualSeverityValue())
+	if candidatePriority != currentPriority {
+		return candidatePriority > currentPriority
+	}
+	return candidate.Time.After(current.Time)
+}
+
+func operationalMapAlarmPriority(severity models.VisualSeverity) int {
+	switch severity {
+	case models.VisualSeverityCritical:
+		return 4
+	case models.VisualSeverityWarning:
+		return 3
+	case models.VisualSeverityInfo:
+		return 2
+	case models.VisualSeverityNormal:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func parseOperationalCoordinates(latitude string, longitude string) (float64, float64, bool) {

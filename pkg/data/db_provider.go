@@ -1162,6 +1162,11 @@ func normalizeDBObjectState(guardState1 *int64, isConnState1 *int64, eng1 *int64
 	}
 
 	switch {
+	case guardState1 != nil && state.guardState == 0:
+		// У БД МІСТ GUARDSTATE1=0 означає "тимчасово знято зі спостереження".
+		// GuardStatus при цьому також залишається Disarmed.
+		state.blockMode = 1
+		state.monitoringStatus = models.MonitoringStatusBlocked
 	case ptrToInt64(eng1) != 0:
 		state.blockMode = 2
 		state.monitoringStatus = models.MonitoringStatusDebug

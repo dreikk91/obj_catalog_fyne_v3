@@ -11,9 +11,15 @@ import (
 	"math"
 	"net/http"
 	"sync"
+
+	"golang.org/x/sync/errgroup"
 )
 
-const tileSize = 256
+const (
+	tileSize               = 256
+	mapTileDownloadLimit   = 4
+	fallbackMapGridSpacing = 64
+)
 
 var mapTileCache = struct {
 	sync.RWMutex
@@ -70,24 +76,93 @@ func LoadMapSnapshot(ctx context.Context, latitude, longitude float64, width, he
 	lastTileY := int(math.Floor((top + float64(height-1)) / tileSize))
 	tileCount := 1 << zoom
 
+	type tilePlacement struct {
+		requestX int
+		requestY int
+		tile     image.Image
+		offsetX  int
+		offsetY  int
+	}
+	placements := make([]tilePlacement, 0, (lastTileX-firstTileX+1)*(lastTileY-firstTileY+1))
 	for tileY := firstTileY; tileY <= lastTileY; tileY++ {
 		if tileY < 0 || tileY >= tileCount {
 			continue
 		}
 		for tileX := firstTileX; tileX <= lastTileX; tileX++ {
 			wrappedX := ((tileX % tileCount) + tileCount) % tileCount
-			tile, err := loadMapTile(ctx, zoom, wrappedX, tileY)
-			if err != nil {
-				return nil, err
-			}
-			offsetX := int(math.Round(float64(tileX*tileSize) - left))
-			offsetY := int(math.Round(float64(tileY*tileSize) - top))
-			draw.Draw(canvas, image.Rect(offsetX, offsetY, offsetX+tileSize, offsetY+tileSize), tile, image.Point{}, draw.Src)
+			placements = append(placements, tilePlacement{
+				requestX: wrappedX,
+				requestY: tileY,
+				offsetX:  int(math.Round(float64(tileX*tileSize) - left)),
+				offsetY:  int(math.Round(float64(tileY*tileSize) - top)),
+			})
 		}
+	}
+
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(mapTileDownloadLimit)
+	for index := range placements {
+		placementIndex := index
+		group.Go(func() error {
+			placement := &placements[placementIndex]
+			tile, err := loadMapTile(groupCtx, zoom, placement.requestX, placement.requestY)
+			if err != nil {
+				return err
+			}
+			placement.tile = tile
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	for _, placement := range placements {
+		draw.Draw(
+			canvas,
+			image.Rect(placement.offsetX, placement.offsetY, placement.offsetX+tileSize, placement.offsetY+tileSize),
+			placement.tile,
+			image.Point{},
+			draw.Src,
+		)
 	}
 	return &MapSnapshot{
 		base: canvas, width: width, height: height, zoom: zoom,
 		leftWorldX: left, topWorldY: top,
+	}, nil
+}
+
+// BuildFallbackMapSnapshotForPoints builds an offline schematic map preserving
+// the relative geographic positions of all markers.
+func BuildFallbackMapSnapshotForPoints(points []MapPoint, width, height int) (*MapSnapshot, error) {
+	if len(points) == 0 {
+		return nil, fmt.Errorf("немає координат для карти")
+	}
+	if width <= 0 || height <= 0 {
+		return nil, fmt.Errorf("некоректні розміри карти")
+	}
+	centerLat, centerLon, zoom := mapViewport(points, width, height)
+	worldSize := math.Ldexp(float64(tileSize), zoom)
+	centerX := (centerLon + 180) / 360 * worldSize
+	sinLatitude := math.Sin(centerLat * math.Pi / 180)
+	centerY := (0.5 - math.Log((1+sinLatitude)/(1-sinLatitude))/(4*math.Pi)) * worldSize
+	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
+	draw.Draw(canvas, canvas.Bounds(), image.NewUniform(color.RGBA{R: 239, G: 243, B: 247, A: 255}), image.Point{}, draw.Src)
+
+	gridColor := image.NewUniform(color.RGBA{R: 209, G: 220, B: 230, A: 255})
+	for x := 0; x < width; x += fallbackMapGridSpacing {
+		draw.Draw(canvas, image.Rect(x, 0, x+1, height), gridColor, image.Point{}, draw.Src)
+	}
+	for y := 0; y < height; y += fallbackMapGridSpacing {
+		draw.Draw(canvas, image.Rect(0, y, width, y+1), gridColor, image.Point{}, draw.Src)
+	}
+
+	return &MapSnapshot{
+		base:       canvas,
+		width:      width,
+		height:     height,
+		zoom:       zoom,
+		leftWorldX: centerX - float64(width)/2,
+		topWorldY:  centerY - float64(height)/2,
 	}, nil
 }
 

@@ -49,6 +49,8 @@ type Application struct {
 	responseGroupsMu       sync.Mutex
 	responseGroupsCache    map[contracts.FrontendSource]responseGroupsCacheEntry
 	phoneDialer            contracts.PhoneDialer
+	backendStatusTimer     *qt.QTimer
+	lastBackendStatus      string
 }
 
 type responseGroupsCacheEntry struct {
@@ -97,6 +99,11 @@ func NewApplication() *Application {
 	})
 	dispatcherTimer.Start2()
 
+	app.backendStatusTimer = qt.NewQTimer()
+	app.backendStatusTimer.SetInterval(1000)
+	app.backendStatusTimer.OnTimeout(app.updateBackendStatus)
+	app.backendStatusTimer.Start2()
+
 	app.ui.OnSettingsSaved = app.applySettings
 	app.ui.OnRefreshRequested = app.refreshData
 	app.ui.OnDiagnosticsRequested = app.showDiagnostics
@@ -134,6 +141,7 @@ func (a *Application) applySettings(dbCfg config.DBConfig, uiCfg config.UIConfig
 		a.runtime.Close()
 		a.runtime = nil
 	}
+	a.lastBackendStatus = ""
 	a.currentObject = nil
 	a.responseGroupsMu.Lock()
 	a.responseGroupsCache = nil
@@ -161,7 +169,7 @@ func (a *Application) applySettings(dbCfg config.DBConfig, uiCfg config.UIConfig
 	if admin, ok := backend.AsAdminProvider(runtime.Provider); ok {
 		a.ui.SetAdminProvider(admin)
 	}
-	a.ui.SetStatus(backendStatusText(runtime))
+	a.updateBackendStatus()
 	a.ui.SetObjectSelectedHandler(a.applyObjectContext)
 	a.refreshData()
 	a.startGettingEvents()
@@ -175,9 +183,7 @@ func (a *Application) refreshData() {
 	a.refreshObjects()
 	a.refreshAlarms()
 	a.refreshEvents()
-	if a.runtime != nil {
-		a.ui.SetStatus(backendStatusText(a.runtime))
-	}
+	a.updateBackendStatus()
 }
 
 func (a *Application) refreshObjects() {
@@ -978,18 +984,39 @@ func backendStatusText(runtime *dataruntime.Runtime) string {
 	if runtime == nil {
 		return "Джерела даних: не ініціалізовано"
 	}
-	parts := make([]string, 0, 3)
-	if runtime.FirebirdEnabled {
-		parts = append(parts, "БД/МІСТ")
-	}
-	if runtime.PhoenixEnabled {
-		parts = append(parts, "Phoenix")
-	}
-	if runtime.CASLEnabled {
-		parts = append(parts, "CASL Cloud")
-	}
-	if len(parts) == 0 {
+	health := runtime.SourceHealth()
+	if len(health) == 0 {
 		return "Джерела даних: не налаштовано"
 	}
-	return "Джерела даних: " + strings.Join(parts, " | ") + " підключено"
+
+	parts := make([]string, 0, len(health))
+	for _, source := range health {
+		name := source.Source.DisplayName()
+		if source.Source == contracts.FrontendSourceBridge {
+			name = "БД/МІСТ"
+		}
+		state := "перевірка..."
+		switch source.Status {
+		case contracts.FrontendSourceHealthStatusOnline:
+			state = "підключено"
+		case contracts.FrontendSourceHealthStatusDegraded:
+			state = "нестабільно"
+		case contracts.FrontendSourceHealthStatusOffline:
+			state = "недоступно"
+		}
+		parts = append(parts, name+": "+state)
+	}
+	return "Джерела даних: " + strings.Join(parts, " | ")
+}
+
+func (a *Application) updateBackendStatus() {
+	if a == nil || a.ui == nil {
+		return
+	}
+	status := backendStatusText(a.runtime)
+	if status == a.lastBackendStatus {
+		return
+	}
+	a.lastBackendStatus = status
+	a.ui.SetStatus(status)
 }

@@ -268,6 +268,46 @@ func TestMapObjectDetailRowToModel_NormalizesBridgeState(t *testing.T) {
 	}
 }
 
+func TestMapObjectDetailRowToModel_GuardStateZeroMeansMonitoringBlocked(t *testing.T) {
+	t.Parallel()
+
+	disarmed := int64(0)
+	disconnected := int64(0)
+	row := database.ObjectDetailRow{
+		Objn:         29381,
+		GuardState1:  &disarmed,
+		IsConnState1: &disconnected,
+	}
+
+	obj := mapObjectDetailRowToModel(row)
+	if obj.GuardStatus != models.GuardStatusDisarmed {
+		t.Fatalf("GuardStatus = %q, want %q", obj.GuardStatus, models.GuardStatusDisarmed)
+	}
+	if obj.MonitoringStatus != models.MonitoringStatusBlocked {
+		t.Fatalf("MonitoringStatus = %q, want %q", obj.MonitoringStatus, models.MonitoringStatusBlocked)
+	}
+	if obj.BlockedArmedOnOff != 1 {
+		t.Fatalf("BlockedArmedOnOff = %d, want 1", obj.BlockedArmedOnOff)
+	}
+}
+
+func TestMapObjectRowToModel_GuardStateZeroMeansMonitoringBlocked(t *testing.T) {
+	t.Parallel()
+
+	disarmed := int64(0)
+	disconnected := int64(0)
+	row := database.ObjectInfoRow{
+		Objn:         29381,
+		GuardState1:  &disarmed,
+		IsConnState1: &disconnected,
+	}
+
+	obj := mapObjectRowToModel(row)
+	if obj.MonitoringStatus != models.MonitoringStatusBlocked || obj.BlockedArmedOnOff != 1 {
+		t.Fatalf("object state was not normalized as blocked: %+v", obj)
+	}
+}
+
 func ptrTime(v time.Time) *time.Time {
 	return &v
 }

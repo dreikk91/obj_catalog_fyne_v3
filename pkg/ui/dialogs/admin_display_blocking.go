@@ -27,7 +27,7 @@ func adminDisplayBlockObjectColors(item adminv1.DisplayBlockObject, isDark bool)
 
 	switch item.MonitoringStatus {
 	case frontendv1.MonitoringStatusBlocked:
-		return selectObjectColor(4)
+		return selectObjectColor(utils.ObjectColorBlocked)
 	case frontendv1.MonitoringStatusDebug:
 		return selectObjectColor(6)
 	}
@@ -42,7 +42,7 @@ func adminDisplayBlockObjectColors(item adminv1.DisplayBlockObject, isDark bool)
 		return selectObjectColor(4)
 	}
 	if item.GuardStatus == frontendv1.GuardStatusDisarmed {
-		return selectObjectColor(4)
+		return selectObjectColor(utils.ObjectColorDisarmed)
 	}
 
 	return selectObjectColor(10)

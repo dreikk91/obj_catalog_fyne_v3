@@ -11,6 +11,32 @@ type ColorPair struct {
 	Row  color.NRGBA
 }
 
+const (
+	// ObjectColorBlocked identifies an administratively blocked object in object lists.
+	ObjectColorBlocked = 100
+	// ObjectColorDisarmed identifies an object temporarily disarmed by a user.
+	ObjectColorDisarmed = 101
+)
+
+var (
+	objectBlockedLight = ColorPair{
+		Text: color.NRGBA{R: 106, G: 27, B: 154, A: 255},  // #6A1B9A
+		Row:  color.NRGBA{R: 243, G: 229, B: 245, A: 255}, // #F3E5F5
+	}
+	objectBlockedDark = ColorPair{
+		Text: color.NRGBA{R: 225, G: 190, B: 231, A: 255}, // #E1BEE7
+		Row:  color.NRGBA{R: 74, G: 40, B: 87, A: 255},    // #4A2857
+	}
+	objectDisarmedLight = ColorPair{
+		Text: color.NRGBA{R: 21, G: 101, B: 192, A: 255},  // #1565C0
+		Row:  color.NRGBA{R: 227, G: 242, B: 253, A: 255}, // #E3F2FD
+	}
+	objectDisarmedDark = ColorPair{
+		Text: color.NRGBA{R: 144, G: 202, B: 249, A: 255}, // #90CAF9
+		Row:  color.NRGBA{R: 23, G: 58, B: 82, A: 255},    // #173A52
+	}
+)
+
 func cloneColorMapping(src map[int]ColorPair) map[int]ColorPair {
 	return maps.Clone(src)
 }
@@ -203,6 +229,12 @@ func SelectColorNRGBADark(colorValue int) (text, row color.NRGBA) {
 // SelectObjectColorNRGBA повертає стандартні кольори списку об'єктів для світлої теми.
 // Ця палітра не змінюється через налаштування кольорів подій.
 func SelectObjectColorNRGBA(colorValue int) (text, row color.NRGBA) {
+	switch colorValue {
+	case ObjectColorBlocked:
+		return objectBlockedLight.Text, objectBlockedLight.Row
+	case ObjectColorDisarmed:
+		return objectDisarmedLight.Text, objectDisarmedLight.Row
+	}
 	if c, ok := defaultLightPalette[colorValue]; ok {
 		return c.Text, c.Row
 	}
@@ -214,6 +246,12 @@ func SelectObjectColorNRGBA(colorValue int) (text, row color.NRGBA) {
 // SelectObjectColorNRGBADark повертає стандартні кольори списку об'єктів для темної теми.
 // Ця палітра не змінюється через налаштування кольорів подій.
 func SelectObjectColorNRGBADark(colorValue int) (text, row color.NRGBA) {
+	switch colorValue {
+	case ObjectColorBlocked:
+		return objectBlockedDark.Text, objectBlockedDark.Row
+	case ObjectColorDisarmed:
+		return objectDisarmedDark.Text, objectDisarmedDark.Row
+	}
 	if c, ok := defaultDarkPalette[colorValue]; ok {
 		return c.Text, c.Row
 	}

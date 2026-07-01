@@ -44,7 +44,9 @@ type AlarmPanelWidget struct {
 	selectedIndex         int
 	selectedID            int
 	lastClickTime         time.Time
+	takeBtn               *widget.Button
 	processBtn            *widget.Button
+	responseBtn           *widget.Button
 	lastKnownIDs          map[int]struct{}
 	CaseHistoryTitle      *widget.Label
 	CaseHistoryAccordion  *widget.Accordion
@@ -61,7 +63,9 @@ type AlarmPanelWidget struct {
 	// OnAlarmActivated викликається тільки при подвійному кліку по одній і тій самій тривозі.
 	OnAlarmActivated func(alarm models.Alarm)
 
+	OnPickAlarm        func(alarm models.Alarm)
 	OnProcessAlarm     func(alarm models.Alarm)
+	OnRespondAlarm     func(alarm models.Alarm)
 	OnCountsChanged    func(total int, critical int)
 	OnNewCriticalAlarm func(alarm models.Alarm)
 	TitleText          *canvas.Text
@@ -199,10 +203,8 @@ func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 		panel.lastClickTime = now
 		panel.mutex.Unlock()
 
-		// Оновлюємо стан кнопки обробки та підсвічування рядка.
-		if panel.processBtn != nil {
-			panel.processBtn.Enable()
-		}
+		// Оновлюємо доступні оператору дії та підсвічування рядка.
+		panel.updateSelectedAlarmActions(selected)
 		if panel.List != nil {
 			if prevIndex >= 0 && prevIndex != int(id) {
 				panel.List.RefreshItem(prevIndex)
@@ -225,17 +227,26 @@ func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 		}
 	}
 
-	panel.processBtn = widget.NewButton("Обробити вибрану тривогу", func() {
-		panel.mutex.RLock()
-		defer panel.mutex.RUnlock()
-		if panel.selectedIndex < 0 || panel.selectedIndex >= len(panel.CurrentAlarms) {
-			return
+	panel.takeBtn = widget.NewButton("Взяти в роботу", func() {
+		if alarm, ok := panel.selectedAlarm(); ok && panel.OnPickAlarm != nil {
+			panel.OnPickAlarm(alarm)
 		}
-		if panel.OnProcessAlarm != nil {
-			panel.OnProcessAlarm(panel.CurrentAlarms[panel.selectedIndex])
+	})
+	panel.takeBtn.Disable()
+
+	panel.processBtn = widget.NewButton("Причина / завершити", func() {
+		if alarm, ok := panel.selectedAlarm(); ok && panel.OnProcessAlarm != nil {
+			panel.OnProcessAlarm(alarm)
 		}
 	})
 	panel.processBtn.Disable()
+
+	panel.responseBtn = widget.NewButton("Картка реагування", func() {
+		if alarm, ok := panel.selectedAlarm(); ok && panel.OnRespondAlarm != nil {
+			panel.OnRespondAlarm(alarm)
+		}
+	})
+	panel.responseBtn.Disable()
 
 	panel.CaseHistoryTitle = widget.NewLabel("Хронологія вибраної тривоги")
 	panel.CaseHistoryTitle.TextStyle = fyne.TextStyle{Bold: true}
@@ -249,7 +260,12 @@ func NewAlarmPanelWidget(provider contracts.DataProvider) *AlarmPanelWidget {
 	)
 	panel.CaseHistorySection.Hide()
 
-	actions := container.NewPadded(container.NewBorder(nil, nil, nil, nil, panel.processBtn))
+	actions := container.NewPadded(container.NewGridWithColumns(
+		3,
+		panel.takeBtn,
+		panel.responseBtn,
+		panel.processBtn,
+	))
 	body := container.NewBorder(nil, panel.CaseHistorySection, nil, nil, alarmsScroll)
 
 	panel.Container = container.NewBorder(
@@ -320,6 +336,8 @@ func (p *AlarmPanelWidget) refreshData() {
 	p.CurrentAlarms = result.FilteredAlarms
 	p.lastKnownIDs = result.KnownIDs
 	selectionCleared := false
+	selectedAlarm := models.Alarm{}
+	hasSelectedAlarm := false
 	if p.selectedID > 0 {
 		found := -1
 		for i := range p.CurrentAlarms {
@@ -330,6 +348,8 @@ func (p *AlarmPanelWidget) refreshData() {
 		}
 		if found >= 0 {
 			p.selectedIndex = found
+			selectedAlarm = p.CurrentAlarms[found]
+			hasSelectedAlarm = true
 		} else {
 			p.selectedIndex = -1
 			p.selectedID = 0
@@ -357,8 +377,10 @@ func (p *AlarmPanelWidget) refreshData() {
 		if p.List != nil {
 			p.List.Refresh()
 		}
-		if p.processBtn != nil && p.selectedIndex < 0 {
-			p.processBtn.Disable()
+		if hasSelectedAlarm {
+			p.updateSelectedAlarmActions(selectedAlarm)
+		} else {
+			p.disableAlarmActions()
 		}
 		if selectionCleared {
 			p.clearCaseHistory()
@@ -422,7 +444,81 @@ func formatAlarmListText(alarm models.Alarm) string {
 	if alarm.Details != "" {
 		displayText += " — " + alarm.Details
 	}
+	if alarm.IsInProgress {
+		operator := strings.TrimSpace(alarm.InProgressBy)
+		if operator == "" {
+			operator = "інший оператор"
+		}
+		displayText += " — У роботі: " + operator
+	}
 	return displayText
+}
+
+func (p *AlarmPanelWidget) selectedAlarm() (models.Alarm, bool) {
+	if p == nil {
+		return models.Alarm{}, false
+	}
+	p.mutex.RLock()
+	defer p.mutex.RUnlock()
+	if p.selectedIndex < 0 || p.selectedIndex >= len(p.CurrentAlarms) {
+		return models.Alarm{}, false
+	}
+	return p.CurrentAlarms[p.selectedIndex], true
+}
+
+func (p *AlarmPanelWidget) updateSelectedAlarmActions(alarm models.Alarm) {
+	if p == nil {
+		return
+	}
+	if p.takeBtn != nil {
+		p.takeBtn.SetText(alarmTakeActionText(alarm))
+		if !alarm.IsInProgress || alarm.CanTakeOver {
+			p.takeBtn.Enable()
+		} else {
+			p.takeBtn.Disable()
+		}
+	}
+	if p.processBtn != nil {
+		if alarm.CanProcess {
+			p.processBtn.Enable()
+		} else {
+			p.processBtn.Disable()
+		}
+	}
+	if p.responseBtn != nil {
+		if ids.IsCASLObjectID(alarm.ObjectID) || ids.IsPhoenixObjectID(alarm.ObjectID) {
+			p.responseBtn.Enable()
+		} else {
+			p.responseBtn.Disable()
+		}
+	}
+}
+
+func (p *AlarmPanelWidget) disableAlarmActions() {
+	if p == nil {
+		return
+	}
+	if p.takeBtn != nil {
+		p.takeBtn.SetText("Взяти в роботу")
+		p.takeBtn.Disable()
+	}
+	if p.processBtn != nil {
+		p.processBtn.Disable()
+	}
+	if p.responseBtn != nil {
+		p.responseBtn.Disable()
+	}
+}
+
+func alarmTakeActionText(alarm models.Alarm) string {
+	switch {
+	case alarm.IsInProgress && !alarm.IsOwnedByMe && alarm.CanTakeOver:
+		return "Перехопити тривогу"
+	case alarm.IsOwnedByMe:
+		return "Тривога у вас"
+	default:
+		return "Взяти в роботу"
+	}
 }
 
 func alarmListTexts(alarms []models.Alarm) []string {

@@ -19,6 +19,18 @@ type frontendTestDataProvider struct {
 	alarms           []models.Alarm
 }
 
+type frontendTakeoverProvider struct {
+	*frontendTestDataProvider
+	pickedAlarm models.Alarm
+	pickedUser  string
+}
+
+func (p *frontendTakeoverProvider) PickAlarm(_ context.Context, alarm models.Alarm, user string) error {
+	p.pickedAlarm = alarm
+	p.pickedUser = user
+	return nil
+}
+
 func (p *frontendTestDataProvider) GetObjects() []models.Object {
 	return append([]models.Object(nil), p.objects...)
 }
@@ -67,7 +79,7 @@ func (p *frontendTestDataProvider) ProcessAlarm(string, string, string) error {
 	return nil
 }
 
-func TestFrontendAlarmCapabilitiesBlockForeignPhoenixOwner(t *testing.T) {
+func TestFrontendAlarmCapabilitiesAllowForeignPhoenixTakeover(t *testing.T) {
 	item := mapFrontendAlarmItem(models.Alarm{
 		ObjectID:     ids.PhoenixObjectIDNamespaceStart,
 		IsInProgress: true,
@@ -77,8 +89,34 @@ func TestFrontendAlarmCapabilitiesBlockForeignPhoenixOwner(t *testing.T) {
 	if item.CanProcess {
 		t.Fatal("foreign Phoenix alarm must not be processable")
 	}
-	if item.CanTakeOver {
-		t.Fatal("Phoenix alarm takeover must not be offered")
+	if !item.CanTakeOver {
+		t.Fatal("Phoenix alarm takeover must be offered")
+	}
+}
+
+func TestFrontendAdapterPickAlarmAllowsPhoenixTakeover(t *testing.T) {
+	alarm := models.Alarm{
+		ID:           77,
+		ObjectID:     ids.PhoenixObjectIDNamespaceStart,
+		IsInProgress: true,
+		InProgressBy: "Оператор 2",
+		IsOwnedByMe:  false,
+	}
+	provider := &frontendTakeoverProvider{
+		frontendTestDataProvider: &frontendTestDataProvider{
+			alarms: []models.Alarm{alarm},
+		},
+	}
+	adapter := NewFrontendAdapter(provider)
+
+	err := adapter.PickAlarm(context.Background(), alarm.ID, contracts.FrontendAlarmPickRequest{
+		User: "Диспетчер",
+	})
+	if err != nil {
+		t.Fatalf("PickAlarm() error = %v", err)
+	}
+	if provider.pickedAlarm.ID != alarm.ID || provider.pickedUser != "Диспетчер" {
+		t.Fatalf("PickAlarm() routed alarm=%+v user=%q", provider.pickedAlarm, provider.pickedUser)
 	}
 }
 

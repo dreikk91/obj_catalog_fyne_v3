@@ -9,10 +9,12 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	fyneDialog "fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	fyneTheme "fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -332,22 +334,149 @@ func (a *Application) configurePanelCallbacks() {
 	}
 
 	a.alarmPanel.OnProcessAlarm = func(alarm models.Alarm) {
-		log.Debug().Int("alarmID", alarm.ID).Msg("Початок обробки тривоги...")
-		provider := a.getUIDataProvider()
-		if provider == nil {
-			dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Провайдер даних недоступний.")
-			return
-		}
+		a.showProcessAlarmDialog(alarm)
+	}
+	a.alarmPanel.OnPickAlarm = a.confirmAndPickAlarm
+	a.alarmPanel.OnRespondAlarm = a.showAlarmResponseDialog
+}
 
-		dialogs.ShowProcessAlarmDialog(a.mainWindow, alarm, provider, "Диспетчер", func() {
-			log.Info().Int("alarmID", alarm.ID).Msg("Тривога відпрацьована")
+func (a *Application) showProcessAlarmDialog(alarm models.Alarm) {
+	log.Debug().Int("alarmID", alarm.ID).Msg("Початок обробки тривоги...")
+	provider := a.getUIDataProvider()
+	if provider == nil {
+		dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Провайдер даних недоступний.")
+		return
+	}
+
+	dialogs.ShowProcessAlarmDialog(a.mainWindow, alarm, provider, contracts.DefaultOperatorName, func() {
+		log.Info().Int("alarmID", alarm.ID).Msg("Тривога відпрацьована")
+		a.publishDataRefresh(eventbus.DataRefreshEvent{
+			RefreshAlarms: true,
+			RefreshEvents: true,
+		})
+		dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Тривогу завершено.")
+	})
+}
+
+func (a *Application) confirmAndPickAlarm(alarm models.Alarm) {
+	if alarm.IsInProgress && !alarm.IsOwnedByMe && alarm.CanTakeOver {
+		owner := strings.TrimSpace(alarm.InProgressBy)
+		if owner == "" {
+			owner = "інший оператор"
+		}
+		fyneDialog.ShowConfirm(
+			"Перехоплення тривоги",
+			fmt.Sprintf("Тривогу вже обробляє %s. Перехопити її?", owner),
+			func(confirmed bool) {
+				if confirmed {
+					a.pickAlarm(alarm)
+				}
+			},
+			a.mainWindow,
+		)
+		return
+	}
+	a.pickAlarm(alarm)
+}
+
+func (a *Application) pickAlarm(alarm models.Alarm) {
+	provider := a.getUIDataProvider()
+	if provider == nil {
+		dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Провайдер даних недоступний.")
+		return
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		err := provider.PickAlarm(ctx, alarm, contracts.DefaultOperatorName)
+		fyne.Do(func() {
+			if err != nil {
+				dialogs.ShowErrorDialog(a.mainWindow, "Взяття тривоги в роботу", err)
+				return
+			}
 			a.publishDataRefresh(eventbus.DataRefreshEvent{
 				RefreshAlarms: true,
 				RefreshEvents: true,
 			})
-			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Тривогу відпрацьовано.")
+			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Тривогу взято в роботу.")
 		})
+	}()
+}
+
+func (a *Application) showAlarmResponseDialog(alarm models.Alarm) {
+	provider := a.getUIDataProvider()
+	if provider == nil {
+		dialogs.ShowInfoDialog(a.mainWindow, "Недоступно", "Провайдер даних недоступний.")
+		return
 	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		groups, err := provider.ListResponseGroupsForAlarm(ctx, alarm)
+		fyne.Do(func() {
+			if err != nil {
+				dialogs.ShowErrorDialog(a.mainWindow, "Завантаження ГМР", err)
+				return
+			}
+			dialogs.ShowAlarmResponseDialog(
+				a.mainWindow,
+				alarm,
+				groups,
+				func(action dialogs.AlarmResponseAction, groupID string) {
+					a.handleAlarmResponseAction(provider, alarm, action, groupID)
+				},
+			)
+		})
+	}()
+}
+
+func (a *Application) handleAlarmResponseAction(
+	provider *backend.FrontendUIDataProvider,
+	alarm models.Alarm,
+	action dialogs.AlarmResponseAction,
+	groupID string,
+) {
+	switch action {
+	case dialogs.AlarmResponseTake:
+		a.confirmAndPickAlarm(alarm)
+		return
+	case dialogs.AlarmResponseProcess:
+		a.showProcessAlarmDialog(alarm)
+		return
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		var err error
+		switch action {
+		case dialogs.AlarmResponseAssign:
+			err = provider.AssignResponseGroup(ctx, alarm, groupID)
+		case dialogs.AlarmResponseArrived:
+			err = provider.NotifyGroupArrived(ctx, alarm)
+		case dialogs.AlarmResponseCancel:
+			err = provider.CancelResponseGroup(ctx, alarm)
+		default:
+			return
+		}
+
+		fyne.Do(func() {
+			if err != nil {
+				dialogs.ShowErrorDialog(a.mainWindow, "Реагування на тривогу", err)
+				return
+			}
+			a.publishDataRefresh(eventbus.DataRefreshEvent{
+				RefreshAlarms: true,
+				RefreshEvents: true,
+			})
+			dialogs.ShowInfoDialog(a.mainWindow, "Успішно", "Стан реагування оновлено.")
+		})
+	}()
 }
 
 func (a *Application) buildThemeButton() *widget.Button {

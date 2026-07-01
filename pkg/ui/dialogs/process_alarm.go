@@ -29,13 +29,13 @@ var legacyAlarmProcessActions = []string{
 }
 
 // ShowProcessAlarmDialog показує діалог відпрацювання тривоги.
-// CASL-модальник використовується тільки для CASL-тривог.
-// Для інших джерел лишається простий legacy-діалог.
+// Розширений модальник використовується для CASL і Phoenix, де причини
+// відпрацювання завантажуються із джерельної системи.
 func ShowProcessAlarmDialog(parent fyne.Window, alarm models.Alarm, provider contracts.AlarmProvider, user string, onSuccess func()) {
 	if parent == nil || provider == nil {
 		return
 	}
-	if !ids.IsCASLObjectID(alarm.ObjectID) {
+	if !ids.IsCASLObjectID(alarm.ObjectID) && !ids.IsPhoenixObjectID(alarm.ObjectID) {
 		showLegacyProcessAlarmDialog(parent, alarm, provider, user, onSuccess)
 		return
 	}
@@ -206,7 +206,7 @@ func ShowProcessAlarmDialog(parent fyne.Window, alarm models.Alarm, provider con
 				reasonSelect.SetSelected(labels[0])
 				statusLabel.SetText("")
 			} else {
-				statusLabel.SetText("CASL не повернув жодної причини відпрацювання.")
+				statusLabel.SetText("Джерело не повернуло жодної причини відпрацювання.")
 			}
 			reasonSelect.Show()
 			loading.Hide()

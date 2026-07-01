@@ -295,7 +295,7 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 	// 1) блокування, 2) тривога, 3) технічна/пожежна несправність,
 	// 4) втрата зв'язку, 5) проблема приписки/конфігурації, 6) інші стани.
 	if item.MonitoringStatusValue() == models.MonitoringStatusBlocked {
-		return selectObjectColor(4) // Попередження: тимчасово знято зі спостереження.
+		return selectObjectColor(utils.ObjectColorBlocked)
 	}
 	if item.MonitoringStatusValue() == models.MonitoringStatusDebug {
 		return selectObjectColor(6) // Інфо: режим налагодження.
@@ -324,7 +324,7 @@ func (vm *ObjectListViewModel) GetRowColors(item models.Object, isDark bool) (te
 	}
 
 	if item.GuardStatusValue() == models.GuardStatusDisarmed {
-		return selectObjectColor(4)
+		return selectObjectColor(utils.ObjectColorDisarmed)
 	}
 
 	if !ids.IsCASLObjectID(item.ID) && !ids.IsPhoenixObjectID(item.ID) &&

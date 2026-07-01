@@ -13,7 +13,7 @@ func TestAdminDisplayBlockObjectColorsUsesNormalizedStatuses(t *testing.T) {
 		BlockMode:        adminv1.DisplayBlockModeTemporaryOff,
 		MonitoringStatus: frontendv1.MonitoringStatusBlocked,
 	}, false)
-	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(utils.ObjectColorBlocked)
 	if text != wantText || row != wantRow {
 		t.Fatalf("blocked colors mismatch: text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
 	}
@@ -22,8 +22,24 @@ func TestAdminDisplayBlockObjectColorsUsesNormalizedStatuses(t *testing.T) {
 		ConnectionStatus: frontendv1.ConnectionStatusOffline,
 		GuardStatus:      frontendv1.GuardStatusGuarded,
 	}, false)
-	if offlineText != wantText || offlineRow != wantRow {
-		t.Fatalf("offline colors mismatch: text=%+v row=%+v want text=%+v row=%+v", offlineText, offlineRow, wantText, wantRow)
+	wantOfflineText, wantOfflineRow := utils.SelectObjectColorNRGBA(4)
+	if offlineText != wantOfflineText || offlineRow != wantOfflineRow {
+		t.Fatalf("offline colors mismatch: text=%+v row=%+v want text=%+v row=%+v", offlineText, offlineRow, wantOfflineText, wantOfflineRow)
+	}
+	if text == offlineText && row == offlineRow {
+		t.Fatalf("blocked and offline colors must differ: text=%+v row=%+v", text, row)
+	}
+
+	disarmedText, disarmedRow := adminDisplayBlockObjectColors(adminv1.DisplayBlockObject{
+		ConnectionStatus: frontendv1.ConnectionStatusOnline,
+		GuardStatus:      frontendv1.GuardStatusDisarmed,
+	}, false)
+	wantDisarmedText, wantDisarmedRow := utils.SelectObjectColorNRGBA(utils.ObjectColorDisarmed)
+	if disarmedText != wantDisarmedText || disarmedRow != wantDisarmedRow {
+		t.Fatalf("disarmed colors mismatch: text=%+v row=%+v want text=%+v row=%+v", disarmedText, disarmedRow, wantDisarmedText, wantDisarmedRow)
+	}
+	if offlineText == disarmedText && offlineRow == disarmedRow {
+		t.Fatalf("offline and disarmed colors must differ: text=%+v row=%+v", offlineText, offlineRow)
 	}
 }
 

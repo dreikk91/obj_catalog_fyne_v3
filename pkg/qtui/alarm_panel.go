@@ -653,7 +653,7 @@ func (panel *AlarmPanel) pickAlarmsWithConfirmation(alarms []models.Alarm) {
 	if alarmsRequireTakeover(alarms) {
 		answer := qt.QMessageBox_Question(
 			panel.QWidget,
-			"Перехоплення тривоги CASL",
+			"Перехоплення тривоги",
 			"Тривогу вже обробляє інший оператор. Перехопити її?",
 		)
 		if answer != qt.QMessageBox__Yes {

@@ -28,7 +28,8 @@ const (
 	phoenixGroupStatusArrived    = int64(3) // Прибула
 )
 
-// PickAlarm marks the alarm as being actively worked on (StateEvent 1→2).
+// PickAlarm marks the alarm as being actively worked on or transfers ownership
+// from another operator. An already dispatched response group stays dispatched.
 func (p *PhoenixDataProvider) PickAlarm(ctx context.Context, alarm models.Alarm, user string) error {
 	panelID := strings.TrimSpace(alarm.ObjectNumber)
 	if panelID == "" {
@@ -36,25 +37,11 @@ func (p *PhoenixDataProvider) PickAlarm(ctx context.Context, alarm models.Alarm,
 	}
 
 	result, err := p.db.ExecContext(ctx,
-		`UPDATE Temp SET StateEvent = @p1, Computer = @p2
-		 WHERE Panel_id = @p3
-		   AND NOT EXISTS (
-				SELECT 1
-				FROM Temp ownerRow
-				WHERE ownerRow.Panel_id = @p3
-				  AND ownerRow.StateEvent IN (2, 3)
-				  AND ownerRow.Computer IS NOT NULL
-				  AND LTRIM(RTRIM(ownerRow.Computer)) <> ''
-				  AND ownerRow.Computer <> @p2
-		   )
-		   AND (
-				StateEvent = 1
-				OR (
-					StateEvent = 2
-					AND (Computer IS NULL OR LTRIM(RTRIM(Computer)) = '' OR Computer = @p2)
-				)
-		   )`,
-		phoenixStateInWork, user, panelID,
+		`UPDATE Temp
+		 SET StateEvent = CASE WHEN StateEvent = @p1 THEN @p2 ELSE StateEvent END,
+		     Computer = @p3
+		 WHERE Panel_id = @p4 AND StateEvent IN (@p1, @p2, @p5)`,
+		phoenixStateActive, phoenixStateInWork, strings.TrimSpace(user), panelID, phoenixStateGroupSent,
 	)
 	if err != nil {
 		return fmt.Errorf("phoenix: PickAlarm %s: %w", panelID, err)

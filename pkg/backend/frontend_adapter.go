@@ -246,7 +246,9 @@ func (a *FrontendAdapter) PickAlarm(ctx context.Context, alarmID int, request co
 	if alarm.IsInProgress && alarm.IsOwnedByMe {
 		return nil
 	}
-	if alarm.IsInProgress && source != contracts.FrontendSourceCASL {
+	if alarm.IsInProgress &&
+		source != contracts.FrontendSourceCASL &&
+		source != contracts.FrontendSourcePhoenix {
 		return fmt.Errorf("%w: %s", contracts.ErrAlarmOwnershipConflict, strings.TrimSpace(alarm.InProgressBy))
 	}
 	if advanced, ok := a.dataProvider.(contracts.AlarmTakeoverProvider); ok {
@@ -999,7 +1001,8 @@ func mapFrontendAlarmItem(alarm models.Alarm) contracts.FrontendAlarmItem {
 		IsInProgress: alarm.IsInProgress,
 		InProgressBy: strings.TrimSpace(alarm.InProgressBy),
 		IsOwnedByMe:  alarm.IsOwnedByMe,
-		CanTakeOver:  source == contracts.FrontendSourceCASL && alarm.IsInProgress && !alarm.IsOwnedByMe,
+		CanTakeOver: (source == contracts.FrontendSourceCASL || source == contracts.FrontendSourcePhoenix) &&
+			alarm.IsInProgress && !alarm.IsOwnedByMe,
 		CanProcess: (!alarm.IsInProgress ||
 			alarm.IsOwnedByMe ||
 			source == contracts.FrontendSourceBridge) &&

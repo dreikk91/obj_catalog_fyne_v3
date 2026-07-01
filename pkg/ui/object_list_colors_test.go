@@ -17,7 +17,7 @@ func TestObjectListRowColors_PriorityBlockedOverAlarm(t *testing.T) {
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
-	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(utils.ObjectColorBlocked)
 	if text != wantText || row != wantRow {
 		t.Fatalf("unexpected blocked colors (light): text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
 	}
@@ -34,7 +34,7 @@ func TestObjectListRowColors_BridgeDisarmedUsesSemanticPalette(t *testing.T) {
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
-	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(utils.ObjectColorDisarmed)
 	if text != wantText || row != wantRow {
 		t.Fatalf("unexpected disarmed colors: text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
 	}
@@ -66,7 +66,7 @@ func TestObjectListRowColors_PhoenixBlockedUsesSemanticPalette(t *testing.T) {
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
-	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(utils.ObjectColorBlocked)
 	if text != wantText || row != wantRow {
 		t.Fatalf("unexpected phoenix blocked colors: text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
 	}
@@ -81,7 +81,7 @@ func TestObjectListRowColors_PhoenixDisarmedUsesSemanticPalette(t *testing.T) {
 	}
 
 	text, row := viewmodels.NewObjectListViewModel().GetRowColors(item, false)
-	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(utils.ObjectColorDisarmed)
 	if text != wantText || row != wantRow {
 		t.Fatalf("unexpected phoenix disarmed colors: text=%+v row=%+v want text=%+v row=%+v", text, row, wantText, wantRow)
 	}
@@ -184,7 +184,7 @@ func TestObjectListRowColors_UsesNormalizedStatuses(t *testing.T) {
 		MonitoringStatus: models.MonitoringStatusBlocked,
 		Status:           models.StatusNormal,
 	}, false)
-	wantText, wantRow := utils.SelectObjectColorNRGBA(4)
+	wantText, wantRow := utils.SelectObjectColorNRGBA(utils.ObjectColorBlocked)
 	if text != wantText || row != wantRow {
 		t.Fatalf("unexpected blocked colors from normalized state: text=%+v row=%+v", text, row)
 	}
@@ -203,5 +203,38 @@ func TestObjectListRowColors_UsesNormalizedStatuses(t *testing.T) {
 			wantOfflineText,
 			wantOfflineRow,
 		)
+	}
+}
+
+func TestObjectListRowColors_OperationalStatesUseDifferentColors(t *testing.T) {
+	vm := viewmodels.NewObjectListViewModel()
+
+	for _, isDark := range []bool{false, true} {
+		blockedText, blockedRow := vm.GetRowColors(models.Object{
+			ID:               1500000010,
+			MonitoringStatus: models.MonitoringStatusBlocked,
+		}, isDark)
+		offlineText, offlineRow := vm.GetRowColors(models.Object{
+			ID:               1000000010,
+			ConnectionStatus: models.ConnectionStatusOffline,
+			Status:           models.StatusOffline,
+		}, isDark)
+		disarmedText, disarmedRow := vm.GetRowColors(models.Object{
+			ID:               1559,
+			MonitoringStatus: models.MonitoringStatusActive,
+			ConnectionStatus: models.ConnectionStatusOnline,
+			GuardStatus:      models.GuardStatusDisarmed,
+			SubServerA:       "A",
+		}, isDark)
+
+		if blockedText == offlineText && blockedRow == offlineRow {
+			t.Fatalf("blocked and offline colors must differ (dark=%v): text=%+v row=%+v", isDark, blockedText, blockedRow)
+		}
+		if blockedText == disarmedText && blockedRow == disarmedRow {
+			t.Fatalf("blocked and disarmed colors must differ (dark=%v): text=%+v row=%+v", isDark, blockedText, blockedRow)
+		}
+		if offlineText == disarmedText && offlineRow == disarmedRow {
+			t.Fatalf("offline and disarmed colors must differ (dark=%v): text=%+v row=%+v", isDark, offlineText, offlineRow)
+		}
 	}
 }

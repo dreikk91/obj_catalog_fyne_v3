@@ -134,7 +134,7 @@ func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 	groups := p.resolveCASLObjectGroups(ctx, record)
 	defaultGroup := firstCASLObjectGroup(groups)
 
-	orderedIDs := normalizeContactIDs(record.InCharge, record.ManagerID)
+	orderedIDs := normalizeContactIDs(record.InCharge, "")
 	if len(orderedIDs) == 0 && len(record.Rooms) == 0 {
 		return nil
 	}
@@ -153,14 +153,17 @@ func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 			groupName := displayCASLGroupName(group)
 			for _, roomUser := range room.Users {
 				userID := strings.TrimSpace(roomUser.UserID)
-				if userID != "" {
-					seenUserIDs[userID] = struct{}{}
-				}
 				detailedUser := roomUser
 				if userID != "" {
 					if user, ok := users[userID]; ok {
 						detailedUser = mergeCASLUsers(detailedUser, user)
 					}
+				}
+				if !isCASLResponsibleUser(detailedUser) {
+					continue
+				}
+				if userID != "" {
+					seenUserIDs[userID] = struct{}{}
 				}
 				contact := buildCASLContact(detailedUser, priority)
 				contact.GroupID = group.ID
@@ -190,6 +193,9 @@ func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 					priority++
 					continue
 				}
+				if !isCASLResponsibleUser(user) {
+					continue
+				}
 
 				contact := buildCASLContact(user, priority)
 				contact.GroupID = defaultGroup.ID
@@ -217,6 +223,9 @@ func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 			})
 			continue
 		}
+		if !isCASLResponsibleUser(user) {
+			continue
+		}
 
 		contact := buildCASLContact(user, idx+1)
 		contact.GroupID = defaultGroup.ID
@@ -227,6 +236,15 @@ func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 	}
 
 	return contacts
+}
+
+func isCASLResponsibleUser(user caslUser) bool {
+	switch strings.ToUpper(strings.TrimSpace(user.Role)) {
+	case "", "IN_CHARGE", "USER":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildCASLContact(user caslUser, priority int) models.Contact {

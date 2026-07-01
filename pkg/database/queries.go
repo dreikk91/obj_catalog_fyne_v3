@@ -13,7 +13,7 @@ func GetObjectsList(ctx context.Context, db *sqlx.DB) ([]ObjectInfoRow, error) {
 	query := `
 		SELECT
 			oi.OBJUIN, oi.OBJN, oi.OBJFULLNAME1, oi.OBJSHORTNAME1, oi.ADDRESS1, oi.CONTRACT1, 
-			oi.ENG1, oi.GSMPHONE, oi.GSMPHONE2, oi.OBJCHAN, oi.RESERVLONG2, oi.SBSA, oi.SBSB,
+			oi.ENG1, oi.GSMPHONE, oi.GSMPHONE2, oi.OBJCHAN, oi.RESERVLONG2, oi.RESERVTEXT, oi.SBSA, oi.SBSB,
 			os.ALARMSTATE1, os.GUARDSTATE1, os.TECHALARMSTATE1,
 			os.BLOCKEDARMED_ON_OFF,
 			ol.ISCONNSTATE1

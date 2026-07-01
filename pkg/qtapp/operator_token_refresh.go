@@ -17,10 +17,6 @@ const (
 	operatorTokenRefreshAhead    = 15 * time.Minute
 )
 
-type vodafoneTokenRefresher interface {
-	RefreshVodafoneToken() (contracts.VodafoneAuthState, error)
-}
-
 type kyivstarTokenRefresher interface {
 	RefreshKyivstarToken() (contracts.KyivstarAuthState, error)
 }
@@ -53,17 +49,6 @@ func (a *Application) refreshOperatorTokens() {
 	now := time.Now().UTC()
 	refreshAt := now.Add(operatorTokenRefreshAhead)
 
-	if shouldRefreshVodafoneToken(config.LoadVodafoneConfig(prefs), refreshAt) {
-		refresher, ok := resolveAdminCapability[vodafoneTokenRefresher](a)
-		if ok {
-			if state, err := refresher.RefreshVodafoneToken(); err != nil {
-				log.Warn().Err(err).Msg("Не вдалося оновити Vodafone token")
-			} else {
-				log.Info().Time("expiresAt", state.TokenExpiresAt).Msg("Vodafone token оновлено")
-			}
-		}
-	}
-
 	if shouldRefreshKyivstarToken(config.LoadKyivstarConfig(prefs), refreshAt) {
 		refresher, ok := resolveAdminCapability[kyivstarTokenRefresher](a)
 		if ok {
@@ -74,12 +59,6 @@ func (a *Application) refreshOperatorTokens() {
 			}
 		}
 	}
-}
-
-func shouldRefreshVodafoneToken(cfg config.VodafoneConfig, at time.Time) bool {
-	return cfg.NormalizedLoginMethod() == config.VodafoneLoginMethodPUK &&
-		cfg.HasPUKCredentials() &&
-		!cfg.TokenUsableAt(at)
 }
 
 func shouldRefreshKyivstarToken(cfg config.KyivstarConfig, at time.Time) bool {

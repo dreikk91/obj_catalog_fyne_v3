@@ -872,6 +872,16 @@ func (a *Application) buildMainMenu() *fyne.MainMenu {
 	)
 
 	utilitiesMenu := fyne.NewMenu("Утиліти",
+		fyne.NewMenuItem("Нові об'єкти за період", func() {
+			provider := a.getUIDataProvider()
+			if provider == nil {
+				dialogs.ShowErrorDialog(a.mainWindow, "Нові об'єкти", fmt.Errorf("джерела даних недоступні"))
+				return
+			}
+			dialogs.ShowNewObjectsReport(provider, a.isDarkTheme, func(object models.Object) {
+				a.applyObjectContext(&object, true)
+			})
+		}),
 		fyne.NewMenuItem("Згенерувати звіт прийнятих об'єктів", func() {
 			a.generateAcceptedObjectsExcelReport()
 		}),

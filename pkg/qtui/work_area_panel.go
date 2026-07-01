@@ -17,6 +17,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	objexport "obj_catalog_fyne_v3/pkg/export"
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
@@ -45,6 +46,7 @@ type WorkAreaPanel struct {
 	overviewZonesLayout      *qt.QGridLayout
 	mapCoordinates           *qt.QLabel
 	mapButton                *qt.QPushButton
+	testMessagesButton       *qt.QPushButton
 	zonesModel               *qt.QStandardItemModel
 	zonesFlatModel           *qt.QStandardItemModel
 	contactsModel            *qt.QStandardItemModel
@@ -578,6 +580,11 @@ func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone,
 	previousEventsRowsReady := panel.eventsRowsReady
 
 	panel.currentObject = &object
+	if panel.testMessagesButton != nil {
+		isBridge := !ids.IsCASLObjectID(object.ID) && !ids.IsPhoenixObjectID(object.ID)
+		panel.testMessagesButton.SetVisible(isBridge)
+		panel.testMessagesButton.SetEnabled(isBridge && panel.dataProvider != nil)
+	}
 	panel.zones = zones
 	panel.contacts = contacts
 	if keepLoadedEvents {
@@ -1105,6 +1112,11 @@ func (panel *WorkAreaPanel) buildObjectCardTab() *qt.QWidget {
 	row = panel.addCardFieldWithTooltip(stateGrid, row, 0, "Якість зв'язку", "Рівень GSM-сигналу приладу")
 	row = panel.addCardFieldWithTooltip(stateGrid, row-1, 2, "Останній тест", "Дата та час останнього тестового сигналу")
 	row = panel.addCardFieldWithTooltip(stateGrid, row-1, 4, "Напрямок", "Напрямок підключення на пульті")
+	panel.testMessagesButton = qt.NewQPushButton3("Переглянути тестові повідомлення")
+	panel.testMessagesButton.SetVisible(false)
+	panel.testMessagesButton.OnClicked(panel.showCurrentObjectTestMessages)
+	stateGrid.AddWidget3(panel.testMessagesButton.QWidget, row, 0, 1, 6)
+	row++
 	_ = row
 	mainLayout.AddWidget(stateGroup.QWidget)
 

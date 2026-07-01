@@ -9,27 +9,6 @@ import (
 	"obj_catalog_fyne_v3/pkg/config"
 )
 
-func TestShouldRefreshVodafoneTokenRequiresPUKCredentials(t *testing.T) {
-	t.Parallel()
-
-	at := time.Now().UTC().Add(15 * time.Minute)
-	cfg := config.VodafoneConfig{
-		Phone:       "380501234567",
-		AccessToken: "old-token",
-		TokenExpiry: at.Add(-time.Minute).Format(time.RFC3339),
-		LoginMethod: config.VodafoneLoginMethodPUK,
-		PUK:         "11112222",
-	}
-	if !shouldRefreshVodafoneToken(cfg, at) {
-		t.Fatal("shouldRefreshVodafoneToken() = false, want true")
-	}
-
-	cfg.LoginMethod = config.VodafoneLoginMethodSMS
-	if shouldRefreshVodafoneToken(cfg, at) {
-		t.Fatal("SMS login must not auto-refresh Vodafone token")
-	}
-}
-
 func TestShouldRefreshKyivstarTokenRequiresCredentials(t *testing.T) {
 	t.Parallel()
 

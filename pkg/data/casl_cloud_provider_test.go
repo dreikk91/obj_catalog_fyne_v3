@@ -2517,14 +2517,16 @@ func TestCASLProvider_ReadConnectionsFallback(t *testing.T) {
 
 	objectID := strconv.Itoa(objects[0].ID)
 	contacts := provider.GetEmployees(objectID)
-	if len(contacts) != 3 {
-		t.Fatalf("expected 3 contacts from read_connections payload, got %d", len(contacts))
+	if len(contacts) != 2 {
+		t.Fatalf("expected 2 responsible users from read_connections payload, got %d", len(contacts))
 	}
 	if contacts[0].Name != "Хіміч Надія Павлівна" {
 		t.Fatalf("unexpected first contact name: %q", contacts[0].Name)
 	}
-	if contacts[2].Name != "Островський Володимир Іванович" {
-		t.Fatalf("unexpected manager contact name: %q", contacts[2].Name)
+	for _, contact := range contacts {
+		if contact.Name == "Островський Володимир Іванович" {
+			t.Fatalf("manager must not be included in responsible users: %+v", contact)
+		}
 	}
 	if readConnectionsCalls == 0 {
 		t.Fatalf("expected read_connections to be used as fallback")
@@ -2534,6 +2536,29 @@ func TestCASLProvider_ReadConnectionsFallback(t *testing.T) {
 	}
 	if readUserCalls != 0 {
 		t.Fatalf("read_user should not be required, got %d calls", readUserCalls)
+	}
+}
+
+func TestCASLResponsibleUserRoleFilter(t *testing.T) {
+	tests := []struct {
+		role string
+		want bool
+	}{
+		{role: "IN_CHARGE", want: true},
+		{role: "USER", want: true},
+		{role: "", want: true},
+		{role: "MANAGER", want: false},
+		{role: "ADMIN", want: false},
+		{role: "ADMINISTRATOR", want: false},
+		{role: "TECHNICIAN", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.role, func(t *testing.T) {
+			got := isCASLResponsibleUser(caslUser{Role: test.role})
+			if got != test.want {
+				t.Fatalf("isCASLResponsibleUser(%q) = %v, want %v", test.role, got, test.want)
+			}
+		})
 	}
 }
 

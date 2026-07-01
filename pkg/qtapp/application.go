@@ -109,6 +109,7 @@ func NewApplication() *Application {
 	app.ui.OnDiagnosticsRequested = app.showDiagnostics
 	app.ui.OnResponseGroupsRequested = app.showResponseGroups
 	app.ui.OnOperationalMapRequested = app.showOperationalMap
+	app.ui.OnNewObjectsRequested = app.showNewObjectsReport
 	app.ui.OnCreateObject = app.createObject
 	app.ui.OnCreateCASLObject = app.createCASLObject
 	app.ui.OnEditObject = app.editCurrentObject
@@ -127,6 +128,13 @@ func NewApplication() *Application {
 	app.registerEventBusHandlers()
 	app.initializeRuntime(preferences)
 	return app
+}
+
+func (a *Application) showNewObjectsReport() {
+	if a == nil || a.ui == nil || a.uiData == nil {
+		return
+	}
+	a.ui.ShowNewObjectsReport(a.uiData, a.applyObjectContext)
 }
 
 func (a *Application) showPhoenixLoginIfNeeded() {

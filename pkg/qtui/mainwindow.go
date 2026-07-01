@@ -40,6 +40,7 @@ type MainWindow struct {
 	OnDiagnosticsRequested    func()
 	OnResponseGroupsRequested func()
 	OnOperationalMapRequested func()
+	OnNewObjectsRequested     func()
 	OnCreateObjectRequested   func()
 	OnCreateCASLRequested     func()
 }
@@ -118,6 +119,13 @@ func (mw *MainWindow) buildMenuBar() {
 	operationalMapAction.OnTriggered(func() {
 		if mw.OnOperationalMapRequested != nil {
 			mw.OnOperationalMapRequested()
+		}
+	})
+	newObjectsAction := viewMenu.AddActionWithText("Нові об'єкти за період")
+	newObjectsAction.SetShortcut(qt.NewQKeySequence2("Ctrl+Shift+O"))
+	newObjectsAction.OnTriggered(func() {
+		if mw.OnNewObjectsRequested != nil {
+			mw.OnNewObjectsRequested()
 		}
 	})
 	viewMenu.AddSeparator()

@@ -1123,6 +1123,7 @@ func mapObjectRowToModel(row database.ObjectInfoRow) models.Object {
 		GSMLevel:      0,
 		SubServerA:    subServerA,
 		SubServerB:    subServerB,
+		LaunchDate:    ptrToString(row.ReservText),
 
 		AlarmState:        ptrToInt64(row.AlarmState1),
 		GuardState:        state.guardState,

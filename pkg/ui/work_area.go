@@ -20,6 +20,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	objexport "obj_catalog_fyne_v3/pkg/export"
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/simoperator"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
@@ -325,6 +326,7 @@ func (w *WorkAreaPanel) createSummaryTab() fyne.CanvasObject {
 	w.SummarySignalLabel = widget.NewLabelWithData(w.ExternalVM.SummarySignalBinding())
 	w.SummaryActivityLabel = widget.NewLabelWithData(w.ExternalVM.SummaryActivityBinding())
 	w.TestLogsBtn = widget.NewButtonWithIcon("Тестові повідомлення", fyneTheme.HistoryIcon(), nil)
+	w.TestLogsBtn.Hide()
 
 	w.Notes1Label = widget.NewLabelWithData(w.DeviceStateVM.NotesBinding())
 	w.Notes1Label.Wrapping = fyne.TextWrapWord
@@ -1336,6 +1338,11 @@ func (w *WorkAreaPanel) updateDeviceInfo() {
 
 	w.TestLogsBtn.OnTapped = func() {
 		w.showTestMessages(strconv.Itoa(obj.ID))
+	}
+	if ids.IsCASLObjectID(obj.ID) || ids.IsPhoenixObjectID(obj.ID) {
+		w.TestLogsBtn.Hide()
+	} else {
+		w.TestLogsBtn.Show()
 	}
 
 	w.CopyPhonesBtn.OnTapped = func() {

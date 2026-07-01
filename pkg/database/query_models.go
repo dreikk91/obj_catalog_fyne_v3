@@ -15,6 +15,7 @@ type ObjectInfoRow struct {
 	GsmPhone2     *string `db:"GSMPHONE2"`
 	ObjChan       *int    `db:"OBJCHAN"`
 	ReservLong2   *int64  `db:"RESERVLONG2"`
+	ReservText    *string `db:"RESERVTEXT"`
 	SBSA          *string `db:"SBSA"`
 	SBSB          *string `db:"SBSB"`
 

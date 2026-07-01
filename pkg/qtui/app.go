@@ -26,6 +26,7 @@ type App struct {
 	OnDiagnosticsRequested    func()
 	OnResponseGroupsRequested func()
 	OnOperationalMapRequested func()
+	OnNewObjectsRequested     func()
 	OnCreateObject            func()
 	OnCreateCASLObject        func()
 	OnEditObject              func()
@@ -84,6 +85,11 @@ func NewApp() *App {
 	app.mainWindow.OnOperationalMapRequested = func() {
 		if app.OnOperationalMapRequested != nil {
 			app.OnOperationalMapRequested()
+		}
+	}
+	app.mainWindow.OnNewObjectsRequested = func() {
+		if app.OnNewObjectsRequested != nil {
+			app.OnNewObjectsRequested()
 		}
 	}
 	app.mainWindow.OnCreateObjectRequested = func() {
@@ -180,6 +186,14 @@ func (a *App) ShowPhoenixLogin(onSaved func(config.DBConfig)) {
 		return
 	}
 	ShowPhoenixLoginDialog(a.mainWindow.QWidget, a.preferences, onSaved)
+}
+
+// ShowNewObjectsReport opens the new objects report window.
+func (a *App) ShowNewObjectsReport(provider contracts.ObjectProvider, onOpen func(models.Object)) {
+	if a == nil || a.mainWindow == nil {
+		return
+	}
+	ShowNewObjectsReport(a.mainWindow.QWidget, provider, onOpen)
 }
 
 func (a *App) Preferences() config.Preferences {

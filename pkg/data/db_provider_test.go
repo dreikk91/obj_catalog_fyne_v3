@@ -226,10 +226,12 @@ func TestMapObjectRowToModel_PreservesSIMPhones(t *testing.T) {
 
 	sim1 := "+380501234567"
 	sim2 := "+380671234567"
+	launchDate := "01.07.2026"
 	row := database.ObjectInfoRow{
-		Objn:      1001,
-		GsmPhone:  &sim1,
-		GsmPhone2: &sim2,
+		Objn:       1001,
+		GsmPhone:   &sim1,
+		GsmPhone2:  &sim2,
+		ReservText: &launchDate,
 	}
 
 	obj := mapObjectRowToModel(row)
@@ -238,6 +240,9 @@ func TestMapObjectRowToModel_PreservesSIMPhones(t *testing.T) {
 	}
 	if obj.SIM2 != sim2 {
 		t.Fatalf("SIM2 = %q, want %q", obj.SIM2, sim2)
+	}
+	if obj.LaunchDate != launchDate {
+		t.Fatalf("LaunchDate = %q, want %q", obj.LaunchDate, launchDate)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 
 	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ui/fyneviewmodels"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
@@ -34,7 +35,7 @@ type objectWizardDialogState struct {
 	coordsFlowVM     *viewmodels.ObjectWizardCoordinatesFlowViewModel
 	channelFlowVM    *viewmodels.ObjectChannelFlowViewModel
 	simUsageVM       *viewmodels.SIMPhoneUsageViewModel
-	simStateVM       *viewmodels.ObjectWizardSIMUsageStateViewModel
+	simStateVM       *fyneviewmodels.ObjectWizardSIMUsageStateViewModel
 	dateVM           *viewmodels.ObjectDateFieldViewModel
 
 	shortNameBinding binding.String
@@ -658,7 +659,7 @@ func ShowNewObjectWizardDialog(parent fyne.Window, provider adminv1.ObjectWizard
 
 	sim1Entry := widget.NewEntry()
 	sim2Entry := widget.NewEntry()
-	simStateVM := viewmodels.NewObjectWizardSIMUsageStateViewModel()
+	simStateVM := fyneviewmodels.NewObjectWizardSIMUsageStateViewModel()
 	sim1UsageLabel := widget.NewLabelWithData(simStateVM.SIM1Binding())
 	sim1UsageLabel.Wrapping = fyne.TextWrapWord
 	sim2UsageLabel := widget.NewLabelWithData(simStateVM.SIM2Binding())

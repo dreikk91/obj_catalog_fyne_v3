@@ -1,6 +1,10 @@
-package viewmodels
+package fyneviewmodels
 
-import "fyne.io/fyne/v2/data/binding"
+import (
+	"fyne.io/fyne/v2/data/binding"
+
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
+)
 
 // WorkAreaExternalStateViewModel зберігає динамічні зовнішні поля вкладки "Стан" через binding.
 type WorkAreaExternalStateViewModel struct {
@@ -21,7 +25,7 @@ func NewWorkAreaExternalStateViewModel() *WorkAreaExternalStateViewModel {
 		summarySignal:   binding.NewString(),
 		summaryActivity: binding.NewString(),
 	}
-	vm.Apply(WorkAreaExternalPresentation{
+	vm.Apply(viewmodels.WorkAreaExternalPresentation{
 		SignalText:          "📶 Рівень: ...",
 		LastTestText:        "📝 Тест: ...",
 		LastTestTimeText:    "📅 Ост. тест: ...",
@@ -56,7 +60,7 @@ func (vm *WorkAreaExternalStateViewModel) SummaryActivityBinding() binding.Strin
 	return vm.summaryActivity
 }
 
-func (vm *WorkAreaExternalStateViewModel) Apply(presentation WorkAreaExternalPresentation) {
+func (vm *WorkAreaExternalStateViewModel) Apply(presentation viewmodels.WorkAreaExternalPresentation) {
 	_ = vm.signal.Set(presentation.SignalText)
 	_ = vm.lastTest.Set(presentation.LastTestText)
 	_ = vm.lastTestTime.Set(presentation.LastTestTimeText)

@@ -3,9 +3,11 @@ package application
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog/log"
 
 	"obj_catalog_fyne_v3/pkg/backend"
 	"obj_catalog_fyne_v3/pkg/config"
@@ -23,6 +25,7 @@ type managedDBResource struct {
 
 type providerBuildResult struct {
 	provider        contracts.DataProvider
+	phoenixProvider *data.PhoenixDataProvider
 	managedDBs      []managedDBResource
 	firebirdEnabled bool
 	phoenixEnabled  bool
@@ -96,6 +99,21 @@ func buildDataProviderFromConfig(cfg config.DBConfig, pref fyne.Preferences, ver
 				return providerBuildResult{}, fmt.Errorf("phoenix ping failed: %w", err)
 			}
 		}
+		phoenixProvider := data.NewPhoenixDataProvider(db, dsn)
+		settingsCtx, settingsCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		settingsErr := phoenixProvider.ConfigureRuntime(settingsCtx, cfg)
+		settingsCancel()
+		if settingsErr != nil {
+			_ = db.Close()
+			closeManagedDBResources(result.managedDBs)
+			return providerBuildResult{}, fmt.Errorf("phoenix runtime settings: %w", settingsErr)
+		}
+		if !verifyConnectivity {
+			if err := phoenixProvider.StartControlCenterSession(); err != nil {
+				log.Warn().Err(err).Msg("Phoenix UDP недоступний; робота з БД продовжується")
+			}
+		}
+		result.phoenixProvider = phoenixProvider
 		result.managedDBs = append(result.managedDBs, managedDBResource{
 			label:        "Phoenix",
 			db:           db,
@@ -103,7 +121,7 @@ func buildDataProviderFromConfig(cfg config.DBConfig, pref fyne.Preferences, ver
 		})
 		sources = append(sources, data.ProviderSource{
 			Name:         "phoenix",
-			Provider:     backend.NewPhoenixProvider(db, dsn),
+			Provider:     phoenixProvider,
 			OwnsObjectID: ids.IsPhoenixObjectID,
 			OwnsAlarmID:  ids.IsPhoenixObjectID,
 		})

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -40,5 +41,20 @@ func TestResponseGroupSelectableAllowsFreeAndCurrentGroups(t *testing.T) {
 		Status: contracts.ResponseGroupStatusDispatched,
 	}, "current") {
 		t.Fatal("response group dispatched to another object must not be selectable")
+	}
+}
+
+func TestAlarmResponseActionsRequireCASLOrPhoenixOwnership(t *testing.T) {
+	if alarmResponseActionsAllowed(models.Alarm{ObjectID: ids.CASLObjectIDNamespaceStart}) {
+		t.Fatal("unowned CASL alarm must not allow response actions")
+	}
+	if alarmResponseActionsAllowed(models.Alarm{ObjectID: ids.PhoenixObjectIDNamespaceStart}) {
+		t.Fatal("unowned Phoenix alarm must not allow response actions")
+	}
+	if !alarmResponseActionsAllowed(models.Alarm{
+		ObjectID:    ids.CASLObjectIDNamespaceStart,
+		IsOwnedByMe: true,
+	}) {
+		t.Fatal("owned CASL alarm must allow response actions")
 	}
 }

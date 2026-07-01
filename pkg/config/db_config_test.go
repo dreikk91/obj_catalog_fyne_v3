@@ -106,6 +106,57 @@ func TestLoadDBConfigTrimsAndFallsBackForRequiredFields(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoadDBConfigPreservesPhoenixOperatorSettings(t *testing.T) {
+	prefs := memoryPreferences{
+		strings: map[string]string{},
+		bools:   map[string]bool{},
+		ints:    map[string]int{},
+		floats:  map[string]float64{},
+	}
+	want := DBConfig{
+		PhoenixControlHost:      "10.32.1.200",
+		PhoenixOperatorID:       42,
+		PhoenixOperatorName:     "Operator",
+		PhoenixOperatorPassword: "secret",
+		PhoenixClientRole:       PhoenixClientRoleAdministrator,
+	}
+
+	SaveDBConfig(prefs, want)
+	got := LoadDBConfig(prefs)
+
+	if got.PhoenixControlHost != want.PhoenixControlHost ||
+		got.PhoenixOperatorID != want.PhoenixOperatorID ||
+		got.PhoenixOperatorName != want.PhoenixOperatorName ||
+		got.PhoenixOperatorPassword != want.PhoenixOperatorPassword ||
+		got.PhoenixClientRole != want.PhoenixClientRole {
+		t.Fatalf("Phoenix operator settings = %+v, want %+v", got, want)
+	}
+}
+
+func TestPhoenixLoginConfigured(t *testing.T) {
+	complete := DBConfig{
+		PhoenixControlHost:      "10.32.1.200",
+		PhoenixOperatorID:       3,
+		PhoenixOperatorPassword: "secret",
+	}
+	if !PhoenixLoginConfigured(complete) {
+		t.Fatal("complete Phoenix login was not recognized")
+	}
+	complete.PhoenixOperatorPassword = ""
+	if PhoenixLoginConfigured(complete) {
+		t.Fatal("Phoenix login without password must be incomplete")
+	}
+}
+
+func TestNormalizePhoenixClientRole(t *testing.T) {
+	if got := NormalizePhoenixClientRole("admin"); got != PhoenixClientRoleAdministrator {
+		t.Fatalf("admin role = %q", got)
+	}
+	if got := NormalizePhoenixClientRole(""); got != PhoenixClientRoleDuty {
+		t.Fatalf("default role = %q", got)
+	}
+}
+
 func TestDBConfigFirebirdDSNUsesTrimmedHostPortAndPath(t *testing.T) {
 	t.Parallel()
 

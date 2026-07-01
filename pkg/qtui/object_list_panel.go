@@ -71,6 +71,7 @@ func NewObjectListPanel(prefs config.Preferences) *ObjectListPanel {
 	panel.table.SetModel(panel.model.QAbstractItemModel)
 	panel.table.SetSortingEnabled(true)
 	panel.table.SetAlternatingRowColors(true)
+	panel.table.SetWordWrap(false)
 	panel.table.SetSelectionBehavior(qt.QAbstractItemView__SelectRows)
 	panel.table.SetEditTriggers(qt.QAbstractItemView__NoEditTriggers)
 	panel.table.HorizontalHeader().SetStretchLastSection(true)

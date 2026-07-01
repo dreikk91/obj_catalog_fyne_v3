@@ -1,4 +1,4 @@
-package viewmodels
+package fyneviewmodels
 
 import "fyne.io/fyne/v2/data/binding"
 

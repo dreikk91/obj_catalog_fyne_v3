@@ -1,9 +1,11 @@
-package viewmodels
+package fyneviewmodels
 
 import (
 	"testing"
 
 	"fyne.io/fyne/v2/test"
+
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
 func TestWorkAreaExternalStateViewModel_DefaultState(t *testing.T) {
@@ -41,7 +43,7 @@ func TestWorkAreaExternalStateViewModel_Apply(t *testing.T) {
 	defer app.Quit()
 
 	vm := NewWorkAreaExternalStateViewModel()
-	vm.Apply(WorkAreaExternalPresentation{
+	vm.Apply(viewmodels.WorkAreaExternalPresentation{
 		SignalText:          "📶 Рівень: 85%",
 		LastTestText:        "📝 Тест: OK",
 		LastTestTimeText:    "📅 Ост. тест: 28.03.2026 10:00:00",

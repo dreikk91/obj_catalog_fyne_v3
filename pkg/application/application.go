@@ -136,6 +136,29 @@ func (a *Application) setDataProvider(provider contracts.DataProvider) {
 	a.providerMu.Unlock()
 }
 
+func (a *Application) clearDataProvider() {
+	if a == nil {
+		return
+	}
+	a.providerMu.Lock()
+	a.dataProvider = nil
+	a.frontendAPI = nil
+	a.uiData = nil
+	a.providerMu.Unlock()
+	if a.alarmPanel != nil {
+		a.alarmPanel.Data = nil
+	}
+	if a.objectList != nil {
+		a.objectList.Data = nil
+	}
+	if a.workArea != nil {
+		a.workArea.Data = nil
+	}
+	if a.eventLog != nil {
+		a.eventLog.Data = nil
+	}
+}
+
 // updateWindowTitle оновлює заголовок вікна з урахуванням
 // вибраного об'єкта та кількості активних тривог.
 func (a *Application) updateWindowTitle() {
@@ -930,8 +953,24 @@ func (a *Application) Run() {
 	if a.objectList != nil && a.objectList.SearchEntry != nil {
 		a.mainWindow.Canvas().Focus(a.objectList.SearchEntry)
 	}
-	a.mainWindow.ShowAndRun()
+	a.mainWindow.Show()
+	a.showPhoenixLoginIfNeeded()
+	a.fyneApp.Run()
 	log.Info().Msg("Основний цикл завершено")
+}
+
+func (a *Application) showPhoenixLoginIfNeeded() {
+	if a == nil || a.fyneApp == nil || a.mainWindow == nil {
+		return
+	}
+	cfg := config.LoadDBConfig(a.fyneApp.Preferences())
+	phoenixEnabled := cfg.PhoenixEnabled || cfg.NormalizedMode() == config.BackendModePhoenix
+	if !phoenixEnabled || config.PhoenixLoginConfigured(cfg) {
+		return
+	}
+	dialogs.ShowPhoenixLoginDialog(a.mainWindow, a.fyneApp.Preferences(), func(saved config.DBConfig) {
+		a.Reconnect(saved)
+	})
 }
 
 // Reconnect перепідключає джерело даних та оновлює провайдери.
@@ -965,6 +1004,17 @@ func (a *Application) Reconnect(cfg config.DBConfig) {
 			}
 		}
 		a.closeManagedDBs()
+		a.clearDataProvider()
+		if buildResult.phoenixProvider != nil {
+			if err := buildResult.phoenixProvider.StartControlCenterSession(); err != nil {
+				log.Warn().Err(err).Msg("Phoenix UDP недоступний; робота з БД продовжується")
+				fyne.Do(func() {
+					if a.statusLabel != nil {
+						a.statusLabel.SetText("Phoenix: БД підключено, UDP-порт зайнятий")
+					}
+				})
+			}
+		}
 		a.managedDBs = buildResult.managedDBs
 		a.setDataProvider(buildResult.provider)
 		a.firebirdEnabled = buildResult.firebirdEnabled

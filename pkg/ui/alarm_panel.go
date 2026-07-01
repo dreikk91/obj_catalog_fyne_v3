@@ -360,6 +360,10 @@ func (p *AlarmPanelWidget) refreshData() {
 	p.mutex.Unlock()
 
 	fyne.Do(func() {
+		scrollOffset := float32(0)
+		if p.List != nil {
+			scrollOffset = p.List.GetScrollOffset()
+		}
 		// Оновлюємо розмір шрифту та UI-елементи теми — тільки на GUI-треді
 		p.lastFontSize = uiCfg.FontSizeAlarms
 		if p.TitleText != nil {
@@ -376,6 +380,7 @@ func (p *AlarmPanelWidget) refreshData() {
 		ensureJournalListMinWidth(p.listWidthGuide, alarmListTexts(result.FilteredAlarms), p.lastFontSize, fyne.TextStyle{Bold: true})
 		if p.List != nil {
 			p.List.Refresh()
+			p.List.ScrollToOffset(scrollOffset)
 		}
 		if hasSelectedAlarm {
 			p.updateSelectedAlarmActions(selectedAlarm)

@@ -87,14 +87,19 @@ type OperatorDBSettings struct {
 	FirebirdPath     string `json:"FirebirdPath"`
 	FirebirdParams   string `json:"FirebirdParams"`
 
-	PhoenixEnabled  bool   `json:"PhoenixEnabled"`
-	PhoenixUser     string `json:"PhoenixUser"`
-	PhoenixPassword string `json:"PhoenixPassword"`
-	PhoenixHost     string `json:"PhoenixHost"`
-	PhoenixPort     string `json:"PhoenixPort"`
-	PhoenixInstance string `json:"PhoenixInstance"`
-	PhoenixDatabase string `json:"PhoenixDatabase"`
-	PhoenixParams   string `json:"PhoenixParams"`
+	PhoenixEnabled          bool   `json:"PhoenixEnabled"`
+	PhoenixUser             string `json:"PhoenixUser"`
+	PhoenixPassword         string `json:"PhoenixPassword"`
+	PhoenixHost             string `json:"PhoenixHost"`
+	PhoenixPort             string `json:"PhoenixPort"`
+	PhoenixInstance         string `json:"PhoenixInstance"`
+	PhoenixDatabase         string `json:"PhoenixDatabase"`
+	PhoenixParams           string `json:"PhoenixParams"`
+	PhoenixControlHost      string `json:"PhoenixControlHost"`
+	PhoenixOperatorID       int64  `json:"PhoenixOperatorID"`
+	PhoenixOperatorName     string `json:"PhoenixOperatorName"`
+	PhoenixOperatorPassword string `json:"PhoenixOperatorPassword"`
+	PhoenixClientRole       string `json:"PhoenixClientRole"`
 
 	CASLEnabled bool   `json:"CASLEnabled"`
 	CASLBaseURL string `json:"CASLBaseURL"`
@@ -162,13 +167,13 @@ func (s *OperatorSettingsService) SaveDBSettings(input OperatorDBSettings) error
 func mapOperatorDBSettings(cfg config.DBConfig) OperatorDBSettings {
 	amiEnabled, amiCfg, _ := loadPreferencesAMIConfig()
 	return OperatorDBSettings{
-		AMIEnabled:   amiEnabled,
-		AMIHost:      amiCfg.Host,
-		AMIPort:      amiCfg.Port,
-		AMIUsername:  amiCfg.Username,
-		AMISecret:    amiCfg.Secret,
-		AMIExtension: amiCfg.Extension,
-		AMIContext:   amiCfg.Context,
+		AMIEnabled:       amiEnabled,
+		AMIHost:          amiCfg.Host,
+		AMIPort:          amiCfg.Port,
+		AMIUsername:      amiCfg.Username,
+		AMISecret:        amiCfg.Secret,
+		AMIExtension:     amiCfg.Extension,
+		AMIContext:       amiCfg.Context,
 		FirebirdEnabled:  cfg.FirebirdEnabled,
 		FirebirdUser:     cfg.User,
 		FirebirdPassword: cfg.Password,
@@ -177,14 +182,19 @@ func mapOperatorDBSettings(cfg config.DBConfig) OperatorDBSettings {
 		FirebirdPath:     cfg.Path,
 		FirebirdParams:   cfg.Params,
 
-		PhoenixEnabled:  cfg.PhoenixEnabled,
-		PhoenixUser:     cfg.PhoenixUser,
-		PhoenixPassword: cfg.PhoenixPassword,
-		PhoenixHost:     cfg.PhoenixHost,
-		PhoenixPort:     cfg.PhoenixPort,
-		PhoenixInstance: cfg.PhoenixInstance,
-		PhoenixDatabase: cfg.PhoenixDatabase,
-		PhoenixParams:   cfg.PhoenixParams,
+		PhoenixEnabled:          cfg.PhoenixEnabled,
+		PhoenixUser:             cfg.PhoenixUser,
+		PhoenixPassword:         cfg.PhoenixPassword,
+		PhoenixHost:             cfg.PhoenixHost,
+		PhoenixPort:             cfg.PhoenixPort,
+		PhoenixInstance:         cfg.PhoenixInstance,
+		PhoenixDatabase:         cfg.PhoenixDatabase,
+		PhoenixParams:           cfg.PhoenixParams,
+		PhoenixControlHost:      cfg.PhoenixControlHost,
+		PhoenixOperatorID:       cfg.PhoenixOperatorID,
+		PhoenixOperatorName:     cfg.PhoenixOperatorName,
+		PhoenixOperatorPassword: cfg.PhoenixOperatorPassword,
+		PhoenixClientRole:       cfg.PhoenixClientRole,
 
 		CASLEnabled: cfg.CASLEnabled,
 		CASLBaseURL: cfg.CASLBaseURL,
@@ -207,14 +217,19 @@ func mapConfigFromOperatorDBSettings(input OperatorDBSettings) config.DBConfig {
 		Params:          strings.TrimSpace(input.FirebirdParams),
 		FirebirdEnabled: input.FirebirdEnabled,
 
-		PhoenixEnabled:  input.PhoenixEnabled,
-		PhoenixUser:     strings.TrimSpace(input.PhoenixUser),
-		PhoenixPassword: input.PhoenixPassword,
-		PhoenixHost:     strings.TrimSpace(input.PhoenixHost),
-		PhoenixPort:     strings.TrimSpace(input.PhoenixPort),
-		PhoenixInstance: strings.TrimSpace(input.PhoenixInstance),
-		PhoenixDatabase: strings.TrimSpace(input.PhoenixDatabase),
-		PhoenixParams:   strings.TrimSpace(input.PhoenixParams),
+		PhoenixEnabled:          input.PhoenixEnabled,
+		PhoenixUser:             strings.TrimSpace(input.PhoenixUser),
+		PhoenixPassword:         input.PhoenixPassword,
+		PhoenixHost:             strings.TrimSpace(input.PhoenixHost),
+		PhoenixPort:             strings.TrimSpace(input.PhoenixPort),
+		PhoenixInstance:         strings.TrimSpace(input.PhoenixInstance),
+		PhoenixDatabase:         strings.TrimSpace(input.PhoenixDatabase),
+		PhoenixParams:           strings.TrimSpace(input.PhoenixParams),
+		PhoenixControlHost:      strings.TrimSpace(input.PhoenixControlHost),
+		PhoenixOperatorID:       input.PhoenixOperatorID,
+		PhoenixOperatorName:     strings.TrimSpace(input.PhoenixOperatorName),
+		PhoenixOperatorPassword: input.PhoenixOperatorPassword,
+		PhoenixClientRole:       config.NormalizePhoenixClientRole(input.PhoenixClientRole),
 
 		CASLEnabled: input.CASLEnabled,
 		CASLBaseURL: strings.TrimSpace(input.CASLBaseURL),

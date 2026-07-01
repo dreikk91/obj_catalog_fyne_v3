@@ -1,4 +1,4 @@
-package viewmodels
+package fyneviewmodels
 
 // ObjectWizardSIMUsageStateViewModel залишено для зворотної сумісності.
 type ObjectWizardSIMUsageStateViewModel = SIMUsageStateViewModel

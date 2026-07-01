@@ -40,6 +40,7 @@ type App struct {
 	OnRunOnMainThread         func(f func())
 	OnAlarmSelected           func(models.Alarm)
 	OnEventSelected           func(models.Event)
+	OnStarted                 func()
 }
 
 func NewApp() *App {
@@ -167,7 +168,18 @@ func (a *App) SetDataProvider(provider contracts.DataProvider) {
 
 func (a *App) Run() int {
 	a.mainWindow.Show()
+	if a.OnStarted != nil {
+		a.OnStarted()
+	}
 	return qt.QApplication_Exec()
+}
+
+// ShowPhoenixLogin opens the compact Phoenix startup login dialog.
+func (a *App) ShowPhoenixLogin(onSaved func(config.DBConfig)) {
+	if a == nil || a.mainWindow == nil {
+		return
+	}
+	ShowPhoenixLoginDialog(a.mainWindow.QWidget, a.preferences, onSaved)
 }
 
 func (a *App) Preferences() config.Preferences {

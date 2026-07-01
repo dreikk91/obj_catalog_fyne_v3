@@ -120,6 +120,18 @@ func TestFrontendAdapterPickAlarmAllowsPhoenixTakeover(t *testing.T) {
 	}
 }
 
+func TestFrontendAlarmCapabilitiesRequireOwnerBeforeProcessing(t *testing.T) {
+	for _, objectID := range []int{
+		ids.PhoenixObjectIDNamespaceStart,
+		ids.CASLObjectIDNamespaceStart,
+	} {
+		item := mapFrontendAlarmItem(models.Alarm{ObjectID: objectID})
+		if item.CanProcess {
+			t.Fatalf("unowned alarm %d must be taken before processing", objectID)
+		}
+	}
+}
+
 func TestEnsureAlarmActionOwnershipRejectsForeignCASLAlarm(t *testing.T) {
 	err := ensureAlarmActionOwnership(models.Alarm{
 		ObjectID:     ids.CASLObjectIDNamespaceStart,

@@ -45,6 +45,7 @@ func ShowAlarmResponseDialog(
 	groupIDs := make(map[string]string)
 	groupLabels := make([]string, 0, len(groups))
 	currentGroupID := strings.TrimSpace(alarm.ResponseGroupID)
+	canRespond := alarmResponseActionsAllowed(alarm)
 	for _, group := range groups {
 		if !responseGroupSelectable(group, currentGroupID) {
 			continue
@@ -81,21 +82,21 @@ func ShowAlarmResponseDialog(
 	assignButton := widget.NewButton("Призначити ГМР", func() {
 		run(AlarmResponseAssign, groupIDs[groupSelect.Selected])
 	})
-	if len(groupLabels) == 0 || alarm.IsResponseGroupDispatched {
+	if !canRespond || len(groupLabels) == 0 || alarm.IsResponseGroupDispatched {
 		assignButton.Disable()
 	}
 
 	arrivedButton := widget.NewButton("ГМР прибула", func() {
 		run(AlarmResponseArrived, "")
 	})
-	if !alarm.IsResponseGroupDispatched || alarm.IsResponseGroupArrived {
+	if !canRespond || !alarm.IsResponseGroupDispatched || alarm.IsResponseGroupArrived {
 		arrivedButton.Disable()
 	}
 
 	cancelButton := widget.NewButton("Зняти ГМР", func() {
 		run(AlarmResponseCancel, "")
 	})
-	if !alarm.IsResponseGroupDispatched {
+	if !canRespond || !alarm.IsResponseGroupDispatched {
 		cancelButton.Disable()
 	}
 
@@ -164,6 +165,14 @@ func alarmResponseStateText(alarm models.Alarm) string {
 	default:
 		return "ГМР не призначена"
 	}
+}
+
+func alarmResponseActionsAllowed(alarm models.Alarm) bool {
+	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
+	if source == contracts.FrontendSourceCASL || source == contracts.FrontendSourcePhoenix {
+		return alarm.IsOwnedByMe
+	}
+	return true
 }
 
 func responseGroupIDSuffix(groupID string) string {

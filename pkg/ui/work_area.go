@@ -24,6 +24,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/simoperator"
 	appTheme "obj_catalog_fyne_v3/pkg/theme"
 	"obj_catalog_fyne_v3/pkg/ui/dialogs"
+	"obj_catalog_fyne_v3/pkg/ui/fyneviewmodels"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
@@ -35,12 +36,12 @@ type WorkAreaPanel struct {
 	Data            contracts.WorkAreaProvider
 	ViewModel       *viewmodels.WorkAreaViewModel
 	CaseHistoryVM   *viewmodels.WorkAreaCaseHistoryViewModel
-	HeaderVM        *viewmodels.WorkAreaHeaderViewModel
+	HeaderVM        *fyneviewmodels.WorkAreaHeaderViewModel
 	DeviceVM        *viewmodels.WorkAreaDeviceViewModel
 	GroupSectionsVM *viewmodels.WorkAreaGroupSectionsViewModel
 	ExportVM        *viewmodels.WorkAreaExportViewModel
-	DeviceStateVM   *viewmodels.WorkAreaDeviceStateViewModel
-	ExternalVM      *viewmodels.WorkAreaExternalStateViewModel
+	DeviceStateVM   *fyneviewmodels.WorkAreaDeviceStateViewModel
+	ExternalVM      *fyneviewmodels.WorkAreaExternalStateViewModel
 	CurrentObject   *models.Object
 	Window          fyne.Window
 	ZonesData       binding.UntypedList
@@ -57,9 +58,9 @@ type WorkAreaPanel struct {
 	eventsLoadingObjectID int
 
 	// UI елементи
-	HeaderName    *widget.Label
-	HeaderAddress *widget.Label
-	HeaderStatus  *canvas.Text
+	HeaderName      *widget.Label
+	HeaderAddress   *widget.Label
+	HeaderStatus    *canvas.Text
 	ExportPDFBtn    *widget.Button
 	ExportXLSXBtn   *widget.Button
 	CopyExcelBtn    *widget.Button
@@ -128,12 +129,12 @@ func NewWorkAreaPanel(provider contracts.WorkAreaProvider, window fyne.Window) *
 		Data:            provider,
 		ViewModel:       viewmodels.NewWorkAreaViewModel(),
 		CaseHistoryVM:   viewmodels.NewWorkAreaCaseHistoryViewModel(),
-		HeaderVM:        viewmodels.NewWorkAreaHeaderViewModel(),
+		HeaderVM:        fyneviewmodels.NewWorkAreaHeaderViewModel(),
 		DeviceVM:        viewmodels.NewWorkAreaDeviceViewModel(),
 		GroupSectionsVM: viewmodels.NewWorkAreaGroupSectionsViewModel(),
 		ExportVM:        viewmodels.NewWorkAreaExportViewModel(),
-		DeviceStateVM:   viewmodels.NewWorkAreaDeviceStateViewModel(),
-		ExternalVM:      viewmodels.NewWorkAreaExternalStateViewModel(),
+		DeviceStateVM:   fyneviewmodels.NewWorkAreaDeviceStateViewModel(),
+		ExternalVM:      fyneviewmodels.NewWorkAreaExternalStateViewModel(),
 		Window:          window,
 		ZonesData:       binding.NewUntypedList(),
 		ContactsData:    binding.NewUntypedList(),

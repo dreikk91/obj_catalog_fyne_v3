@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/config"
+	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
 )
 
@@ -562,6 +564,37 @@ func TestPhoenixBuildActiveAlarms_UsesTempRowsAndMapsAlarmType(t *testing.T) {
 	}
 	if alarms[0].ObjectNumber != "L00042" {
 		t.Fatalf("newest object number = %q, want %q", alarms[0].ObjectNumber, "L00042")
+	}
+}
+
+func TestPhoenixBuildActiveAlarms_StateOneShowsCurrentOperator(t *testing.T) {
+	provider := NewPhoenixDataProvider(nil, "")
+	provider.ConfigureAlarmOperator(1, contracts.DefaultOperatorName, "", PhoenixRuntimeMetadata{}, config.PhoenixClientRoleDuty)
+	rows := []phoenixActiveAlarmRow{
+		{
+			EventID:     sql.NullInt64{Int64: 601, Valid: true},
+			PanelID:     "L00061",
+			GroupNo:     1,
+			TimeEvent:   sql.NullTime{Time: time.Date(2026, time.April, 8, 10, 0, 0, 0, time.UTC), Valid: true},
+			EventCode:   sql.NullString{String: "E130", Valid: true},
+			CodeMessage: sql.NullString{String: "Проникнення", Valid: true},
+			TypeCodeID:  sql.NullInt64{Int64: 1, Valid: true},
+			GroupSent:   sql.NullBool{Bool: true, Valid: true},
+			StateEvent:  sql.NullInt64{Int64: phoenixStateInWork, Valid: true},
+			Computer:    sql.NullString{String: contracts.DefaultOperatorName, Valid: true},
+		},
+	}
+
+	alarms := provider.buildPhoenixActiveAlarms(rows)
+	if len(alarms) != 1 {
+		t.Fatalf("buildPhoenixActiveAlarms() returned %d alarms, want 1", len(alarms))
+	}
+	alarm := alarms[0]
+	if !alarm.IsInProgress || !alarm.IsOwnedByMe {
+		t.Fatalf("alarm ownership was not mapped: %+v", alarm)
+	}
+	if alarm.InProgressBy != contracts.DefaultOperatorName {
+		t.Fatalf("InProgressBy = %q, want %q", alarm.InProgressBy, contracts.DefaultOperatorName)
 	}
 }
 

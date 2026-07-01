@@ -60,6 +60,7 @@ func ShowAlarmResponseDialog(
 	groupSelect := qt.NewQComboBox2()
 	groupSelect.SetMinimumContentsLength(36)
 	availableGroups := selectableResponseGroups(alarm, groups)
+	canRespond := alarmResponseActionsAllowed(alarm)
 	selectedIndex := -1
 	for _, group := range availableGroups {
 		label := responseGroupLabel(group)
@@ -100,11 +101,11 @@ func ShowAlarmResponseDialog(
 	processButton := qt.NewQPushButton3("Причина / завершити")
 	processButton.SetEnabled(alarm.CanProcess)
 	assignButton := qt.NewQPushButton3("Призначити МГР")
-	assignButton.SetEnabled(len(availableGroups) > 0 && !alarm.IsResponseGroupDispatched)
+	assignButton.SetEnabled(canRespond && len(availableGroups) > 0 && !alarm.IsResponseGroupDispatched)
 	arrivedButton := qt.NewQPushButton3("МГР прибула")
-	arrivedButton.SetEnabled(alarm.IsResponseGroupDispatched && !alarm.IsResponseGroupArrived)
+	arrivedButton.SetEnabled(canRespond && alarm.IsResponseGroupDispatched && !alarm.IsResponseGroupArrived)
 	cancelButton := qt.NewQPushButton3("Зняти МГР")
-	cancelButton.SetEnabled(alarm.IsResponseGroupDispatched)
+	cancelButton.SetEnabled(canRespond && alarm.IsResponseGroupDispatched)
 	closeButton := qt.NewQPushButton3("Закрити")
 
 	result := AlarmResponseInput{}
@@ -206,6 +207,14 @@ func alarmResponseState(alarm models.Alarm) string {
 	default:
 		return "МГР не направлена"
 	}
+}
+
+func alarmResponseActionsAllowed(alarm models.Alarm) bool {
+	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
+	if source == contracts.FrontendSourceCASL || source == contracts.FrontendSourcePhoenix {
+		return alarm.IsOwnedByMe
+	}
+	return true
 }
 
 func responseGroupSuffix(groupID string) string {

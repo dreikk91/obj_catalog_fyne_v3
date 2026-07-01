@@ -17,15 +17,20 @@ const (
 	PrefPath     = "db.path"
 	PrefParams   = "db.params"
 
-	PrefFirebirdEnabled = "firebird.enabled"
-	PrefPhoenixEnabled  = "phoenix.enabled"
-	PrefPhoenixUser     = "phoenix.user"
-	PrefPhoenixPassword = "phoenix.password"
-	PrefPhoenixHost     = "phoenix.host"
-	PrefPhoenixPort     = "phoenix.port"
-	PrefPhoenixInstance = "phoenix.instance"
-	PrefPhoenixDatabase = "phoenix.database"
-	PrefPhoenixParams   = "phoenix.params"
+	PrefFirebirdEnabled         = "firebird.enabled"
+	PrefPhoenixEnabled          = "phoenix.enabled"
+	PrefPhoenixUser             = "phoenix.user"
+	PrefPhoenixPassword         = "phoenix.password"
+	PrefPhoenixHost             = "phoenix.host"
+	PrefPhoenixPort             = "phoenix.port"
+	PrefPhoenixInstance         = "phoenix.instance"
+	PrefPhoenixDatabase         = "phoenix.database"
+	PrefPhoenixParams           = "phoenix.params"
+	PrefPhoenixControlHost      = "phoenix.control_center.host"
+	PrefPhoenixOperatorID       = "phoenix.operator.id"
+	PrefPhoenixOperatorName     = "phoenix.operator.name"
+	PrefPhoenixOperatorPassword = "phoenix.operator.password"
+	PrefPhoenixClientRole       = "phoenix.client.role"
 
 	PrefBackendMode = "backend.mode"
 	PrefCASLEnabled = "casl.enabled"
@@ -43,6 +48,28 @@ const (
 	BackendModeCASLCloud = "casl_cloud"
 )
 
+const (
+	PhoenixClientRoleDuty          = "duty_operator"
+	PhoenixClientRoleAdministrator = "administrator"
+)
+
+// NormalizePhoenixClientRole returns a supported Phoenix workstation role.
+func NormalizePhoenixClientRole(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case PhoenixClientRoleAdministrator, "admin":
+		return PhoenixClientRoleAdministrator
+	default:
+		return PhoenixClientRoleDuty
+	}
+}
+
+// PhoenixLoginConfigured reports whether automatic Phoenix login has credentials.
+func PhoenixLoginConfigured(cfg DBConfig) bool {
+	return strings.TrimSpace(cfg.PhoenixControlHost) != "" &&
+		cfg.PhoenixOperatorID > 0 &&
+		cfg.PhoenixOperatorPassword != ""
+}
+
 type DBConfig struct {
 	User     string
 	Password string
@@ -51,15 +78,20 @@ type DBConfig struct {
 	Path     string
 	Params   string
 
-	FirebirdEnabled bool
-	PhoenixEnabled  bool
-	PhoenixUser     string
-	PhoenixPassword string
-	PhoenixHost     string
-	PhoenixPort     string
-	PhoenixInstance string
-	PhoenixDatabase string
-	PhoenixParams   string
+	FirebirdEnabled         bool
+	PhoenixEnabled          bool
+	PhoenixUser             string
+	PhoenixPassword         string
+	PhoenixHost             string
+	PhoenixPort             string
+	PhoenixInstance         string
+	PhoenixDatabase         string
+	PhoenixParams           string
+	PhoenixControlHost      string
+	PhoenixOperatorID       int64
+	PhoenixOperatorName     string
+	PhoenixOperatorPassword string
+	PhoenixClientRole       string
 
 	CASLEnabled bool
 	Mode        string
@@ -85,15 +117,20 @@ func LoadDBConfig(p Preferences) DBConfig {
 		Path:     stringWithTrimmedFallback(p, PrefPath, "C:/MOST.PM/BASE/MOST5.FDB"),
 		Params:   stringWithTrimmedFallback(p, PrefParams, "charset=WIN1251&auth_plugin_name=Srp"),
 
-		FirebirdEnabled: firebirdEnabled,
-		PhoenixEnabled:  phoenixEnabled,
-		PhoenixUser:     stringWithTrimmedFallback(p, PrefPhoenixUser, "sa"),
-		PhoenixPassword: p.StringWithFallback(PrefPhoenixPassword, ""),
-		PhoenixHost:     stringWithTrimmedFallback(p, PrefPhoenixHost, "localhost"),
-		PhoenixPort:     strings.TrimSpace(p.StringWithFallback(PrefPhoenixPort, "")),
-		PhoenixInstance: stringWithTrimmedFallback(p, PrefPhoenixInstance, "PHOENIX4"),
-		PhoenixDatabase: stringWithTrimmedFallback(p, PrefPhoenixDatabase, "Pult4DB"),
-		PhoenixParams:   stringWithTrimmedFallback(p, PrefPhoenixParams, "encrypt=disable&trustservercertificate=true"),
+		FirebirdEnabled:         firebirdEnabled,
+		PhoenixEnabled:          phoenixEnabled,
+		PhoenixUser:             stringWithTrimmedFallback(p, PrefPhoenixUser, "sa"),
+		PhoenixPassword:         p.StringWithFallback(PrefPhoenixPassword, ""),
+		PhoenixHost:             stringWithTrimmedFallback(p, PrefPhoenixHost, "localhost"),
+		PhoenixPort:             strings.TrimSpace(p.StringWithFallback(PrefPhoenixPort, "")),
+		PhoenixInstance:         stringWithTrimmedFallback(p, PrefPhoenixInstance, "PHOENIX4"),
+		PhoenixDatabase:         stringWithTrimmedFallback(p, PrefPhoenixDatabase, "Pult4DB"),
+		PhoenixParams:           stringWithTrimmedFallback(p, PrefPhoenixParams, "encrypt=disable&trustservercertificate=true"),
+		PhoenixControlHost:      strings.TrimSpace(p.StringWithFallback(PrefPhoenixControlHost, "")),
+		PhoenixOperatorID:       int64(p.IntWithFallback(PrefPhoenixOperatorID, 0)),
+		PhoenixOperatorName:     strings.TrimSpace(p.StringWithFallback(PrefPhoenixOperatorName, "")),
+		PhoenixOperatorPassword: p.StringWithFallback(PrefPhoenixOperatorPassword, ""),
+		PhoenixClientRole:       NormalizePhoenixClientRole(p.StringWithFallback(PrefPhoenixClientRole, PhoenixClientRoleDuty)),
 
 		CASLEnabled: caslEnabled,
 		Mode:        legacyMode,
@@ -147,6 +184,11 @@ func SaveDBConfig(p Preferences, cfg DBConfig) {
 	p.SetString(PrefPhoenixInstance, strings.TrimSpace(cfg.PhoenixInstance))
 	p.SetString(PrefPhoenixDatabase, strings.TrimSpace(cfg.PhoenixDatabase))
 	p.SetString(PrefPhoenixParams, strings.TrimSpace(cfg.PhoenixParams))
+	p.SetString(PrefPhoenixControlHost, strings.TrimSpace(cfg.PhoenixControlHost))
+	p.SetInt(PrefPhoenixOperatorID, int(cfg.PhoenixOperatorID))
+	p.SetString(PrefPhoenixOperatorName, strings.TrimSpace(cfg.PhoenixOperatorName))
+	p.SetString(PrefPhoenixOperatorPassword, cfg.PhoenixOperatorPassword)
+	p.SetString(PrefPhoenixClientRole, NormalizePhoenixClientRole(cfg.PhoenixClientRole))
 	p.SetBool(PrefCASLEnabled, cfg.CASLEnabled)
 	p.SetString(PrefBackendMode, normalizeBackendMode(cfg.Mode))
 	p.SetString(PrefCASLBaseURL, cfg.CASLBaseURL)

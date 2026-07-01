@@ -1,9 +1,11 @@
-package viewmodels
+package fyneviewmodels
 
 import (
 	"testing"
 
 	"fyne.io/fyne/v2/test"
+
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
 func TestWorkAreaDeviceStateViewModel_DefaultState(t *testing.T) {
@@ -45,7 +47,7 @@ func TestWorkAreaDeviceStateViewModel_ApplyAndReset(t *testing.T) {
 	defer app.Quit()
 
 	vm := NewWorkAreaDeviceStateViewModel()
-	vm.Apply(WorkAreaDevicePresentation{
+	vm.Apply(viewmodels.WorkAreaDevicePresentation{
 		DeviceTypeText:   "🔧 Тип: Tiras",
 		PanelMarkText:    "🏷️ Марка: TM-1",
 		GroupsText:       "🔐 Групи:\nГрупа 1: ПІД ОХОРОНОЮ",

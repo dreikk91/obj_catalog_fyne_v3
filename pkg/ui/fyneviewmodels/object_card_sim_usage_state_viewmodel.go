@@ -1,4 +1,4 @@
-package viewmodels
+package fyneviewmodels
 
 // ObjectCardSIMUsageStateViewModel залишено для зворотної сумісності.
 type ObjectCardSIMUsageStateViewModel = SIMUsageStateViewModel

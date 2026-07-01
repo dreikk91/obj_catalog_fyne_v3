@@ -3,11 +3,22 @@
 package qtui
 
 import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
 	qt "github.com/mappu/miqt/qt6"
 
 	"obj_catalog_fyne_v3/pkg/ami"
 	"obj_catalog_fyne_v3/pkg/config"
+	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/simcommands"
+)
+
+const (
+	qtPhoenixRoleDutyLabel  = "Черговий оператор (Duty Operator)"
+	qtPhoenixRoleAdminLabel = "Адміністратор (Administrator)"
 )
 
 type settingsDialog struct {
@@ -22,14 +33,20 @@ type settingsDialog struct {
 	dbPath          *qt.QLineEdit
 	dbParams        *qt.QLineEdit
 
-	phoenixEnabled  *qt.QCheckBox
-	phoenixUser     *qt.QLineEdit
-	phoenixPassword *qt.QLineEdit
-	phoenixHost     *qt.QLineEdit
-	phoenixPort     *qt.QLineEdit
-	phoenixInstance *qt.QLineEdit
-	phoenixDatabase *qt.QLineEdit
-	phoenixParams   *qt.QLineEdit
+	phoenixEnabled          *qt.QCheckBox
+	phoenixUser             *qt.QLineEdit
+	phoenixPassword         *qt.QLineEdit
+	phoenixHost             *qt.QLineEdit
+	phoenixPort             *qt.QLineEdit
+	phoenixInstance         *qt.QLineEdit
+	phoenixDatabase         *qt.QLineEdit
+	phoenixParams           *qt.QLineEdit
+	phoenixControlHost      *qt.QLineEdit
+	phoenixClientRole       *qt.QComboBox
+	phoenixOperator         *qt.QComboBox
+	phoenixOperatorPassword *qt.QLineEdit
+	phoenixRuntimeStatus    *qt.QLabel
+	phoenixOperatorsByLabel map[string]data.PhoenixOperator
 
 	caslEnabled *qt.QCheckBox
 	caslBaseURL *qt.QLineEdit
@@ -102,6 +119,15 @@ func ShowSettingsDialog(parent *qt.QWidget, prefs config.Preferences, onSaved fu
 		return
 	}
 	dbCfg, uiCfg := d.values()
+	if dbCfg.PhoenixEnabled && dbCfg.PhoenixOperatorID > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		err := data.ValidatePhoenixOperatorCredentials(ctx, dbCfg)
+		cancel()
+		if err != nil {
+			qt.QMessageBox_Critical(parent, "Користувач Phoenix", err.Error())
+			return
+		}
+	}
 	config.SaveDBConfig(prefs, dbCfg)
 	config.SaveUIConfig(prefs, uiCfg)
 	d.saveOperatorAndCommandSettings()
@@ -112,8 +138,9 @@ func ShowSettingsDialog(parent *qt.QWidget, prefs config.Preferences, onSaved fu
 
 func newSettingsDialog(parent *qt.QWidget, prefs config.Preferences) *settingsDialog {
 	d := &settingsDialog{
-		dialog: qt.NewQDialog(parent),
-		prefs:  prefs,
+		dialog:                  qt.NewQDialog(parent),
+		prefs:                   prefs,
+		phoenixOperatorsByLabel: make(map[string]data.PhoenixOperator),
 	}
 	d.dialog.SetWindowTitle("Налаштування")
 	d.dialog.Resize(640, 520)
@@ -176,6 +203,25 @@ func (d *settingsDialog) buildDataSourcesTab() *qt.QWidget {
 	form.AddRow3("Phoenix password", d.phoenixPassword.QWidget)
 	d.phoenixParams = lineEdit()
 	form.AddRow3("Phoenix params", d.phoenixParams.QWidget)
+	d.phoenixControlHost = lineEdit()
+	d.phoenixControlHost.SetPlaceholderText("IP або DNS Phoenix Control Center")
+	form.AddRow3("Центр керування", d.phoenixControlHost.QWidget)
+	d.phoenixClientRole = qt.NewQComboBox2()
+	d.phoenixClientRole.AddItems([]string{qtPhoenixRoleDutyLabel, qtPhoenixRoleAdminLabel})
+	form.AddRow3("Роль клієнта", d.phoenixClientRole.QWidget)
+	d.phoenixOperator = qt.NewQComboBox2()
+	form.AddRow3("Оператор", d.phoenixOperator.QWidget)
+	d.phoenixOperatorPassword = passwordEdit()
+	form.AddRow3("Пароль оператора", d.phoenixOperatorPassword.QWidget)
+	refreshPhoenix := qt.NewQPushButton3("Оновити користувачів і порти з БД")
+	refreshPhoenix.OnClicked(d.refreshPhoenixRuntimeMetadata)
+	form.AddRow3("", refreshPhoenix.QWidget)
+	verifyPhoenix := qt.NewQPushButton3("Перевірити оператора")
+	verifyPhoenix.OnClicked(d.verifyPhoenixOperator)
+	form.AddRow3("", verifyPhoenix.QWidget)
+	d.phoenixRuntimeStatus = qt.NewQLabel3("Порти та користувачі ще не завантажені")
+	d.phoenixRuntimeStatus.SetWordWrap(true)
+	form.AddRow3("Стан", d.phoenixRuntimeStatus.QWidget)
 	tabs.AddTab(wrapForm(form), "Phoenix")
 
 	form = qt.NewQFormLayout2()
@@ -351,6 +397,13 @@ func (d *settingsDialog) load(dbCfg config.DBConfig, uiCfg config.UIConfig) {
 	d.phoenixInstance.SetText(dbCfg.PhoenixInstance)
 	d.phoenixDatabase.SetText(dbCfg.PhoenixDatabase)
 	d.phoenixParams.SetText(dbCfg.PhoenixParams)
+	d.phoenixControlHost.SetText(dbCfg.PhoenixControlHost)
+	if config.NormalizePhoenixClientRole(dbCfg.PhoenixClientRole) == config.PhoenixClientRoleAdministrator {
+		d.phoenixClientRole.SetCurrentText(qtPhoenixRoleAdminLabel)
+	} else {
+		d.phoenixClientRole.SetCurrentText(qtPhoenixRoleDutyLabel)
+	}
+	d.phoenixOperatorPassword.SetText(dbCfg.PhoenixOperatorPassword)
 
 	d.caslEnabled.SetChecked(dbCfg.CASLEnabled)
 	d.caslBaseURL.SetText(dbCfg.CASLBaseURL)
@@ -388,6 +441,23 @@ func (d *settingsDialog) values() (config.DBConfig, config.UIConfig) {
 	dbCfg.PhoenixInstance = d.phoenixInstance.Text()
 	dbCfg.PhoenixDatabase = d.phoenixDatabase.Text()
 	dbCfg.PhoenixParams = d.phoenixParams.Text()
+	dbCfg.PhoenixControlHost = d.phoenixControlHost.Text()
+	dbCfg.PhoenixClientRole = config.PhoenixClientRoleDuty
+	if d.phoenixClientRole.CurrentText() == qtPhoenixRoleAdminLabel {
+		dbCfg.PhoenixClientRole = config.PhoenixClientRoleAdministrator
+	}
+	selectedOperator := d.phoenixOperatorsByLabel[d.phoenixOperator.CurrentText()]
+	if selectedOperator.ID <= 0 {
+		current := config.LoadDBConfig(d.prefs)
+		selectedOperator.ID = current.PhoenixOperatorID
+		selectedOperator.Login = current.PhoenixOperatorName
+	}
+	dbCfg.PhoenixOperatorID = selectedOperator.ID
+	dbCfg.PhoenixOperatorName = strings.TrimSpace(selectedOperator.Login)
+	if dbCfg.PhoenixOperatorName == "" {
+		dbCfg.PhoenixOperatorName = strings.TrimSpace(selectedOperator.Name)
+	}
+	dbCfg.PhoenixOperatorPassword = d.phoenixOperatorPassword.Text()
 
 	dbCfg.CASLEnabled = d.caslEnabled.IsChecked()
 	dbCfg.CASLBaseURL = d.caslBaseURL.Text()
@@ -410,6 +480,64 @@ func (d *settingsDialog) values() (config.DBConfig, config.UIConfig) {
 	uiCfg.ExportDir = d.exportDir.Text()
 
 	return dbCfg, uiCfg
+}
+
+func (d *settingsDialog) refreshPhoenixRuntimeMetadata() {
+	if d == nil || d.phoenixRuntimeStatus == nil {
+		return
+	}
+	cfg, _ := d.values()
+	selectedID := cfg.PhoenixOperatorID
+	if selectedID <= 0 {
+		selectedID = config.LoadDBConfig(d.prefs).PhoenixOperatorID
+	}
+	d.phoenixRuntimeStatus.SetText("Завантаження портів і користувачів Phoenix...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	metadata, err := data.LoadPhoenixRuntimeMetadata(ctx, cfg)
+	if err != nil {
+		d.phoenixRuntimeStatus.SetText("Phoenix: " + err.Error())
+		return
+	}
+
+	d.phoenixOperatorsByLabel = make(map[string]data.PhoenixOperator, len(metadata.Operators))
+	d.phoenixOperator.Clear()
+	selectedIndex := -1
+	for _, operator := range metadata.Operators {
+		label := operator.DisplayName()
+		d.phoenixOperatorsByLabel[label] = operator
+		d.phoenixOperator.AddItem(label)
+		if operator.ID == selectedID {
+			selectedIndex = d.phoenixOperator.Count() - 1
+		}
+	}
+	if selectedIndex >= 0 {
+		d.phoenixOperator.SetCurrentIndex(selectedIndex)
+	}
+	d.phoenixRuntimeStatus.SetText(fmt.Sprintf(
+		"Порти з БД: Control Center %d, Duty Operator %d, Administrator %d, GPS %d. Користувачів: %d",
+		metadata.ControlPort,
+		metadata.ClientPort,
+		metadata.AdminPort,
+		metadata.GPSPort,
+		len(metadata.Operators),
+	))
+}
+
+func (d *settingsDialog) verifyPhoenixOperator() {
+	if d == nil || d.phoenixRuntimeStatus == nil {
+		return
+	}
+	cfg, _ := d.values()
+	d.phoenixRuntimeStatus.SetText("Перевірка користувача Phoenix...")
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	if err := data.ValidatePhoenixOperatorCredentials(ctx, cfg); err != nil {
+		d.phoenixRuntimeStatus.SetText("Phoenix: " + err.Error())
+		return
+	}
+	d.phoenixRuntimeStatus.SetText("Користувача Phoenix підтверджено.")
 }
 
 func (d *settingsDialog) loadOperatorAndCommandSettings() {

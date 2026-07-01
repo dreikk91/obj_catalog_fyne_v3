@@ -3,6 +3,7 @@ package dataruntime
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
@@ -112,6 +113,18 @@ func New(cfg config.DBConfig, store ConfigStore, verifyConnectivity bool) (*Runt
 				return nil, fmt.Errorf("phoenix ping failed: %w", err)
 			}
 		}
+		phoenixProvider := data.NewPhoenixDataProvider(db, dsn)
+		settingsCtx, settingsCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		settingsErr := phoenixProvider.ConfigureRuntime(settingsCtx, cfg)
+		settingsCancel()
+		if settingsErr != nil {
+			_ = db.Close()
+			runtime.Close()
+			return nil, fmt.Errorf("phoenix runtime settings: %w", settingsErr)
+		}
+		if err := phoenixProvider.StartControlCenterSession(); err != nil {
+			log.Warn().Err(err).Msg("Phoenix UDP недоступний; робота з БД продовжується")
+		}
 		healthCancel, health := database.StartNamedHealthCheckWithStatus(db, "Phoenix")
 		runtime.managedDBs = append(runtime.managedDBs, managedDBResource{
 			db:           db,
@@ -121,7 +134,7 @@ func New(cfg config.DBConfig, store ConfigStore, verifyConnectivity bool) (*Runt
 		})
 		sources = append(sources, data.ProviderSource{
 			Name:         "phoenix",
-			Provider:     data.NewPhoenixDataProvider(db, dsn),
+			Provider:     phoenixProvider,
 			OwnsObjectID: ids.IsPhoenixObjectID,
 			OwnsAlarmID:  ids.IsPhoenixObjectID,
 		})

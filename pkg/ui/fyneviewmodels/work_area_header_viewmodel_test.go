@@ -1,4 +1,4 @@
-package viewmodels
+package fyneviewmodels
 
 import (
 	"testing"

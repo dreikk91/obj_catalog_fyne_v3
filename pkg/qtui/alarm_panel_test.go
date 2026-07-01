@@ -114,7 +114,7 @@ func TestAlarmActionCapabilitiesRequireEverySelectedAlarm(t *testing.T) {
 	}
 }
 
-func TestAlarmPickActionShowsCASLTakeover(t *testing.T) {
+func TestAlarmPickActionShowsTakeover(t *testing.T) {
 	alarms := []models.Alarm{{
 		IsInProgress: true,
 		IsOwnedByMe:  false,
@@ -124,7 +124,19 @@ func TestAlarmPickActionShowsCASLTakeover(t *testing.T) {
 		t.Fatalf("alarmPickActionVerb() = %q", got)
 	}
 	if !alarmsRequireTakeover(alarms) {
-		t.Fatal("foreign CASL alarm must require takeover confirmation")
+		t.Fatal("foreign alarm must require takeover confirmation")
+	}
+}
+
+func TestAlarmGroupOperatorTextShowsCurrentOwner(t *testing.T) {
+	got := alarmGroupOperatorText(alarmGroup{
+		Alarms: []models.Alarm{{
+			IsInProgress: true,
+			InProgressBy: "Оператор 4",
+		}},
+	})
+	if got != "Оператор 4" {
+		t.Fatalf("alarmGroupOperatorText() = %q", got)
 	}
 }
 

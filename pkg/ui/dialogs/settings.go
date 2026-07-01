@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/data"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 	"runtime"
 	"strconv"
@@ -26,6 +27,11 @@ type settingsDialogAdminProvider interface {
 	RefreshKyivstarToken() (contracts.KyivstarAuthState, error)
 	ClearKyivstarToken() error
 }
+
+const (
+	phoenixRoleDutyLabel  = "Черговий оператор (порт Duty Operator)"
+	phoenixRoleAdminLabel = "Адміністратор (порт Administrator)"
+)
 
 type settingsDialogState struct {
 	// ... existing fields ...
@@ -61,6 +67,12 @@ type settingsDialogState struct {
 	phoenixInstanceEntry         *widget.Entry
 	phoenixDatabaseEntry         *widget.Entry
 	phoenixParamsEntry           *widget.Entry
+	phoenixControlHostEntry      *widget.Entry
+	phoenixClientRoleSelect      *widget.Select
+	phoenixOperatorSelect        *widget.Select
+	phoenixOperatorPassEntry     *widget.Entry
+	phoenixRuntimeStatusLabel    *widget.Label
+	phoenixOperatorsByLabel      map[string]data.PhoenixOperator
 	caslBaseURLEntry             *widget.Entry
 	caslTokenEntry               *widget.Entry
 	caslEmailEntry               *widget.Entry
@@ -114,6 +126,7 @@ func ShowSettingsDialog(
 	dialog := state.buildDialog()
 	state.refreshVodafoneStatus()
 	state.refreshKyivstarStatus()
+	state.refreshPhoenixRuntimeMetadata()
 	dialog.Show()
 }
 
@@ -186,6 +199,25 @@ func (s *settingsDialogState) initDatabaseFields() {
 	s.phoenixDatabaseEntry.SetText(s.dbCfg.PhoenixDatabase)
 	s.phoenixParamsEntry = widget.NewEntry()
 	s.phoenixParamsEntry.SetText(s.dbCfg.PhoenixParams)
+	s.phoenixControlHostEntry = widget.NewEntry()
+	s.phoenixControlHostEntry.SetText(s.dbCfg.PhoenixControlHost)
+	s.phoenixControlHostEntry.SetPlaceHolder("IP або DNS Phoenix Control Center")
+	s.phoenixClientRoleSelect = widget.NewSelect([]string{
+		phoenixRoleDutyLabel,
+		phoenixRoleAdminLabel,
+	}, nil)
+	if config.NormalizePhoenixClientRole(s.dbCfg.PhoenixClientRole) == config.PhoenixClientRoleAdministrator {
+		s.phoenixClientRoleSelect.SetSelected(phoenixRoleAdminLabel)
+	} else {
+		s.phoenixClientRoleSelect.SetSelected(phoenixRoleDutyLabel)
+	}
+	s.phoenixOperatorSelect = widget.NewSelect(nil, nil)
+	s.phoenixOperatorSelect.PlaceHolder = "Завантажте користувачів із БД"
+	s.phoenixOperatorPassEntry = widget.NewPasswordEntry()
+	s.phoenixOperatorPassEntry.SetText(s.dbCfg.PhoenixOperatorPassword)
+	s.phoenixRuntimeStatusLabel = widget.NewLabel("Порти та користувачі ще не завантажені")
+	s.phoenixRuntimeStatusLabel.Wrapping = fyne.TextWrapWord
+	s.phoenixOperatorsByLabel = make(map[string]data.PhoenixOperator)
 
 	s.caslBaseURLEntry = widget.NewEntry()
 	s.caslBaseURLEntry.SetText(strings.TrimSpace(s.dbCfg.CASLBaseURL))
@@ -389,15 +421,27 @@ func (s *settingsDialogState) buildDatabaseTab() fyne.CanvasObject {
 }
 
 func (s *settingsDialogState) buildPhoenixTab() fyne.CanvasObject {
-	return widget.NewForm(
+	form := widget.NewForm(
 		widget.NewFormItem("Увімкнення", s.phoenixEnabledCheck),
-		widget.NewFormItem("Користувач", s.phoenixUserEntry),
-		widget.NewFormItem("Пароль", s.phoenixPassEntry),
-		widget.NewFormItem("Хост", s.phoenixHostEntry),
-		widget.NewFormItem("Порт", s.phoenixPortEntry),
+		widget.NewFormItem("SQL користувач", s.phoenixUserEntry),
+		widget.NewFormItem("SQL пароль", s.phoenixPassEntry),
+		widget.NewFormItem("SQL хост", s.phoenixHostEntry),
+		widget.NewFormItem("SQL порт", s.phoenixPortEntry),
 		widget.NewFormItem("Інстанс", s.phoenixInstanceEntry),
 		widget.NewFormItem("База", s.phoenixDatabaseEntry),
 		widget.NewFormItem("Параметри", s.phoenixParamsEntry),
+		widget.NewFormItem("Центр керування", s.phoenixControlHostEntry),
+		widget.NewFormItem("Роль клієнта", s.phoenixClientRoleSelect),
+		widget.NewFormItem("Оператор", s.phoenixOperatorSelect),
+		widget.NewFormItem("Пароль оператора", s.phoenixOperatorPassEntry),
+	)
+	return container.NewVBox(
+		form,
+		container.NewHBox(
+			widget.NewButton("Оновити з БД", s.refreshPhoenixRuntimeMetadata),
+			widget.NewButton("Перевірити оператора", s.verifyPhoenixOperator),
+		),
+		s.phoenixRuntimeStatusLabel,
 	)
 }
 
@@ -769,6 +813,77 @@ func (s *settingsDialogState) handleKyivstarTokenClear() {
 	}()
 }
 
+func (s *settingsDialogState) refreshPhoenixRuntimeMetadata() {
+	if s == nil || s.phoenixRuntimeStatusLabel == nil {
+		return
+	}
+	cfg := s.buildDBConfigFromForm()
+	selectedID := cfg.PhoenixOperatorID
+	if selectedID <= 0 {
+		selectedID = s.dbCfg.PhoenixOperatorID
+	}
+	s.phoenixRuntimeStatusLabel.SetText("Завантаження портів і користувачів Phoenix...")
+
+	go func() {
+		ctx, cancel := context.WithTimeout(s.dialogCtx, 12*time.Second)
+		defer cancel()
+		metadata, err := data.LoadPhoenixRuntimeMetadata(ctx, cfg)
+		fyne.Do(func() {
+			if err != nil {
+				s.phoenixRuntimeStatusLabel.SetText("Phoenix: " + err.Error())
+				return
+			}
+			s.phoenixOperatorsByLabel = make(map[string]data.PhoenixOperator, len(metadata.Operators))
+			options := make([]string, 0, len(metadata.Operators))
+			selectedLabel := ""
+			for _, operator := range metadata.Operators {
+				label := operator.DisplayName()
+				s.phoenixOperatorsByLabel[label] = operator
+				options = append(options, label)
+				if operator.ID == selectedID {
+					selectedLabel = label
+				}
+			}
+			s.phoenixOperatorSelect.Options = options
+			s.phoenixOperatorSelect.Refresh()
+			switch {
+			case selectedLabel != "":
+				s.phoenixOperatorSelect.SetSelected(selectedLabel)
+			case len(options) > 0:
+				s.phoenixOperatorSelect.SetSelected(options[0])
+			}
+			s.phoenixRuntimeStatusLabel.SetText(fmt.Sprintf(
+				"Порти з БД: Control Center %d, Duty Operator %d, Administrator %d, GPS %d. Користувачів: %d",
+				metadata.ControlPort,
+				metadata.ClientPort,
+				metadata.AdminPort,
+				metadata.GPSPort,
+				len(metadata.Operators),
+			))
+		})
+	}()
+}
+
+func (s *settingsDialogState) verifyPhoenixOperator() {
+	if s == nil || s.phoenixRuntimeStatusLabel == nil {
+		return
+	}
+	cfg := s.buildDBConfigFromForm()
+	s.phoenixRuntimeStatusLabel.SetText("Перевірка користувача Phoenix...")
+	go func() {
+		ctx, cancel := context.WithTimeout(s.dialogCtx, 12*time.Second)
+		defer cancel()
+		err := data.ValidatePhoenixOperatorCredentials(ctx, cfg)
+		fyne.Do(func() {
+			if err != nil {
+				s.phoenixRuntimeStatusLabel.SetText("Phoenix: " + err.Error())
+				return
+			}
+			s.phoenixRuntimeStatusLabel.SetText("Користувача Phoenix підтверджено.")
+		})
+	}()
+}
+
 func (s *settingsDialogState) applySave() {
 	newDbCfg := s.buildDBConfigFromForm()
 	newUiCfg := s.buildUIConfigFromForm()
@@ -802,31 +917,49 @@ func (s *settingsDialogState) buildDBConfigFromForm() config.DBConfig {
 	if parsed, err := strconv.ParseInt(strings.TrimSpace(s.caslPultIDEntry.Text), 10, 64); err == nil && parsed > 0 {
 		caslPultID = parsed
 	}
+	selectedOperator := s.phoenixOperatorsByLabel[s.phoenixOperatorSelect.Selected]
+	operatorName := strings.TrimSpace(selectedOperator.Login)
+	if operatorName == "" {
+		operatorName = strings.TrimSpace(selectedOperator.Name)
+	}
+	if selectedOperator.ID <= 0 && s.dbCfg.PhoenixOperatorID > 0 {
+		selectedOperator.ID = s.dbCfg.PhoenixOperatorID
+		operatorName = s.dbCfg.PhoenixOperatorName
+	}
+	clientRole := config.PhoenixClientRoleDuty
+	if s.phoenixClientRoleSelect.Selected == phoenixRoleAdminLabel {
+		clientRole = config.PhoenixClientRoleAdministrator
+	}
 
 	return config.DBConfig{
-		User:            s.userEntry.Text,
-		Password:        s.passEntry.Text,
-		Host:            s.hostEntry.Text,
-		Port:            s.portEntry.Text,
-		Path:            s.pathEntry.Text,
-		Params:          s.paramsEntry.Text,
-		FirebirdEnabled: firebirdEnabled,
-		PhoenixEnabled:  phoenixEnabled,
-		PhoenixUser:     strings.TrimSpace(s.phoenixUserEntry.Text),
-		PhoenixPassword: s.phoenixPassEntry.Text,
-		PhoenixHost:     strings.TrimSpace(s.phoenixHostEntry.Text),
-		PhoenixPort:     strings.TrimSpace(s.phoenixPortEntry.Text),
-		PhoenixInstance: strings.TrimSpace(s.phoenixInstanceEntry.Text),
-		PhoenixDatabase: strings.TrimSpace(s.phoenixDatabaseEntry.Text),
-		PhoenixParams:   strings.TrimSpace(s.phoenixParamsEntry.Text),
-		CASLEnabled:     caslEnabled,
-		Mode:            mode,
-		CASLBaseURL:     strings.TrimSpace(s.caslBaseURLEntry.Text),
-		CASLToken:       strings.TrimSpace(s.caslTokenEntry.Text),
-		CASLEmail:       strings.TrimSpace(s.caslEmailEntry.Text),
-		CASLPass:        strings.TrimSpace(s.caslPassEntry.Text),
-		CASLPultID:      caslPultID,
-		LogLevel:        strings.ToLower(strings.TrimSpace(s.logLevelSelect.Selected)),
+		User:                    s.userEntry.Text,
+		Password:                s.passEntry.Text,
+		Host:                    s.hostEntry.Text,
+		Port:                    s.portEntry.Text,
+		Path:                    s.pathEntry.Text,
+		Params:                  s.paramsEntry.Text,
+		FirebirdEnabled:         firebirdEnabled,
+		PhoenixEnabled:          phoenixEnabled,
+		PhoenixUser:             strings.TrimSpace(s.phoenixUserEntry.Text),
+		PhoenixPassword:         s.phoenixPassEntry.Text,
+		PhoenixHost:             strings.TrimSpace(s.phoenixHostEntry.Text),
+		PhoenixPort:             strings.TrimSpace(s.phoenixPortEntry.Text),
+		PhoenixInstance:         strings.TrimSpace(s.phoenixInstanceEntry.Text),
+		PhoenixDatabase:         strings.TrimSpace(s.phoenixDatabaseEntry.Text),
+		PhoenixParams:           strings.TrimSpace(s.phoenixParamsEntry.Text),
+		PhoenixControlHost:      strings.TrimSpace(s.phoenixControlHostEntry.Text),
+		PhoenixOperatorID:       selectedOperator.ID,
+		PhoenixOperatorName:     operatorName,
+		PhoenixOperatorPassword: s.phoenixOperatorPassEntry.Text,
+		PhoenixClientRole:       clientRole,
+		CASLEnabled:             caslEnabled,
+		Mode:                    mode,
+		CASLBaseURL:             strings.TrimSpace(s.caslBaseURLEntry.Text),
+		CASLToken:               strings.TrimSpace(s.caslTokenEntry.Text),
+		CASLEmail:               strings.TrimSpace(s.caslEmailEntry.Text),
+		CASLPass:                strings.TrimSpace(s.caslPassEntry.Text),
+		CASLPultID:              caslPultID,
+		LogLevel:                strings.ToLower(strings.TrimSpace(s.logLevelSelect.Selected)),
 	}
 }
 

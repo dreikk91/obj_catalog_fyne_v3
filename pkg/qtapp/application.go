@@ -123,9 +123,24 @@ func NewApplication() *Application {
 	app.ui.OnRunOnMainThread = app.runOnMainThread
 	app.ui.OnAlarmSelected = app.handleAlarmSelected
 	app.ui.OnEventSelected = app.handleEventSelected
+	app.ui.OnStarted = app.showPhoenixLoginIfNeeded
 	app.registerEventBusHandlers()
 	app.initializeRuntime(preferences)
 	return app
+}
+
+func (a *Application) showPhoenixLoginIfNeeded() {
+	if a == nil || a.ui == nil {
+		return
+	}
+	cfg := config.LoadDBConfig(a.ui.Preferences())
+	phoenixEnabled := cfg.PhoenixEnabled || cfg.NormalizedMode() == config.BackendModePhoenix
+	if !phoenixEnabled || config.PhoenixLoginConfigured(cfg) {
+		return
+	}
+	a.ui.ShowPhoenixLogin(func(saved config.DBConfig) {
+		a.applySettings(saved, config.LoadUIConfig(a.ui.Preferences()))
+	})
 }
 
 func (a *Application) initializeRuntime(preferences config.Preferences) {
@@ -137,6 +152,16 @@ func (a *Application) applySettings(dbCfg config.DBConfig, uiCfg config.UIConfig
 	if a == nil || a.ui == nil {
 		return
 	}
+	if a.refreshLoopCancel != nil {
+		a.refreshLoopCancel()
+		a.refreshLoopCancel = nil
+	}
+	a.objectsRefreshSeq++
+	a.alarmsRefreshSeq++
+	a.eventsRefreshSeq++
+	a.uiData = nil
+	a.ui.SetDataProvider(nil)
+	a.ui.SetAdminProvider(nil)
 	if a.runtime != nil {
 		a.runtime.Close()
 		a.runtime = nil

@@ -16,9 +16,10 @@ import (
 
 // StateEvent values in Phoenix Temp table.
 const (
-	phoenixStateActive    = int64(1) // alarm is active, not yet picked up
-	phoenixStateInWork    = int64(2) // operator took the alarm
-	phoenixStateGroupSent = int64(3) // response group dispatched
+	phoenixStateUnassigned   = int64(0) // active alarm without an operator
+	phoenixStateInWork       = int64(1) // operator took the alarm
+	phoenixStateGroupSent    = int64(2) // response group dispatched
+	phoenixStateGroupArrived = int64(3) // response group arrived
 )
 
 // GroupResponse status_id values (from StatusGroupResponse).
@@ -35,22 +36,15 @@ func (p *PhoenixDataProvider) PickAlarm(ctx context.Context, alarm models.Alarm,
 	if panelID == "" {
 		return fmt.Errorf("phoenix: PickAlarm: порожній panel_id")
 	}
-
-	result, err := p.db.ExecContext(ctx,
-		`UPDATE Temp
-		 SET StateEvent = CASE WHEN StateEvent = @p1 THEN @p2 ELSE StateEvent END,
-		     Computer = @p3
-		 WHERE Panel_id = @p4 AND StateEvent IN (@p1, @p2, @p5)`,
-		phoenixStateActive, phoenixStateInWork, strings.TrimSpace(user), panelID, phoenixStateGroupSent,
-	)
+	_, operatorName, err := p.alarmOperatorIdentity()
 	if err != nil {
+		return err
+	}
+	eventID := p.activePhoenixAlarmEventID(ctx, panelID)
+	if err := p.sendAlarmState(ctx, panelID, eventID, phoenixStateInWork, "", operatorName, false); err != nil {
 		return fmt.Errorf("phoenix: PickAlarm %s: %w", panelID, err)
 	}
-	n, _ := result.RowsAffected()
-	if n == 0 {
-		return p.phoenixAlarmOwnershipError(ctx, panelID, user)
-	}
-	log.Debug().Str("panelID", panelID).Str("user", user).Int64("rows", n).Msg("Phoenix PickAlarm")
+	log.Debug().Str("panelID", panelID).Str("user", operatorName).Msg("Phoenix PickAlarm sent to Control Center")
 	return nil
 }
 
@@ -107,8 +101,11 @@ func (p *PhoenixDataProvider) ProcessAlarmWithRequest(ctx context.Context, alarm
 	if err != nil || stateID <= 0 {
 		return fmt.Errorf("phoenix: ProcessAlarmWithRequest: невалідний stateID %q", request.CauseCode)
 	}
+	_, operatorName, err := p.alarmOperatorIdentity()
+	if err != nil {
+		return err
+	}
 
-	// Get event_id before changing state (for ArchiveAdditionInfo).
 	var eventID sql.NullInt64
 	_ = p.db.QueryRowContext(ctx,
 		`SELECT TOP 1 Event_id FROM Temp WITH (NOLOCK)
@@ -116,48 +113,36 @@ func (p *PhoenixDataProvider) ProcessAlarmWithRequest(ctx context.Context, alarm
 		 ORDER BY StateEvent DESC, Event_id DESC`,
 		panelID,
 	).Scan(&eventID)
-
-	result, err := p.db.ExecContext(ctx,
-		`UPDATE Temp SET StateEvent = @p1, Computer = @p2
-		 WHERE Panel_id = @p3
-		   AND StateEvent IN (1, 2, 3)
-		   AND NOT EXISTS (
-				SELECT 1
-				FROM Temp ownerRow
-				WHERE ownerRow.Panel_id = @p3
-				  AND ownerRow.StateEvent IN (2, 3)
-				  AND ownerRow.Computer IS NOT NULL
-				  AND LTRIM(RTRIM(ownerRow.Computer)) <> ''
-				  AND ownerRow.Computer <> @p2
-		   )
-		   AND (
-				StateEvent = 1
-				OR Computer IS NULL
-				OR LTRIM(RTRIM(Computer)) = ''
-				OR Computer = @p2
-		   )`,
-		stateID, user, panelID,
-	)
-	if err != nil {
+	if !eventID.Valid {
+		return fmt.Errorf("phoenix: ProcessAlarmWithRequest %s: активна тривога не знайдена", panelID)
+	}
+	cause := phoenixFinishCause(ctx, p, alarm, request.CauseCode)
+	note := strings.TrimSpace(request.Note)
+	status := fmt.Sprintf("%d=%s\n %s\n", stateID, cause, note)
+	if err := p.sendAlarmState(ctx, panelID, eventID.Int64, 4, status, operatorName, false); err != nil {
 		return fmt.Errorf("phoenix: ProcessAlarmWithRequest %s: %w", panelID, err)
 	}
-	n, _ := result.RowsAffected()
-	if n == 0 {
-		return p.phoenixAlarmOwnershipError(ctx, panelID, user)
-	}
-	log.Debug().Str("panelID", panelID).Int64("stateID", stateID).Int64("rows", n).Msg("Phoenix ProcessAlarmWithRequest")
+	log.Debug().Str("panelID", panelID).Int64("stateID", stateID).Msg("Phoenix finish sent to Control Center")
+	return nil
+}
 
-	// Attach operator note to the archived event.
-	note := strings.TrimSpace(request.Note)
-	if note != "" && eventID.Valid && eventID.Int64 > 0 {
-		if _, err := p.db.ExecContext(ctx,
-			`INSERT INTO ArchiveAdditionInfo (ArchiveEventID, info) VALUES (@p1, @p2)`,
-			eventID.Int64, note,
-		); err != nil {
-			log.Warn().Err(err).Int64("eventID", eventID.Int64).Msg("Phoenix: не вдалося зберегти примітку до архіву")
+func phoenixFinishCause(
+	ctx context.Context,
+	p *PhoenixDataProvider,
+	alarm models.Alarm,
+	causeCode string,
+) string {
+	options, err := p.GetAlarmProcessingOptions(ctx, alarm)
+	if err == nil {
+		for _, option := range options {
+			if strings.TrimSpace(option.Code) == strings.TrimSpace(causeCode) {
+				if label := strings.TrimSpace(option.Label); label != "" {
+					return label
+				}
+			}
 		}
 	}
-	return nil
+	return "Причину вказано оператором"
 }
 
 func (p *PhoenixDataProvider) phoenixAlarmOwnershipError(ctx context.Context, panelID string, user string) error {
@@ -189,37 +174,16 @@ func (p *PhoenixDataProvider) ProcessAlarm(id string, user string, note string) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-
-	// Use state 5 (first non-active available state) for quick cancellation.
-	// State 5 is the typical "Скасування" state in Phoenix AvailableStates for idTCode=1.
-	cancelState := int64(5)
-
-	result, err := p.db.ExecContext(ctx,
-		`UPDATE Temp SET StateEvent = @p1, Computer = @p2
-		 WHERE Panel_id = @p3 AND StateEvent IN (1, 2, 3)`,
-		cancelState, user, panelID,
-	)
+	_, operatorName, err := p.alarmOperatorIdentity()
 	if err != nil {
+		return err
+	}
+	eventID := p.activePhoenixAlarmEventID(ctx, panelID)
+	status := "21=Порушень немає\n " + strings.TrimSpace(note) + "\n"
+	if err := p.sendAlarmState(ctx, panelID, eventID, 4, status, operatorName, false); err != nil {
 		return fmt.Errorf("phoenix: ProcessAlarm %s: %w", panelID, err)
 	}
-	n, _ := result.RowsAffected()
-	log.Debug().Str("panelID", panelID).Int64("rows", n).Msg("Phoenix ProcessAlarm (cancel)")
-
-	if note != "" {
-		var eventID sql.NullInt64
-		_ = p.db.QueryRowContext(ctx,
-			`SELECT TOP 1 Event_id FROM Temp WITH (NOLOCK)
-			 WHERE Panel_id = @p1 AND StateEvent = @p2
-			 ORDER BY Event_id DESC`,
-			panelID, cancelState,
-		).Scan(&eventID)
-		if eventID.Valid && eventID.Int64 > 0 {
-			_, _ = p.db.ExecContext(ctx,
-				`INSERT INTO ArchiveAdditionInfo (ArchiveEventID, info) VALUES (@p1, @p2)`,
-				eventID.Int64, note,
-			)
-		}
-	}
+	log.Debug().Str("panelID", panelID).Msg("Phoenix legacy finish sent to Control Center")
 	return nil
 }
 
@@ -282,7 +246,7 @@ func responseGroupStatusText(status contracts.ResponseGroupStatus, sourceText st
 	}
 }
 
-// AssignResponseGroup dispatches a response group to the alarm (GroupResponse status 1→2, StateEvent 2→3).
+// AssignResponseGroup dispatches a response group to the alarm (StateEvent 1→2).
 func (p *PhoenixDataProvider) AssignResponseGroup(ctx context.Context, alarm models.Alarm, groupID string) error {
 	panelID := strings.TrimSpace(alarm.ObjectNumber)
 	if panelID == "" {
@@ -292,47 +256,35 @@ func (p *PhoenixDataProvider) AssignResponseGroup(ctx context.Context, alarm mod
 	if err != nil || gid <= 0 {
 		return fmt.Errorf("phoenix: AssignResponseGroup: невалідний groupID %q", groupID)
 	}
+	_, operatorName, err := p.alarmOperatorIdentity()
+	if err != nil {
+		return err
+	}
 
-	// Find current active event_id and group_ for this panel.
 	var eventID sql.NullInt64
-	var groupNo sql.NullInt64
+	var owner sql.NullString
 	if err := p.db.QueryRowContext(ctx,
-		`SELECT TOP 1 Event_id, Group_ FROM Temp WITH (NOLOCK)
+		`SELECT TOP 1 Event_id, Computer FROM Temp WITH (NOLOCK)
 		 WHERE Panel_id = @p1 AND StateEvent IN (1, 2, 3)
 		 ORDER BY StateEvent DESC, Event_id DESC`,
 		panelID,
-	).Scan(&eventID, &groupNo); err != nil {
+	).Scan(&eventID, &owner); err != nil {
 		return fmt.Errorf("phoenix: AssignResponseGroup %s: активна тривога не знайдена: %w", panelID, err)
 	}
 	if !eventID.Valid {
 		return fmt.Errorf("phoenix: AssignResponseGroup %s: немає активної тривоги в Temp", panelID)
 	}
-
-	grp := int64(1)
-	if groupNo.Valid && groupNo.Int64 > 0 {
-		grp = groupNo.Int64
+	if !strings.EqualFold(strings.TrimSpace(nullString(owner)), operatorName) {
+		return p.phoenixAlarmOwnershipError(ctx, panelID, operatorName)
 	}
 
-	// Link response group to the alarm event.
-	if _, err := p.db.ExecContext(ctx,
-		`UPDATE GroupResponse
-		 SET Event_id = @p1, Panel_id = @p2, Group_ = @p3, Status_id = @p4
-		 WHERE Group_id = @p5`,
-		eventID.Int64, panelID, grp, phoenixGroupStatusDispatched, gid,
+	if err := p.sendAlarmState(
+		ctx, panelID, eventID.Int64, phoenixStateGroupSent,
+		phoenixResponseGroupNotifyStatus(gid), operatorName, true,
 	); err != nil {
 		return fmt.Errorf("phoenix: AssignResponseGroup %s (group %d): %w", panelID, gid, err)
 	}
-
-	// Advance alarm state to "group dispatched".
-	if _, err := p.db.ExecContext(ctx,
-		`UPDATE Temp SET StateEvent = @p1
-		 WHERE Panel_id = @p2 AND StateEvent IN (1, 2)`,
-		phoenixStateGroupSent, panelID,
-	); err != nil {
-		log.Warn().Err(err).Str("panelID", panelID).Msg("Phoenix: не вдалося перевести StateEvent=3")
-	}
-
-	log.Debug().Str("panelID", panelID).Int64("groupID", gid).Int64("eventID", eventID.Int64).Msg("Phoenix AssignResponseGroup")
+	log.Debug().Str("panelID", panelID).Int64("groupID", gid).Int64("eventID", eventID.Int64).Msg("Phoenix assign group sent to Control Center")
 	return nil
 }
 
@@ -342,18 +294,22 @@ func (p *PhoenixDataProvider) NotifyGroupArrived(ctx context.Context, alarm mode
 	if panelID == "" {
 		return fmt.Errorf("phoenix: NotifyGroupArrived: порожній panel_id")
 	}
-
-	result, err := p.db.ExecContext(ctx,
-		`UPDATE GroupResponse
-		 SET Status_id = @p1, TimeArriveToObject = GETDATE()
-		 WHERE Panel_id = @p2 AND Status_id = @p3`,
-		phoenixGroupStatusArrived, panelID, phoenixGroupStatusDispatched,
-	)
+	_, operatorName, err := p.alarmOperatorIdentity()
 	if err != nil {
+		return err
+	}
+	eventID := p.activePhoenixAlarmEventID(ctx, panelID)
+	groupID, err := strconv.ParseInt(strings.TrimSpace(alarm.ResponseGroupID), 10, 64)
+	if err != nil || groupID <= 0 {
+		return fmt.Errorf("phoenix: NotifyGroupArrived %s: не визначено ГМР", panelID)
+	}
+	if err := p.sendAlarmState(
+		ctx, panelID, eventID, phoenixStateGroupArrived,
+		phoenixResponseGroupNotifyStatus(groupID), operatorName, true,
+	); err != nil {
 		return fmt.Errorf("phoenix: NotifyGroupArrived %s: %w", panelID, err)
 	}
-	n, _ := result.RowsAffected()
-	log.Debug().Str("panelID", panelID).Int64("rows", n).Msg("Phoenix NotifyGroupArrived")
+	log.Debug().Str("panelID", panelID).Int64("groupID", groupID).Msg("Phoenix group arrival sent to Control Center")
 	return nil
 }
 
@@ -363,31 +319,19 @@ func (p *PhoenixDataProvider) CancelResponseGroup(ctx context.Context, alarm mod
 	if panelID == "" {
 		return fmt.Errorf("phoenix: CancelResponseGroup: порожній panel_id")
 	}
-
-	result, err := p.db.ExecContext(ctx,
-		`UPDATE GroupResponse
-		 SET Status_id = @p1, Event_id = NULL, Panel_id = NULL, Group_ = NULL,
-		     TimeArriveToObject = NULL, TimeStayOnObj = NULL
-		 WHERE Panel_id = @p2 AND Status_id IN (@p3, @p4)`,
-		phoenixGroupStatusFree, panelID, phoenixGroupStatusDispatched, phoenixGroupStatusArrived,
-	)
+	_, operatorName, err := p.alarmOperatorIdentity()
 	if err != nil {
+		return err
+	}
+	eventID := p.activePhoenixAlarmEventID(ctx, panelID)
+	// Phoenix represents removing the response group as returning EVENT to the
+	// in-work state, followed by STATUS_OBJECT so Control Center refreshes group state.
+	if err := p.sendAlarmState(
+		ctx, panelID, eventID, phoenixStateInWork, "", operatorName, true,
+	); err != nil {
 		return fmt.Errorf("phoenix: CancelResponseGroup %s: %w", panelID, err)
 	}
-	n, _ := result.RowsAffected()
-
-	// Revert alarm state if group was the only dispatch.
-	if n > 0 {
-		if _, err := p.db.ExecContext(ctx,
-			`UPDATE Temp SET StateEvent = @p1
-			 WHERE Panel_id = @p2 AND StateEvent = @p3`,
-			phoenixStateInWork, panelID, phoenixStateGroupSent,
-		); err != nil {
-			log.Warn().Err(err).Str("panelID", panelID).Msg("Phoenix: не вдалося відкотити StateEvent=2")
-		}
-	}
-
-	log.Debug().Str("panelID", panelID).Int64("rows", n).Msg("Phoenix CancelResponseGroup")
+	log.Debug().Str("panelID", panelID).Msg("Phoenix cancel group sent to Control Center")
 	return nil
 }
 

@@ -1,4 +1,4 @@
-package viewmodels
+package fyneviewmodels
 
 import (
 	"testing"
@@ -6,11 +6,11 @@ import (
 	"fyne.io/fyne/v2/test"
 )
 
-func TestObjectCardSIMUsageStateViewModel_DefaultState(t *testing.T) {
+func TestObjectWizardSIMUsageStateViewModel_DefaultState(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	vm := NewObjectCardSIMUsageStateViewModel()
+	vm := NewObjectWizardSIMUsageStateViewModel()
 	sim1, _ := vm.SIM1Binding().Get()
 	sim2, _ := vm.SIM2Binding().Get()
 
@@ -22,11 +22,11 @@ func TestObjectCardSIMUsageStateViewModel_DefaultState(t *testing.T) {
 	}
 }
 
-func TestObjectCardSIMUsageStateViewModel_SetAndClear(t *testing.T) {
+func TestObjectWizardSIMUsageStateViewModel_SetAndClear(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
-	vm := NewObjectCardSIMUsageStateViewModel()
+	vm := NewObjectWizardSIMUsageStateViewModel()
 	vm.SetSIM1("used by #1")
 	vm.SetSIM2("used by #2")
 

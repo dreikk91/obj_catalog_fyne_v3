@@ -4,13 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"obj_catalog_fyne_v3/pkg/contracts"
+	"obj_catalog_fyne_v3/pkg/config"
 	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 
@@ -31,6 +33,27 @@ type PhoenixDataProvider struct {
 	db  *sqlx.DB
 	dsn string
 
+	operatorMu        sync.RWMutex
+	operatorID        int64
+	operatorName      string
+	controlCenterHost string
+	controlPort       int
+	clientPort        int
+	clientRole        string
+	controlClientCode string
+	gpsPort           int
+
+	controlMu        sync.Mutex
+	controlConn      *net.UDPConn
+	controlRemote    *net.UDPAddr
+	controlCancel    context.CancelFunc
+	controlWG        sync.WaitGroup
+	controlLocalIP   string
+	controlSource    string
+	controlPendingMu sync.Mutex
+	controlPending   map[string][]chan struct{}
+	controlRevision  atomic.Uint64
+
 	idMu      sync.RWMutex
 	panelByID map[int]string
 	idByPanel map[string]int
@@ -47,6 +70,52 @@ type PhoenixDataProvider struct {
 	cachedEvents []models.Event
 }
 
+// ConfigureAlarmOperator configures the existing Phoenix user used for alarm actions.
+func (p *PhoenixDataProvider) ConfigureAlarmOperator(
+	operatorID int64,
+	operatorName string,
+	controlCenterHost string,
+	metadata PhoenixRuntimeMetadata,
+	clientRole string,
+) {
+	if p == nil {
+		return
+	}
+	p.operatorMu.Lock()
+	p.operatorID = operatorID
+	p.operatorName = strings.TrimSpace(operatorName)
+	p.controlCenterHost = strings.TrimSpace(controlCenterHost)
+	p.controlPort = metadata.ControlPort
+	p.clientRole = config.NormalizePhoenixClientRole(clientRole)
+	p.controlClientCode = "OP"
+	p.clientPort = metadata.ClientPort
+	if p.clientRole == config.PhoenixClientRoleAdministrator {
+		p.clientPort = metadata.AdminPort
+		p.controlClientCode = "PH"
+	}
+	p.gpsPort = metadata.GPSPort
+	p.operatorMu.Unlock()
+}
+
+func (p *PhoenixDataProvider) alarmOperatorIdentity() (int64, string, error) {
+	if p == nil {
+		return 0, "", fmt.Errorf("phoenix: провайдер не ініціалізований")
+	}
+	p.operatorMu.RLock()
+	defer p.operatorMu.RUnlock()
+	if p.operatorID <= 0 || strings.TrimSpace(p.operatorName) == "" {
+		return 0, "", fmt.Errorf("у налаштуваннях не вибрано користувача Phoenix")
+	}
+	return p.operatorID, strings.TrimSpace(p.operatorName), nil
+}
+
+func (p *PhoenixDataProvider) isCurrentAlarmOperator(operator string) bool {
+	p.operatorMu.RLock()
+	name := strings.TrimSpace(p.operatorName)
+	p.operatorMu.RUnlock()
+	return name != "" && strings.EqualFold(strings.TrimSpace(operator), name)
+}
+
 func NewPhoenixDataProvider(db *sqlx.DB, dsn string) *PhoenixDataProvider {
 	return &PhoenixDataProvider{
 		db:             db,
@@ -54,6 +123,7 @@ func NewPhoenixDataProvider(db *sqlx.DB, dsn string) *PhoenixDataProvider {
 		panelByID:      make(map[int]string),
 		idByPanel:      make(map[string]int),
 		objectCacheTTL: 15 * time.Second,
+		controlPending: make(map[string][]chan struct{}),
 	}
 }
 
@@ -307,7 +377,7 @@ func (p *PhoenixDataProvider) GetLatestEventID() (int64, error) {
 
 	p.objectMu.RLock()
 	if !p.latestProbeAt.IsZero() && time.Since(p.latestProbeAt) < phoenixLatestProbeTTL {
-		value := p.latestProbeValue
+		value := p.phoenixLatestCursor(p.latestProbeValue)
 		p.objectMu.RUnlock()
 		return value, nil
 	}
@@ -327,7 +397,13 @@ func (p *PhoenixDataProvider) GetLatestEventID() (int64, error) {
 	p.latestProbeValue = value
 	p.objectMu.Unlock()
 
-	return value, nil
+	return p.phoenixLatestCursor(value), nil
+}
+
+func (p *PhoenixDataProvider) phoenixLatestCursor(databaseEventID int64) int64 {
+	revision := p.controlRevision.Load()
+	cursor := uint64(databaseEventID) ^ revision*0x9e3779b97f4a7c15
+	return int64(cursor & 0x7fffffffffffffff)
 }
 
 func (p *PhoenixDataProvider) GetAlarms() []models.Alarm {
@@ -656,8 +732,8 @@ func (p *PhoenixDataProvider) buildPhoenixActiveAlarms(rows []phoenixActiveAlarm
 		rowSC1 := resolvePhoenixGroupedAlarmSC1(messages, phoenixActiveAlarmMessageSC1(selected))
 		stateEvent := nullInt64(selectedRow.StateEvent)
 		operator := strings.TrimSpace(nullString(selectedRow.Computer))
-		inProgress := stateEvent == phoenixStateInWork || stateEvent == phoenixStateGroupSent
-		ownedByMe := inProgress && operator != "" && strings.EqualFold(operator, contracts.DefaultOperatorName)
+		inProgress := stateEvent >= phoenixStateInWork && stateEvent <= phoenixStateGroupArrived
+		ownedByMe := inProgress && p.isCurrentAlarmOperator(operator)
 
 		alarms = append(alarms, models.Alarm{
 			ID:           alarmID,

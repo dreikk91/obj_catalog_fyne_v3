@@ -81,9 +81,9 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 		prefs:         prefs,
 	}
 	layout := qt.NewQVBoxLayout(panel.QWidget)
-	panel.model = qt.NewQStandardItemModel2(0, 6)
+	panel.model = qt.NewQStandardItemModel2(0, 7)
 	panel.model.SetHorizontalHeaderLabels(alarmGroupHeaders())
-	addReadOnlyRow(panel.model, []string{"--:--", "-", "Немає активних тривог", "", "", ""})
+	addReadOnlyRow(panel.model, []string{"--:--", "-", "Немає активних тривог", "", "", "", ""})
 
 	header := qt.NewQFrame2()
 	header.SetStyleSheet(`
@@ -282,7 +282,7 @@ func newAlarmMetricLabel(title string, color string, background string) *qt.QLab
 }
 
 func alarmGroupHeaders() []string {
-	return []string{"Остання", "№", "Об'єкт", "Кейс", "Пріоритет", "Джерело"}
+	return []string{"Остання", "№", "Об'єкт", "Кейс", "Оператор", "Пріоритет", "Джерело"}
 }
 
 func buildAlarmGroups(alarms []models.Alarm) []alarmGroup {
@@ -369,6 +369,19 @@ func alarmGroupCaseText(group alarmGroup) string {
 	return strings.Join(parts, " | ")
 }
 
+func alarmGroupOperatorText(group alarmGroup) string {
+	for _, alarm := range group.Alarms {
+		if !alarm.IsInProgress {
+			continue
+		}
+		if operator := strings.TrimSpace(alarm.InProgressBy); operator != "" {
+			return operator
+		}
+		return "У роботі"
+	}
+	return "Не взята"
+}
+
 func addColoredReadOnlyGroupRow(model *qt.QStandardItemModel, values []string, groupKey string, textColor color.NRGBA, rowColor color.NRGBA) {
 	items := make([]*qt.QStandardItem, 0, len(values))
 	foreground := qt.NewQColor11(int(textColor.R), int(textColor.G), int(textColor.B), int(textColor.A)).ToQVariant()
@@ -451,16 +464,24 @@ func (panel *AlarmPanel) applyFilters() {
 	panel.rowsReady = true
 
 	var columnWidths []int
+	scrollValue := 0
+	scrollWasAtBottom := false
+	if panel.table != nil {
+		scrollBar := panel.table.VerticalScrollBar()
+		scrollValue = scrollBar.Value()
+		scrollWasAtBottom = scrollValue >= scrollBar.Maximum()
+	}
 	if panel.autoSized {
 		columnWidths = captureTableColumnWidths(panel.table)
 	}
 	panel.model.Clear()
 	panel.model.SetHorizontalHeaderLabels(alarmGroupHeaders())
 	if len(groups) == 0 {
-		addReadOnlyRow(panel.model, []string{"--:--", "-", "Немає активних тривог", "", "", ""})
+		addReadOnlyRow(panel.model, []string{"--:--", "-", "Немає активних тривог", "", "", "", ""})
 		panel.selectedAlarmID = 0
 		panel.hideCaseHistory()
 		restoreTableColumnWidthsSnapshot("alarms", panel.table, columnWidths)
+		restoreAlarmTableScroll(panel.table, scrollValue, scrollWasAtBottom)
 		panel.updateSelectionState()
 		return
 	}
@@ -479,16 +500,31 @@ func (panel *AlarmPanel) applyFilters() {
 			group.ObjectNumber,
 			strings.TrimSpace(group.ObjectName),
 			alarmGroupCaseText(group),
+			alarmGroupOperatorText(group),
 			priority,
 			group.Source,
 		}, group.Key, textColor, rowColor)
 	}
 	if restoreTableColumnWidthsSnapshot("alarms", panel.table, columnWidths) {
+		restoreAlarmTableScroll(panel.table, scrollValue, scrollWasAtBottom)
 		panel.updateSelectionState()
 		return
 	}
 	panel.applyColumnWidths()
+	restoreAlarmTableScroll(panel.table, scrollValue, scrollWasAtBottom)
 	panel.updateSelectionState()
+}
+
+func restoreAlarmTableScroll(table *qt.QTableView, value int, wasAtBottom bool) {
+	if table == nil {
+		return
+	}
+	scrollBar := table.VerticalScrollBar()
+	if wasAtBottom {
+		scrollBar.SetValue(scrollBar.Maximum())
+		return
+	}
+	scrollBar.SetValue(value)
 }
 
 func alarmGroupRowsSignature(groups []alarmGroup) string {
@@ -496,7 +532,7 @@ func alarmGroupRowsSignature(groups []alarmGroup) string {
 	for _, group := range groups {
 		fmt.Fprintf(
 			&b,
-			"%s:%d:%s:%d:%d:%s:%s:%s|",
+			"%s:%d:%s:%d:%d:%s:%s:%s:%s|",
 			group.Key,
 			group.ObjectID,
 			group.LatestTime,
@@ -505,6 +541,7 @@ func alarmGroupRowsSignature(groups []alarmGroup) string {
 			group.ObjectNumber,
 			strings.TrimSpace(group.ObjectName),
 			alarmGroupCaseText(group),
+			alarmGroupOperatorText(group),
 		)
 		for _, alarm := range group.Alarms {
 			fmt.Fprintf(&b, "%d:%d:%d:%s;", alarm.ID, alarm.Time.UnixNano(), alarm.SC1, strings.TrimSpace(alarm.Details))

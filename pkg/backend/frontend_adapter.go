@@ -274,9 +274,10 @@ func (a *FrontendAdapter) ProcessAlarm(ctx context.Context, alarmID int, request
 
 	user := strings.TrimSpace(request.User)
 	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
-	if alarm.IsInProgress && !alarm.IsOwnedByMe &&
-		(source == contracts.FrontendSourceCASL || source == contracts.FrontendSourcePhoenix) {
-		return fmt.Errorf("%w: %s", contracts.ErrAlarmOwnershipConflict, strings.TrimSpace(alarm.InProgressBy))
+	if source == contracts.FrontendSourceCASL || source == contracts.FrontendSourcePhoenix {
+		if err := ensureAlarmActionOwnership(alarm); err != nil {
+			return err
+		}
 	}
 	note := strings.TrimSpace(request.Note)
 	if advanced, ok := a.dataProvider.(contracts.AlarmProcessingProvider); ok {
@@ -444,11 +445,17 @@ func (a *FrontendAdapter) CancelResponseGroup(ctx context.Context, alarmID int) 
 
 func ensureAlarmActionOwnership(alarm models.Alarm) error {
 	source := contracts.DetectFrontendSourceByObjectID(alarm.ObjectID)
-	if alarm.IsInProgress && !alarm.IsOwnedByMe &&
-		(source == contracts.FrontendSourceCASL || source == contracts.FrontendSourcePhoenix) {
-		return fmt.Errorf("%w: %s", contracts.ErrAlarmOwnershipConflict, strings.TrimSpace(alarm.InProgressBy))
+	if source != contracts.FrontendSourceCASL && source != contracts.FrontendSourcePhoenix {
+		return nil
 	}
-	return nil
+	if alarm.IsOwnedByMe {
+		return nil
+	}
+	owner := strings.TrimSpace(alarm.InProgressBy)
+	if owner == "" {
+		owner = "тривогу спочатку потрібно взяти в роботу"
+	}
+	return fmt.Errorf("%w: %s", contracts.ErrAlarmOwnershipConflict, owner)
 }
 
 func (a *FrontendAdapter) ListEvents(context.Context) ([]contracts.FrontendEventItem, error) {
@@ -1003,15 +1010,24 @@ func mapFrontendAlarmItem(alarm models.Alarm) contracts.FrontendAlarmItem {
 		IsOwnedByMe:  alarm.IsOwnedByMe,
 		CanTakeOver: (source == contracts.FrontendSourceCASL || source == contracts.FrontendSourcePhoenix) &&
 			alarm.IsInProgress && !alarm.IsOwnedByMe,
-		CanProcess: (!alarm.IsInProgress ||
-			alarm.IsOwnedByMe ||
-			source == contracts.FrontendSourceBridge) &&
-			!alarm.IsResponseGroupDispatched,
+		CanProcess:                alarmCanBeProcessed(source, alarm),
 		ResponseGroupID:           strings.TrimSpace(alarm.ResponseGroupID),
 		IsResponseGroupDispatched: alarm.IsResponseGroupDispatched,
 		IsResponseGroupArrived:    alarm.IsResponseGroupArrived,
 		ObjectNativeID:            alarm.GetObjectNumberDisplay(),
 		VisualSeverity:            frontendAlarmSeverity(alarm),
+	}
+}
+
+func alarmCanBeProcessed(source contracts.FrontendSource, alarm models.Alarm) bool {
+	if alarm.IsResponseGroupDispatched {
+		return false
+	}
+	switch source {
+	case contracts.FrontendSourceCASL, contracts.FrontendSourcePhoenix:
+		return alarm.IsOwnedByMe
+	default:
+		return !alarm.IsInProgress || alarm.IsOwnedByMe || source == contracts.FrontendSourceBridge
 	}
 }
 

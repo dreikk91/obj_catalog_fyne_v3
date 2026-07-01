@@ -1,6 +1,10 @@
-package viewmodels
+package fyneviewmodels
 
-import "fyne.io/fyne/v2/data/binding"
+import (
+	"fyne.io/fyne/v2/data/binding"
+
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
+)
 
 // WorkAreaDeviceStateViewModel зберігає статичні поля вкладки "Стан" через binding.
 type WorkAreaDeviceStateViewModel struct {
@@ -89,7 +93,7 @@ func (vm *WorkAreaDeviceStateViewModel) Reset() {
 	_ = vm.location.Set("")
 }
 
-func (vm *WorkAreaDeviceStateViewModel) Apply(p WorkAreaDevicePresentation) {
+func (vm *WorkAreaDeviceStateViewModel) Apply(p viewmodels.WorkAreaDevicePresentation) {
 	_ = vm.deviceType.Set(p.DeviceTypeText)
 	_ = vm.panelMark.Set(p.PanelMarkText)
 	_ = vm.groups.Set(p.GroupsText)

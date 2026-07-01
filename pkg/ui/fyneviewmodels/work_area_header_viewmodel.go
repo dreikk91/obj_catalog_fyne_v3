@@ -1,4 +1,4 @@
-package viewmodels
+package fyneviewmodels
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2/data/binding"
 
 	"obj_catalog_fyne_v3/pkg/models"
+	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
 // WorkAreaHeaderViewModel керує текстом шапки правої панелі через Fyne Data Binding.
@@ -38,7 +39,7 @@ func (vm *WorkAreaHeaderViewModel) Reset() {
 }
 
 func (vm *WorkAreaHeaderViewModel) ApplyObject(object models.Object) {
-	_ = vm.headerName.Set(fmt.Sprintf("%s (№%s)", object.Name, ObjectDisplayNumber(object)))
+	_ = vm.headerName.Set(fmt.Sprintf("%s (№%s)", object.Name, viewmodels.ObjectDisplayNumber(object)))
 	parts := make([]string, 0, 4)
 	if address := strings.TrimSpace(object.Address); address != "" {
 		parts = append(parts, "📌 "+address)
@@ -53,6 +54,6 @@ func (vm *WorkAreaHeaderViewModel) ApplyObject(object models.Object) {
 	if contract := strings.TrimSpace(object.ContractNum); contract != "" {
 		parts = append(parts, "📄 "+contract)
 	}
-	parts = append(parts, "🧭 "+ObjectSourceByID(object.ID))
+	parts = append(parts, "🧭 "+viewmodels.ObjectSourceByID(object.ID))
 	_ = vm.headerAddress.Set(strings.Join(parts, " | "))
 }

@@ -15,6 +15,7 @@ import (
 	adminv1 "obj_catalog_fyne_v3/pkg/adminapi/v1"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/simoperator"
+	"obj_catalog_fyne_v3/pkg/ui/fyneviewmodels"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
@@ -43,11 +44,11 @@ type objectCardDialogState struct {
 	channelVM *viewmodels.ObjectChannelFlowViewModel
 	refsVM    *viewmodels.ObjectCardReferencesViewModel
 	simVM     *viewmodels.SIMPhoneUsageViewModel
-	simState  *viewmodels.ObjectCardSIMUsageStateViewModel
+	simState  *fyneviewmodels.ObjectCardSIMUsageStateViewModel
 	vfSIMVM   *viewmodels.VodafoneSIMViewModel
 	ksSIMVM   *viewmodels.KyivstarSIMViewModel
-	simAPI1VM *viewmodels.SIMOperatorStateViewModel
-	simAPI2VM *viewmodels.SIMOperatorStateViewModel
+	simAPI1VM *fyneviewmodels.SIMOperatorStateViewModel
+	simAPI2VM *fyneviewmodels.SIMOperatorStateViewModel
 
 	statusLabel *widget.Label
 
@@ -88,9 +89,9 @@ type objectCardDialogState struct {
 }
 
 func newObjectCardDialogState(win fyne.Window, provider adminv1.ObjectCardProvider, editObjN *int64, onSaved func(objn int64)) *objectCardDialogState {
-	simState := viewmodels.NewObjectCardSIMUsageStateViewModel()
-	simAPI1VM := viewmodels.NewSIMOperatorStateViewModel("SIM API: перевірка за запитом")
-	simAPI2VM := viewmodels.NewSIMOperatorStateViewModel("SIM API: перевірка за запитом")
+	simState := fyneviewmodels.NewObjectCardSIMUsageStateViewModel()
+	simAPI1VM := fyneviewmodels.NewSIMOperatorStateViewModel("SIM API: перевірка за запитом")
+	simAPI2VM := fyneviewmodels.NewSIMOperatorStateViewModel("SIM API: перевірка за запитом")
 	channelOptions := viewmodels.ObjectChannelOptions()
 	channelLabelToCode := viewmodels.DefaultObjectChannelLabelToCode()
 	channelCodeToLabel := viewmodels.DefaultObjectChannelCodeToLabel()
@@ -266,7 +267,7 @@ func (s *objectCardDialogState) checkSIMUsage(rawPhone string, slot int) {
 	s.simState.SetSIM1(text)
 }
 
-func (s *objectCardDialogState) simOperatorState(slot int) *viewmodels.SIMOperatorStateViewModel {
+func (s *objectCardDialogState) simOperatorState(slot int) *fyneviewmodels.SIMOperatorStateViewModel {
 	if slot == 2 {
 		return s.simAPI2VM
 	}

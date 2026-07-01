@@ -1083,3 +1083,15 @@ func (panel *AlarmPanel) viewAlarmHistory(alarm models.Alarm) {
 	// Currently just reloads in the browser pane
 	panel.loadCaseHistoryForAlarm(alarm)
 }
+
+func (panel *AlarmPanel) SetTableFontSize(size float32) {
+	if panel == nil || panel.table == nil {
+		return
+	}
+	font := panel.table.Font()
+	font.SetPointSizeF(float64(size))
+	panel.table.SetFont(font)
+	
+	panel.table.VerticalHeader().SetDefaultSectionSize(int(size * 2))
+}
+

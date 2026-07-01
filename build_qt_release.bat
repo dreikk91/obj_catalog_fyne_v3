@@ -11,6 +11,23 @@ if not "%OUT_DIR%"=="" if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
 echo Building Qt release: %OUT%
 echo.
 
+echo Embedding icon and metadata...
+go-winres simply ^
+  --icon "icon.png" ^
+  --arch amd64 ^
+  --out "cmd\obj-catalog-qt\rsrc" ^
+  --manifest gui ^
+  --product-name "АРМ Пожежної Безпеки" ^
+  --file-description "Каталог об'єктів - Qt UI" ^
+  --original-filename "obj_catalog_qt.exe" ^
+  --copyright "2024-2026"
+
+if errorlevel 1 (
+  echo.
+  echo Warning: go-winres failed. Building without icon...
+  echo.
+)
+
 go build ^
   -tags qt ^
   -trimpath ^
@@ -26,26 +43,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo Build completed.
-
-where upx >nul 2>nul
-if errorlevel 1 (
-  echo UPX not found in PATH. Skipping compression.
-  echo Output: %OUT%
-  exit /b 0
-)
-
+echo Build completed: %OUT%
 echo.
-echo Compressing with UPX...
-upx --best --lzma "%OUT%"
-
-if errorlevel 1 (
-  echo.
-  echo UPX compression failed. Uncompressed executable is still available:
-  echo %OUT%
-  exit /b 1
-)
-
-echo.
-echo Done: %OUT%
+echo NOTE: UPX compression disabled — CGO/Qt binaries are incompatible with UPX
+echo       (causes 0xc0000142 at startup). The -s -w ldflags already strip
+echo       debug info, reducing size from ~365MB to ~63MB.
 exit /b 0

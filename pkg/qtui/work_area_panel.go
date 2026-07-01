@@ -1972,3 +1972,29 @@ func objectEventRowsSignature(events []models.Event) string {
 	}
 	return b.String()
 }
+
+func (panel *WorkAreaPanel) SetTableFontSize(objectsSize float32, eventsSize float32) {
+	if panel == nil {
+		return
+	}
+	objTables := []*qt.QTableView{
+		panel.overviewContactsTable,
+		panel.zonesTable,
+		panel.contactsTable,
+	}
+	for _, table := range objTables {
+		if table != nil {
+			font := table.Font()
+			font.SetPointSizeF(float64(objectsSize))
+			table.SetFont(font)
+			table.VerticalHeader().SetDefaultSectionSize(int(objectsSize * 2))
+		}
+	}
+	if panel.eventsTable != nil {
+		font := panel.eventsTable.Font()
+		font.SetPointSizeF(float64(eventsSize))
+		panel.eventsTable.SetFont(font)
+		panel.eventsTable.VerticalHeader().SetDefaultSectionSize(int(eventsSize * 2))
+	}
+}
+

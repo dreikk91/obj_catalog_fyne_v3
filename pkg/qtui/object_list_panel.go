@@ -473,3 +473,16 @@ func indexToID(index *qt.QModelIndex) int {
 	}
 	return index.SiblingAtColumn(0).DataWithRole(int(qt.UserRole)).ToInt()
 }
+
+func (panel *ObjectListPanel) SetTableFontSize(size float32) {
+	if panel == nil || panel.table == nil {
+		return
+	}
+	font := panel.table.Font()
+	font.SetPointSizeF(float64(size))
+	panel.table.SetFont(font)
+	
+	// Also adjust row height dynamically if needed, or rely on vertical header
+	panel.table.VerticalHeader().SetDefaultSectionSize(int(size * 2))
+}
+

@@ -203,6 +203,7 @@ func (a *Application) applySettings(dbCfg config.DBConfig, uiCfg config.UIConfig
 		a.ui.SetAdminProvider(admin)
 	}
 	a.updateBackendStatus()
+	a.ui.ApplyFontSizes(uiCfg)
 	a.ui.SetObjectSelectedHandler(a.applyObjectContext)
 	a.refreshData()
 	a.startGettingEvents()

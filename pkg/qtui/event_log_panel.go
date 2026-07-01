@@ -377,3 +377,15 @@ func (panel *EventLogPanel) showContextMenu(pos *qt.QPoint) {
 	})
 	menu.ExecWithPos(panel.table.MapToGlobalWithQPoint(pos))
 }
+
+func (panel *EventLogPanel) SetTableFontSize(size float32) {
+	if panel == nil || panel.table == nil {
+		return
+	}
+	font := panel.table.Font()
+	font.SetPointSizeF(float64(size))
+	panel.table.SetFont(font)
+	
+	panel.table.VerticalHeader().SetDefaultSectionSize(int(size * 2))
+}
+

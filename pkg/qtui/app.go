@@ -3,6 +3,7 @@
 package qtui
 
 import (
+	_ "embed"
 	"os"
 	"strings"
 
@@ -14,6 +15,9 @@ import (
 	"obj_catalog_fyne_v3/pkg/simcommands"
 	"obj_catalog_fyne_v3/pkg/version"
 )
+
+//go:embed icon.png
+var appIconPNG []byte
 
 type App struct {
 	qapp          *qt.QApplication
@@ -51,6 +55,7 @@ func NewApp() *App {
 	qt.QCoreApplication_SetApplicationVersion(version.Current().String())
 	setNativeWindowsStyle()
 	setDefaultApplicationFont()
+	setApplicationIcon()
 
 	preferences := config.NewQtPreferences("MOST", "ObjCatalogQt")
 
@@ -173,11 +178,31 @@ func (a *App) SetDataProvider(provider contracts.DataProvider) {
 }
 
 func (a *App) Run() int {
+	a.ApplyFontSizes(config.LoadUIConfig(a.preferences))
 	a.mainWindow.Show()
 	if a.OnStarted != nil {
 		a.OnStarted()
 	}
 	return qt.QApplication_Exec()
+}
+
+// ApplyFontSizes applies font size settings from UIConfig to all panel tables.
+func (a *App) ApplyFontSizes(uiCfg config.UIConfig) {
+	if a == nil || a.mainWindow == nil {
+		return
+	}
+	if a.mainWindow.objectList != nil {
+		a.mainWindow.objectList.SetTableFontSize(uiCfg.FontSizeObjects)
+	}
+	if a.mainWindow.eventLog != nil {
+		a.mainWindow.eventLog.SetTableFontSize(uiCfg.FontSizeEvents)
+	}
+	if a.mainWindow.alarmPanel != nil {
+		a.mainWindow.alarmPanel.SetTableFontSize(uiCfg.FontSizeAlarms)
+	}
+	if a.mainWindow.workArea != nil {
+		a.mainWindow.workArea.SetTableFontSize(uiCfg.FontSizeObjects, uiCfg.FontSizeEvents)
+	}
 }
 
 // ShowPhoenixLogin opens the compact Phoenix startup login dialog.
@@ -427,6 +452,13 @@ func setDefaultApplicationFont() {
 		font.SetPointSize(10)
 	}
 	qt.QApplication_SetFont(font)
+}
+
+func setApplicationIcon() {
+	pixmap := qt.NewQPixmap()
+	pixmap.LoadFromDataWithData(appIconPNG)
+	icon := qt.NewQIcon2(pixmap)
+	qt.QGuiApplication_SetWindowIcon(icon)
 }
 
 func setNativeWindowsStyle() {

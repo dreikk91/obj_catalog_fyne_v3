@@ -163,6 +163,11 @@ type ResponseGroupProvider interface {
 	CancelResponseGroup(ctx context.Context, alarm models.Alarm) error
 }
 
+// AlarmResponseGroupProvider loads response groups only from the source that owns an alarm.
+type AlarmResponseGroupProvider interface {
+	ListResponseGroupsForAlarm(ctx context.Context, alarm models.Alarm) ([]ResponseGroup, error)
+}
+
 // DataProvider об'єднує всі інтерфейси даних
 type DataProvider interface {
 	ObjectProvider

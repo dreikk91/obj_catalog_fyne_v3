@@ -48,6 +48,9 @@ type Application struct {
 	refreshCoalescePending bool
 	responseGroupsMu       sync.Mutex
 	responseGroupsCache    map[contracts.FrontendSource]responseGroupsCacheEntry
+	responseDialogMu       sync.Mutex
+	responseDialogAlarmID  int
+	responseDialogActive   bool
 	phoneDialer            contracts.PhoneDialer
 	backendStatusTimer     *qt.QTimer
 	lastBackendStatus      string
@@ -797,24 +800,50 @@ func (a *Application) respondToAlarm(alarm models.Alarm) {
 	if a == nil || a.ui == nil || a.uiData == nil {
 		return
 	}
+	if !a.beginAlarmResponseDialog(alarm.ID) {
+		a.ui.SetStatus("Картка цієї тривоги вже завантажується або відкрита")
+		return
+	}
 
 	provider := a.uiData
-	a.ui.SetStatus("Завантаження груп реагування...")
+	a.ui.SetAlarmResponseLoading(alarm.ID, true)
+	a.ui.SetStatus("Завантаження картки реагування...")
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 
-		groups, err := a.responseGroupsForAlarm(ctx, provider, alarm)
-		history := append([]models.AlarmMsg(nil), alarm.SourceMsgs...)
-		if len(history) == 0 {
-			history = provider.GetAlarmSourceMessages(alarm)
-		}
+		var (
+			groups    []contracts.FrontendResponseGroup
+			groupsErr error
+			history   []models.AlarmMsg
+		)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			groups, groupsErr = a.responseGroupsForAlarm(ctx, provider, alarm)
+		}()
+		go func() {
+			defer wg.Done()
+			history = append([]models.AlarmMsg(nil), alarm.SourceMsgs...)
+			if len(history) == 0 {
+				history = provider.GetAlarmSourceMessages(alarm)
+			}
+		}()
+		wg.Wait()
+
 		a.runOnMainThread(func() {
+			defer func() {
+				a.endAlarmResponseDialog(alarm.ID)
+				if a.ui != nil {
+					a.ui.SetAlarmResponseLoading(alarm.ID, false)
+				}
+			}()
 			if a == nil || a.ui == nil || a.uiData != provider {
 				return
 			}
-			if err != nil {
-				a.ui.ShowError("Картка реагування", "Не вдалося завантажити групи реагування: "+err.Error())
+			if groupsErr != nil {
+				a.ui.ShowError("Картка реагування", "Не вдалося завантажити групи реагування: "+groupsErr.Error())
 				a.ui.SetStatus("Групи реагування недоступні")
 				return
 			}
@@ -834,6 +863,26 @@ func (a *Application) respondToAlarm(alarm models.Alarm) {
 			}
 		})
 	}()
+}
+
+func (a *Application) beginAlarmResponseDialog(alarmID int) bool {
+	a.responseDialogMu.Lock()
+	defer a.responseDialogMu.Unlock()
+	if a.responseDialogActive {
+		return false
+	}
+	a.responseDialogActive = true
+	a.responseDialogAlarmID = alarmID
+	return true
+}
+
+func (a *Application) endAlarmResponseDialog(alarmID int) {
+	a.responseDialogMu.Lock()
+	defer a.responseDialogMu.Unlock()
+	if a.responseDialogActive && a.responseDialogAlarmID == alarmID {
+		a.responseDialogActive = false
+		a.responseDialogAlarmID = 0
+	}
 }
 
 func (a *Application) responseGroupsForAlarm(

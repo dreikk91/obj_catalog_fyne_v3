@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"obj_catalog_fyne_v3/pkg/caslobject"
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/ids"
 )
@@ -325,14 +326,22 @@ func (p *CASLCloudProvider) IsCASLDeviceNumberInUse(ctx context.Context, deviceN
 }
 
 func (p *CASLCloudProvider) CreateCASLDevice(ctx context.Context, create contracts.CASLDeviceCreate) (string, error) {
+	sim1, err := caslobject.NormalizeUAPhone(create.SIM1)
+	if err != nil {
+		return "", fmt.Errorf("casl create device: SIM 1: %w", err)
+	}
+	sim2, err := caslobject.NormalizeUAPhone(create.SIM2)
+	if err != nil {
+		return "", fmt.Errorf("casl create device: SIM 2: %w", err)
+	}
 	payload := map[string]any{
 		"type":              "create_device",
 		"number":            create.Number,
 		"name":              strings.TrimSpace(create.Name),
 		"device_type":       strings.TrimSpace(create.DeviceType),
 		"timeout":           create.Timeout,
-		"sim1":              strings.TrimSpace(create.SIM1),
-		"sim2":              strings.TrimSpace(create.SIM2),
+		"sim1":              sim1,
+		"sim2":              sim2,
 		"technician_id":     strings.TrimSpace(create.TechnicianID),
 		"units":             strings.TrimSpace(create.Units),
 		"requisites":        strings.TrimSpace(create.Requisites),
@@ -361,6 +370,14 @@ func (p *CASLCloudProvider) CreateCASLDevice(ctx context.Context, create contrac
 }
 
 func (p *CASLCloudProvider) UpdateCASLDevice(ctx context.Context, update contracts.CASLDeviceUpdate) error {
+	sim1, err := caslobject.NormalizeUAPhone(update.SIM1)
+	if err != nil {
+		return fmt.Errorf("casl update device: SIM 1: %w", err)
+	}
+	sim2, err := caslobject.NormalizeUAPhone(update.SIM2)
+	if err != nil {
+		return fmt.Errorf("casl update device: SIM 2: %w", err)
+	}
 	payload := map[string]any{
 		"type":              "update_device",
 		"device_id":         strings.TrimSpace(update.DeviceID),
@@ -368,8 +385,8 @@ func (p *CASLCloudProvider) UpdateCASLDevice(ctx context.Context, update contrac
 		"name":              strings.TrimSpace(update.Name),
 		"device_type":       strings.TrimSpace(update.DeviceType),
 		"timeout":           update.Timeout,
-		"sim1":              strings.TrimSpace(update.SIM1),
-		"sim2":              strings.TrimSpace(update.SIM2),
+		"sim1":              sim1,
+		"sim2":              sim2,
 		"technician_id":     strings.TrimSpace(update.TechnicianID),
 		"units":             strings.TrimSpace(update.Units),
 		"requisites":        strings.TrimSpace(update.Requisites),
@@ -539,7 +556,10 @@ func (p *CASLCloudProvider) UpdateCASLRoomUserPriorities(ctx context.Context, ob
 func (p *CASLCloudProvider) CreateCASLUser(ctx context.Context, request contracts.CASLUserCreateRequest) (contracts.CASLUserProfile, error) {
 	payloadPhones := make([]map[string]any, 0, len(request.PhoneNumbers))
 	for _, phone := range request.PhoneNumbers {
-		number := strings.TrimSpace(phone.Number)
+		number, err := caslobject.NormalizeUAPhone(phone.Number)
+		if err != nil {
+			return contracts.CASLUserProfile{}, fmt.Errorf("casl create user: телефон: %w", err)
+		}
 		if number == "" {
 			continue
 		}

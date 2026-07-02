@@ -921,7 +921,7 @@ func decodeCASLEventDescription(translator map[string]string, dictionary map[str
 	return applyCASLNumberTemplate(template, resolvedNumber)
 }
 
-func buildCASLUserActionDetails(row CASLObjectEvent, dictionary map[string]string) string {
+func buildCASLUserActionDetails(row CASLObjectEvent, dictionary map[string]string, users map[string]caslUser) string {
 	action := strings.ToUpper(strings.TrimSpace(row.Action))
 	if action == "" {
 		action = strings.ToUpper(strings.TrimSpace(row.Code))
@@ -941,7 +941,10 @@ func buildCASLUserActionDetails(row CASLObjectEvent, dictionary map[string]strin
 		base := "Взяття в роботу об'єкта"
 		who := strings.TrimSpace(row.UserFIO)
 		if who == "" {
-			who = strings.TrimSpace(row.UserID)
+			who = caslEventUserName(users, row.UserID)
+		}
+		if who == "" && strings.TrimSpace(row.UserID) != "" {
+			who = "Оператор #" + strings.TrimSpace(row.UserID)
 		}
 		if who != "" {
 			return base + ": " + who
@@ -976,7 +979,10 @@ func buildCASLUserActionDetails(row CASLObjectEvent, dictionary map[string]strin
 		base := "Завершення відпрацювання тривоги"
 		who := strings.TrimSpace(row.UserFIO)
 		if who == "" {
-			who = strings.TrimSpace(row.UserID)
+			who = caslEventUserName(users, row.UserID)
+		}
+		if who == "" && strings.TrimSpace(row.UserID) != "" {
+			who = "Оператор #" + strings.TrimSpace(row.UserID)
 		}
 		if who != "" {
 			base += ": " + who

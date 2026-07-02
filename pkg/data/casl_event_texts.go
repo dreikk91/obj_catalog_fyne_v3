@@ -39,7 +39,7 @@ func (p *CASLCloudProvider) buildCASLLineInfoIndex(ctx context.Context, lines []
 
 func shouldLoadCASLEventUsers(rows []CASLObjectEvent) bool {
 	for _, row := range rows {
-		if strings.TrimSpace(row.HozUserID) != "" {
+		if strings.TrimSpace(row.HozUserID) != "" || strings.TrimSpace(row.UserID) != "" {
 			return true
 		}
 	}

@@ -19,3 +19,4 @@ dist
 node_modules
 *.json
 .tmp
+*.7z

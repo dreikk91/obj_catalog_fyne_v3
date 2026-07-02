@@ -137,8 +137,8 @@ func newCASLObjectDialogState(
 		deviceTimeout:      newLineEdit(formatInt64NonZero(snapshot.Object.Device.Timeout)),
 		changeDate:         newLineEdit(caslDateText(snapshot.Object.Device.ChangeDate)),
 		reglamentDate:      newLineEdit(caslDateText(snapshot.Object.Device.ReglamentDate)),
-		sim1:               newLineEdit(snapshot.Object.Device.SIM1),
-		sim2:               newLineEdit(snapshot.Object.Device.SIM2),
+		sim1:               newLineEdit(formatCASLPhoneForDisplay(snapshot.Object.Device.SIM1)),
+		sim2:               newLineEdit(formatCASLPhoneForDisplay(snapshot.Object.Device.SIM2)),
 		technician:         qt.NewQComboBox2(),
 		units:              newLineEdit(snapshot.Object.Device.Units),
 		requisites:         newLineEdit(snapshot.Object.Device.Requisites),
@@ -161,6 +161,9 @@ func newCASLObjectDialogState(
 	state.deviceNumberTimer.SetSingleShot(true)
 	state.deviceNumberTimer.SetInterval(350)
 	state.deviceNumberTimer.OnTimeout(state.updateDeviceNumberSuggestions)
+	phonePlaceholder := "+380671234567 / 380671234567 / 0671234567"
+	state.sim1.SetPlaceholderText(phonePlaceholder)
+	state.sim2.SetPlaceholderText(phonePlaceholder)
 	state.description.SetPlainText(snapshot.Object.Description)
 	state.prepareOptions()
 	state.prepareDefaults()
@@ -254,6 +257,7 @@ func (s *caslObjectDialogState) exec() (int64, bool) {
 	tabs.AddTab(s.buildImagesTab(), "6. Фото")
 	tabs.AddTab(s.buildRegimesTab(), "7. Режими")
 	s.wireDirtyTracking()
+	s.wirePhoneFormatting()
 	s.loadDeviceNumbers()
 
 	saveButton := qt.NewQPushButton3("Створити")
@@ -353,6 +357,18 @@ func (s *caslObjectDialogState) wireDirtyTracking() {
 		s.deviceNumberTimer.Stop()
 		s.deviceNumberTimer.Start(350)
 	})
+}
+
+func (s *caslObjectDialogState) wirePhoneFormatting() {
+	for _, field := range []*qt.QLineEdit{s.sim1, s.sim2} {
+		field := field
+		field.OnEditingFinished(func() {
+			formatted, err := caslobject.NormalizeUAPhone(field.Text())
+			if err == nil {
+				field.SetText(formatted)
+			}
+		})
+	}
 }
 
 func (s *caslObjectDialogState) confirmDiscard(parent *qt.QWidget) bool {
@@ -714,8 +730,14 @@ func (s *caslObjectDialogState) readForms() error {
 	if err != nil {
 		return err
 	}
-	device.SIM1 = strings.TrimSpace(s.sim1.Text())
-	device.SIM2 = strings.TrimSpace(s.sim2.Text())
+	device.SIM1, err = caslobject.NormalizeUAPhone(s.sim1.Text())
+	if err != nil {
+		return fmt.Errorf("SIM 1: %w", err)
+	}
+	device.SIM2, err = caslobject.NormalizeUAPhone(s.sim2.Text())
+	if err != nil {
+		return fmt.Errorf("SIM 2: %w", err)
+	}
 	device.ChangeDate, err = parseCASLDate(s.changeDate.Text())
 	if err != nil {
 		return fmt.Errorf("дата зміни: %w", err)
@@ -2350,10 +2372,18 @@ func caslPhonesText(items []contracts.CASLPhoneNumber) string {
 	phones := make([]string, 0, len(items))
 	for _, item := range items {
 		if value := strings.TrimSpace(item.Number); value != "" {
-			phones = append(phones, value)
+			phones = append(phones, formatCASLPhoneForDisplay(value))
 		}
 	}
 	return strings.Join(phones, ", ")
+}
+
+func formatCASLPhoneForDisplay(raw string) string {
+	formatted, err := caslobject.NormalizeUAPhone(raw)
+	if err != nil {
+		return strings.TrimSpace(raw)
+	}
+	return formatted
 }
 
 func caslDateText(value int64) string {

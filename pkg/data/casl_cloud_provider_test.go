@@ -1044,7 +1044,7 @@ func TestBuildCASLUserActionDetails(t *testing.T) {
 		ObjID:     "25",
 		ObjName:   "1004 Будинок Хіміч Н.П.",
 		AlarmType: "ALARM_TYPE_OPERATOR",
-	}, nil)
+	}, nil, nil)
 	if details != "Попадання тривоги в стрічку" {
 		t.Fatalf("unexpected notif details: %q", details)
 	}
@@ -1052,7 +1052,7 @@ func TestBuildCASLUserActionDetails(t *testing.T) {
 	details = buildCASLUserActionDetails(CASLObjectEvent{
 		Action:  "GRD_OBJ_PICK",
 		UserFIO: "Островська Марина",
-	}, nil)
+	}, nil, nil)
 	if !strings.Contains(details, "Взяття в роботу об'єкта") || !strings.Contains(details, "Островська") {
 		t.Fatalf("unexpected pick details: %q", details)
 	}
@@ -1061,7 +1061,7 @@ func TestBuildCASLUserActionDetails(t *testing.T) {
 		Action: "GRD_OBJ_FINISH",
 		Cause:  "CAUSES_FALSE_ALARM",
 		Note:   "Хибний виклик",
-	}, map[string]string{"CAUSES_FALSE_ALARM": "Хибна тривога"})
+	}, map[string]string{"CAUSES_FALSE_ALARM": "Хибна тривога"}, nil)
 	if !strings.Contains(details, "Завершення відпрацювання тривоги") ||
 		!strings.Contains(details, "Причина: Хибна тривога") ||
 		!strings.Contains(details, "Примітка: Хибний виклик") {
@@ -1072,11 +1072,35 @@ func TestBuildCASLUserActionDetails(t *testing.T) {
 		Action:       "DEVICE_BLOCK",
 		BlockMessage: "Сервісні роботи",
 		TimeUnblock:  time.Now().Add(2 * time.Hour).Unix(),
-	}, nil)
+	}, nil, nil)
 	if !strings.Contains(details, "Блокування ППК") ||
 		!strings.Contains(details, "Причина: Сервісні роботи") ||
 		!strings.Contains(details, "До:") {
 		t.Fatalf("unexpected block details: %q", details)
+	}
+}
+
+func TestBuildCASLUserActionDetails_ResolvesOperatorName(t *testing.T) {
+	t.Parallel()
+
+	users := map[string]caslUser{
+		"66": {
+			UserID:     "66",
+			LastName:   "Островська",
+			FirstName:  "Марина",
+			MiddleName: "Іванівна",
+		},
+	}
+
+	details := buildCASLUserActionDetails(CASLObjectEvent{
+		Action: "GRD_OBJ_FINISH",
+		UserID: "66",
+		Cause:  "CAUSES_CLIENT_FAULT",
+	}, map[string]string{"CAUSES_CLIENT_FAULT": "Вина клієнта"}, users)
+
+	want := "Завершення відпрацювання тривоги: Островська Марина Іванівна, Причина: Вина клієнта"
+	if details != want {
+		t.Fatalf("details = %q, want %q", details, want)
 	}
 }
 
@@ -1172,6 +1196,38 @@ func TestCASLProvider_MapCASLRowsToEvents_AllowsSystemActionWithoutObject(t *tes
 	}
 	if !strings.Contains(events[0].Details, "Вхід користувача") {
 		t.Fatalf("unexpected details: %q", events[0].Details)
+	}
+}
+
+func TestCASLProvider_MapCASLRowsToEvents_ResolvesOperatorName(t *testing.T) {
+	t.Parallel()
+
+	provider := NewCASLCloudProvider("http://127.0.0.1:50003", "token", 1)
+	provider.mu.Lock()
+	provider.cachedUsers["66"] = caslUser{
+		UserID:    "66",
+		LastName:  "Островська",
+		FirstName: "Марина",
+	}
+	provider.cachedUsersAt = time.Now()
+	provider.mu.Unlock()
+
+	events, _ := provider.mapCASLRowsToEvents(context.Background(), []CASLObjectEvent{
+		{
+			Type:   "user_action",
+			Action: "GRD_OBJ_FINISH",
+			Code:   "GRD_OBJ_FINISH",
+			UserID: "66",
+			Cause:  "CAUSES_CLIENT_FAULT",
+			Time:   time.Now().UnixMilli(),
+		},
+	}, 0)
+
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if !strings.Contains(events[0].Details, "Островська Марина") {
+		t.Fatalf("operator name was not resolved: %q", events[0].Details)
 	}
 }
 

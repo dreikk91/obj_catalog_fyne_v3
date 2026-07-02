@@ -11,13 +11,14 @@ import (
 )
 
 type frontendUIBackendStub struct {
-	objectSummaries []contracts.FrontendObjectSummary
-	objectDetails   contracts.FrontendObjectDetails
-	events          []contracts.FrontendEventItem
-	alarms          []contracts.FrontendAlarmItem
-	responseGroups  []contracts.FrontendResponseGroup
-	objectDetailErr error
-	detailRequests  int
+	objectSummaries    []contracts.FrontendObjectSummary
+	objectDetails      contracts.FrontendObjectDetails
+	events             []contracts.FrontendEventItem
+	alarms             []contracts.FrontendAlarmItem
+	responseGroups     []contracts.FrontendResponseGroup
+	responseGroupCalls int
+	objectDetailErr    error
+	detailRequests     int
 
 	assignedAlarmID  int
 	assignedGroupID  string
@@ -66,6 +67,7 @@ func (s *frontendUIBackendStub) StandbyObject(context.Context, int, contracts.Fr
 }
 
 func (s *frontendUIBackendStub) ListResponseGroups(context.Context) ([]contracts.FrontendResponseGroup, error) {
+	s.responseGroupCalls++
 	return s.responseGroups, nil
 }
 
@@ -120,6 +122,17 @@ type frontendUIFallbackStub struct {
 
 	processAlarmCalls int
 	testMessages      []models.TestMessage
+}
+
+type alarmResponseGroupsFallbackStub struct {
+	*frontendUIFallbackStub
+	groups []contracts.ResponseGroup
+	calls  int
+}
+
+func (s *alarmResponseGroupsFallbackStub) ListResponseGroupsForAlarm(context.Context, models.Alarm) ([]contracts.ResponseGroup, error) {
+	s.calls++
+	return append([]contracts.ResponseGroup(nil), s.groups...), nil
 }
 
 func (s *frontendUIFallbackStub) GetObjects() []models.Object {
@@ -436,6 +449,39 @@ func TestFrontendUIDataProviderGetEventsAndAlarmsUseFrontendAndDelegateFallbackO
 	}
 	if frontend.arrivedAlarmID != 20 || frontend.cancelledAlarmID != 20 {
 		t.Fatalf("response action alarm IDs = arrived %d cancelled %d", frontend.arrivedAlarmID, frontend.cancelledAlarmID)
+	}
+}
+
+func TestFrontendUIDataProviderResponseGroupsUseAlarmOwnerProvider(t *testing.T) {
+	t.Parallel()
+
+	frontend := &frontendUIBackendStub{
+		responseGroups: []contracts.FrontendResponseGroup{
+			{ID: "all-sources"},
+		},
+	}
+	fallback := &alarmResponseGroupsFallbackStub{
+		frontendUIFallbackStub: &frontendUIFallbackStub{},
+		groups: []contracts.ResponseGroup{
+			{
+				ID:       "bridge-1",
+				Name:     "МГР МІСТ",
+				Callsign: "Беркут",
+				Source:   contracts.FrontendSourceBridge,
+			},
+		},
+	}
+	provider := NewFrontendUIDataProvider(frontend, fallback)
+
+	groups, err := provider.ListResponseGroupsForAlarm(context.Background(), models.Alarm{ObjectID: 101})
+	if err != nil {
+		t.Fatalf("ListResponseGroupsForAlarm() error = %v", err)
+	}
+	if len(groups) != 1 || groups[0].ID != "bridge-1" || groups[0].Callsign != "Беркут" {
+		t.Fatalf("groups = %+v, want mapped bridge group", groups)
+	}
+	if fallback.calls != 1 || frontend.responseGroupCalls != 0 {
+		t.Fatalf("group calls: fallback=%d frontend=%d", fallback.calls, frontend.responseGroupCalls)
 	}
 }
 

@@ -14,6 +14,21 @@ type caslObjectEditDiffStub struct {
 	calls []string
 }
 
+func TestFormatCASLPhoneForDisplay(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"380753163889":        "+38 (075) 316-38-89",
+		"+380931234567":       "+38 (093) 123-45-67",
+		"+38 (067) 344-74-85": "+38 (067) 344-74-85",
+	}
+	for input, want := range tests {
+		if got := formatCASLPhoneForDisplay(input); got != want {
+			t.Fatalf("formatCASLPhoneForDisplay(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func (s *caslObjectEditDiffStub) UpdateCASLObject(context.Context, contracts.CASLGuardObjectUpdate) error {
 	s.calls = append(s.calls, "object")
 	return nil

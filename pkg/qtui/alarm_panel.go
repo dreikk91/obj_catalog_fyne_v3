@@ -33,11 +33,13 @@ type AlarmPanel struct {
 	responseButton *qt.QPushButton
 	historyButton  *qt.QPushButton
 	hideHistoryBtn *qt.QPushButton
-	table          *qt.QTableView
+	table          *qt.QTreeView
 	model          *qt.QStandardItemModel
 	vm             *viewmodels.AlarmListViewModel
 	caseHistoryVM  *viewmodels.WorkAreaCaseHistoryViewModel
-	historyBrowser *qt.QTextBrowser
+	historyTree    *qt.QTreeView
+	historyModel   *qt.QStandardItemModel
+	splitter       *qt.QSplitter
 	dataProvider   contracts.DataProvider
 	prefs          config.Preferences
 
@@ -49,6 +51,7 @@ type AlarmPanel struct {
 	rowsSignature   string
 	rowsReady       bool
 	selectedAlarmID int
+	responseLoading bool
 
 	OnAlarmSelected func(models.Alarm)
 	OnProcessAlarms func([]models.Alarm)
@@ -135,7 +138,7 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	panel.responseButton.OnClicked(func() {
 		panel.respondToSelectedAlarm()
 	})
-	panel.historyButton = qt.NewQPushButton3("Хронологія")
+	panel.historyButton = qt.NewQPushButton3("Хронологія ▾")
 	panel.historyButton.SetToolTip("Показати хронологію вибраної групи")
 	panel.historyButton.OnClicked(func() {
 		panel.showSelectedHistory()
@@ -194,17 +197,21 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	toolbar.AddWidget(panel.severityFilter.QWidget)
 	headerLayout.AddLayout(toolbar.QLayout)
 
-	panel.table = qt.NewQTableView2()
+	panel.table = qt.NewQTreeView2()
 	panel.table.SetModel(panel.model.QAbstractItemModel)
 	panel.table.SetSortingEnabled(true)
 	panel.table.SetAlternatingRowColors(true)
 	panel.table.SetSelectionBehavior(qt.QAbstractItemView__SelectRows)
 	panel.table.SetSelectionMode(qt.QAbstractItemView__ExtendedSelection)
 	panel.table.SetEditTriggers(qt.QAbstractItemView__NoEditTriggers)
-	panel.table.HorizontalHeader().SetStretchLastSection(true)
-	panel.table.VerticalHeader().SetVisible(false)
+	panel.table.SetRootIsDecorated(true)
+	panel.table.SetItemsExpandable(true)
+	panel.table.SetAnimated(true)
+	panel.table.SetExpandsOnDoubleClick(false)
+	panel.table.SetIndentation(20)
+	panel.table.Header().SetStretchLastSection(true)
 	panel.table.SetStyleSheet(`
-		QTableView {
+		QTreeView {
 			gridline-color: #e7e7e7;
 			selection-background-color: ` + qtPrimaryColor + `;
 			selection-color: white;
@@ -253,16 +260,43 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	topLayout.AddWidget(panel.table.QWidget)
 	topWidget.SetLayout(topLayout.QLayout)
 
-	panel.historyBrowser = qt.NewQTextBrowser(nil)
+	panel.historyModel = qt.NewQStandardItemModel2(0, 4)
+	panel.historyTree = qt.NewQTreeView2()
+	panel.historyTree.SetModel(panel.historyModel.QAbstractItemModel)
+	panel.historyTree.SetEditTriggers(qt.QAbstractItemView__NoEditTriggers)
+	panel.historyTree.SetSelectionBehavior(qt.QAbstractItemView__SelectRows)
+	panel.historyTree.SetAlternatingRowColors(true)
+	panel.historyTree.SetAnimated(true)
+	panel.historyTree.SetRootIsDecorated(true)
+	panel.historyTree.SetItemsExpandable(true)
+	panel.historyTree.SetWordWrap(true)
+	panel.historyTree.SetUniformRowHeights(false)
+	panel.historyTree.Header().SetStretchLastSection(true)
+	panel.historyTree.SetStyleSheet(`
+		QTreeView {
+			border: 1px solid #d5d5d5;
+			background: #ffffff;
+			alternate-background-color: #f8fafb;
+			selection-background-color: ` + qtPrimaryColor + `;
+			selection-color: white;
+		}
+		QHeaderView::section {
+			background: #f2f5f7;
+			border: 0;
+			border-bottom: 1px solid #d5d5d5;
+			padding: 5px;
+			font-weight: 600;
+		}
+	`)
 	panel.clearCaseHistory()
-	panel.historyBrowser.SetVisible(false)
+	panel.historyTree.SetVisible(false)
 
-	splitter := qt.NewQSplitter3(qt.Vertical)
-	splitter.AddWidget(topWidget)
-	splitter.AddWidget(panel.historyBrowser.QWidget)
-	splitter.SetSizes([]int{900, 0})
+	panel.splitter = qt.NewQSplitter3(qt.Vertical)
+	panel.splitter.AddWidget(topWidget)
+	panel.splitter.AddWidget(panel.historyTree.QWidget)
+	panel.splitter.SetSizes([]int{900, 0})
 
-	layout.AddWidget(splitter.QWidget)
+	layout.AddWidget(panel.splitter.QWidget)
 	panel.SetLayout(layout.QLayout)
 	panel.updateRibbonStats(nil, nil)
 	panel.updateSelectionState()
@@ -282,7 +316,7 @@ func newAlarmMetricLabel(title string, color string, background string) *qt.QLab
 }
 
 func alarmGroupHeaders() []string {
-	return []string{"Остання", "№", "Об'єкт", "Кейс", "Оператор", "Пріоритет", "Джерело"}
+	return []string{"Остання / час", "№", "Об'єкт / зона", "Кейс / тривога", "Оператор", "Пріоритет", "Джерело"}
 }
 
 func buildAlarmGroups(alarms []models.Alarm) []alarmGroup {
@@ -382,7 +416,7 @@ func alarmGroupOperatorText(group alarmGroup) string {
 	return "Не взята"
 }
 
-func addColoredReadOnlyGroupRow(model *qt.QStandardItemModel, values []string, groupKey string, textColor color.NRGBA, rowColor color.NRGBA) {
+func newColoredReadOnlyAlarmRow(values []string, groupKey string, alarmID int, textColor color.NRGBA, rowColor color.NRGBA) []*qt.QStandardItem {
 	items := make([]*qt.QStandardItem, 0, len(values))
 	foreground := qt.NewQColor11(int(textColor.R), int(textColor.G), int(textColor.B), int(textColor.A)).ToQVariant()
 	background := qt.NewQColor11(int(rowColor.R), int(rowColor.G), int(rowColor.B), int(rowColor.A)).ToQVariant()
@@ -393,10 +427,11 @@ func addColoredReadOnlyGroupRow(model *qt.QStandardItemModel, values []string, g
 		item.SetData(background, int(qt.BackgroundRole))
 		if idx == 0 {
 			item.SetData(qt.NewQVariant14(groupKey), int(qt.UserRole))
+			item.SetData(qt.NewQVariant4(alarmID), int(qt.UserRole)+1)
 		}
 		items = append(items, item)
 	}
-	model.AppendRow(items)
+	return items
 }
 
 func (panel *AlarmPanel) SetDataProvider(provider contracts.DataProvider) {
@@ -418,7 +453,8 @@ func (panel *AlarmPanel) applyColumnWidths() {
 	if panel.autoSized {
 		return
 	}
-	resizeTableToContentsWithMinimums("alarms", panel.table)
+	resizeTreeToContentsWithMinimums("alarms", panel.table)
+	panel.table.CollapseAll()
 	panel.autoSized = true
 }
 
@@ -464,6 +500,7 @@ func (panel *AlarmPanel) applyFilters() {
 	panel.rowsReady = true
 
 	var columnWidths []int
+	expandedGroups := panel.expandedAlarmGroupKeys()
 	scrollValue := 0
 	scrollWasAtBottom := false
 	if panel.table != nil {
@@ -472,7 +509,7 @@ func (panel *AlarmPanel) applyFilters() {
 		scrollWasAtBottom = scrollValue >= scrollBar.Maximum()
 	}
 	if panel.autoSized {
-		columnWidths = captureTableColumnWidths(panel.table)
+		columnWidths = captureTreeColumnWidths(panel.table)
 	}
 	panel.model.Clear()
 	panel.model.SetHorizontalHeaderLabels(alarmGroupHeaders())
@@ -480,8 +517,8 @@ func (panel *AlarmPanel) applyFilters() {
 		addReadOnlyRow(panel.model, []string{"--:--", "-", "Немає активних тривог", "", "", "", ""})
 		panel.selectedAlarmID = 0
 		panel.hideCaseHistory()
-		restoreTableColumnWidthsSnapshot("alarms", panel.table, columnWidths)
-		restoreAlarmTableScroll(panel.table, scrollValue, scrollWasAtBottom)
+		restoreTreeColumnWidthsSnapshot("alarms", panel.table, columnWidths)
+		restoreAlarmTreeScroll(panel.table, scrollValue, scrollWasAtBottom)
 		panel.updateSelectionState()
 		return
 	}
@@ -495,7 +532,7 @@ func (panel *AlarmPanel) applyFilters() {
 			priority = "критична"
 		}
 		textColor, rowColor := eventRowColorsBySeverity(group.Primary.VisualSeverityValue(), group.Primary.SC1)
-		addColoredReadOnlyGroupRow(panel.model, []string{
+		parentItems := newColoredReadOnlyAlarmRow([]string{
 			group.LatestTime,
 			group.ObjectNumber,
 			strings.TrimSpace(group.ObjectName),
@@ -503,19 +540,63 @@ func (panel *AlarmPanel) applyFilters() {
 			alarmGroupOperatorText(group),
 			priority,
 			group.Source,
-		}, group.Key, textColor, rowColor)
+		}, group.Key, 0, textColor, rowColor)
+		panel.model.AppendRow(parentItems)
+		for _, alarm := range group.Alarms {
+			childTextColor, childRowColor := eventRowColorsBySeverity(alarm.VisualSeverityValue(), alarm.SC1)
+			parentItems[0].AppendRow(newColoredReadOnlyAlarmRow(
+				alarmTreeChildValues(alarm),
+				group.Key,
+				alarm.ID,
+				childTextColor,
+				childRowColor,
+			))
+		}
 	}
-	if restoreTableColumnWidthsSnapshot("alarms", panel.table, columnWidths) {
-		restoreAlarmTableScroll(panel.table, scrollValue, scrollWasAtBottom)
+	panel.restoreExpandedAlarmGroups(expandedGroups)
+	if restoreTreeColumnWidthsSnapshot("alarms", panel.table, columnWidths) {
+		restoreAlarmTreeScroll(panel.table, scrollValue, scrollWasAtBottom)
 		panel.updateSelectionState()
 		return
 	}
 	panel.applyColumnWidths()
-	restoreAlarmTableScroll(panel.table, scrollValue, scrollWasAtBottom)
+	panel.restoreExpandedAlarmGroups(expandedGroups)
+	restoreAlarmTreeScroll(panel.table, scrollValue, scrollWasAtBottom)
 	panel.updateSelectionState()
 }
 
-func restoreAlarmTableScroll(table *qt.QTableView, value int, wasAtBottom bool) {
+func alarmTreeChildValues(alarm models.Alarm) []string {
+	zone := "Подія"
+	if alarm.ZoneNumber > 0 {
+		zone = "Зона " + strconv.Itoa(alarm.ZoneNumber)
+	}
+	eventText := strings.TrimSpace(alarm.GetTypeDisplay())
+	if details := strings.TrimSpace(alarm.Details); details != "" {
+		eventText += " — " + details
+	}
+	operator := "Не взята"
+	if alarm.IsInProgress {
+		operator = strings.TrimSpace(alarm.InProgressBy)
+		if operator == "" {
+			operator = "У роботі"
+		}
+	}
+	priority := "звичайна"
+	if alarm.IsCritical() {
+		priority = "критична"
+	}
+	return []string{
+		alarm.GetTimeDisplay(),
+		"",
+		"↳ " + zone,
+		eventText,
+		operator,
+		priority,
+		viewmodels.ObjectSourceByID(alarm.ObjectID),
+	}
+}
+
+func restoreAlarmTreeScroll(table *qt.QTreeView, value int, wasAtBottom bool) {
 	if table == nil {
 		return
 	}
@@ -525,6 +606,43 @@ func restoreAlarmTableScroll(table *qt.QTableView, value int, wasAtBottom bool) 
 		return
 	}
 	scrollBar.SetValue(value)
+}
+
+func (panel *AlarmPanel) expandedAlarmGroupKeys() map[string]struct{} {
+	result := make(map[string]struct{})
+	if panel == nil || panel.table == nil || panel.model == nil {
+		return result
+	}
+	root := qt.NewQModelIndex()
+	for row := 0; row < panel.model.RowCount(root); row++ {
+		index := panel.model.Index(row, 0, root)
+		if index == nil || !index.IsValid() || !panel.table.IsExpanded(index) {
+			continue
+		}
+		if key := strings.TrimSpace(index.DataWithRole(int(qt.UserRole)).ToString()); key != "" {
+			result[key] = struct{}{}
+		}
+	}
+	runtime.KeepAlive(root)
+	return result
+}
+
+func (panel *AlarmPanel) restoreExpandedAlarmGroups(expanded map[string]struct{}) {
+	if panel == nil || panel.table == nil || panel.model == nil || len(expanded) == 0 {
+		return
+	}
+	root := qt.NewQModelIndex()
+	for row := 0; row < panel.model.RowCount(root); row++ {
+		index := panel.model.Index(row, 0, root)
+		if index == nil || !index.IsValid() {
+			continue
+		}
+		key := strings.TrimSpace(index.DataWithRole(int(qt.UserRole)).ToString())
+		if _, ok := expanded[key]; ok {
+			panel.table.Expand(index)
+		}
+	}
+	runtime.KeepAlive(root)
 }
 
 func alarmGroupRowsSignature(groups []alarmGroup) string {
@@ -544,7 +662,20 @@ func alarmGroupRowsSignature(groups []alarmGroup) string {
 			alarmGroupOperatorText(group),
 		)
 		for _, alarm := range group.Alarms {
-			fmt.Fprintf(&b, "%d:%d:%d:%s;", alarm.ID, alarm.Time.UnixNano(), alarm.SC1, strings.TrimSpace(alarm.Details))
+			fmt.Fprintf(
+				&b,
+				"%d:%d:%d:%s:%s:%d:%t:%s:%t:%t;",
+				alarm.ID,
+				alarm.Time.UnixNano(),
+				alarm.SC1,
+				strings.TrimSpace(alarm.GetTypeDisplay()),
+				strings.TrimSpace(alarm.Details),
+				alarm.ZoneNumber,
+				alarm.IsInProgress,
+				strings.TrimSpace(alarm.InProgressBy),
+				alarm.CanTakeOver,
+				alarm.CanProcess,
+			)
 		}
 		b.WriteByte('|')
 	}
@@ -610,11 +741,24 @@ func (panel *AlarmPanel) updateSelectionState() {
 		panel.pickButton.SetText(alarmActionText(alarmPickActionVerb(alarms), alarms))
 	}
 	if panel.responseButton != nil {
-		panel.responseButton.SetEnabled(selectedGroups == 1)
+		panel.responseButton.SetEnabled(selectedGroups == 1 && !panel.responseLoading)
+		if panel.responseLoading {
+			panel.responseButton.SetText("Завантаження...")
+		} else {
+			panel.responseButton.SetText("Реагування")
+		}
 	}
 	if panel.historyButton != nil {
 		panel.historyButton.SetEnabled(selectedGroups == 1)
 	}
+}
+
+func (panel *AlarmPanel) SetResponseLoading(_ int, loading bool) {
+	if panel == nil {
+		return
+	}
+	panel.responseLoading = loading
+	panel.updateSelectionState()
 }
 
 func (panel *AlarmPanel) currentSeverityFilter() string {
@@ -633,13 +777,34 @@ func (panel *AlarmPanel) selectedAlarms() []models.Alarm {
 		return nil
 	}
 	alarms := make([]models.Alarm, 0, len(selection))
+	seen := make(map[int]struct{}, len(selection))
 	for _, index := range selection {
 		if index.Column() != 0 {
 			continue
 		}
-		groupKey := panel.model.Data(&index, int(qt.UserRole)).ToString()
+		rowIndex := panel.alarmTreeFirstColumnIndex(&index)
+		if rowIndex == nil || !rowIndex.IsValid() {
+			continue
+		}
+		alarmID := panel.model.Data(rowIndex, int(qt.UserRole)+1).ToInt()
+		if alarmID > 0 {
+			if alarm, ok := panel.alarmsByID[alarmID]; ok {
+				if _, exists := seen[alarm.ID]; !exists {
+					alarms = append(alarms, alarm)
+					seen[alarm.ID] = struct{}{}
+				}
+			}
+			continue
+		}
+		groupKey := panel.model.Data(rowIndex, int(qt.UserRole)).ToString()
 		if group, ok := panel.groupsByKey[groupKey]; ok {
-			alarms = append(alarms, group.Alarms...)
+			for _, alarm := range group.Alarms {
+				if _, exists := seen[alarm.ID]; exists {
+					continue
+				}
+				alarms = append(alarms, alarm)
+				seen[alarm.ID] = struct{}{}
+			}
 		}
 	}
 	return alarms
@@ -650,19 +815,30 @@ func (panel *AlarmPanel) selectedGroupAndAlarmCounts() (int, int) {
 		return 0, 0
 	}
 	selection := panel.table.SelectionModel().SelectedRows()
-	groupCount := 0
-	alarmCount := 0
+	groupKeys := make(map[string]struct{})
+	alarmIDs := make(map[int]struct{})
 	for _, index := range selection {
 		if index.Column() != 0 {
 			continue
 		}
-		groupKey := panel.model.Data(&index, int(qt.UserRole)).ToString()
+		rowIndex := panel.alarmTreeFirstColumnIndex(&index)
+		if rowIndex == nil || !rowIndex.IsValid() {
+			continue
+		}
+		groupKey := panel.model.Data(rowIndex, int(qt.UserRole)).ToString()
 		if group, ok := panel.groupsByKey[groupKey]; ok {
-			groupCount++
-			alarmCount += len(group.Alarms)
+			groupKeys[groupKey] = struct{}{}
+			alarmID := panel.model.Data(rowIndex, int(qt.UserRole)+1).ToInt()
+			if alarmID > 0 {
+				alarmIDs[alarmID] = struct{}{}
+				continue
+			}
+			for _, alarm := range group.Alarms {
+				alarmIDs[alarm.ID] = struct{}{}
+			}
 		}
 	}
-	return groupCount, alarmCount
+	return len(groupKeys), len(alarmIDs)
 }
 
 func (panel *AlarmPanel) processSelectedAlarms() {
@@ -724,9 +900,18 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 	if !ok {
 		return
 	}
-	alarms := contextMenuAlarms(group.Alarms, panel.selectedAlarms())
-	if !selectionContainsAnyAlarm(panel.selectedAlarms(), group.Alarms) {
-		panel.table.SelectRow(index.Row())
+	clickedAlarms := group.Alarms
+	if alarm, exact := panel.exactAlarmAtIndex(index); exact {
+		clickedAlarms = []models.Alarm{alarm}
+	}
+	alarms := contextMenuAlarms(clickedAlarms, panel.selectedAlarms())
+	if !selectionContainsAnyAlarm(panel.selectedAlarms(), clickedAlarms) {
+		panel.table.ClearSelection()
+		panel.table.SetCurrentIndex(index)
+		panel.table.SelectionModel().Select(
+			index,
+			qt.QItemSelectionModel__ClearAndSelect|qt.QItemSelectionModel__Rows,
+		)
 	}
 
 	menu := qt.NewQMenu(panel.table.QWidget)
@@ -747,8 +932,12 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 	if panel.OnRespondAlarm != nil {
 		responseAction := menu.AddActionWithText("Відкрити картку реагування")
 		responseAction.SetEnabled(len(group.Alarms) > 0)
+		targetAlarm := group.Primary
+		if alarm, exact := panel.exactAlarmAtIndex(index); exact {
+			targetAlarm = alarm
+		}
 		responseAction.OnTriggered(func() {
-			panel.OnRespondAlarm(group.Primary)
+			panel.OnRespondAlarm(targetAlarm)
 		})
 	}
 
@@ -759,9 +948,9 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 	})
 
 	menu.AddSeparator()
-	addTableCopyActions(menu, panel.table, index)
+	addTreeCopyActions(menu, panel.table, index)
 	menu.AddSeparator()
-	addTableColumnActions(menu, "alarms", panel.table, panel.prefs, func() {
+	addTreeColumnActions(menu, "alarms", panel.table, panel.prefs, func() {
 		panel.autoSized = true
 	}, func() {
 		panel.autoSized = false
@@ -838,6 +1027,9 @@ func alarmActionText(action string, alarms []models.Alarm) string {
 }
 
 func (panel *AlarmPanel) alarmAtIndex(index *qt.QModelIndex) (models.Alarm, bool) {
+	if alarm, ok := panel.exactAlarmAtIndex(index); ok {
+		return alarm, true
+	}
 	group, ok := panel.groupAtIndex(index)
 	if !ok {
 		return models.Alarm{}, false
@@ -845,21 +1037,38 @@ func (panel *AlarmPanel) alarmAtIndex(index *qt.QModelIndex) (models.Alarm, bool
 	return group.Primary, true
 }
 
+func (panel *AlarmPanel) exactAlarmAtIndex(index *qt.QModelIndex) (models.Alarm, bool) {
+	rowIndex := panel.alarmTreeFirstColumnIndex(index)
+	if rowIndex == nil || !rowIndex.IsValid() {
+		return models.Alarm{}, false
+	}
+	alarmID := panel.model.Data(rowIndex, int(qt.UserRole)+1).ToInt()
+	alarm, ok := panel.alarmsByID[alarmID]
+	return alarm, ok && alarmID > 0
+}
+
 func (panel *AlarmPanel) groupAtIndex(index *qt.QModelIndex) (alarmGroup, bool) {
 	if panel == nil || panel.model == nil || index == nil || !index.IsValid() {
 		return alarmGroup{}, false
 	}
-	parent := qt.NewQModelIndex()
-	rowIndex := panel.model.Index(index.Row(), 0, parent)
+	rowIndex := panel.alarmTreeFirstColumnIndex(index)
 	if rowIndex == nil || !rowIndex.IsValid() {
-		runtime.KeepAlive(parent)
 		return alarmGroup{}, false
 	}
 	groupKey := panel.model.Data(rowIndex, int(qt.UserRole)).ToString()
 	group, ok := panel.groupsByKey[groupKey]
-	runtime.KeepAlive(parent)
 	runtime.KeepAlive(rowIndex)
 	return group, ok
+}
+
+func (panel *AlarmPanel) alarmTreeFirstColumnIndex(index *qt.QModelIndex) *qt.QModelIndex {
+	if panel == nil || panel.model == nil || index == nil || !index.IsValid() {
+		return nil
+	}
+	parent := index.Parent()
+	rowIndex := panel.model.Index(index.Row(), 0, parent)
+	runtime.KeepAlive(parent)
+	return rowIndex
 }
 
 func (panel *AlarmPanel) showSelectedHistory() {
@@ -878,18 +1087,47 @@ func (panel *AlarmPanel) showGroupHistory(group alarmGroup) {
 	if panel == nil {
 		return
 	}
-	if panel.historyBrowser != nil {
-		panel.historyBrowser.SetVisible(true)
+	if panel.historyTree != nil {
+		panel.historyTree.SetVisible(true)
 	}
+	panel.ensureCaseHistoryVisible()
 	panel.viewAlarmHistory(group.Primary)
 }
 
+func (panel *AlarmPanel) ensureCaseHistoryVisible() {
+	if panel == nil || panel.splitter == nil {
+		return
+	}
+	panel.splitter.SetSizes(caseHistorySplitterSizes(panel.splitter.Sizes()))
+}
+
+func caseHistorySplitterSizes(sizes []int) []int {
+	total := 0
+	for _, size := range sizes {
+		total += size
+	}
+	if total <= 0 {
+		total = 900
+	}
+	historySize := total / 3
+	if historySize < 220 {
+		historySize = 220
+	}
+	if historySize >= total {
+		historySize = total / 2
+	}
+	return []int{total - historySize, historySize}
+}
+
 func (panel *AlarmPanel) hideCaseHistory() {
-	if panel == nil || panel.historyBrowser == nil {
+	if panel == nil || panel.historyTree == nil {
 		return
 	}
 	panel.clearCaseHistory()
-	panel.historyBrowser.SetVisible(false)
+	panel.historyTree.SetVisible(false)
+	if panel.splitter != nil {
+		panel.splitter.SetSizes([]int{900, 0})
+	}
 }
 
 func (panel *AlarmPanel) loadCaseHistoryForAlarm(alarm models.Alarm) {
@@ -974,7 +1212,7 @@ func (panel *AlarmPanel) showCaseHistoryLoading(alarm models.Alarm) {
 	if name := strings.TrimSpace(alarm.ObjectName); name != "" {
 		title += " " + name
 	}
-	panel.historyBrowser.SetHtml(fmt.Sprintf("<div style='color: %s; font-family: Segoe UI; padding: 10px;'><b>%s</b><br/>Завантаження хронології...</div>", qtPrimaryColor, title))
+	panel.setCaseHistoryTreeStatus(title, "Завантаження хронології...")
 }
 
 func (panel *AlarmPanel) showEmptyCaseHistory(alarm models.Alarm) {
@@ -982,7 +1220,7 @@ func (panel *AlarmPanel) showEmptyCaseHistory(alarm models.Alarm) {
 	if name := strings.TrimSpace(alarm.ObjectName); name != "" {
 		title += " " + name
 	}
-	panel.historyBrowser.SetHtml(fmt.Sprintf("<div style='color: #666; font-family: Segoe UI; padding: 10px;'><b>%s</b><br/>Подій за період тривоги не знайдено</div>", title))
+	panel.setCaseHistoryTreeStatus(title, "Подій за період тривоги не знайдено")
 }
 
 func (panel *AlarmPanel) showCaseHistorySourceMessages(alarm models.Alarm, sourceMsgs []models.AlarmMsg) {
@@ -997,32 +1235,12 @@ func (panel *AlarmPanel) showCaseHistorySourceMessages(alarm models.Alarm, sourc
 		title += " " + name
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(`
-		<div style="font-family: 'Segoe UI', sans-serif; font-size: 10pt; padding: 10px;">
-			<h4 style="margin: 0 0 10px 0; color: %s;">%s</h4>
-			<table width="100%%" cellpadding="4" cellspacing="0" style="border-collapse: collapse;">
-	`, qtPrimaryColor, title))
-
+	rows := make([]caseHistoryTreeRow, 0, len(msgs))
 	for _, msg := range msgs {
 		textColor, rowColor := eventColorsForSC1(alarmSourceMessageSC1(msg))
-		text := formatAlarmSourceMessageText(msg)
-		weight := "normal"
-		if msg.IsAlarm {
-			weight = "bold"
-		}
-		sb.WriteString(fmt.Sprintf(`
-			<tr style="background-color: %s; color: %s; font-weight: %s;">
-				<td style="border-bottom: 1px solid #eee; padding: 4px;">%s</td>
-			</tr>
-		`, rowColor, textColor, weight, htmlEscape(text)))
+		rows = append(rows, alarmMessageHistoryTreeRow(msg, textColor, rowColor))
 	}
-
-	sb.WriteString(`
-			</table>
-		</div>
-	`)
-	panel.historyBrowser.SetHtml(sb.String())
+	panel.setCaseHistoryTreeRows(title, rows)
 }
 
 func (panel *AlarmPanel) showCaseHistoryGroup(alarm models.Alarm, group viewmodels.WorkAreaCaseHistoryGroup) {
@@ -1034,39 +1252,19 @@ func (panel *AlarmPanel) showCaseHistoryGroup(alarm models.Alarm, group viewmode
 		title += " | " + summary
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(`
-		<div style="font-family: 'Segoe UI', sans-serif; font-size: 10pt; padding: 10px;">
-			<h4 style="margin: 0 0 10px 0; color: %s;">%s</h4>
-			<table width="100%%" cellpadding="4" cellspacing="0" style="border-collapse: collapse;">
-	`, qtPrimaryColor, title))
-
+	rows := make([]caseHistoryTreeRow, 0, len(group.Events))
 	for _, event := range group.Events {
 		textColor, rowColor := eventRowColors(event)
-		text := caseHistoryEventText(event)
-		weight := "normal"
-		if event.IsCritical() {
-			weight = "bold"
-		}
-		sb.WriteString(fmt.Sprintf(`
-			<tr style="background-color: %s; color: %s; font-weight: %s;">
-				<td style="border-bottom: 1px solid #eee; padding: 4px;">%s</td>
-			</tr>
-		`, colorToHTML(rowColor), colorToHTML(textColor), weight, htmlEscape(text)))
+		rows = append(rows, eventHistoryTreeRow(event, colorToHTML(textColor), colorToHTML(rowColor)))
 	}
-
-	sb.WriteString(`
-			</table>
-		</div>
-	`)
-	panel.historyBrowser.SetHtml(sb.String())
+	panel.setCaseHistoryTreeRows(title, rows)
 }
 
 func (panel *AlarmPanel) clearCaseHistory() {
-	if panel == nil || panel.historyBrowser == nil {
+	if panel == nil || panel.historyTree == nil || panel.historyModel == nil {
 		return
 	}
-	panel.historyBrowser.SetHtml("<div style='color: #666; font-family: Segoe UI; padding: 10px;'>Оберіть тривогу для перегляду хронології</div>")
+	panel.setCaseHistoryTreeStatus("Хронологія кейсу", "Оберіть тривогу для перегляду")
 }
 
 func (panel *AlarmPanel) ReloadSelectedCaseHistory() {
@@ -1091,7 +1289,4 @@ func (panel *AlarmPanel) SetTableFontSize(size float32) {
 	font := panel.table.Font()
 	font.SetPointSizeF(float64(size))
 	panel.table.SetFont(font)
-	
-	panel.table.VerticalHeader().SetDefaultSectionSize(int(size * 2))
 }
-

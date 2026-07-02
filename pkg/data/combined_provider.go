@@ -929,6 +929,29 @@ func (p *CombinedDataProvider) ListResponseGroups(ctx context.Context) ([]contra
 	return result, nil
 }
 
+// ListResponseGroupsForAlarm loads groups only from the provider that owns the alarm.
+func (p *CombinedDataProvider) ListResponseGroupsForAlarm(ctx context.Context, alarm models.Alarm) ([]contracts.ResponseGroup, error) {
+	src := p.sourceForObjectID(alarm.ObjectID)
+	if src == nil {
+		return nil, errors.New("no source available for alarm")
+	}
+	provider, ok := src.Provider.(contracts.ResponseGroupProvider)
+	if !ok {
+		return []contracts.ResponseGroup{}, nil
+	}
+	groups, err := provider.ListResponseGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sourceType := frontendSourceFromProviderName(src.Name)
+	for i := range groups {
+		if groups[i].Source == contracts.FrontendSourceUnknown || groups[i].Source == "" {
+			groups[i].Source = sourceType
+		}
+	}
+	return groups, nil
+}
+
 // AssignResponseGroup implements contracts.ResponseGroupProvider.
 func (p *CombinedDataProvider) AssignResponseGroup(ctx context.Context, alarm models.Alarm, groupID string) error {
 	src := p.sourceForObjectID(alarm.ObjectID)

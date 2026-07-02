@@ -312,6 +312,14 @@ func (p *FrontendUIDataProvider) PickAlarm(ctx context.Context, alarm models.Ala
 }
 
 func (p *FrontendUIDataProvider) ListResponseGroupsForAlarm(ctx context.Context, alarm models.Alarm) ([]contracts.FrontendResponseGroup, error) {
+	if provider, ok := p.fallback.(contracts.AlarmResponseGroupProvider); ok {
+		groups, err := provider.ListResponseGroupsForAlarm(ctx, alarm)
+		if err != nil {
+			return nil, err
+		}
+		return mapFrontendResponseGroups(groups), nil
+	}
+
 	groups, err := p.ListResponseGroups(ctx)
 	if err != nil {
 		return nil, err
@@ -324,6 +332,27 @@ func (p *FrontendUIDataProvider) ListResponseGroupsForAlarm(ctx context.Context,
 		}
 	}
 	return filtered, nil
+}
+
+func mapFrontendResponseGroups(groups []contracts.ResponseGroup) []contracts.FrontendResponseGroup {
+	result := make([]contracts.FrontendResponseGroup, 0, len(groups))
+	for _, group := range groups {
+		result = append(result, contracts.FrontendResponseGroup{
+			ID:              strings.TrimSpace(group.ID),
+			Name:            strings.TrimSpace(group.Name),
+			Callsign:        strings.TrimSpace(group.Callsign),
+			Phone:           strings.TrimSpace(group.Phone),
+			Source:          group.Source,
+			Status:          group.Status,
+			StatusText:      strings.TrimSpace(group.StatusText),
+			ObjectNumber:    strings.TrimSpace(group.ObjectNumber),
+			ObjectName:      strings.TrimSpace(group.ObjectName),
+			Latitude:        strings.TrimSpace(group.Latitude),
+			Longitude:       strings.TrimSpace(group.Longitude),
+			StatusChangedAt: group.StatusChangedAt,
+		})
+	}
+	return result
 }
 
 func (p *FrontendUIDataProvider) ListResponseGroups(ctx context.Context) ([]contracts.FrontendResponseGroup, error) {

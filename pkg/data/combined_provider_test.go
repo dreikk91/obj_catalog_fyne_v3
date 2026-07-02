@@ -34,6 +34,29 @@ type combinedStubProvider struct {
 	reconnectCalls []string
 }
 
+type combinedResponseGroupStub struct {
+	*combinedStubProvider
+	groups     []contracts.ResponseGroup
+	groupCalls int
+}
+
+func (s *combinedResponseGroupStub) ListResponseGroups(context.Context) ([]contracts.ResponseGroup, error) {
+	s.groupCalls++
+	return append([]contracts.ResponseGroup(nil), s.groups...), nil
+}
+
+func (s *combinedResponseGroupStub) AssignResponseGroup(context.Context, models.Alarm, string) error {
+	return nil
+}
+
+func (s *combinedResponseGroupStub) NotifyGroupArrived(context.Context, models.Alarm) error {
+	return nil
+}
+
+func (s *combinedResponseGroupStub) CancelResponseGroup(context.Context, models.Alarm) error {
+	return nil
+}
+
 func (s *combinedStubProvider) GetObjects() []models.Object {
 	return append([]models.Object(nil), s.objects...)
 }
@@ -160,6 +183,49 @@ func TestCombinedDataProvider_MergesObjectsAndAlarms(t *testing.T) {
 	}
 	if alarms[0].ObjectID != secondaryObjID {
 		t.Fatalf("latest alarm should be CASL alarm")
+	}
+}
+
+func TestCombinedDataProvider_ListResponseGroupsForAlarmQueriesOnlyOwner(t *testing.T) {
+	t.Parallel()
+
+	bridge := &combinedResponseGroupStub{
+		combinedStubProvider: &combinedStubProvider{},
+		groups: []contracts.ResponseGroup{
+			{ID: "bridge-1", Name: "МГР МІСТ"},
+		},
+	}
+	casl := &combinedResponseGroupStub{
+		combinedStubProvider: &combinedStubProvider{},
+		groups: []contracts.ResponseGroup{
+			{ID: "casl-1", Name: "МГР CASL"},
+		},
+	}
+	provider := NewMultiSourceDataProvider(
+		ProviderSource{
+			Name:         "bridge",
+			Provider:     bridge,
+			OwnsObjectID: func(id int) bool { return !ids.IsCASLObjectID(id) },
+		},
+		ProviderSource{
+			Name:         "casl",
+			Provider:     casl,
+			OwnsObjectID: ids.IsCASLObjectID,
+		},
+	)
+
+	groups, err := provider.ListResponseGroupsForAlarm(context.Background(), models.Alarm{ObjectID: 101})
+	if err != nil {
+		t.Fatalf("ListResponseGroupsForAlarm() error = %v", err)
+	}
+	if len(groups) != 1 || groups[0].ID != "bridge-1" {
+		t.Fatalf("groups = %+v, want bridge group", groups)
+	}
+	if bridge.groupCalls != 1 || casl.groupCalls != 0 {
+		t.Fatalf("group calls: bridge=%d casl=%d", bridge.groupCalls, casl.groupCalls)
+	}
+	if groups[0].Source != contracts.FrontendSourceBridge {
+		t.Fatalf("group source = %q, want bridge", groups[0].Source)
 	}
 }
 

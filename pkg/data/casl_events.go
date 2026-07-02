@@ -692,7 +692,7 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 			deviceType = strings.TrimSpace(ctxItem.DeviceType)
 		}
 
-		details := buildCASLUserActionDetails(row, dictMap)
+		details := buildCASLUserActionDetails(row, dictMap, users)
 		if details == "" && isCASLPPKMessageSource(sourceType) {
 			details = buildCASLPPKEventDetails(row, translator, dictMap, deviceType, lineInfos, users)
 		}
@@ -2527,7 +2527,7 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 		contactID := strings.TrimSpace(row.ContactID)
 		sourceType := effectiveCASLSourceType(row)
 
-		details := buildCASLUserActionDetails(row, dictMap)
+		details := buildCASLUserActionDetails(row, dictMap, users)
 		if details == "" && isCASLPPKMessageSource(sourceType) {
 			details = buildCASLPPKEventDetails(row, translator, dictMap, deviceType, lineInfos, users)
 		}

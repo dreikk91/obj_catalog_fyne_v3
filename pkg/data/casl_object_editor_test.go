@@ -589,7 +589,13 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 	if err := provider.CreateCASLRoom(ctx, contracts.CASLRoomCreate{ObjID: "29", Name: "New room"}); err != nil {
 		t.Fatalf("CreateCASLRoom failed: %v", err)
 	}
-	if err := provider.UpdateCASLDevice(ctx, contracts.CASLDeviceUpdate{DeviceID: "28", Number: 1007, DeviceType: "TYPE_DEVICE_Ajax"}); err != nil {
+	if err := provider.UpdateCASLDevice(ctx, contracts.CASLDeviceUpdate{
+		DeviceID:   "28",
+		Number:     1007,
+		DeviceType: "TYPE_DEVICE_Ajax",
+		SIM1:       "380753163889",
+		SIM2:       "093 123 45 67",
+	}); err != nil {
 		t.Fatalf("UpdateCASLDevice failed: %v", err)
 	}
 	lineID := int64(213)
@@ -643,6 +649,9 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 		LastName:  "Нове",
 		FirstName: "Імя",
 		Role:      "IN_CHARGE",
+		PhoneNumbers: []contracts.CASLPhoneNumber{
+			{Active: true, Number: "380673447485"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("CreateCASLUser failed: %v", err)
@@ -676,6 +685,12 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 	if got := strings.TrimSpace(asString(payloads["update_grd_object"]["obj_id"])); got != "29" {
 		t.Fatalf("unexpected obj_id in update_grd_object: %q", got)
 	}
+	if got := strings.TrimSpace(asString(payloads["update_device"]["sim1"])); got != "+38 (075) 316-38-89" {
+		t.Fatalf("unexpected SIM1 in update_device: %q", got)
+	}
+	if got := strings.TrimSpace(asString(payloads["update_device"]["sim2"])); got != "+38 (093) 123-45-67" {
+		t.Fatalf("unexpected SIM2 in update_device: %q", got)
+	}
 	if got := strings.TrimSpace(asString(payloads["upd_priority_user_in_room"]["obj_id"])); got != "29" {
 		t.Fatalf("unexpected obj_id in upd_priority_user_in_room: %q", got)
 	}
@@ -687,6 +702,14 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 	}
 	if got := strings.TrimSpace(asString(payloads["create_image"]["image_type"])); got != "png" {
 		t.Fatalf("unexpected image_type in create_image: %q", got)
+	}
+	phoneRows, ok := payloads["create_user"]["phone_numbers"].([]any)
+	if !ok || len(phoneRows) != 1 {
+		t.Fatalf("unexpected phone_numbers in create_user: %#v", payloads["create_user"]["phone_numbers"])
+	}
+	phoneRow, ok := phoneRows[0].(map[string]any)
+	if !ok || strings.TrimSpace(asString(phoneRow["number"])) != "+38 (067) 344-74-85" {
+		t.Fatalf("unexpected phone number in create_user: %#v", phoneRows[0])
 	}
 	if got := strings.TrimSpace(asString(payloads["delete_image"]["image_id"])); got != "381" {
 		t.Fatalf("unexpected image_id in delete_image: %q", got)
@@ -779,8 +802,8 @@ func TestCASLProvider_ObjectEditorCreateFlow(t *testing.T) {
 		DeviceType:   "TYPE_DEVICE_Ajax",
 		Timeout:      3600,
 		TechnicianID: "281",
-		SIM1:         "+38 (067) 123-45-67",
-		SIM2:         "+38 (093) 123-45-67",
+		SIM1:         "380671234567",
+		SIM2:         "+380931234567",
 	})
 	if err != nil {
 		t.Fatalf("CreateCASLDevice failed: %v", err)
@@ -797,6 +820,12 @@ func TestCASLProvider_ObjectEditorCreateFlow(t *testing.T) {
 	}
 	if got := parseCASLAnyInt(payloads["create_device"]["number"]); got != 9998 {
 		t.Fatalf("unexpected number in create_device: %d", got)
+	}
+	if got := strings.TrimSpace(asString(payloads["create_device"]["sim1"])); got != "+38 (067) 123-45-67" {
+		t.Fatalf("unexpected SIM1 in create_device: %q", got)
+	}
+	if got := strings.TrimSpace(asString(payloads["create_device"]["sim2"])); got != "+38 (093) 123-45-67" {
+		t.Fatalf("unexpected SIM2 in create_device: %q", got)
 	}
 	if got := strings.TrimSpace(asString(payloads["created_new_device"]["device_number"])); got != "9998" {
 		t.Fatalf("unexpected device_number in created_new_device: %q", got)

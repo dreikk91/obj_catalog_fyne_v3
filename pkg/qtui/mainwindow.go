@@ -275,9 +275,6 @@ func (mw *MainWindow) tableRegistry() map[string]*qt.QTableView {
 	if mw.objectList != nil {
 		tables["objects"] = mw.objectList.table
 	}
-	if mw.alarmPanel != nil {
-		tables["alarms"] = mw.alarmPanel.table
-	}
 	if mw.eventLog != nil {
 		tables["events"] = mw.eventLog.table
 	}
@@ -291,6 +288,9 @@ func (mw *MainWindow) tableRegistry() map[string]*qt.QTableView {
 
 func (mw *MainWindow) treeRegistry() map[string]*qt.QTreeView {
 	trees := map[string]*qt.QTreeView{}
+	if mw.alarmPanel != nil {
+		trees["alarms"] = mw.alarmPanel.table
+	}
 	if mw.workArea != nil {
 		trees["object_zones"] = mw.workArea.zonesTree
 	}

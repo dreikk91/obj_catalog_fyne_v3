@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	qt "github.com/mappu/miqt/qt6"
+
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
 )
@@ -93,6 +95,108 @@ func TestAlarmResponseHistoryHTMLShowsEmptyState(t *testing.T) {
 	html := alarmResponseHistoryHTML(models.Alarm{}, nil)
 	if !strings.Contains(html, "Додаткових подій кейсу немає") {
 		t.Fatalf("empty history HTML = %q", html)
+	}
+}
+
+func TestAlarmMessageHistoryTreeRowSeparatesColumns(t *testing.T) {
+	msg := models.AlarmMsg{
+		Time:      time.Date(2026, 7, 2, 10, 21, 58, 0, time.Local),
+		Code:      "GRD_OBJ_FINISH",
+		ContactID: "401",
+		Number:    7,
+		Details:   "Завершення відпрацювання тривоги",
+		IsAlarm:   true,
+	}
+
+	row := alarmMessageHistoryTreeRow(msg, "#111111", "#ffffff")
+
+	if row.Time != "02.07.2026 10:21:58" {
+		t.Fatalf("row.Time = %q", row.Time)
+	}
+	if row.Event != "Тривога — Завершення відпрацювання тривоги" {
+		t.Fatalf("row.Event = %q", row.Event)
+	}
+	if row.Context != "GRD_OBJ_FINISH · CID 401" || row.Zone != "7" {
+		t.Fatalf("unexpected context columns: %+v", row)
+	}
+}
+
+func TestHistoryTreeCountLabelUsesUkrainianPlural(t *testing.T) {
+	tests := map[int]string{
+		1:  "1 подія",
+		2:  "2 події",
+		5:  "5 подій",
+		11: "11 подій",
+		21: "21 подія",
+	}
+	for count, want := range tests {
+		if got := historyTreeCountLabel(count); got != want {
+			t.Fatalf("historyTreeCountLabel(%d) = %q, want %q", count, got, want)
+		}
+	}
+}
+
+func TestCaseHistorySplitterSizesMakesHistoryVisible(t *testing.T) {
+	got := caseHistorySplitterSizes([]int{900, 0})
+	if len(got) != 2 || got[0] != 600 || got[1] != 300 {
+		t.Fatalf("caseHistorySplitterSizes() = %v, want [600 300]", got)
+	}
+
+	got = caseHistorySplitterSizes(nil)
+	if len(got) != 2 || got[1] <= 0 {
+		t.Fatalf("fallback splitter sizes must expose history: %v", got)
+	}
+}
+
+func TestAlarmPanelAlarmAtIndexReturnsExactTreeChild(t *testing.T) {
+	model := qt.NewQStandardItemModel2(0, 1)
+	parentItem := newReadOnlyItem("Об'єкт")
+	parentItem.SetData(qt.NewQVariant14("bridge:101"), int(qt.UserRole))
+	parentItem.SetData(qt.NewQVariant4(0), int(qt.UserRole)+1)
+	childItem := newReadOnlyItem("Тривога 2")
+	childItem.SetData(qt.NewQVariant14("bridge:101"), int(qt.UserRole))
+	childItem.SetData(qt.NewQVariant4(2), int(qt.UserRole)+1)
+	parentItem.AppendRowWithItem(childItem)
+	model.AppendRowWithItem(parentItem)
+
+	primary := models.Alarm{ID: 1, ObjectID: 101}
+	exact := models.Alarm{ID: 2, ObjectID: 101, ZoneNumber: 7}
+	panel := &AlarmPanel{
+		model:      model,
+		alarmsByID: map[int]models.Alarm{1: primary, 2: exact},
+		groupsByKey: map[string]alarmGroup{
+			"bridge:101": {Key: "bridge:101", Primary: primary, Alarms: []models.Alarm{primary, exact}},
+		},
+	}
+
+	parentIndex := parentItem.Index()
+	childIndex := model.Index(0, 0, parentIndex)
+	got, ok := panel.alarmAtIndex(childIndex)
+	if !ok || got.ID != 2 || got.ZoneNumber != 7 {
+		t.Fatalf("alarmAtIndex(child) = %+v, %v; want exact alarm 2", got, ok)
+	}
+
+	got, ok = panel.alarmAtIndex(parentIndex)
+	if !ok || got.ID != 1 {
+		t.Fatalf("alarmAtIndex(parent) = %+v, %v; want primary alarm 1", got, ok)
+	}
+}
+
+func TestAlarmTreeChildValuesShowsEventDetails(t *testing.T) {
+	alarm := models.Alarm{
+		ObjectID:     101,
+		ZoneNumber:   7,
+		Type:         models.AlarmFire,
+		Details:      "Пожежа у серверній",
+		IsInProgress: true,
+		InProgressBy: "Оператор",
+	}
+	values := alarmTreeChildValues(alarm)
+	if len(values) != len(alarmGroupHeaders()) {
+		t.Fatalf("child columns = %d, want %d", len(values), len(alarmGroupHeaders()))
+	}
+	if values[2] != "↳ Зона 7" || !strings.Contains(values[3], "Пожежа у серверній") || values[4] != "Оператор" {
+		t.Fatalf("unexpected child values: %v", values)
 	}
 }
 

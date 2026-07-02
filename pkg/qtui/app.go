@@ -334,6 +334,13 @@ func (a *App) ShowAlarmResponseDialog(
 	return ShowAlarmResponseDialog(a.mainWindow.QWidget, alarm, groups, history)
 }
 
+func (a *App) SetAlarmResponseLoading(alarmID int, loading bool) {
+	if a == nil || a.mainWindow == nil || a.mainWindow.alarmPanel == nil {
+		return
+	}
+	a.mainWindow.alarmPanel.SetResponseLoading(alarmID, loading)
+}
+
 func (a *App) ShowInfo(title string, message string) {
 	if a == nil || a.mainWindow == nil {
 		return

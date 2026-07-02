@@ -5,6 +5,7 @@ package qtui
 import (
 	"fmt"
 	"image/color"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -709,6 +710,62 @@ func addTableCopyActions(menu *qt.QMenu, table *qt.QTableView, index *qt.QModelI
 	})
 }
 
+func addTreeColumnActions(menu *qt.QMenu, key string, tree *qt.QTreeView, prefs config.Preferences, markSized func(), clearSized func()) {
+	if menu == nil || tree == nil {
+		return
+	}
+	autofit := menu.AddActionWithText("Підігнати колонки")
+	autofit.OnTriggered(func() {
+		resizeTreeToContentsWithMinimums(key, tree)
+		if markSized != nil {
+			markSized()
+		}
+		saveTreeColumnPrefs(key, tree, prefs)
+	})
+	reset := menu.AddActionWithText("Скинути ширини колонок")
+	reset.OnTriggered(func() {
+		if prefs != nil {
+			prefs.SetString(prefQtTablePrefix+key+".widths", "")
+		}
+		if clearSized != nil {
+			clearSized()
+		}
+		resizeTreeToContentsWithMinimums(key, tree)
+	})
+}
+
+func addTreeCopyActions(menu *qt.QMenu, tree *qt.QTreeView, index *qt.QModelIndex) {
+	if menu == nil || tree == nil || index == nil || !index.IsValid() {
+		return
+	}
+	cellAction := menu.AddActionWithText("Копіювати клітинку")
+	cellAction.OnTriggered(func() {
+		setClipboardText(tableCellText(index))
+	})
+	rowAction := menu.AddActionWithText("Копіювати рядок")
+	rowAction.OnTriggered(func() {
+		setClipboardText(treeRowText(tree, index))
+	})
+}
+
+func treeRowText(tree *qt.QTreeView, rowIndex *qt.QModelIndex) string {
+	if tree == nil || tree.Model() == nil || rowIndex == nil || !rowIndex.IsValid() {
+		return ""
+	}
+	parent := rowIndex.Parent()
+	count := tree.Model().ColumnCount(parent)
+	values := make([]string, 0, count)
+	for column := 0; column < count; column++ {
+		index := tree.Model().Index(rowIndex.Row(), column, parent)
+		if index == nil || !index.IsValid() {
+			continue
+		}
+		values = append(values, strings.TrimSpace(index.DataWithRole(int(qt.DisplayRole)).ToString()))
+	}
+	runtime.KeepAlive(parent)
+	return strings.Join(values, "\t")
+}
+
 func tableCellText(index *qt.QModelIndex) string {
 	if index == nil || !index.IsValid() {
 		return ""
@@ -738,6 +795,13 @@ func saveTableColumnPrefs(key string, table *qt.QTableView, prefs config.Prefere
 		return
 	}
 	prefs.SetString(prefQtTablePrefix+key+".widths", encodeSizes(normalizedColumnWidths(key, captureTableColumnWidths(table))))
+}
+
+func saveTreeColumnPrefs(key string, tree *qt.QTreeView, prefs config.Preferences) {
+	if prefs == nil || tree == nil {
+		return
+	}
+	prefs.SetString(prefQtTablePrefix+key+".widths", encodeSizes(normalizedColumnWidths(key, captureTreeColumnWidths(tree))))
 }
 
 func maxInt(a int, b int) int {

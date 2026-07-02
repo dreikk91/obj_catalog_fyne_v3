@@ -1150,7 +1150,7 @@ func (p *CASLCloudProvider) updateRealtimeAlarmsFromRows(ctx context.Context, ro
 			_, isCustomDeviceType = customDeviceTypes[strings.ToUpper(deviceType)]
 		}
 
-		details := buildCASLUserActionDetails(row, dictMap)
+		details := buildCASLUserActionDetails(row, dictMap, users)
 		if details == "" {
 			details = decodeCASLEventDescription(nil, dictMap, row.Code, row.ContactID, int(row.Number), deviceType)
 		}

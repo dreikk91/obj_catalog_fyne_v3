@@ -1,0 +1,10 @@
+prefix=D:/msys64/ucrt64/qt6-static
+libdir=${prefix}/lib
+includedir=${prefix}/include/qt6
+
+Name: Qt6 Widgets
+Description: Qt 6 Widgets static library
+Version: 6.11.1
+Requires: Qt6Gui Qt6Core
+Libs: -L${libdir} -lQt6Widgets
+Cflags: -I${includedir}/QtWidgets -I${includedir} -DQT_WIDGETS_LIB

@@ -1,0 +1,10 @@
+prefix=D:/msys64/ucrt64/qt6-static
+libdir=${prefix}/lib
+includedir=${prefix}/include/qt6
+
+Name: Qt6 Core
+Description: Qt 6 Core static library
+Version: 6.11.1
+Requires: Qt6Platform
+Libs: -L${libdir} -lQt6Core
+Cflags: -I${includedir}/QtCore -I${includedir} -DQT_CORE_LIB

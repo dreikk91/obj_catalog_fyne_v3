@@ -1,0 +1,10 @@
+prefix=D:/msys64/ucrt64/qt6-static
+libdir=${prefix}/lib
+includedir=${prefix}/include/qt6
+
+Name: Qt6 Gui
+Description: Qt 6 Gui static library
+Version: 6.11.1
+Requires: Qt6Core
+Libs: -L${libdir} -lQt6Gui
+Cflags: -I${includedir}/QtGui -I${includedir} -DQT_GUI_LIB

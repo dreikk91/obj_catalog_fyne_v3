@@ -971,6 +971,7 @@ func (s *settingsDialogState) buildUIConfigFromForm() config.UIConfig {
 		FontSizeAlarms:         parseFloat32(s.fontAlmEntry.Text),
 		ShowBottomAlarmJournal: s.bottomAlarmJournalCheck.Checked,
 		ShowBottomEventJournal: s.bottomEventJournalCheck.Checked,
+		AllowDetachedJournals:  config.LoadUIConfig(s.pref).AllowDetachedJournals,
 		ExportDir:              strings.TrimSpace(s.exportDirEntry.Text),
 		EventLogLimit:          parseInt(s.eventLimitEntry.Text),
 		ObjectLogLimit:         parseInt(s.objectLimitEntry.Text),

@@ -138,14 +138,27 @@ func DraftImage(raw string) (string, string, bool) {
 		return "", "", false
 	}
 	header := strings.ToLower(raw[:comma])
-	imageType := "jpg"
-	for _, candidate := range []string{"png", "webp", "gif", "bmp", "svg"} {
-		if strings.Contains(header, "image/"+candidate) {
-			imageType = candidate
-			break
-		}
+	mimeType := strings.TrimPrefix(strings.SplitN(header, ";", 2)[0], "data:")
+	imageType, err := NormalizeImageType(mimeType)
+	if err != nil {
+		return "", "", false
 	}
 	return imageType, strings.TrimSpace(raw[comma+1:]), true
+}
+
+// NormalizeImageType validates and normalizes image types accepted by CASL.
+func NormalizeImageType(raw string) (string, error) {
+	imageType := strings.ToLower(strings.TrimSpace(raw))
+	imageType = strings.TrimPrefix(imageType, "image/")
+	imageType = strings.TrimPrefix(imageType, ".")
+	switch imageType {
+	case "jpg", "jpeg":
+		return "jpeg", nil
+	case "gif", "png", "bmp":
+		return imageType, nil
+	default:
+		return "", fmt.Errorf("CASL підтримує лише JPG, PNG, GIF і BMP")
+	}
 }
 
 // DictionaryOptions returns sorted display labels and their raw CASL values.

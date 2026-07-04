@@ -3,6 +3,7 @@
 package qtui
 
 import (
+	"encoding/base64"
 	"strconv"
 	"strings"
 
@@ -12,26 +13,29 @@ import (
 )
 
 const (
-	prefQtWindowWidth       = "qt.window.width"
-	prefQtWindowHeight      = "qt.window.height"
-	prefQtMainSplitterSizes = "qt.splitter.main.sizes"
-	prefQtTopSplitterSizes  = "qt.splitter.top.sizes"
-	prefQtTablePrefix       = "qt.table."
+	prefQtWindowWidth      = "qt.window.width"
+	prefQtWindowHeight     = "qt.window.height"
+	prefQtTopSplitterSizes = "qt.splitter.top.sizes"
+	prefQtTablePrefix      = "qt.table."
+	prefQtDockState        = "qt.window.dock_state"
 )
 
 type MainWindow struct {
 	*qt.QMainWindow
 
 	app          *App
-	mainSplitter *qt.QSplitter
 	topSplitter  *qt.QSplitter
-	bottomTabs   *qt.QTabWidget
 	persistTimer *qt.QTimer
 
-	objectList *ObjectListPanel
-	workArea   *WorkAreaPanel
-	alarmPanel *AlarmPanel
-	eventLog   *EventLogPanel
+	objectList            *ObjectListPanel
+	workArea              *WorkAreaPanel
+	alarmPanel            *AlarmPanel
+	eventLog              *EventLogPanel
+	alarmDock             *qt.QDockWidget
+	eventDock             *qt.QDockWidget
+	alarmDockAction       *qt.QAction
+	eventDockAction       *qt.QAction
+	allowDetachedJournals bool
 
 	statusLabel *qt.QLabel
 
@@ -55,9 +59,11 @@ func NewMainWindow(app *App) *MainWindow {
 	mw.restoreWindowSize()
 	mw.SetStyleSheet(NativeWindowsStyleSheet)
 
-	mw.buildMenuBar()
-	mw.buildStatusBar()
 	mw.buildLayout()
+	mw.restoreDockState()
+	mw.buildMenuBar()
+	mw.ApplyJournalDockPolicy(config.LoadUIConfig(mw.preferences()).AllowDetachedJournals)
+	mw.buildStatusBar()
 	mw.restoreTableColumnWidths()
 	mw.installTableColumnPersistence()
 	mw.registerShortcuts()
@@ -129,6 +135,27 @@ func (mw *MainWindow) buildMenuBar() {
 		}
 	})
 	viewMenu.AddSeparator()
+	if mw.alarmDock != nil {
+		toggleAlarmsAction := mw.alarmDock.ToggleViewAction()
+		toggleAlarmsAction.SetText("Показати журнал тривог")
+		viewMenu.AddAction(toggleAlarmsAction)
+		detachAlarmsAction := viewMenu.AddActionWithText("Прикріпити / відкріпити журнал тривог")
+		detachAlarmsAction.OnTriggered(func() {
+			mw.toggleDockFloating(mw.alarmDock)
+		})
+		mw.alarmDockAction = detachAlarmsAction
+	}
+	if mw.eventDock != nil {
+		toggleEventsAction := mw.eventDock.ToggleViewAction()
+		toggleEventsAction.SetText("Показати журнал подій")
+		viewMenu.AddAction(toggleEventsAction)
+		detachEventsAction := viewMenu.AddActionWithText("Прикріпити / відкріпити журнал подій")
+		detachEventsAction.OnTriggered(func() {
+			mw.toggleDockFloating(mw.eventDock)
+		})
+		mw.eventDockAction = detachEventsAction
+	}
+	viewMenu.AddSeparator()
 	viewMenu.AddActionWithText("Світла тема")
 	viewMenu.AddActionWithText("Темна тема")
 
@@ -164,38 +191,140 @@ func (mw *MainWindow) buildLayout() {
 	mw.alarmPanel = NewAlarmPanel(mw.app.Preferences())
 	mw.eventLog = NewEventLogPanel(mw.app.Preferences())
 	mw.alarmPanel.OnCountChanged = func(count int) {
-		mw.setBottomTabCount(0, "Тривоги", count)
+		mw.setDockCount(mw.alarmDock, "Тривоги", count)
 	}
 	mw.eventLog.OnCountChanged = func(count int) {
-		mw.setBottomTabCount(1, "Журнал подій", count)
+		mw.setDockCount(mw.eventDock, "Журнал подій", count)
 	}
 
 	mw.topSplitter = qt.NewQSplitter3(qt.Horizontal)
 	mw.topSplitter.AddWidget(mw.objectList.QWidget)
 	mw.topSplitter.AddWidget(mw.workArea.QWidget)
 	mw.topSplitter.SetSizes(mw.savedSplitterSizes(prefQtTopSplitterSizes, []int{320, 1040}))
+	mw.SetCentralWidget(mw.topSplitter.QWidget)
 
-	mw.bottomTabs = qt.NewQTabWidget2()
-	mw.bottomTabs.AddTab(mw.alarmPanel.QWidget, "Тривоги")
-	mw.bottomTabs.AddTab(mw.eventLog.QWidget, "Журнал подій")
+	dockFeatures := qt.QDockWidget__DockWidgetClosable |
+		qt.QDockWidget__DockWidgetMovable |
+		qt.QDockWidget__DockWidgetFloatable
+	mw.alarmDock = qt.NewQDockWidget4("Тривоги", mw.QWidget)
+	alarmDockName := qt.NewQAnyStringView3("alarmJournalDock")
+	mw.alarmDock.SetObjectName(*alarmDockName)
+	alarmDockName.Delete()
+	mw.alarmDock.SetFeatures(dockFeatures)
+	mw.alarmDock.SetWidget(mw.alarmPanel.QWidget)
+	disableDockDoubleClick(mw.alarmDock)
+	mw.activateDockAfterAttach(mw.alarmDock)
+	mw.AddDockWidget(qt.BottomDockWidgetArea, mw.alarmDock)
 
-	mw.mainSplitter = qt.NewQSplitter3(qt.Vertical)
-	mw.mainSplitter.AddWidget(mw.topSplitter.QWidget)
-	mw.mainSplitter.AddWidget(mw.bottomTabs.QWidget)
-	mw.mainSplitter.SetSizes(mw.savedSplitterSizes(prefQtMainSplitterSizes, []int{590, 310}))
+	mw.eventDock = qt.NewQDockWidget4("Журнал подій", mw.QWidget)
+	eventDockName := qt.NewQAnyStringView3("eventJournalDock")
+	mw.eventDock.SetObjectName(*eventDockName)
+	eventDockName.Delete()
+	mw.eventDock.SetFeatures(dockFeatures)
+	mw.eventDock.SetWidget(mw.eventLog.QWidget)
+	disableDockDoubleClick(mw.eventDock)
+	mw.activateDockAfterAttach(mw.eventDock)
+	mw.AddDockWidget(qt.BottomDockWidgetArea, mw.eventDock)
 
-	mw.SetCentralWidget(mw.mainSplitter.QWidget)
+	mw.SetDockOptions(qt.QMainWindow__AllowTabbedDocks)
+	mw.TabifyDockWidget(mw.alarmDock, mw.eventDock)
+	mw.alarmDock.Raise()
+	mw.ResizeDocks([]*qt.QDockWidget{mw.alarmDock, mw.eventDock}, []int{310, 310}, qt.Vertical)
 }
 
-func (mw *MainWindow) setBottomTabCount(index int, title string, count int) {
-	if mw == nil || mw.bottomTabs == nil {
+func disableDockDoubleClick(dock *qt.QDockWidget) {
+	if dock == nil {
+		return
+	}
+	dock.OnMouseDoubleClickEvent(func(_ func(event *qt.QMouseEvent), event *qt.QMouseEvent) {
+		if event != nil {
+			event.Accept()
+		}
+	})
+}
+
+func (mw *MainWindow) activateDockAfterAttach(dock *qt.QDockWidget) {
+	if mw == nil || dock == nil {
+		return
+	}
+	dock.OnTopLevelChanged(func(topLevel bool) {
+		if topLevel {
+			return
+		}
+		DeferOnMainThread(func() {
+			if dock.IsFloating() {
+				return
+			}
+			dock.SetVisible(true)
+			dock.Raise()
+			dock.Update()
+			mw.Update()
+		})
+	})
+}
+
+func (mw *MainWindow) restoreDockState() {
+	prefs := mw.preferences()
+	if prefs == nil {
+		return
+	}
+	encoded := strings.TrimSpace(prefs.StringWithFallback(prefQtDockState, ""))
+	if encoded == "" {
+		return
+	}
+	state, err := base64.StdEncoding.DecodeString(encoded)
+	if err == nil {
+		mw.RestoreState(state)
+	}
+}
+
+func (mw *MainWindow) setDockCount(dock *qt.QDockWidget, title string, count int) {
+	if mw == nil || dock == nil {
 		return
 	}
 	if count > 0 {
-		mw.bottomTabs.SetTabText(index, title+" ("+strconv.Itoa(count)+")")
+		dock.SetWindowTitle(title + " (" + strconv.Itoa(count) + ")")
 		return
 	}
-	mw.bottomTabs.SetTabText(index, title)
+	dock.SetWindowTitle(title)
+}
+
+func (mw *MainWindow) toggleDockFloating(dock *qt.QDockWidget) {
+	if mw == nil || dock == nil || !mw.allowDetachedJournals {
+		return
+	}
+	dock.SetVisible(true)
+	dock.SetFloating(!dock.IsFloating())
+	dock.Raise()
+}
+
+// ApplyJournalDockPolicy enables or disables floating journal windows.
+func (mw *MainWindow) ApplyJournalDockPolicy(allowDetached bool) {
+	if mw == nil {
+		return
+	}
+	mw.allowDetachedJournals = allowDetached
+
+	features := qt.QDockWidget__DockWidgetClosable
+	if allowDetached {
+		features |= qt.QDockWidget__DockWidgetMovable | qt.QDockWidget__DockWidgetFloatable
+	}
+	for _, dock := range []*qt.QDockWidget{mw.alarmDock, mw.eventDock} {
+		if dock == nil {
+			continue
+		}
+		if !allowDetached && dock.IsFloating() {
+			dock.SetFloating(false)
+			dock.Raise()
+		}
+		dock.SetFeatures(features)
+	}
+	for _, action := range []*qt.QAction{mw.alarmDockAction, mw.eventDockAction} {
+		if action != nil {
+			action.SetVisible(allowDetached)
+			action.SetEnabled(allowDetached)
+		}
+	}
 }
 
 func (mw *MainWindow) registerShortcuts() {
@@ -261,11 +390,11 @@ func (mw *MainWindow) persistWindowState() {
 		prefs.SetInt(prefQtWindowWidth, size.Width())
 		prefs.SetInt(prefQtWindowHeight, size.Height())
 	}
-	if mw.mainSplitter != nil {
-		prefs.SetString(prefQtMainSplitterSizes, encodeSizes(mw.mainSplitter.Sizes()))
-	}
 	if mw.topSplitter != nil {
 		prefs.SetString(prefQtTopSplitterSizes, encodeSizes(mw.topSplitter.Sizes()))
+	}
+	if state := mw.SaveState(); len(state) > 0 {
+		prefs.SetString(prefQtDockState, base64.StdEncoding.EncodeToString(state))
 	}
 	mw.persistTableColumnWidths()
 }

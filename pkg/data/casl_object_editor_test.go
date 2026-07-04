@@ -605,6 +605,9 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 	if err := provider.CreateCASLDeviceLine(ctx, contracts.CASLDeviceLineMutation{DeviceID: "28", LineNumber: 6, LineType: "EMPTY"}); err != nil {
 		t.Fatalf("CreateCASLDeviceLine failed: %v", err)
 	}
+	if err := provider.DeleteCASLDeviceLine(ctx, "28", 7); err != nil {
+		t.Fatalf("DeleteCASLDeviceLine failed: %v", err)
+	}
 	if err := provider.AddCASLLineToRoom(ctx, contracts.CASLLineToRoomBinding{ObjID: "29", DeviceID: "28", RoomID: "36", LineNumber: 5}); err != nil {
 		t.Fatalf("AddCASLLineToRoom failed: %v", err)
 	}
@@ -620,7 +623,7 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 	if err := provider.CreateCASLImage(ctx, contracts.CASLImageCreateRequest{
 		ObjID:     "29",
 		RoomID:    "36",
-		ImageType: "png",
+		ImageType: "jpg",
 		ImageData: "ZmFrZQ==",
 	}); err != nil {
 		t.Fatalf("CreateCASLImage failed: %v", err)
@@ -667,6 +670,7 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 		"update_device",
 		"update_device_line",
 		"create_device_line",
+		"delete_device_line",
 		"add_line_to_room",
 		"remove_line_from_room",
 		"add_user_to_room",
@@ -700,7 +704,7 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 	if got := strings.TrimSpace(asString(payloads["create_image"]["room_id"])); got != "36" {
 		t.Fatalf("unexpected room_id in create_image: %q", got)
 	}
-	if got := strings.TrimSpace(asString(payloads["create_image"]["image_type"])); got != "png" {
+	if got := strings.TrimSpace(asString(payloads["create_image"]["image_type"])); got != "jpeg" {
 		t.Fatalf("unexpected image_type in create_image: %q", got)
 	}
 	phoneRows, ok := payloads["create_user"]["phone_numbers"].([]any)
@@ -716,6 +720,18 @@ func TestCASLProvider_ObjectEditorMutations(t *testing.T) {
 	}
 	if got := strings.TrimSpace(asString(payloads["create_device_line"]["line_type"])); got != "EMPTY" {
 		t.Fatalf("unexpected line_type in create_device_line: %q", got)
+	}
+	if got := parseCASLAnyInt(payloads["update_device_line"]["line_id"]); got != 213 {
+		t.Fatalf("unexpected line_id in update_device_line: %d", got)
+	}
+	if got := parseCASLAnyInt(payloads["update_device_line"]["line_number"]); got != 5 {
+		t.Fatalf("unexpected line_number in update_device_line: %d", got)
+	}
+	if got := strings.TrimSpace(asString(payloads["delete_device_line"]["device_id"])); got != "28" {
+		t.Fatalf("unexpected device_id in delete_device_line: %q", got)
+	}
+	if got := parseCASLAnyInt(payloads["delete_device_line"]["line_number"]); got != 7 {
+		t.Fatalf("unexpected line_number in delete_device_line: %d", got)
 	}
 }
 

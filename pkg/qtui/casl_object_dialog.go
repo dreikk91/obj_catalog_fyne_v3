@@ -824,6 +824,26 @@ func (s *caslObjectDialogState) saveExisting(ctx context.Context) (int64, error)
 			if err := s.provider.CreateCASLDeviceLine(ctx, mutation); err != nil {
 				return 0, fmt.Errorf("зона #%d: %w", line.LineNumber, err)
 			}
+		} else if originalLine.LineNumber != line.LineNumber {
+			originalRoomID := caslRoomIDForLine(s.original.Rooms, originalLine.LineNumber)
+			if originalRoomID == "" {
+				originalRoomID = strings.TrimSpace(originalLine.RoomID)
+			}
+			if originalRoomID != "" {
+				if err := s.provider.RemoveCASLLineFromRoom(ctx, contracts.CASLLineToRoomBinding{
+					ObjID: object.ObjID, DeviceID: device.DeviceID,
+					LineNumber: originalLine.LineNumber, RoomID: originalRoomID,
+				}); err != nil {
+					return 0, fmt.Errorf("відв'язка зони #%d: %w", originalLine.LineNumber, err)
+				}
+			}
+			if err := s.provider.DeleteCASLDeviceLine(ctx, device.DeviceID, originalLine.LineNumber); err != nil {
+				return 0, fmt.Errorf("видалення зони #%d: %w", originalLine.LineNumber, err)
+			}
+			mutation.LineID = nil
+			if err := s.provider.CreateCASLDeviceLine(ctx, mutation); err != nil {
+				return 0, fmt.Errorf("створення зони #%d: %w", line.LineNumber, err)
+			}
 		} else if !caslLineDefinitionEqual(originalLine, line) {
 			if err := s.provider.UpdateCASLDeviceLine(ctx, mutation); err != nil {
 				return 0, fmt.Errorf("зона #%d: %w", line.LineNumber, err)
@@ -865,13 +885,15 @@ func (s *caslObjectDialogState) saveExisting(ctx context.Context) (int64, error)
 				originalRoomID = strings.TrimSpace(originalLine.RoomID)
 			}
 		}
-		bindingChanged := !existed || originalRoomID != desiredRoomID || originalLineNumber != line.LineNumber
+		lineRenumbered := existed && originalLineNumber != line.LineNumber
+		bindingChanged := !existed || originalRoomID != desiredRoomID || lineRenumbered
 		if !bindingChanged {
 			continue
 		}
-		if originalRoomID != "" {
+		if originalRoomID != "" && !lineRenumbered {
 			if err := s.provider.RemoveCASLLineFromRoom(ctx, contracts.CASLLineToRoomBinding{
-				ObjID: object.ObjID, DeviceID: device.DeviceID, LineNumber: originalLineNumber, RoomID: originalRoomID,
+				ObjID: object.ObjID, DeviceID: device.DeviceID,
+				LineNumber: originalLineNumber, RoomID: originalRoomID,
 			}); err != nil {
 				return 0, fmt.Errorf("відв'язка зони #%d: %w", originalLineNumber, err)
 			}
@@ -880,7 +902,8 @@ func (s *caslObjectDialogState) saveExisting(ctx context.Context) (int64, error)
 			continue
 		}
 		if err := s.provider.AddCASLLineToRoom(ctx, contracts.CASLLineToRoomBinding{
-			ObjID: object.ObjID, DeviceID: device.DeviceID, LineNumber: line.LineNumber, RoomID: desiredRoomID,
+			ObjID: object.ObjID, DeviceID: device.DeviceID,
+			LineNumber: line.LineNumber, RoomID: desiredRoomID,
 		}); err != nil {
 			return 0, fmt.Errorf("прив'язка зони #%d: %w", line.LineNumber, err)
 		}
@@ -1487,13 +1510,9 @@ func (s *caslObjectDialogState) addImage() {
 		return
 	}
 	imageType := strings.TrimPrefix(strings.ToLower(filepath.Ext(filename)), ".")
-	if imageType == "jpeg" {
-		imageType = "jpg"
-	}
-	switch imageType {
-	case "jpg", "png", "webp", "gif", "bmp":
-	default:
-		s.showError(fmt.Errorf("підтримуються JPG, PNG, WEBP, GIF і BMP"))
+	imageType, err = caslobject.NormalizeImageType(imageType)
+	if err != nil {
+		s.showError(err)
 		return
 	}
 	images := append(slices.Clone(s.currentImages()), "data:image/"+imageType+";base64,"+base64.StdEncoding.EncodeToString(body))

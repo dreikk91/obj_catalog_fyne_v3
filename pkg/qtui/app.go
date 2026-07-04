@@ -178,12 +178,21 @@ func (a *App) SetDataProvider(provider contracts.DataProvider) {
 }
 
 func (a *App) Run() int {
-	a.ApplyFontSizes(config.LoadUIConfig(a.preferences))
+	a.ApplyUIConfig(config.LoadUIConfig(a.preferences))
 	a.mainWindow.Show()
 	if a.OnStarted != nil {
 		a.OnStarted()
 	}
 	return qt.QApplication_Exec()
+}
+
+// ApplyUIConfig applies interface settings that can change at runtime.
+func (a *App) ApplyUIConfig(uiCfg config.UIConfig) {
+	if a == nil || a.mainWindow == nil {
+		return
+	}
+	a.ApplyFontSizes(uiCfg)
+	a.mainWindow.ApplyJournalDockPolicy(uiCfg.AllowDetachedJournals)
 }
 
 // ApplyFontSizes applies font size settings from UIConfig to all panel tables.
@@ -244,6 +253,7 @@ func (a *App) ShowSettings() {
 		return
 	}
 	ShowSettingsDialog(a.mainWindow.QWidget, a.preferences, func(dbCfg config.DBConfig, uiCfg config.UIConfig) {
+		a.ApplyUIConfig(uiCfg)
 		if a.OnSettingsSaved != nil {
 			a.OnSettingsSaved(dbCfg, uiCfg)
 		}

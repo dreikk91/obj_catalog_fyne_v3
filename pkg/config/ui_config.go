@@ -7,6 +7,7 @@ const (
 	PrefFontSizeAlarms         = "ui.font_size_alarms"
 	PrefShowBottomAlarmJournal = "ui.show_bottom_alarm_journal"
 	PrefShowBottomEventJournal = "ui.show_bottom_event_journal"
+	PrefAllowDetachedJournals  = "ui.allow_detached_journals"
 	PrefExportDir              = "ui.export_dir"
 	PrefEventLogLimit          = "ui.event_log_limit"
 	PrefObjectLogLimit         = "ui.object_log_limit"
@@ -43,6 +44,7 @@ type UIConfig struct {
 	FontSizeAlarms         float32
 	ShowBottomAlarmJournal bool
 	ShowBottomEventJournal bool
+	AllowDetachedJournals  bool
 	ExportDir              string
 	EventLogLimit          int
 	ObjectLogLimit         int
@@ -113,6 +115,7 @@ func LoadUIConfig(p Preferences) UIConfig {
 		FontSizeAlarms:         fontSizeAlarms,
 		ShowBottomAlarmJournal: p.BoolWithFallback(PrefShowBottomAlarmJournal, false),
 		ShowBottomEventJournal: p.BoolWithFallback(PrefShowBottomEventJournal, false),
+		AllowDetachedJournals:  p.BoolWithFallback(PrefAllowDetachedJournals, true),
 		ExportDir:              p.StringWithFallback(PrefExportDir, ""),
 		EventLogLimit:          clampEventLimit(int(p.IntWithFallback(PrefEventLogLimit, 2000))),
 		ObjectLogLimit:         clampEventLimit(int(p.IntWithFallback(PrefObjectLogLimit, 0))),
@@ -133,6 +136,7 @@ func SaveUIConfig(p Preferences, cfg UIConfig) {
 	p.SetFloat(PrefFontSizeAlarms, float64(clampFontSize(cfg.FontSizeAlarms)))
 	p.SetBool(PrefShowBottomAlarmJournal, cfg.ShowBottomAlarmJournal)
 	p.SetBool(PrefShowBottomEventJournal, cfg.ShowBottomEventJournal)
+	p.SetBool(PrefAllowDetachedJournals, cfg.AllowDetachedJournals)
 	p.SetString(PrefExportDir, cfg.ExportDir)
 	p.SetInt(PrefEventLogLimit, clampEventLimit(cfg.EventLogLimit))
 	p.SetInt(PrefObjectLogLimit, clampEventLimit(cfg.ObjectLogLimit))

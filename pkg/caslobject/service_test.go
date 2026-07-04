@@ -127,6 +127,45 @@ func TestNormalizeUAPhone(t *testing.T) {
 	}
 }
 
+func TestNormalizeImageType(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"jpg":        "jpeg",
+		".JPEG":      "jpeg",
+		"image/jpeg": "jpeg",
+		"png":        "png",
+		"gif":        "gif",
+		"bmp":        "bmp",
+	}
+	for input, want := range tests {
+		got, err := NormalizeImageType(input)
+		if err != nil {
+			t.Fatalf("NormalizeImageType(%q) error = %v", input, err)
+		}
+		if got != want {
+			t.Fatalf("NormalizeImageType(%q) = %q, want %q", input, got, want)
+		}
+	}
+	for _, input := range []string{"webp", "svg", ""} {
+		if _, err := NormalizeImageType(input); err == nil {
+			t.Fatalf("NormalizeImageType(%q) expected error", input)
+		}
+	}
+}
+
+func TestDraftImageUsesCASLImageTypes(t *testing.T) {
+	t.Parallel()
+
+	imageType, payload, ok := DraftImage("data:image/jpg;base64,ZmFrZQ==")
+	if !ok || imageType != "jpeg" || payload != "ZmFrZQ==" {
+		t.Fatalf("DraftImage(jpg) = %q, %q, %v", imageType, payload, ok)
+	}
+	if _, _, ok := DraftImage("data:image/webp;base64,ZmFrZQ=="); ok {
+		t.Fatal("DraftImage(webp) must reject unsupported CASL image type")
+	}
+}
+
 func TestDeviceTypeOptionsUsesHumanNames(t *testing.T) {
 	dictionary := map[string]any{
 		"device_types": map[string]any{

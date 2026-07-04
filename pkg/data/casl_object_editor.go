@@ -466,6 +466,19 @@ func (p *CASLCloudProvider) CreateCASLDeviceLine(ctx context.Context, create con
 	return nil
 }
 
+func (p *CASLCloudProvider) DeleteCASLDeviceLine(ctx context.Context, deviceID string, lineNumber int) error {
+	payload := map[string]any{
+		"type":        "delete_device_line",
+		"device_id":   strings.TrimSpace(deviceID),
+		"line_number": lineNumber,
+	}
+	if _, err := p.ExecuteCASLCommand(ctx, payload, true); err != nil {
+		return err
+	}
+	p.invalidateCASLEditorCaches()
+	return nil
+}
+
 func (p *CASLCloudProvider) AddCASLLineToRoom(ctx context.Context, binding contracts.CASLLineToRoomBinding) error {
 	payload := map[string]any{
 		"type":        "add_line_to_room",
@@ -618,10 +631,14 @@ func (p *CASLCloudProvider) ReadCASLObjectBasket(ctx context.Context) ([]contrac
 }
 
 func (p *CASLCloudProvider) CreateCASLImage(ctx context.Context, request contracts.CASLImageCreateRequest) error {
+	imageType, err := caslobject.NormalizeImageType(request.ImageType)
+	if err != nil {
+		return fmt.Errorf("casl create image: %w", err)
+	}
 	payload := map[string]any{
 		"type":       "create_image",
 		"obj_id":     strings.TrimSpace(request.ObjID),
-		"image_type": strings.TrimSpace(request.ImageType),
+		"image_type": imageType,
 		"image_data": strings.TrimSpace(request.ImageData),
 	}
 	if roomID := strings.TrimSpace(request.RoomID); roomID != "" {

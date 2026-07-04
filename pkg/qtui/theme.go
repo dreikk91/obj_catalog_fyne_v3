@@ -37,6 +37,29 @@ const NativeWindowsStyleSheet = `
 		color: #E2E8F0;
 		padding: 3px 8px;
 	}
+	QDockWidget {
+		color: #263F50;
+		font-weight: 700;
+	}
+	QDockWidget::title {
+		background: #DCE5EC;
+		color: #263F50;
+		border-top: 1px solid #AEBECD;
+		border-bottom: 2px solid #1E78B4;
+		padding: 5px 8px;
+		text-align: left;
+	}
+	QDockWidget::close-button,
+	QDockWidget::float-button {
+		background: transparent;
+		border: 0;
+		border-radius: 2px;
+		padding: 2px;
+	}
+	QDockWidget::close-button:hover,
+	QDockWidget::float-button:hover {
+		background: #B8CBD9;
+	}
 
 	QTabWidget::pane {
 		border: 1px solid #AEBECD;
@@ -59,6 +82,12 @@ const NativeWindowsStyleSheet = `
 	}
 	QTabBar::tab:hover:!selected {
 		background: #EAF0F4;
+	}
+	QMainWindow > QTabBar {
+		qproperty-elideMode: ElideNone;
+	}
+	QMainWindow > QTabBar::tab {
+		min-width: 110px;
 	}
 
 	QTableView, QTreeView {

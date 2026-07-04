@@ -17,6 +17,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
+	"obj_catalog_fyne_v3/pkg/utils"
 )
 
 type AlarmPanel struct {
@@ -542,6 +543,9 @@ func (panel *AlarmPanel) applyFilters() {
 			group.Source,
 		}, group.Key, 0, textColor, rowColor)
 		panel.model.AppendRow(parentItems)
+		if !alarmGroupHasChildren(group) {
+			continue
+		}
 		for _, alarm := range group.Alarms {
 			childTextColor, childRowColor := eventRowColorsBySeverity(alarm.VisualSeverityValue(), alarm.SC1)
 			parentItems[0].AppendRow(newColoredReadOnlyAlarmRow(
@@ -563,6 +567,10 @@ func (panel *AlarmPanel) applyFilters() {
 	panel.restoreExpandedAlarmGroups(expandedGroups)
 	restoreAlarmTreeScroll(panel.table, scrollValue, scrollWasAtBottom)
 	panel.updateSelectionState()
+}
+
+func alarmGroupHasChildren(group alarmGroup) bool {
+	return len(group.Alarms) > 1
 }
 
 func alarmTreeChildValues(alarm models.Alarm) []string {
@@ -1237,8 +1245,8 @@ func (panel *AlarmPanel) showCaseHistorySourceMessages(alarm models.Alarm, sourc
 
 	rows := make([]caseHistoryTreeRow, 0, len(msgs))
 	for _, msg := range msgs {
-		textColor, rowColor := eventColorsForSC1(alarmSourceMessageSC1(msg))
-		rows = append(rows, alarmMessageHistoryTreeRow(msg, textColor, rowColor))
+		textColor, rowColor := utils.SelectColorNRGBA(alarmSourceMessageSC1(msg))
+		rows = append(rows, alarmMessageHistoryTreeRow(msg, colorToQtName(textColor), colorToQtName(rowColor)))
 	}
 	panel.setCaseHistoryTreeRows(title, rows)
 }
@@ -1255,7 +1263,7 @@ func (panel *AlarmPanel) showCaseHistoryGroup(alarm models.Alarm, group viewmode
 	rows := make([]caseHistoryTreeRow, 0, len(group.Events))
 	for _, event := range group.Events {
 		textColor, rowColor := eventRowColors(event)
-		rows = append(rows, eventHistoryTreeRow(event, colorToHTML(textColor), colorToHTML(rowColor)))
+		rows = append(rows, eventHistoryTreeRow(event, colorToQtName(textColor), colorToQtName(rowColor)))
 	}
 	panel.setCaseHistoryTreeRows(title, rows)
 }

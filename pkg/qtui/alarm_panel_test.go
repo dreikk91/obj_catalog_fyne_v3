@@ -3,6 +3,7 @@
 package qtui
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 	"time"
@@ -121,6 +122,19 @@ func TestAlarmMessageHistoryTreeRowSeparatesColumns(t *testing.T) {
 	}
 }
 
+func TestColorToQtNameProducesValidQColor(t *testing.T) {
+	name := colorToQtName(color.NRGBA{R: 255, G: 235, B: 238, A: 255})
+	got := qt.NewQColor6(name)
+	defer got.Delete()
+
+	if !got.IsValid() {
+		t.Fatalf("QColor(%q) is invalid", name)
+	}
+	if got.Red() != 255 || got.Green() != 235 || got.Blue() != 238 {
+		t.Fatalf("QColor(%q) = rgb(%d, %d, %d)", name, got.Red(), got.Green(), got.Blue())
+	}
+}
+
 func TestHistoryTreeCountLabelUsesUkrainianPlural(t *testing.T) {
 	tests := map[int]string{
 		1:  "1 подія",
@@ -197,6 +211,15 @@ func TestAlarmTreeChildValuesShowsEventDetails(t *testing.T) {
 	}
 	if values[2] != "↳ Зона 7" || !strings.Contains(values[3], "Пожежа у серверній") || values[4] != "Оператор" {
 		t.Fatalf("unexpected child values: %v", values)
+	}
+}
+
+func TestAlarmGroupHasChildrenOnlyForMultipleAlarms(t *testing.T) {
+	if alarmGroupHasChildren(alarmGroup{Alarms: []models.Alarm{{ID: 1}}}) {
+		t.Fatal("a group with one alarm must not be expandable")
+	}
+	if !alarmGroupHasChildren(alarmGroup{Alarms: []models.Alarm{{ID: 1}, {ID: 2}}}) {
+		t.Fatal("a group with multiple alarms must be expandable")
 	}
 }
 

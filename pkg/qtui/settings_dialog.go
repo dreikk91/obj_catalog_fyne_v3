@@ -61,6 +61,7 @@ type settingsDialog struct {
 	fontSizeAlarms         *qt.QDoubleSpinBox
 	showBottomAlarmJournal *qt.QCheckBox
 	showBottomEventJournal *qt.QCheckBox
+	allowDetachedJournals  *qt.QCheckBox
 	eventLogLimit          *qt.QSpinBox
 	objectLogLimit         *qt.QSpinBox
 	exportDir              *qt.QLineEdit
@@ -262,16 +263,42 @@ func (d *settingsDialog) buildInterfaceTab() *qt.QWidget {
 	form.AddRow3("Тривоги", d.showBottomAlarmJournal.QWidget)
 	d.showBottomEventJournal = qt.NewQCheckBox3("Показувати журнал у нижній панелі")
 	form.AddRow3("Журнал", d.showBottomEventJournal.QWidget)
+	d.allowDetachedJournals = qt.NewQCheckBox3("Дозволити відкріплення журналів для перенесення на інший монітор")
+	form.AddRow3("Окремі вікна", d.allowDetachedJournals.QWidget)
 	d.eventLogLimit = spinBox(0, 100000)
 	form.AddRow3("Ліміт загального журналу", d.eventLogLimit.QWidget)
 	d.objectLogLimit = spinBox(0, 100000)
 	form.AddRow3("Ліміт журналу об'єкта", d.objectLogLimit.QWidget)
 	d.exportDir = lineEdit()
-	form.AddRow3("Папка експорту", d.exportDir.QWidget)
+	d.exportDir.SetPlaceholderText("Оберіть папку для файлів експорту")
+	exportDirWidget := qt.NewQWidget2()
+	exportDirLayout := qt.NewQHBoxLayout(exportDirWidget)
+	exportDirLayout.SetContentsMargins(0, 0, 0, 0)
+	exportDirLayout.AddWidget(d.exportDir.QWidget)
+	browseExportDir := qt.NewQPushButton3("Огляд...")
+	browseExportDir.SetToolTip("Вибрати папку через File Explorer")
+	browseExportDir.OnClicked(d.chooseExportDirectory)
+	exportDirLayout.AddWidget(browseExportDir.QWidget)
+	exportDirWidget.SetLayout(exportDirLayout.QLayout)
+	form.AddRow3("Папка експорту", exportDirWidget)
 
 	layout.AddLayout(form.QLayout)
 	tab.SetLayout(layout.QLayout)
 	return tab
+}
+
+func (d *settingsDialog) chooseExportDirectory() {
+	if d == nil || d.dialog == nil || d.exportDir == nil {
+		return
+	}
+	dir := qt.QFileDialog_GetExistingDirectory3(
+		d.dialog.QWidget,
+		"Виберіть папку для файлів експорту",
+		strings.TrimSpace(d.exportDir.Text()),
+	)
+	if strings.TrimSpace(dir) != "" {
+		d.exportDir.SetText(dir)
+	}
 }
 
 func (d *settingsDialog) buildOperatorsTab() *qt.QWidget {
@@ -418,6 +445,7 @@ func (d *settingsDialog) load(dbCfg config.DBConfig, uiCfg config.UIConfig) {
 	d.fontSizeAlarms.SetValue(float64(uiCfg.FontSizeAlarms))
 	d.showBottomAlarmJournal.SetChecked(uiCfg.ShowBottomAlarmJournal)
 	d.showBottomEventJournal.SetChecked(uiCfg.ShowBottomEventJournal)
+	d.allowDetachedJournals.SetChecked(uiCfg.AllowDetachedJournals)
 	d.eventLogLimit.SetValue(uiCfg.EventLogLimit)
 	d.objectLogLimit.SetValue(uiCfg.ObjectLogLimit)
 	d.exportDir.SetText(uiCfg.ExportDir)
@@ -475,6 +503,7 @@ func (d *settingsDialog) values() (config.DBConfig, config.UIConfig) {
 	uiCfg.FontSize = uiCfg.FontSizeObjects
 	uiCfg.ShowBottomAlarmJournal = d.showBottomAlarmJournal.IsChecked()
 	uiCfg.ShowBottomEventJournal = d.showBottomEventJournal.IsChecked()
+	uiCfg.AllowDetachedJournals = d.allowDetachedJournals.IsChecked()
 	uiCfg.EventLogLimit = d.eventLogLimit.Value()
 	uiCfg.ObjectLogLimit = d.objectLogLimit.Value()
 	uiCfg.ExportDir = d.exportDir.Text()

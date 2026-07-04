@@ -62,6 +62,7 @@ func TestLoadSaveUIConfig_BottomJournals(t *testing.T) {
 		FontSizeAlarms:         17,
 		ShowBottomAlarmJournal: true,
 		ShowBottomEventJournal: true,
+		AllowDetachedJournals:  false,
 		EventLogLimit:          123,
 		ObjectLogLimit:         456,
 		BridgeAlarmHistoryMode: BridgeAlarmHistoryModeLegacy,
@@ -74,6 +75,9 @@ func TestLoadSaveUIConfig_BottomJournals(t *testing.T) {
 	if !cfg.ShowBottomEventJournal {
 		t.Fatalf("ShowBottomEventJournal = false, want true")
 	}
+	if cfg.AllowDetachedJournals {
+		t.Fatal("AllowDetachedJournals = true, want false")
+	}
 	if cfg.EventLogLimit != 123 {
 		t.Fatalf("EventLogLimit = %d, want 123", cfg.EventLogLimit)
 	}
@@ -82,5 +86,16 @@ func TestLoadSaveUIConfig_BottomJournals(t *testing.T) {
 	}
 	if cfg.BridgeAlarmHistoryMode != BridgeAlarmHistoryModeLegacy {
 		t.Fatalf("BridgeAlarmHistoryMode = %q, want %q", cfg.BridgeAlarmHistoryMode, BridgeAlarmHistoryModeLegacy)
+	}
+}
+
+func TestLoadUIConfigAllowsDetachedJournalsByDefault(t *testing.T) {
+	t.Parallel()
+
+	app := test.NewApp()
+	defer app.Quit()
+
+	if cfg := LoadUIConfig(app.Preferences()); !cfg.AllowDetachedJournals {
+		t.Fatal("AllowDetachedJournals = false, want true by default")
 	}
 }

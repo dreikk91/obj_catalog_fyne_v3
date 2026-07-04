@@ -314,6 +314,14 @@ func (p *CombinedDataProvider) CreateCASLDeviceLine(ctx context.Context, create 
 	return provider.CreateCASLDeviceLine(ctx, create)
 }
 
+func (p *CombinedDataProvider) DeleteCASLDeviceLine(ctx context.Context, deviceID string, lineNumber int) error {
+	provider, err := p.resolveAnyCASLObjectEditorProvider()
+	if err != nil {
+		return err
+	}
+	return provider.DeleteCASLDeviceLine(ctx, deviceID, lineNumber)
+}
+
 func (p *CombinedDataProvider) AddCASLLineToRoom(ctx context.Context, binding contracts.CASLLineToRoomBinding) error {
 	provider, err := p.resolveCASLObjectEditorProvider(parseCASLMutationObjectID(binding.ObjID))
 	if err != nil {

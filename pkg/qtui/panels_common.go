@@ -63,6 +63,10 @@ func colorToHTML(c color.NRGBA) string {
 	return fmt.Sprintf("rgba(%d,%d,%d,%f)", c.R, c.G, c.B, float64(c.A)/255.0)
 }
 
+func colorToQtName(c color.NRGBA) string {
+	return fmt.Sprintf("#%02X%02X%02X", c.R, c.G, c.B)
+}
+
 func htmlEscape(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")

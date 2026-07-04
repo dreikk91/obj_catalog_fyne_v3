@@ -330,6 +330,7 @@ type CASLObjectEditorProvider interface {
 	UnblockCASLDevice(ctx context.Context, deviceID string) error
 	UpdateCASLDeviceLine(ctx context.Context, update CASLDeviceLineMutation) error
 	CreateCASLDeviceLine(ctx context.Context, create CASLDeviceLineMutation) error
+	DeleteCASLDeviceLine(ctx context.Context, deviceID string, lineNumber int) error
 	AddCASLLineToRoom(ctx context.Context, binding CASLLineToRoomBinding) error
 	RemoveCASLLineFromRoom(ctx context.Context, binding CASLLineToRoomBinding) error
 	AddCASLUserToRoom(ctx context.Context, request CASLAddUserToRoomRequest) error

@@ -1,0 +1,8 @@
+prefix=D:/msys64/ucrt64/qt6-static
+includedir=${prefix}/include/qt6
+mkspecsdir=${prefix}/share/qt6/mkspecs
+
+Name: Qt6 Platform
+Description: Qt 6 platform metadata for the MSYS2 static build
+Version: 6.11.1
+Cflags: -I${mkspecsdir}/win32-g++ -I${includedir} -DWIN32 -DWIN64 -D_WIN64 -DMINGW_HAS_SECURE_API=1

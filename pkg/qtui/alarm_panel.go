@@ -26,14 +26,10 @@ type AlarmPanel struct {
 	severityFilter *qt.QComboBox
 	statusLabel    *qt.QLabel
 	criticalLabel  *qt.QLabel
-	normalLabel    *qt.QLabel
-	filteredLabel  *qt.QLabel
 	selectionLabel *qt.QLabel
 	processButton  *qt.QPushButton
 	pickButton     *qt.QPushButton
 	responseButton *qt.QPushButton
-	historyButton  *qt.QPushButton
-	hideHistoryBtn *qt.QPushButton
 	table          *qt.QTreeView
 	model          *qt.QStandardItemModel
 	vm             *viewmodels.AlarmListViewModel
@@ -41,6 +37,7 @@ type AlarmPanel struct {
 	historyTree    *qt.QTreeView
 	historyModel   *qt.QStandardItemModel
 	splitter       *qt.QSplitter
+	toolbarLayout  *qt.QGridLayout
 	dataProvider   contracts.DataProvider
 	prefs          config.Preferences
 
@@ -85,36 +82,70 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 		prefs:         prefs,
 	}
 	layout := qt.NewQVBoxLayout(panel.QWidget)
+	layout.SetContentsMargins(0, 0, 0, 0)
+	layout.SetSpacing(0)
 	panel.model = qt.NewQStandardItemModel2(0, 7)
 	panel.model.SetHorizontalHeaderLabels(alarmGroupHeaders())
 	addReadOnlyRow(panel.model, []string{"--:--", "-", "Немає активних тривог", "", "", "", ""})
 
 	header := qt.NewQFrame2()
-	header.SetStyleSheet(`
+	headerStyle := `
 		QFrame {
 			background: ` + qtSurfaceColor + `;
-			border: 1px solid ` + qtBorderColor + `;
-			border-radius: 3px;
+			border: 0;
+			border-bottom: 1px solid ` + qtBorderColor + `;
+			border-radius: 0;
 		}
-	`)
+	`
+	if isHighDPIScreen(qt.QGuiApplication_PrimaryScreen()) {
+		headerStyle += `
+			QFrame QPushButton {
+				min-height: 20px;
+				padding: 2px 7px;
+			}
+			QFrame QComboBox {
+				min-height: 20px;
+				padding: 1px 4px;
+			}
+		`
+	}
+	headerStyle += `
+		QFrame QPushButton {
+			background: #FFFFFF;
+			border: 1px solid #AEBECD;
+			border-radius: 2px;
+		}
+		QFrame QPushButton:hover {
+			background: #EAF0F4;
+			border-color: #1E78B4;
+		}
+		QFrame QPushButton:disabled {
+			background: #E5ECF1;
+			color: #8796A1;
+			border-color: #C3CFD8;
+		}
+		QFrame QComboBox {
+			background: #FFFFFF;
+			border: 1px solid #AEBECD;
+			border-radius: 2px;
+		}
+	`
+	header.SetStyleSheet(headerStyle)
 	headerLayout := qt.NewQVBoxLayout(header.QWidget)
-	headerLayout.SetContentsMargins(6, 4, 6, 4)
-	headerLayout.SetSpacing(4)
+	if isHighDPIScreen(qt.QGuiApplication_PrimaryScreen()) {
+		headerLayout.SetContentsMargins(2, 1, 2, 1)
+		headerLayout.SetSpacing(0)
+	} else {
+		headerLayout.SetContentsMargins(4, 2, 4, 2)
+		headerLayout.SetSpacing(0)
+	}
 
-	toolbar := qt.NewQHBoxLayout2()
 	panel.statusLabel = qt.NewQLabel3("Тривог немає")
-	panel.statusLabel.SetMinimumWidth(168)
+	panel.statusLabel.SetMinimumWidth(120)
 	panel.statusLabel.SetStyleSheet("font-weight: 700; color: #3D9C3B; border: 0; background: transparent;")
-	toolbar.AddWidget(panel.statusLabel.QWidget)
 
 	panel.criticalLabel = newAlarmMetricLabel("Критичні", "#C62828", "#FFEBEE")
-	panel.normalLabel = newAlarmMetricLabel("Звичайні", "#FF8F00", "#FFF3E0")
-	panel.filteredLabel = newAlarmMetricLabel("Груп", qtPrimaryColor, qtAltSurfaceColor)
 	panel.selectionLabel = newAlarmMetricLabel("Вибрано", "#3D9C3B", "#E8F5E9")
-	toolbar.AddWidget(panel.criticalLabel.QWidget)
-	toolbar.AddWidget(panel.normalLabel.QWidget)
-	toolbar.AddWidget(panel.filteredLabel.QWidget)
-	toolbar.AddWidget(panel.selectionLabel.QWidget)
 
 	panel.processButton = qt.NewQPushButton3("Відпрацювати")
 	panel.processButton.SetToolTip("Відпрацювати вибрані тривоги")
@@ -139,26 +170,9 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	panel.responseButton.OnClicked(func() {
 		panel.respondToSelectedAlarm()
 	})
-	panel.historyButton = qt.NewQPushButton3("Хронологія ▾")
-	panel.historyButton.SetToolTip("Показати хронологію вибраної групи")
-	panel.historyButton.OnClicked(func() {
-		panel.showSelectedHistory()
-	})
-	panel.hideHistoryBtn = qt.NewQPushButton3("Сховати")
-	panel.hideHistoryBtn.SetToolTip("Сховати хронологію")
-	panel.hideHistoryBtn.OnClicked(func() {
-		panel.hideCaseHistory()
-	})
 	panel.processButton.SetEnabled(false)
 	panel.pickButton.SetEnabled(false)
 	panel.responseButton.SetEnabled(false)
-	panel.historyButton.SetEnabled(false)
-	toolbar.AddWidget(panel.processButton.QWidget)
-	toolbar.AddWidget(panel.pickButton.QWidget)
-	toolbar.AddWidget(panel.responseButton.QWidget)
-	toolbar.AddWidget(panel.historyButton.QWidget)
-	toolbar.AddWidget(panel.hideHistoryBtn.QWidget)
-
 	panel.sourceFilter = qt.NewQComboBox2()
 	panel.sourceFilter.AddItems(viewmodels.BuildObjectSourceOptions(0, 0, 0, 0))
 	panel.sourceFilter.OnCurrentTextChanged(func(string) {
@@ -175,28 +189,12 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 		}
 		panel.applyFilters()
 	})
-	criticalFilterButton := qt.NewQPushButton3("Критичні")
-	criticalFilterButton.SetToolTip("Показати тільки критичні тривоги")
-	criticalFilterButton.OnClicked(func() {
-		panel.severityFilter.SetCurrentText("Критичні")
-	})
-	allFilterButton := qt.NewQPushButton3("Всі")
-	allFilterButton.SetToolTip("Показати всі тривоги")
-	allFilterButton.OnClicked(func() {
-		panel.severityFilter.SetCurrentText("Всі тривоги")
-	})
-	normalFilterButton := qt.NewQPushButton3("Звичайні")
-	normalFilterButton.SetToolTip("Показати тільки звичайні тривоги")
-	normalFilterButton.OnClicked(func() {
-		panel.severityFilter.SetCurrentText("Звичайні")
-	})
-	toolbar.AddStretch()
-	toolbar.AddWidget(criticalFilterButton.QWidget)
-	toolbar.AddWidget(allFilterButton.QWidget)
-	toolbar.AddWidget(normalFilterButton.QWidget)
-	toolbar.AddWidget(panel.sourceFilter.QWidget)
-	toolbar.AddWidget(panel.severityFilter.QWidget)
-	headerLayout.AddLayout(toolbar.QLayout)
+	panel.toolbarLayout = qt.NewQGridLayout2()
+	panel.toolbarLayout.SetContentsMargins(0, 0, 0, 0)
+	panel.toolbarLayout.SetHorizontalSpacing(4)
+	panel.toolbarLayout.SetVerticalSpacing(2)
+	headerLayout.AddLayout(panel.toolbarLayout.QLayout)
+	panel.layoutToolbar()
 
 	panel.table = qt.NewQTreeView2()
 	panel.table.SetModel(panel.model.QAbstractItemModel)
@@ -208,23 +206,11 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	panel.table.SetRootIsDecorated(true)
 	panel.table.SetItemsExpandable(true)
 	panel.table.SetAnimated(true)
+	panel.table.SetUniformRowHeights(true)
 	panel.table.SetExpandsOnDoubleClick(false)
 	panel.table.SetIndentation(20)
 	panel.table.Header().SetStretchLastSection(true)
-	panel.table.SetStyleSheet(`
-		QTreeView {
-			gridline-color: #e7e7e7;
-			selection-background-color: ` + qtPrimaryColor + `;
-			selection-color: white;
-		}
-		QHeaderView::section {
-			background: #f7f7f7;
-			border: 0;
-			border-bottom: 1px solid #d5d5d5;
-			padding: 5px;
-			font-weight: 600;
-		}
-	`)
+	panel.table.SetStyleSheet(alarmTreeStyleSheet(2))
 	panel.table.OnDoubleClicked(func(index *qt.QModelIndex) {
 		if alarm, ok := panel.alarmAtIndex(index); ok {
 			if panel.OnRespondAlarm != nil {
@@ -257,6 +243,8 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 
 	topWidget := qt.NewQWidget2()
 	topLayout := qt.NewQVBoxLayout(topWidget)
+	topLayout.SetContentsMargins(2, 0, 2, 2)
+	topLayout.SetSpacing(2)
 	topLayout.AddWidget(header.QWidget)
 	topLayout.AddWidget(panel.table.QWidget)
 	topWidget.SetLayout(topLayout.QLayout)
@@ -306,14 +294,73 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 
 func newAlarmMetricLabel(title string, color string, background string) *qt.QLabel {
 	label := qt.NewQLabel3(title + ": 0")
-	label.SetMinimumWidth(92)
+	label.SetMinimumWidth(78)
 	label.SetStyleSheet(fmt.Sprintf(
-		"font-weight: 700; color: %s; background: %s; border: 1px solid %s; border-radius: 3px; padding: 3px 6px;",
+		"font-weight: 700; color: %s; background: %s; border: 1px solid %s; border-radius: 2px; padding: 2px 4px;",
 		color,
 		background,
 		color,
 	))
 	return label
+}
+
+func (panel *AlarmPanel) toolbarWidgets() []*qt.QWidget {
+	if panel == nil {
+		return nil
+	}
+	return []*qt.QWidget{
+		panel.statusLabel.QWidget,
+		panel.criticalLabel.QWidget,
+		panel.selectionLabel.QWidget,
+		panel.responseButton.QWidget,
+		panel.processButton.QWidget,
+		panel.pickButton.QWidget,
+		panel.sourceFilter.QWidget,
+		panel.severityFilter.QWidget,
+	}
+}
+
+func (panel *AlarmPanel) layoutToolbar() {
+	if panel == nil || panel.toolbarLayout == nil {
+		return
+	}
+
+	for _, widget := range panel.toolbarWidgets() {
+		panel.toolbarLayout.RemoveWidget(widget)
+	}
+	for column := 0; column < 9; column++ {
+		panel.toolbarLayout.SetColumnStretch(column, 0)
+	}
+
+	panel.toolbarLayout.AddWidget2(panel.statusLabel.QWidget, 0, 0)
+	panel.toolbarLayout.AddWidget2(panel.criticalLabel.QWidget, 0, 1)
+	panel.toolbarLayout.AddWidget2(panel.selectionLabel.QWidget, 0, 2)
+	panel.toolbarLayout.SetColumnStretch(3, 1)
+	panel.toolbarLayout.AddWidget2(panel.responseButton.QWidget, 0, 4)
+	panel.toolbarLayout.AddWidget2(panel.processButton.QWidget, 0, 5)
+	panel.toolbarLayout.AddWidget2(panel.pickButton.QWidget, 0, 6)
+	panel.toolbarLayout.AddWidget2(panel.sourceFilter.QWidget, 0, 7)
+	panel.toolbarLayout.AddWidget2(panel.severityFilter.QWidget, 0, 8)
+}
+
+func alarmTreeStyleSheet(itemPadding int) string {
+	return fmt.Sprintf(`
+		QTreeView {
+			gridline-color: #e7e7e7;
+			selection-background-color: %s;
+			selection-color: white;
+		}
+		QTreeView::item {
+			padding: %dpx 3px;
+		}
+		QHeaderView::section {
+			background: #f7f7f7;
+			border: 0;
+			border-bottom: 1px solid #d5d5d5;
+			padding: 3px 5px;
+			font-weight: 600;
+		}
+	`, qtPrimaryColor, itemPadding)
 }
 
 func alarmGroupHeaders() []string {
@@ -690,7 +737,7 @@ func alarmGroupRowsSignature(groups []alarmGroup) string {
 	return b.String()
 }
 
-func (panel *AlarmPanel) updateRibbonStats(sourceFiltered []models.Alarm, groups []alarmGroup) {
+func (panel *AlarmPanel) updateRibbonStats(sourceFiltered []models.Alarm, _ []alarmGroup) {
 	if panel == nil {
 		return
 	}
@@ -700,8 +747,6 @@ func (panel *AlarmPanel) updateRibbonStats(sourceFiltered []models.Alarm, groups
 			criticalCount++
 		}
 	}
-	normalCount := len(sourceFiltered) - criticalCount
-	displayedCount := len(groups)
 	if panel.statusLabel != nil {
 		switch {
 		case len(sourceFiltered) == 0:
@@ -717,12 +762,6 @@ func (panel *AlarmPanel) updateRibbonStats(sourceFiltered []models.Alarm, groups
 	}
 	if panel.criticalLabel != nil {
 		panel.criticalLabel.SetText("Критичні: " + strconv.Itoa(criticalCount))
-	}
-	if panel.normalLabel != nil {
-		panel.normalLabel.SetText("Звичайні: " + strconv.Itoa(normalCount))
-	}
-	if panel.filteredLabel != nil {
-		panel.filteredLabel.SetText("Груп: " + strconv.Itoa(displayedCount))
 	}
 }
 
@@ -755,9 +794,6 @@ func (panel *AlarmPanel) updateSelectionState() {
 		} else {
 			panel.responseButton.SetText("Реагування")
 		}
-	}
-	if panel.historyButton != nil {
-		panel.historyButton.SetEnabled(selectedGroups == 1)
 	}
 }
 
@@ -954,6 +990,10 @@ func (panel *AlarmPanel) showContextMenu(pos *qt.QPoint) {
 	historyAction.OnTriggered(func() {
 		panel.showGroupHistory(group)
 	})
+	if panel.historyTree != nil && panel.historyTree.IsVisible() {
+		hideHistoryAction := menu.AddActionWithText("Сховати хронологію")
+		hideHistoryAction.OnTriggered(panel.hideCaseHistory)
+	}
 
 	menu.AddSeparator()
 	addTreeCopyActions(menu, panel.table, index)
@@ -1077,18 +1117,6 @@ func (panel *AlarmPanel) alarmTreeFirstColumnIndex(index *qt.QModelIndex) *qt.QM
 	rowIndex := panel.model.Index(index.Row(), 0, parent)
 	runtime.KeepAlive(parent)
 	return rowIndex
-}
-
-func (panel *AlarmPanel) showSelectedHistory() {
-	if panel == nil || panel.table == nil {
-		return
-	}
-	current := panel.table.SelectionModel().CurrentIndex()
-	group, ok := panel.groupAtIndex(current)
-	if !ok {
-		return
-	}
-	panel.showGroupHistory(group)
 }
 
 func (panel *AlarmPanel) showGroupHistory(group alarmGroup) {
@@ -1297,4 +1325,24 @@ func (panel *AlarmPanel) SetTableFontSize(size float32) {
 	font := panel.table.Font()
 	font.SetPointSizeF(float64(size))
 	panel.table.SetFont(font)
+	panel.table.Header().SetFont(font)
+	itemPadding := max(1, min(5, int(size/5)))
+	panel.table.SetStyleSheet(alarmTreeStyleSheet(itemPadding))
+	panel.table.DoItemsLayout()
+	panel.table.UpdateGeometry()
+	panel.table.Viewport().Update()
+	resizeTreeToContentsWithMinimums("alarms", panel.table)
+}
+
+func (panel *AlarmPanel) SetToolbarFontSize(size float32) {
+	if panel == nil {
+		return
+	}
+	size = min(size, 12)
+	for _, widget := range panel.toolbarWidgets() {
+		font := widget.Font()
+		font.SetPointSizeF(float64(size))
+		widget.SetFont(font)
+	}
+	panel.layoutToolbar()
 }

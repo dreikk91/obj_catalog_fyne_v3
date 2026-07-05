@@ -966,6 +966,8 @@ func (s *settingsDialogState) buildDBConfigFromForm() config.DBConfig {
 func (s *settingsDialogState) buildUIConfigFromForm() config.UIConfig {
 	return config.UIConfig{
 		FontSize:               parseFloat32(s.fontEntry.Text),
+		FontSizeInterface:      config.LoadUIConfig(s.pref).FontSizeInterface,
+		FontSizeObjectCard:     config.LoadUIConfig(s.pref).FontSizeObjectCard,
 		FontSizeObjects:        parseFloat32(s.fontObjEntry.Text),
 		FontSizeEvents:         parseFloat32(s.fontEvEntry.Text),
 		FontSizeAlarms:         parseFloat32(s.fontAlmEntry.Text),

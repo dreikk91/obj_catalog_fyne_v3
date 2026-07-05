@@ -200,6 +200,10 @@ func (a *App) ApplyFontSizes(uiCfg config.UIConfig) {
 	if a == nil || a.mainWindow == nil {
 		return
 	}
+	interfaceFont := qt.QApplication_Font()
+	interfaceFont.SetPointSizeF(float64(uiCfg.FontSizeInterface))
+	qt.QApplication_SetFont(interfaceFont)
+	a.mainWindow.SetFont(interfaceFont)
 	if a.mainWindow.objectList != nil {
 		a.mainWindow.objectList.SetTableFontSize(uiCfg.FontSizeObjects)
 	}
@@ -207,9 +211,11 @@ func (a *App) ApplyFontSizes(uiCfg config.UIConfig) {
 		a.mainWindow.eventLog.SetTableFontSize(uiCfg.FontSizeEvents)
 	}
 	if a.mainWindow.alarmPanel != nil {
+		a.mainWindow.alarmPanel.SetToolbarFontSize(uiCfg.FontSizeInterface)
 		a.mainWindow.alarmPanel.SetTableFontSize(uiCfg.FontSizeAlarms)
 	}
 	if a.mainWindow.workArea != nil {
+		a.mainWindow.workArea.SetCardFontSize(uiCfg.FontSizeObjectCard)
 		a.mainWindow.workArea.SetTableFontSize(uiCfg.FontSizeObjects, uiCfg.FontSizeEvents)
 	}
 }

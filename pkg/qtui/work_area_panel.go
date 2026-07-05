@@ -120,10 +120,10 @@ func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 	}
 	layout := qt.NewQVBoxLayout(panel.QWidget)
 	panel.headerName = qt.NewQLabel3("Оберіть об'єкт зі списку")
-	panel.headerName.SetStyleSheet("font-weight: 700; font-size: 15pt; color: #172B3A; padding: 2px 0;")
+	panel.headerName.SetStyleSheet("font-weight: 700; color: #172B3A; padding: 2px 0;")
 	panel.headerAddress = qt.NewQLabel3("")
 	panel.headerAddress.SetWordWrap(true)
-	panel.headerAddress.SetStyleSheet("color: " + qtMutedTextColor + "; font-size: 10pt; padding-bottom: 4px;")
+	panel.headerAddress.SetStyleSheet("color: " + qtMutedTextColor + "; padding-bottom: 4px;")
 	actionsLayout := qt.NewQHBoxLayout2()
 	editButton := qt.NewQPushButton3("Редагувати")
 	editButton.OnClicked(func() {
@@ -277,9 +277,9 @@ func (panel *WorkAreaPanel) addOverviewMetric(layout *qt.QHBoxLayout, key string
 	frameLayout := qt.NewQHBoxLayout(frame.QWidget)
 	frameLayout.SetContentsMargins(10, 5, 10, 5)
 	value := qt.NewQLabel3("0")
-	value.SetStyleSheet("font-weight: 800; font-size: 15pt; color: #172B3A; border: 0; background: transparent;")
+	value.SetStyleSheet("font-weight: 800; color: #172B3A; border: 0; background: transparent;")
 	label := qt.NewQLabel3(title)
-	label.SetStyleSheet("font-weight: 700; font-size: 8pt; color: " + qtMutedTextColor + "; border: 0; background: transparent;")
+	label.SetStyleSheet("font-weight: 700; color: " + qtMutedTextColor + "; border: 0; background: transparent;")
 	frameLayout.AddWidget(value.QWidget)
 	frameLayout.AddWidget(label.QWidget)
 	layout.AddWidget(frame.QWidget)
@@ -288,7 +288,7 @@ func (panel *WorkAreaPanel) addOverviewMetric(layout *qt.QHBoxLayout, key string
 
 func (panel *WorkAreaPanel) addOverviewFact(grid *qt.QGridLayout, row int, col int, title string, key string) {
 	titleLabel := qt.NewQLabel3(title)
-	titleLabel.SetStyleSheet("color: " + qtMutedTextColor + "; font-size: 9pt;")
+	titleLabel.SetStyleSheet("color: " + qtMutedTextColor + ";")
 	value := qt.NewQLabel3("—")
 	value.SetWordWrap(true)
 	value.SetTextInteractionFlags(qt.TextSelectableByMouse)
@@ -300,7 +300,7 @@ func (panel *WorkAreaPanel) addOverviewFact(grid *qt.QGridLayout, row int, col i
 
 func (panel *WorkAreaPanel) addOverviewWideFact(grid *qt.QGridLayout, row int, title string, key string) {
 	titleLabel := qt.NewQLabel3(title)
-	titleLabel.SetStyleSheet("color: " + qtMutedTextColor + "; font-size: 9pt;")
+	titleLabel.SetStyleSheet("color: " + qtMutedTextColor + ";")
 	value := qt.NewQLabel3("—")
 	value.SetWordWrap(true)
 	value.SetTextInteractionFlags(qt.TextSelectableByMouse)
@@ -1164,10 +1164,10 @@ func (panel *WorkAreaPanel) addStatusCard(layout *qt.QHBoxLayout, key string, ti
 	cardLayout.SetContentsMargins(6, 4, 6, 4)
 
 	titleLabel := qt.NewQLabel3(title)
-	titleLabel.SetStyleSheet("font-size: 9pt; color: " + qtMutedTextColor + "; border: 0; background: transparent; padding: 0;")
+	titleLabel.SetStyleSheet("color: " + qtMutedTextColor + "; border: 0; background: transparent; padding: 0;")
 
 	valueLabel := qt.NewQLabel3(initialValue)
-	valueLabel.SetStyleSheet("font-weight: 700; font-size: 10pt; color: #333; border: 0; background: transparent; padding: 0;")
+	valueLabel.SetStyleSheet("font-weight: 700; color: #333; border: 0; background: transparent; padding: 0;")
 
 	cardLayout.AddWidget(titleLabel.QWidget)
 	cardLayout.AddWidget(valueLabel.QWidget)
@@ -1250,7 +1250,7 @@ func (panel *WorkAreaPanel) setStatusCardState(card *statusCard, value string, t
 	}
 	card.value.SetText(value)
 	card.value.SetStyleSheet(fmt.Sprintf(
-		"font-weight: 700; font-size: 10pt; color: %s; border: 0; background: transparent; padding: 0;",
+		"font-weight: 700; color: %s; border: 0; background: transparent; padding: 0;",
 		textColor,
 	))
 	card.frame.SetStyleSheet(fmt.Sprintf(`
@@ -1614,7 +1614,7 @@ func (panel *WorkAreaPanel) buildExportTab() *qt.QWidget {
 	layout := qt.NewQVBoxLayout(widget)
 
 	title := qt.NewQLabel3("Експорт даних об'єкта")
-	title.SetStyleSheet("font-weight: bold; font-size: 11pt; margin-bottom: 8px;")
+	title.SetStyleSheet("font-weight: bold; margin-bottom: 8px;")
 	layout.AddWidget(title.QWidget)
 
 	info := qt.NewQLabel3("Виберіть потрібний формат для експорту поточного стану об'єкта, його зон, контактів та журналу подій.")
@@ -1973,6 +1973,45 @@ func objectEventRowsSignature(events []models.Event) string {
 	return b.String()
 }
 
+func (panel *WorkAreaPanel) SetCardFontSize(size float32) {
+	if panel == nil {
+		return
+	}
+	font := panel.Font()
+	font.SetPointSizeF(float64(size))
+	panel.SetFont(font)
+
+	if panel.headerName != nil {
+		headerFont := panel.headerName.Font()
+		headerFont.SetPointSizeF(float64(min(size+3, float32(config.MaxFontSize))))
+		headerFont.SetBold(true)
+		panel.headerName.SetFont(headerFont)
+	}
+	if panel.headerAddress != nil {
+		addressFont := panel.headerAddress.Font()
+		addressFont.SetPointSizeF(float64(size))
+		panel.headerAddress.SetFont(addressFont)
+	}
+	for _, card := range panel.statusCards {
+		if card == nil {
+			continue
+		}
+		if card.title != nil {
+			titleFont := card.title.Font()
+			titleFont.SetPointSizeF(float64(max(float32(config.MinFontSize), size-1)))
+			card.title.SetFont(titleFont)
+		}
+		if card.value != nil {
+			valueFont := card.value.Font()
+			valueFont.SetPointSizeF(float64(min(size+2, float32(config.MaxFontSize))))
+			valueFont.SetBold(true)
+			card.value.SetFont(valueFont)
+		}
+	}
+	panel.UpdateGeometry()
+	panel.Update()
+}
+
 func (panel *WorkAreaPanel) SetTableFontSize(objectsSize float32, eventsSize float32) {
 	if panel == nil {
 		return
@@ -1997,4 +2036,3 @@ func (panel *WorkAreaPanel) SetTableFontSize(objectsSize float32, eventsSize flo
 		panel.eventsTable.VerticalHeader().SetDefaultSectionSize(int(eventsSize * 2))
 	}
 }
-

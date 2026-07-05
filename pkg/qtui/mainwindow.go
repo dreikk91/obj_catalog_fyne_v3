@@ -17,7 +17,7 @@ const (
 	prefQtWindowHeight     = "qt.window.height"
 	prefQtTopSplitterSizes = "qt.splitter.top.sizes"
 	prefQtTablePrefix      = "qt.table."
-	prefQtDockState        = "qt.window.dock_state"
+	prefQtDockState        = "qt.window.dock_state_v3"
 )
 
 type MainWindow struct {
@@ -190,6 +190,10 @@ func (mw *MainWindow) buildLayout() {
 	mw.workArea = NewWorkAreaPanel(mw.app.Preferences())
 	mw.alarmPanel = NewAlarmPanel(mw.app.Preferences())
 	mw.eventLog = NewEventLogPanel(mw.app.Preferences())
+	mw.objectList.SetSizePolicy2(qt.QSizePolicy__Preferred, qt.QSizePolicy__Ignored)
+	mw.workArea.SetSizePolicy2(qt.QSizePolicy__Expanding, qt.QSizePolicy__Ignored)
+	mw.alarmPanel.SetSizePolicy2(qt.QSizePolicy__Expanding, qt.QSizePolicy__Ignored)
+	mw.eventLog.SetSizePolicy2(qt.QSizePolicy__Expanding, qt.QSizePolicy__Ignored)
 	mw.alarmPanel.OnCountChanged = func(count int) {
 		mw.setDockCount(mw.alarmDock, "Тривоги", count)
 	}
@@ -200,7 +204,9 @@ func (mw *MainWindow) buildLayout() {
 	mw.topSplitter = qt.NewQSplitter3(qt.Horizontal)
 	mw.topSplitter.AddWidget(mw.objectList.QWidget)
 	mw.topSplitter.AddWidget(mw.workArea.QWidget)
-	mw.topSplitter.SetSizes(mw.savedSplitterSizes(prefQtTopSplitterSizes, []int{320, 1040}))
+	mw.topSplitter.SetSizePolicy2(qt.QSizePolicy__Expanding, qt.QSizePolicy__Ignored)
+	topSizes := mw.savedSplitterSizes(prefQtTopSplitterSizes, []int{320, 1040})
+	mw.topSplitter.SetSizes(normalizeTopSplitterSizes(topSizes, mw.availableLayoutWidth()))
 	mw.SetCentralWidget(mw.topSplitter.QWidget)
 
 	dockFeatures := qt.QDockWidget__DockWidgetClosable |
@@ -229,7 +235,8 @@ func (mw *MainWindow) buildLayout() {
 	mw.SetDockOptions(qt.QMainWindow__AllowTabbedDocks)
 	mw.TabifyDockWidget(mw.alarmDock, mw.eventDock)
 	mw.alarmDock.Raise()
-	mw.ResizeDocks([]*qt.QDockWidget{mw.alarmDock, mw.eventDock}, []int{310, 310}, qt.Vertical)
+	dockHeight := journalDockHeight(mw.availableLayoutHeight())
+	mw.ResizeDocks([]*qt.QDockWidget{mw.alarmDock, mw.eventDock}, []int{dockHeight, dockHeight}, qt.Vertical)
 }
 
 func disableDockDoubleClick(dock *qt.QDockWidget) {
@@ -358,19 +365,33 @@ func (mw *MainWindow) selectWorkAreaTab(index int) {
 
 func (mw *MainWindow) restoreWindowSize() {
 	prefs := mw.preferences()
-	if prefs == nil {
-		mw.Resize(1440, 900)
-		return
+	width, height := 1440, 900
+	if prefs != nil {
+		width = prefs.IntWithFallback(prefQtWindowWidth, width)
+		height = prefs.IntWithFallback(prefQtWindowHeight, height)
 	}
-	width := prefs.IntWithFallback(prefQtWindowWidth, 1440)
-	height := prefs.IntWithFallback(prefQtWindowHeight, 900)
-	if width < 800 {
-		width = 800
-	}
-	if height < 600 {
-		height = 600
-	}
+	availableWidth, availableHeight := mw.availableScreenDimensions()
+	width, height = constrainWindowSize(width, height, availableWidth, availableHeight)
 	mw.Resize(width, height)
+}
+
+func constrainWindowSize(width int, height int, availableWidth int, availableHeight int) (int, int) {
+	width = max(width, 800)
+	height = max(height, 600)
+	if availableWidth > 0 {
+		width = min(width, availableWidth)
+	}
+	if availableHeight > 0 {
+		height = min(height, availableHeight)
+	}
+	return width, height
+}
+
+func journalDockHeight(availableHeight int) int {
+	if availableHeight <= 0 {
+		return 240
+	}
+	return max(170, min(260, availableHeight*24/100))
 }
 
 func (mw *MainWindow) installClosePersistence() {
@@ -664,6 +685,78 @@ func (mw *MainWindow) savedSplitterSizes(key string, fallback []int) []int {
 		return fallback
 	}
 	return sizes
+}
+
+func normalizeTopSplitterSizes(sizes []int, availableWidth int) []int {
+	if len(sizes) != 2 {
+		sizes = []int{320, 1040}
+	}
+	if availableWidth <= 0 {
+		availableWidth = sizes[0] + sizes[1]
+	}
+	if availableWidth < 800 {
+		availableWidth = 800
+	}
+
+	const (
+		minObjectListWidth = 240
+		maxObjectListWidth = 420
+		minWorkAreaWidth   = 560
+	)
+	maxByRatio := availableWidth * 32 / 100
+	maxLeft := min(maxObjectListWidth, maxByRatio)
+	maxLeft = min(maxLeft, availableWidth-minWorkAreaWidth)
+	if maxLeft < minObjectListWidth {
+		maxLeft = minObjectListWidth
+	}
+
+	left := sizes[0]
+	if left < minObjectListWidth {
+		left = minObjectListWidth
+	}
+	if left > maxLeft {
+		left = maxLeft
+	}
+	return []int{left, availableWidth - left}
+}
+
+func (mw *MainWindow) availableLayoutWidth() int {
+	if mw == nil {
+		return 0
+	}
+	width := mw.Width()
+	availableWidth, _ := mw.availableScreenDimensions()
+	if availableWidth > 0 && (width <= 0 || availableWidth < width) {
+		return availableWidth
+	}
+	return width
+}
+
+func (mw *MainWindow) availableLayoutHeight() int {
+	if mw == nil {
+		return 0
+	}
+	height := mw.Height()
+	_, availableHeight := mw.availableScreenDimensions()
+	if availableHeight > 0 && (height <= 0 || availableHeight < height) {
+		return availableHeight
+	}
+	return height
+}
+
+func (mw *MainWindow) availableScreenDimensions() (int, int) {
+	if mw == nil {
+		return 0, 0
+	}
+	screen := mw.Screen()
+	if screen == nil {
+		return 0, 0
+	}
+	geometry := screen.AvailableGeometry()
+	if geometry == nil {
+		return 0, 0
+	}
+	return geometry.Width(), geometry.Height()
 }
 
 func (mw *MainWindow) preferences() config.Preferences {

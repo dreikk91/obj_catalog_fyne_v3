@@ -57,6 +57,8 @@ func TestLoadSaveUIConfig_BottomJournals(t *testing.T) {
 	prefs := app.Preferences()
 	SaveUIConfig(prefs, UIConfig{
 		FontSize:               14,
+		FontSizeInterface:      11,
+		FontSizeObjectCard:     12,
 		FontSizeObjects:        15,
 		FontSizeEvents:         16,
 		FontSizeAlarms:         17,
@@ -69,6 +71,9 @@ func TestLoadSaveUIConfig_BottomJournals(t *testing.T) {
 	})
 
 	cfg := LoadUIConfig(prefs)
+	if cfg.FontSizeInterface != 11 || cfg.FontSizeObjectCard != 12 {
+		t.Fatalf("Qt font sizes = %.1f/%.1f, want 11/12", cfg.FontSizeInterface, cfg.FontSizeObjectCard)
+	}
 	if !cfg.ShowBottomAlarmJournal {
 		t.Fatalf("ShowBottomAlarmJournal = false, want true")
 	}

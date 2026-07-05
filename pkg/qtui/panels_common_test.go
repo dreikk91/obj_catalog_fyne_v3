@@ -9,6 +9,33 @@ import (
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
+func TestNormalizeTopSplitterSizesLimitsObjectListOnLaptop(t *testing.T) {
+	got := normalizeTopSplitterSizes([]int{700, 580}, 1280)
+	if got[0] != 409 || got[1] != 871 {
+		t.Fatalf("normalizeTopSplitterSizes() = %v, want [409 871]", got)
+	}
+}
+
+func TestNormalizeTopSplitterSizesPreservesReasonableWidth(t *testing.T) {
+	got := normalizeTopSplitterSizes([]int{320, 1040}, 1360)
+	if got[0] != 320 || got[1] != 1040 {
+		t.Fatalf("normalizeTopSplitterSizes() = %v, want [320 1040]", got)
+	}
+}
+
+func TestConstrainWindowSizeUsesAvailableLaptopGeometry(t *testing.T) {
+	width, height := constrainWindowSize(1920, 1080, 1280, 760)
+	if width != 1280 || height != 760 {
+		t.Fatalf("constrainWindowSize() = %dx%d, want 1280x760", width, height)
+	}
+}
+
+func TestJournalDockHeightScalesForLaptop(t *testing.T) {
+	if got := journalDockHeight(760); got != 182 {
+		t.Fatalf("journalDockHeight(760) = %d, want 182", got)
+	}
+}
+
 func TestSC1FromVisualSeverity(t *testing.T) {
 	tests := []struct {
 		name     string

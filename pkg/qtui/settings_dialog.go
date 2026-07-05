@@ -56,6 +56,8 @@ type settingsDialog struct {
 	caslPultID  *qt.QSpinBox
 	logLevel    *qt.QComboBox
 
+	fontSizeInterface      *qt.QDoubleSpinBox
+	fontSizeObjectCard     *qt.QDoubleSpinBox
 	fontSizeObjects        *qt.QDoubleSpinBox
 	fontSizeEvents         *qt.QDoubleSpinBox
 	fontSizeAlarms         *qt.QDoubleSpinBox
@@ -253,6 +255,10 @@ func (d *settingsDialog) buildInterfaceTab() *qt.QWidget {
 	layout := qt.NewQVBoxLayout(tab)
 	form := qt.NewQFormLayout2()
 
+	d.fontSizeInterface = doubleSpinBox(config.MinFontSize, config.MaxFontSize)
+	form.AddRow3("Шрифт інтерфейсу", d.fontSizeInterface.QWidget)
+	d.fontSizeObjectCard = doubleSpinBox(config.MinFontSize, config.MaxFontSize)
+	form.AddRow3("Шрифт картки об'єкта", d.fontSizeObjectCard.QWidget)
 	d.fontSizeObjects = doubleSpinBox(config.MinFontSize, config.MaxFontSize)
 	form.AddRow3("Шрифт об'єктів", d.fontSizeObjects.QWidget)
 	d.fontSizeEvents = doubleSpinBox(config.MinFontSize, config.MaxFontSize)
@@ -440,6 +446,8 @@ func (d *settingsDialog) load(dbCfg config.DBConfig, uiCfg config.UIConfig) {
 	d.caslPultID.SetValue(int(dbCfg.CASLPultID))
 	setComboText(d.logLevel, dbCfg.LogLevel)
 
+	d.fontSizeInterface.SetValue(float64(uiCfg.FontSizeInterface))
+	d.fontSizeObjectCard.SetValue(float64(uiCfg.FontSizeObjectCard))
 	d.fontSizeObjects.SetValue(float64(uiCfg.FontSizeObjects))
 	d.fontSizeEvents.SetValue(float64(uiCfg.FontSizeEvents))
 	d.fontSizeAlarms.SetValue(float64(uiCfg.FontSizeAlarms))
@@ -497,10 +505,11 @@ func (d *settingsDialog) values() (config.DBConfig, config.UIConfig) {
 	dbCfg.Mode = backendModeFromEnabled(dbCfg)
 
 	uiCfg := config.LoadUIConfig(d.prefs)
+	uiCfg.FontSizeInterface = float32(d.fontSizeInterface.Value())
+	uiCfg.FontSizeObjectCard = float32(d.fontSizeObjectCard.Value())
 	uiCfg.FontSizeObjects = float32(d.fontSizeObjects.Value())
 	uiCfg.FontSizeEvents = float32(d.fontSizeEvents.Value())
 	uiCfg.FontSizeAlarms = float32(d.fontSizeAlarms.Value())
-	uiCfg.FontSize = uiCfg.FontSizeObjects
 	uiCfg.ShowBottomAlarmJournal = d.showBottomAlarmJournal.IsChecked()
 	uiCfg.ShowBottomEventJournal = d.showBottomEventJournal.IsChecked()
 	uiCfg.AllowDetachedJournals = d.allowDetachedJournals.IsChecked()

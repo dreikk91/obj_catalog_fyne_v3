@@ -2,6 +2,8 @@
 
 package qtui
 
+import qt "github.com/mappu/miqt/qt6"
+
 const (
 	qtPrimaryColor    = "#4585BC"
 	qtBorderColor     = "#B1BFCD"
@@ -152,3 +154,8 @@ const NativeWindowsStyleSheet = `
 		border: none;
 	}
 `
+
+func isHighDPIScreen(screen *qt.QScreen) bool {
+	return screen != nil &&
+		(screen.DevicePixelRatio() >= 1.25 || screen.LogicalDotsPerInch() >= 120)
+}

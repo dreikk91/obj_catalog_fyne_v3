@@ -4,6 +4,7 @@ package qtui
 
 import (
 	"fmt"
+	"hash/fnv"
 	"image/color"
 	"runtime"
 	"sort"
@@ -46,7 +47,7 @@ type AlarmPanel struct {
 	allAlarms       []models.Alarm
 	alarmsByID      map[int]models.Alarm
 	groupsByKey     map[string]alarmGroup
-	rowsSignature   string
+	rowsHash        uint64
 	rowsReady       bool
 	selectedAlarmID int
 	responseLoading bool
@@ -533,8 +534,8 @@ func (panel *AlarmPanel) applyFilters() {
 	}
 	panel.alarmsByID = make(map[int]models.Alarm, len(filtered))
 	panel.groupsByKey = make(map[string]alarmGroup, len(groups))
-	signature := alarmGroupRowsSignature(groups)
-	if panel.rowsReady && panel.rowsSignature == signature {
+	hash := alarmGroupRowsHash(groups)
+	if panel.rowsReady && panel.rowsHash == hash {
 		for _, alarm := range filtered {
 			panel.alarmsByID[alarm.ID] = alarm
 		}
@@ -544,7 +545,7 @@ func (panel *AlarmPanel) applyFilters() {
 		panel.updateSelectionState()
 		return
 	}
-	panel.rowsSignature = signature
+	panel.rowsHash = hash
 	panel.rowsReady = true
 
 	var columnWidths []int
@@ -701,6 +702,38 @@ func (panel *AlarmPanel) restoreExpandedAlarmGroups(expanded map[string]struct{}
 }
 
 func alarmGroupRowsSignature(groups []alarmGroup) string {
+	return strconv.FormatUint(alarmGroupRowsHash(groups), 16)
+}
+
+func alarmGroupRowsHash(groups []alarmGroup) uint64 {
+	h := fnv.New64a()
+	for _, group := range groups {
+		writeHashString(h, group.Key)
+		writeHashInt(h, group.ObjectID)
+		writeHashString(h, group.LatestTime)
+		writeHashInt(h, group.CriticalCount)
+		writeHashInt(h, len(group.Alarms))
+		writeHashString(h, group.ObjectNumber)
+		writeHashString(h, strings.TrimSpace(group.ObjectName))
+		writeHashString(h, alarmGroupCaseText(group))
+		writeHashString(h, alarmGroupOperatorText(group))
+		for _, alarm := range group.Alarms {
+			writeHashInt(h, alarm.ID)
+			writeHashInt64(h, alarm.Time.UnixNano())
+			writeHashInt(h, alarm.SC1)
+			writeHashString(h, strings.TrimSpace(alarm.GetTypeDisplay()))
+			writeHashString(h, strings.TrimSpace(alarm.Details))
+			writeHashInt(h, alarm.ZoneNumber)
+			writeHashBool(h, alarm.IsInProgress)
+			writeHashString(h, strings.TrimSpace(alarm.InProgressBy))
+			writeHashBool(h, alarm.CanTakeOver)
+			writeHashBool(h, alarm.CanProcess)
+		}
+	}
+	return h.Sum64()
+}
+
+func alarmGroupRowsSignatureLegacy(groups []alarmGroup) string {
 	var b strings.Builder
 	for _, group := range groups {
 		fmt.Fprintf(

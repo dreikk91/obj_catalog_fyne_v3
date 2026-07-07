@@ -4,6 +4,8 @@ package qtui
 
 import (
 	"fmt"
+	"hash/fnv"
+	"strconv"
 	"strings"
 
 	qt "github.com/mappu/miqt/qt6"
@@ -31,7 +33,7 @@ type ObjectListPanel struct {
 	vm                *viewmodels.ObjectListViewModel
 	prefs             config.Preferences
 	allObjects        []models.Object
-	rowsSignature     string
+	rowsHash          uint64
 	rowsReady         bool
 	autoSized         bool
 	suppressSelection bool
@@ -256,11 +258,11 @@ func (panel *ObjectListPanel) refreshFilterOptions(out viewmodels.ObjectListFilt
 }
 
 func (panel *ObjectListPanel) setFilteredObjects(objects []models.Object) {
-	signature := objectRowsSignature(objects)
-	if panel.rowsReady && panel.rowsSignature == signature {
+	hash := objectRowsHash(objects)
+	if panel.rowsReady && panel.rowsHash == hash {
 		return
 	}
-	panel.rowsSignature = signature
+	panel.rowsHash = hash
 	panel.rowsReady = true
 
 	var columnWidths []int
@@ -278,22 +280,22 @@ func (panel *ObjectListPanel) setFilteredObjects(objects []models.Object) {
 }
 
 func objectRowsSignature(objects []models.Object) string {
-	var b strings.Builder
+	return strconv.FormatUint(objectRowsHash(objects), 16)
+}
+
+func objectRowsHash(objects []models.Object) uint64 {
+	h := fnv.New64a()
 	for _, object := range objects {
-		fmt.Fprintf(
-			&b,
-			"%d:%s:%s:%s:%d:%s:%s:%s|",
-			object.ID,
-			viewmodels.ObjectDisplayNumber(object),
-			strings.TrimSpace(object.Name),
-			strings.TrimSpace(object.Address),
-			object.Status,
-			strings.TrimSpace(object.StatusText),
-			object.MonitoringStatusValue(),
-			viewmodels.ObjectSourceByID(object.ID),
-		)
+		writeHashInt(h, object.ID)
+		writeHashString(h, viewmodels.ObjectDisplayNumber(object))
+		writeHashString(h, strings.TrimSpace(object.Name))
+		writeHashString(h, strings.TrimSpace(object.Address))
+		writeHashInt(h, int(object.Status))
+		writeHashString(h, strings.TrimSpace(object.StatusText))
+		writeHashString(h, string(object.MonitoringStatusValue()))
+		writeHashString(h, viewmodels.ObjectSourceByID(object.ID))
 	}
-	return b.String()
+	return h.Sum64()
 }
 
 func (panel *ObjectListPanel) SelectObject(id int) {
@@ -481,8 +483,7 @@ func (panel *ObjectListPanel) SetTableFontSize(size float32) {
 	font := panel.table.Font()
 	font.SetPointSizeF(float64(size))
 	panel.table.SetFont(font)
-	
+
 	// Also adjust row height dynamically if needed, or rely on vertical header
 	panel.table.VerticalHeader().SetDefaultSectionSize(int(size * 2))
 }
-

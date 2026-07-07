@@ -3,6 +3,8 @@
 package qtui
 
 import (
+	"hash/fnv"
+	"strconv"
 	"strings"
 
 	qt "github.com/mappu/miqt/qt6"
@@ -31,7 +33,7 @@ type EventLogPanel struct {
 	allEvents          []models.Event
 	filteredEvents     []models.Event
 	currentObject      *models.Object
-	rowsSignature      string
+	rowsHash           uint64
 	rowsReady          bool
 	showForCurrentOnly bool
 	isPaused           bool
@@ -212,11 +214,11 @@ func (panel *EventLogPanel) applyFilters() {
 		panel.filterUpdating = false
 	}
 
-	signature := eventLogRowsSignature(out.Filtered)
-	if panel.rowsReady && panel.rowsSignature == signature {
+	hash := eventLogRowsHash(out.Filtered)
+	if panel.rowsReady && panel.rowsHash == hash {
 		return
 	}
-	panel.rowsSignature = signature
+	panel.rowsHash = hash
 	panel.rowsReady = true
 
 	var columnWidths []int
@@ -237,12 +239,15 @@ func (panel *EventLogPanel) applyFilters() {
 }
 
 func eventLogRowsSignature(events []models.Event) string {
-	var b strings.Builder
+	return strconv.FormatUint(eventLogRowsHash(events), 16)
+}
+
+func eventLogRowsHash(events []models.Event) uint64 {
+	h := fnv.New64a()
 	for _, event := range events {
-		b.WriteString(eventRowSignature(event))
-		b.WriteByte('|')
+		writeHashString(h, eventRowSignature(event))
 	}
-	return b.String()
+	return h.Sum64()
 }
 
 func (panel *EventLogPanel) eventAtIndex(index *qt.QModelIndex) (models.Event, bool) {
@@ -385,7 +390,6 @@ func (panel *EventLogPanel) SetTableFontSize(size float32) {
 	font := panel.table.Font()
 	font.SetPointSizeF(float64(size))
 	panel.table.SetFont(font)
-	
+
 	panel.table.VerticalHeader().SetDefaultSectionSize(int(size * 2))
 }
-

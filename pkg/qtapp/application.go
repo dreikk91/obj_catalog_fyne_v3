@@ -43,6 +43,13 @@ type Application struct {
 	eventBus               *eventbus.Bus
 	mainThreadQueue        chan func()
 	refreshLoopCancel      context.CancelFunc
+	refreshStateMu         sync.Mutex
+	objectsRefreshInFlight bool
+	objectsRefreshPending  bool
+	alarmsRefreshInFlight  bool
+	alarmsRefreshPending   bool
+	eventsRefreshInFlight  bool
+	eventsRefreshPending   bool
 	refreshCoalesceMu      sync.Mutex
 	pendingRefresh         eventbus.DataRefreshEvent
 	refreshCoalescePending bool
@@ -228,12 +235,22 @@ func (a *Application) refreshObjects() {
 		return
 	}
 	provider := a.uiData
+	a.refreshStateMu.Lock()
+	if a.objectsRefreshInFlight {
+		a.objectsRefreshPending = true
+		a.objectsRefreshSeq++
+		a.refreshStateMu.Unlock()
+		return
+	}
+	a.objectsRefreshInFlight = true
 	a.objectsRefreshSeq++
 	seq := a.objectsRefreshSeq
+	a.refreshStateMu.Unlock()
 	go func() {
 		defer traceQtOperation("refreshObjects")()
 		objects := provider.GetObjects()
 		a.runOnMainThread(func() {
+			defer a.finishObjectsRefresh()
 			if a == nil || a.ui == nil || a.uiData != provider || seq != a.objectsRefreshSeq {
 				return
 			}
@@ -248,12 +265,22 @@ func (a *Application) refreshAlarms() {
 		return
 	}
 	provider := a.uiData
+	a.refreshStateMu.Lock()
+	if a.alarmsRefreshInFlight {
+		a.alarmsRefreshPending = true
+		a.alarmsRefreshSeq++
+		a.refreshStateMu.Unlock()
+		return
+	}
+	a.alarmsRefreshInFlight = true
 	a.alarmsRefreshSeq++
 	seq := a.alarmsRefreshSeq
+	a.refreshStateMu.Unlock()
 	go func() {
 		defer traceQtOperation("refreshAlarms")()
 		alarms := provider.GetAlarms()
 		a.runOnMainThread(func() {
+			defer a.finishAlarmsRefresh()
 			if a == nil || a.ui == nil || a.uiData != provider || seq != a.alarmsRefreshSeq {
 				return
 			}
@@ -269,8 +296,17 @@ func (a *Application) refreshEvents() {
 	}
 	provider := a.uiData
 	uiCfg := config.LoadUIConfig(a.ui.Preferences())
+	a.refreshStateMu.Lock()
+	if a.eventsRefreshInFlight {
+		a.eventsRefreshPending = true
+		a.eventsRefreshSeq++
+		a.refreshStateMu.Unlock()
+		return
+	}
+	a.eventsRefreshInFlight = true
 	a.eventsRefreshSeq++
 	seq := a.eventsRefreshSeq
+	a.refreshStateMu.Unlock()
 	go func() {
 		defer traceQtOperation("refreshEvents")()
 		events := provider.GetEvents()
@@ -278,6 +314,7 @@ func (a *Application) refreshEvents() {
 			events = events[:uiCfg.EventLogLimit]
 		}
 		a.runOnMainThread(func() {
+			defer a.finishEventsRefresh()
 			if a == nil || a.ui == nil || a.uiData != provider || seq != a.eventsRefreshSeq {
 				return
 			}
@@ -285,6 +322,48 @@ func (a *Application) refreshEvents() {
 			a.ui.SetEvents(events)
 		})
 	}()
+}
+
+func (a *Application) finishObjectsRefresh() {
+	if a == nil {
+		return
+	}
+	a.refreshStateMu.Lock()
+	restart := a.objectsRefreshPending
+	a.objectsRefreshInFlight = false
+	a.objectsRefreshPending = false
+	a.refreshStateMu.Unlock()
+	if restart {
+		a.refreshObjects()
+	}
+}
+
+func (a *Application) finishAlarmsRefresh() {
+	if a == nil {
+		return
+	}
+	a.refreshStateMu.Lock()
+	restart := a.alarmsRefreshPending
+	a.alarmsRefreshInFlight = false
+	a.alarmsRefreshPending = false
+	a.refreshStateMu.Unlock()
+	if restart {
+		a.refreshAlarms()
+	}
+}
+
+func (a *Application) finishEventsRefresh() {
+	if a == nil {
+		return
+	}
+	a.refreshStateMu.Lock()
+	restart := a.eventsRefreshPending
+	a.eventsRefreshInFlight = false
+	a.eventsRefreshPending = false
+	a.refreshStateMu.Unlock()
+	if restart {
+		a.refreshEvents()
+	}
 }
 
 func (a *Application) showResponseGroups() {

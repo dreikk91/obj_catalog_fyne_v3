@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
@@ -12,17 +13,28 @@ import (
 )
 
 type FrontendUIDataProvider struct {
-	frontend contracts.FrontendBackend
-	fallback contracts.DataProvider
+	frontend         contracts.FrontendBackend
+	fallback         contracts.DataProvider
+	fallbackCacheTTL time.Duration
+	fallbackMu       sync.Mutex
+	cachedObjects    []models.Object
+	cachedObjectsAt  time.Time
+	cachedEvents     []models.Event
+	cachedEventsAt   time.Time
+	cachedAlarms     []models.Alarm
+	cachedAlarmsAt   time.Time
 }
+
+const frontendFallbackCacheTTL = 2 * time.Second
 
 func NewFrontendUIDataProvider(frontend contracts.FrontendBackend, fallback contracts.DataProvider) *FrontendUIDataProvider {
 	if frontend == nil && fallback == nil {
 		return nil
 	}
 	return &FrontendUIDataProvider{
-		frontend: frontend,
-		fallback: fallback,
+		frontend:         frontend,
+		fallback:         fallback,
+		fallbackCacheTTL: frontendFallbackCacheTTL,
 	}
 }
 
@@ -48,8 +60,9 @@ func (p *FrontendUIDataProvider) GetObjects() []models.Object {
 		return p.fallbackObjects()
 	}
 
+	fallbackObjects := p.fallbackObjects()
 	fallbackByID := make(map[int]models.Object)
-	for _, object := range p.fallbackObjects() {
+	for _, object := range fallbackObjects {
 		fallbackByID[object.ID] = object
 	}
 
@@ -142,8 +155,9 @@ func (p *FrontendUIDataProvider) GetEvents() []models.Event {
 		return p.fallbackEvents()
 	}
 
+	fallbackEvents := p.fallbackEvents()
 	fallbackByID := make(map[int]models.Event)
-	for _, event := range p.fallbackEvents() {
+	for _, event := range fallbackEvents {
 		fallbackByID[event.ID] = event
 	}
 
@@ -207,8 +221,9 @@ func (p *FrontendUIDataProvider) GetAlarms() []models.Alarm {
 		return p.fallbackAlarms()
 	}
 
+	fallbackAlarms := p.fallbackAlarms()
 	fallbackByID := make(map[int]models.Alarm)
-	for _, alarm := range p.fallbackAlarms() {
+	for _, alarm := range fallbackAlarms {
 		fallbackByID[alarm.ID] = alarm
 	}
 
@@ -421,7 +436,22 @@ func (p *FrontendUIDataProvider) fallbackObjects() []models.Object {
 	if p == nil || p.fallback == nil {
 		return nil
 	}
-	return p.fallback.GetObjects()
+	now := time.Now()
+	p.fallbackMu.Lock()
+	if p.fallbackCacheTTL > 0 && !p.cachedObjectsAt.IsZero() && now.Sub(p.cachedObjectsAt) <= p.fallbackCacheTTL {
+		objects := append([]models.Object(nil), p.cachedObjects...)
+		p.fallbackMu.Unlock()
+		return objects
+	}
+	p.fallbackMu.Unlock()
+
+	objects := p.fallback.GetObjects()
+	p.fallbackMu.Lock()
+	p.cachedObjects = append(p.cachedObjects[:0], objects...)
+	p.cachedObjectsAt = now
+	out := append([]models.Object(nil), p.cachedObjects...)
+	p.fallbackMu.Unlock()
+	return out
 }
 
 func (p *FrontendUIDataProvider) fallbackObjectByID(id string) *models.Object {
@@ -456,7 +486,22 @@ func (p *FrontendUIDataProvider) fallbackEvents() []models.Event {
 	if p == nil || p.fallback == nil {
 		return nil
 	}
-	return p.fallback.GetEvents()
+	now := time.Now()
+	p.fallbackMu.Lock()
+	if p.fallbackCacheTTL > 0 && !p.cachedEventsAt.IsZero() && now.Sub(p.cachedEventsAt) <= p.fallbackCacheTTL {
+		events := append([]models.Event(nil), p.cachedEvents...)
+		p.fallbackMu.Unlock()
+		return events
+	}
+	p.fallbackMu.Unlock()
+
+	events := p.fallback.GetEvents()
+	p.fallbackMu.Lock()
+	p.cachedEvents = append(p.cachedEvents[:0], events...)
+	p.cachedEventsAt = now
+	out := append([]models.Event(nil), p.cachedEvents...)
+	p.fallbackMu.Unlock()
+	return out
 }
 
 func (p *FrontendUIDataProvider) fallbackObjectEvents(objectID string) []models.Event {
@@ -470,7 +515,22 @@ func (p *FrontendUIDataProvider) fallbackAlarms() []models.Alarm {
 	if p == nil || p.fallback == nil {
 		return nil
 	}
-	return p.fallback.GetAlarms()
+	now := time.Now()
+	p.fallbackMu.Lock()
+	if p.fallbackCacheTTL > 0 && !p.cachedAlarmsAt.IsZero() && now.Sub(p.cachedAlarmsAt) <= p.fallbackCacheTTL {
+		alarms := append([]models.Alarm(nil), p.cachedAlarms...)
+		p.fallbackMu.Unlock()
+		return alarms
+	}
+	p.fallbackMu.Unlock()
+
+	alarms := p.fallback.GetAlarms()
+	p.fallbackMu.Lock()
+	p.cachedAlarms = append(p.cachedAlarms[:0], alarms...)
+	p.cachedAlarmsAt = now
+	out := append([]models.Alarm(nil), p.cachedAlarms...)
+	p.fallbackMu.Unlock()
+	return out
 }
 
 func parseObjectID(raw string) (int, bool) {

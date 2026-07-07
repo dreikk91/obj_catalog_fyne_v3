@@ -25,6 +25,13 @@ import (
 	"obj_catalog_fyne_v3/pkg/ui/viewmodels"
 )
 
+const (
+	mainThreadQueueSize         = 1000
+	mainThreadQueueDrainLimit   = 128
+	mainThreadEnqueueWarnAfter  = 5 * time.Second
+	mainThreadEnqueueRetryDelay = 200 * time.Millisecond
+)
+
 type Application struct {
 	ui                     *qtui.App
 	runtime                *dataruntime.Runtime
@@ -90,18 +97,16 @@ func NewApplication() *Application {
 		ui:              ui,
 		workVM:          viewmodels.NewWorkAreaViewModel(),
 		eventBus:        eventbus.NewBus(),
-		mainThreadQueue: make(chan func(), 1000),
+		mainThreadQueue: make(chan func(), mainThreadQueueSize),
 	}
 
 	dispatcherTimer := qt.NewQTimer()
 	dispatcherTimer.SetInterval(20)
 	dispatcherTimer.OnTimeout(func() {
-		for {
+		for i := 0; i < mainThreadQueueDrainLimit; i++ {
 			select {
 			case f := <-app.mainThreadQueue:
-				if f != nil {
-					f()
-				}
+				app.safeRunOnMainThread(f)
 			default:
 				return
 			}

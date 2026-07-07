@@ -5,6 +5,8 @@ package qtapp
 import (
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"obj_catalog_fyne_v3/pkg/eventbus"
 )
 
@@ -136,10 +138,55 @@ func mergeDataRefreshEvents(base, extra eventbus.DataRefreshEvent) eventbus.Data
 }
 
 func (a *Application) runOnMainThread(f func()) {
-	if a == nil || a.mainThreadQueue == nil {
+	if a == nil || a.mainThreadQueue == nil || f == nil {
 		return
 	}
-	a.mainThreadQueue <- f
+	select {
+	case a.mainThreadQueue <- f:
+		return
+	default:
+	}
+
+	timer := time.NewTimer(mainThreadEnqueueWarnAfter)
+	select {
+	case a.mainThreadQueue <- f:
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		return
+	case <-timer.C:
+		log.Warn().
+			Int("queued", len(a.mainThreadQueue)).
+			Int("capacity", cap(a.mainThreadQueue)).
+			Msg("Qt main-thread queue is full; enqueueing asynchronously")
+	}
+
+	go func() {
+		ticker := time.NewTicker(mainThreadEnqueueRetryDelay)
+		defer ticker.Stop()
+		for {
+			select {
+			case a.mainThreadQueue <- f:
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
+func (a *Application) safeRunOnMainThread(f func()) {
+	if f == nil {
+		return
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Error().Interface("panic", recovered).Msg("Qt main-thread callback panicked")
+		}
+	}()
+	f()
 }
 
 func (a *Application) applyObjectContextByID(objectID int64) {

@@ -26,6 +26,7 @@ type FrontendUIDataProvider struct {
 }
 
 const frontendFallbackCacheTTL = 2 * time.Second
+const frontendReadTimeout = 20 * time.Second
 
 func NewFrontendUIDataProvider(frontend contracts.FrontendBackend, fallback contracts.DataProvider) *FrontendUIDataProvider {
 	if frontend == nil && fallback == nil {
@@ -408,28 +409,36 @@ func (p *FrontendUIDataProvider) listObjects() ([]contracts.FrontendObjectSummar
 	if p == nil || p.frontend == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
 	}
-	return p.frontend.ListObjects(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), frontendReadTimeout)
+	defer cancel()
+	return p.frontend.ListObjects(ctx)
 }
 
 func (p *FrontendUIDataProvider) listAlarms() ([]contracts.FrontendAlarmItem, error) {
 	if p == nil || p.frontend == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
 	}
-	return p.frontend.ListAlarms(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), frontendReadTimeout)
+	defer cancel()
+	return p.frontend.ListAlarms(ctx)
 }
 
 func (p *FrontendUIDataProvider) listEvents() ([]contracts.FrontendEventItem, error) {
 	if p == nil || p.frontend == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
 	}
-	return p.frontend.ListEvents(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), frontendReadTimeout)
+	defer cancel()
+	return p.frontend.ListEvents(ctx)
 }
 
 func (p *FrontendUIDataProvider) getObjectDetails(objectID int) (contracts.FrontendObjectDetails, error) {
 	if p == nil || p.frontend == nil {
 		return contracts.FrontendObjectDetails{}, contracts.ErrFrontendBackendUnavailable
 	}
-	return p.frontend.GetObjectDetails(context.Background(), objectID)
+	ctx, cancel := context.WithTimeout(context.Background(), frontendReadTimeout)
+	defer cancel()
+	return p.frontend.GetObjectDetails(ctx, objectID)
 }
 
 func (p *FrontendUIDataProvider) fallbackObjects() []models.Object {

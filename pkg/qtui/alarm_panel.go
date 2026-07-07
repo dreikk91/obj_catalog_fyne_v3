@@ -59,6 +59,8 @@ type AlarmPanel struct {
 	OnCountChanged  func(count int)
 }
 
+const prefQtAlarmSplitterSizes = "qt.splitter.alarms.sizes"
+
 type alarmGroup struct {
 	Key           string
 	Source        string
@@ -284,7 +286,13 @@ func NewAlarmPanel(prefs config.Preferences) *AlarmPanel {
 	panel.splitter = qt.NewQSplitter3(qt.Vertical)
 	panel.splitter.AddWidget(topWidget)
 	panel.splitter.AddWidget(panel.historyTree.QWidget)
-	panel.splitter.SetSizes([]int{900, 0})
+	panel.splitter.SetSizes(panel.savedSplitterSizes([]int{900, 0}))
+	panel.splitter.OnSplitterMoved(func(pos int, index int) {
+		panel.saveSplitterSizes()
+	})
+	if sizes := panel.savedSplitterSizes(nil); len(sizes) == 2 && sizes[1] > 0 {
+		panel.historyTree.SetVisible(true)
+	}
 
 	layout.AddWidget(panel.splitter.QWidget)
 	panel.SetLayout(layout.QLayout)
@@ -1167,7 +1175,12 @@ func (panel *AlarmPanel) ensureCaseHistoryVisible() {
 	if panel == nil || panel.splitter == nil {
 		return
 	}
-	panel.splitter.SetSizes(caseHistorySplitterSizes(panel.splitter.Sizes()))
+	sizes := panel.savedSplitterSizes(nil)
+	if len(sizes) != 2 || sizes[1] <= 0 {
+		sizes = caseHistorySplitterSizes(panel.splitter.Sizes())
+	}
+	panel.splitter.SetSizes(sizes)
+	panel.saveSplitterSizes()
 }
 
 func caseHistorySplitterSizes(sizes []int) []int {
@@ -1196,7 +1209,47 @@ func (panel *AlarmPanel) hideCaseHistory() {
 	panel.historyTree.SetVisible(false)
 	if panel.splitter != nil {
 		panel.splitter.SetSizes([]int{900, 0})
+		panel.saveSplitterSizes()
 	}
+}
+
+func (panel *AlarmPanel) savedSplitterSizes(fallback []int) []int {
+	if panel == nil || panel.prefs == nil {
+		return fallback
+	}
+	sizes := decodeSizes(panel.prefs.StringWithFallback(prefQtAlarmSplitterSizes, ""))
+	if len(sizes) != 2 {
+		return fallback
+	}
+	return normalizeAlarmSplitterSizes(sizes, fallback)
+}
+
+func (panel *AlarmPanel) saveSplitterSizes() {
+	if panel == nil || panel.prefs == nil || panel.splitter == nil {
+		return
+	}
+	panel.prefs.SetString(prefQtAlarmSplitterSizes, encodeSizes(normalizeAlarmSplitterSizes(panel.splitter.Sizes(), []int{900, 0})))
+}
+
+func normalizeAlarmSplitterSizes(sizes []int, fallback []int) []int {
+	if len(sizes) != 2 {
+		return fallback
+	}
+	top := maxInt(sizes[0], 0)
+	bottom := maxInt(sizes[1], 0)
+	if top == 0 && bottom == 0 {
+		return fallback
+	}
+	if bottom > 0 {
+		bottom = maxInt(bottom, 160)
+		if top == 0 {
+			top = 260
+		}
+	}
+	if top > 0 {
+		top = maxInt(top, 260)
+	}
+	return []int{top, bottom}
 }
 
 func (panel *AlarmPanel) loadCaseHistoryForAlarm(alarm models.Alarm) {
@@ -1364,7 +1417,9 @@ func (panel *AlarmPanel) SetTableFontSize(size float32) {
 	panel.table.DoItemsLayout()
 	panel.table.UpdateGeometry()
 	panel.table.Viewport().Update()
-	resizeTreeToContentsWithMinimums("alarms", panel.table)
+	if !panel.autoSized {
+		resizeTreeToContentsWithMinimums("alarms", panel.table)
+	}
 }
 
 func (panel *AlarmPanel) SetToolbarFontSize(size float32) {

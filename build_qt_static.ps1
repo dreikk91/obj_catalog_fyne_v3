@@ -1,6 +1,10 @@
 param(
     [string]$Output = "dist\obj_catalog_qt_static.exe",
-    [string]$MsysRoot = "D:\msys64"
+    [string]$MsysRoot = "D:\msys64",
+    [switch]$UPX,
+    [string]$UPXPath = "",
+    [string[]]$UPXArgs = @("--best"),
+    [switch]$NoUPXBackup
 )
 
 $ErrorActionPreference = "Stop"
@@ -113,4 +117,47 @@ if (Test-Path -LiteralPath $objdumpExe) {
     }
 
     Write-Host "Verified: no Qt or MinGW runtime DLL imports."
+}
+
+if ($UPX) {
+    if ([string]::IsNullOrWhiteSpace($UPXPath)) {
+        $upxCommand = Get-Command "upx.exe" -ErrorAction SilentlyContinue
+        if ($null -eq $upxCommand) {
+            $upxCommand = Get-Command "upx" -ErrorAction SilentlyContinue
+        }
+        if ($null -eq $upxCommand) {
+            throw "UPX compression was requested, but upx was not found in PATH. Install UPX or pass -UPXPath <path-to-upx.exe>."
+        }
+        $resolvedUPX = $upxCommand.Source
+    } else {
+        $resolvedUPX = [System.IO.Path]::GetFullPath($UPXPath)
+        if (-not (Test-Path -LiteralPath $resolvedUPX)) {
+            throw "UPX executable not found: $resolvedUPX"
+        }
+    }
+
+    if (-not $NoUPXBackup) {
+        $backupPath = [System.IO.Path]::Combine(
+            [System.IO.Path]::GetDirectoryName($outputPath),
+            [System.IO.Path]::GetFileNameWithoutExtension($outputPath) + ".unpacked" + [System.IO.Path]::GetExtension($outputPath)
+        )
+        Copy-Item -LiteralPath $outputPath -Destination $backupPath -Force
+        Write-Host "Saved uncompressed executable: $backupPath"
+    }
+
+    $beforeSize = (Get-Item -LiteralPath $outputPath).Length
+    Write-Host "Compressing with UPX: $resolvedUPX $($UPXArgs -join ' ')"
+    & $resolvedUPX @UPXArgs $outputPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "UPX compression failed with exit code $LASTEXITCODE."
+    }
+
+    $afterSize = (Get-Item -LiteralPath $outputPath).Length
+    $savedSize = $beforeSize - $afterSize
+    $savedPercent = 0
+    if ($beforeSize -gt 0) {
+        $savedPercent = [math]::Round(($savedSize / $beforeSize) * 100, 1)
+    }
+    Write-Host "UPX compressed: $outputPath"
+    Write-Host "Size: $([math]::Round($beforeSize / 1MB, 1)) MB -> $([math]::Round($afterSize / 1MB, 1)) MB ($savedPercent% saved)"
 }

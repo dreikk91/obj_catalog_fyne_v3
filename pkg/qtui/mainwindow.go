@@ -417,6 +417,9 @@ func (mw *MainWindow) persistWindowState() {
 	if state := mw.SaveState(); len(state) > 0 {
 		prefs.SetString(prefQtDockState, base64.StdEncoding.EncodeToString(state))
 	}
+	if mw.alarmPanel != nil {
+		mw.alarmPanel.saveSplitterSizes()
+	}
 	mw.persistTableColumnWidths()
 }
 
@@ -700,12 +703,9 @@ func normalizeTopSplitterSizes(sizes []int, availableWidth int) []int {
 
 	const (
 		minObjectListWidth = 240
-		maxObjectListWidth = 420
 		minWorkAreaWidth   = 560
 	)
-	maxByRatio := availableWidth * 32 / 100
-	maxLeft := min(maxObjectListWidth, maxByRatio)
-	maxLeft = min(maxLeft, availableWidth-minWorkAreaWidth)
+	maxLeft := availableWidth - minWorkAreaWidth
 	if maxLeft < minObjectListWidth {
 		maxLeft = minObjectListWidth
 	}

@@ -146,8 +146,18 @@ if ($UPX) {
     }
 
     $beforeSize = (Get-Item -LiteralPath $outputPath).Length
-    Write-Host "Compressing with UPX: $resolvedUPX $($UPXArgs -join ' ')"
-    & $resolvedUPX @UPXArgs $outputPath
+    $normalizedUPXArgs = @(
+        foreach ($arg in $UPXArgs) {
+            foreach ($part in ($arg -split ",")) {
+                $trimmed = $part.Trim()
+                if ($trimmed -ne "") {
+                    $trimmed
+                }
+            }
+        }
+    )
+    Write-Host "Compressing with UPX: $resolvedUPX $($normalizedUPXArgs -join ' ')"
+    & $resolvedUPX @normalizedUPXArgs $outputPath
     if ($LASTEXITCODE -ne 0) {
         throw "UPX compression failed with exit code $LASTEXITCODE."
     }

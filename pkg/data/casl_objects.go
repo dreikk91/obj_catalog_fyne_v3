@@ -50,6 +50,10 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 	activeAlarms := p.loadCASLActiveAlarmIndex(context.Background())
 	enrichCtx, enrichCancel := withCASLRequestTimeout(context.Background())
 	defer enrichCancel()
+	groupStats, groupStatsErr := p.loadCASLGroupStatistics(enrichCtx)
+	if groupStatsErr != nil {
+		log.Debug().Err(groupStatsErr).Msg("CASL: не вдалося завантажити get_objects_statistic")
+	}
 	var geoZoneGroups map[string]caslGeoZoneResponseGroups
 	if caslRecordsNeedResponseGroups(records) {
 		geoZoneGroups = p.loadCASLGeoZoneResponseGroups(enrichCtx)
@@ -59,6 +63,8 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 	for _, record := range records {
 		device, hasDevice := p.resolveDeviceForObject(record)
 		obj := mapCASLGrdObjectToObject(record, selectCASLDevice(hasDevice, device))
+		obj.Groups = mergeCASLGroupsWithStatistics(nil, caslGroupStatisticsForRecord(groupStats, record))
+		applyCASLObjectGroupGuardState(&obj, obj.Groups)
 		applyCASLResponseGroups(&obj, record.GeoZoneID.Int64(), geoZoneGroups)
 		p.enrichCASLObjectWithDeviceMeta(enrichCtx, &obj, hasDevice, device)
 		if hasDevice {
@@ -163,6 +169,12 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 		obj.Groups = p.buildCASLObjectGroups(groupCtx, record, state.Groups)
 		groupCancel()
 	}
+	if len(obj.Groups) == 0 {
+		groupCtx, groupCancel := withCASLRequestTimeout(context.Background())
+		obj.Groups = p.buildCASLObjectGroups(groupCtx, record, nil)
+		groupCancel()
+	}
+	applyCASLObjectGroupGuardState(&obj, obj.Groups)
 	stateCancel()
 	// read_device.offline/disconnected приходить з іншого CASL зрізу і для списку/картки
 	// може відставати від read_device_state, тому не перебиваємо поточний стан приладу.
@@ -315,16 +327,68 @@ func syncCASLObjectFrontendStatuses(obj *models.Object) {
 	default:
 		obj.MonitoringStatus = models.MonitoringStatusActive
 	}
-	if obj.GuardState == 0 && !obj.IsUnderGuard {
-		obj.GuardStatus = models.GuardStatusDisarmed
-	} else {
-		obj.GuardStatus = models.GuardStatusGuarded
+	switch obj.GuardStatus {
+	case models.GuardStatusGuarded, models.GuardStatusDisarmed, models.GuardStatusUnknown:
+		// Already normalized from a source with explicit frontend status.
+	default:
+		if obj.GuardState == 0 && !obj.IsUnderGuard {
+			obj.GuardStatus = models.GuardStatusDisarmed
+		} else {
+			obj.GuardStatus = models.GuardStatusGuarded
+		}
 	}
 	if obj.IsConnState > 0 || obj.IsConnOK {
 		obj.ConnectionStatus = models.ConnectionStatusOnline
 		return
 	}
 	obj.ConnectionStatus = models.ConnectionStatusOffline
+}
+
+func applyCASLObjectGroupGuardState(obj *models.Object, groups []models.ObjectGroup) {
+	if obj == nil {
+		return
+	}
+	if len(groups) == 0 {
+		obj.GuardStatus = models.GuardStatusUnknown
+		obj.GuardState = -1
+		obj.IsUnderGuard = false
+		return
+	}
+
+	armed := false
+	disarmed := false
+	known := false
+	for _, group := range groups {
+		stateText := strings.ToUpper(strings.TrimSpace(group.StateText))
+		switch {
+		case strings.Contains(stateText, "НЕВІДОМО"), strings.Contains(stateText, "UNKNOWN"), stateText == "", stateText == "—":
+			continue
+		case strings.Contains(stateText, "ЗНЯТО"), strings.Contains(stateText, "OFF"):
+			disarmed = true
+			known = true
+		case strings.Contains(stateText, "ЧАСТКОВО"), strings.Contains(stateText, "ПІД ОХОРОНОЮ"), strings.Contains(stateText, "ON"):
+			armed = true
+			known = true
+		case group.Armed:
+			armed = true
+			known = true
+		}
+	}
+
+	switch {
+	case !known:
+		obj.GuardStatus = models.GuardStatusUnknown
+		obj.GuardState = -1
+		obj.IsUnderGuard = false
+	case armed:
+		obj.GuardStatus = models.GuardStatusGuarded
+		obj.GuardState = 1
+		obj.IsUnderGuard = true
+	case disarmed:
+		obj.GuardStatus = models.GuardStatusDisarmed
+		obj.GuardState = 0
+		obj.IsUnderGuard = false
+	}
 }
 
 func applyCASLObjectDeviceConnectivityState(obj *models.Object, device caslDevice) {
@@ -1161,12 +1225,12 @@ func mapCASLPultToObject(item caslPult) models.Object {
 		ContractNum:      strings.TrimSpace(item.Nickname),
 		Status:           models.StatusNormal,
 		StatusText:       caslObjectStatusText,
-		GuardState:       1,
+		GuardState:       -1,
 		IsConnState:      1,
-		GuardStatus:      models.GuardStatusGuarded,
+		GuardStatus:      models.GuardStatusUnknown,
 		ConnectionStatus: models.ConnectionStatusOnline,
 		MonitoringStatus: models.MonitoringStatusActive,
-		IsUnderGuard:     true,
+		IsUnderGuard:     false,
 		IsConnOK:         true,
 		HasAssignment:    true,
 		SignalStrength:   "н/д",

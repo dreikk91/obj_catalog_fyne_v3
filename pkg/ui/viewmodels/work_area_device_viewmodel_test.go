@@ -123,6 +123,26 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_NoGuard(t *testing.T) {
 	}
 }
 
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_UnknownCASLGuard(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:          ids.CASLObjectIDNamespaceStart + 24,
+		GuardState:  -1,
+		GuardStatus: models.GuardStatusUnknown,
+		Groups: []models.ObjectGroup{
+			{Number: 1, Name: "Група 1", StateText: "НЕВІДОМО"},
+		},
+	})
+
+	if presentation.GuardText != "Стан охорони невідомий" {
+		t.Fatalf("unexpected guard text: %q", presentation.GuardText)
+	}
+	if presentation.GroupsText != "🔐 Групи:\nГрупа 1 | Група 1 | НЕВІДОМО" {
+		t.Fatalf("unexpected groups text: %q", presentation.GroupsText)
+	}
+}
+
 func TestWorkAreaDeviceViewModel_BuildObjectPresentation_PhoenixBlocked(t *testing.T) {
 	vm := NewWorkAreaDeviceViewModel()
 

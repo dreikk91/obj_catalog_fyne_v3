@@ -3,6 +3,7 @@ package dataruntime
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -40,8 +41,9 @@ type Runtime struct {
 
 // SourceHealth reports the latest known connectivity state of an enabled source.
 type SourceHealth struct {
-	Source contracts.FrontendSource
-	Status contracts.FrontendSourceHealthStatus
+	Source     contracts.FrontendSource
+	Status     contracts.FrontendSourceHealthStatus
+	HealthText string
 }
 
 // New builds the configured backend without importing the GUI application layer.
@@ -166,6 +168,7 @@ func (r *Runtime) SourceHealth() []SourceHealth {
 	}
 
 	healthBySource := make(map[contracts.FrontendSource]contracts.FrontendSourceHealthStatus, 3)
+	healthTextBySource := make(map[contracts.FrontendSource]string, 3)
 	for _, resource := range r.managedDBs {
 		checked, online := resource.health.Status()
 		status := contracts.FrontendSourceHealthStatusUnknown
@@ -185,6 +188,9 @@ func (r *Runtime) SourceHealth() []SourceHealth {
 			if capability.HealthStatus != "" {
 				healthBySource[capability.Source] = capability.HealthStatus
 			}
+			if capability.HealthText != "" {
+				healthTextBySource[capability.Source] = capability.HealthText
+			}
 		}
 	}
 
@@ -197,7 +203,11 @@ func (r *Runtime) SourceHealth() []SourceHealth {
 		if !ok || status == "" {
 			status = contracts.FrontendSourceHealthStatusUnknown
 		}
-		result = append(result, SourceHealth{Source: source, Status: status})
+		result = append(result, SourceHealth{
+			Source:     source,
+			Status:     status,
+			HealthText: strings.TrimSpace(healthTextBySource[source]),
+		})
 	}
 	appendSource(r.FirebirdEnabled, contracts.FrontendSourceBridge)
 	appendSource(r.PhoenixEnabled, contracts.FrontendSourcePhoenix)

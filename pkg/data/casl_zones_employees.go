@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -307,11 +308,9 @@ func (p *CASLCloudProvider) buildCASLObjectGroups(
 		}
 	}
 
-	if len(groups) == 0 {
-		stats, statsErr := p.loadCASLGroupStatistics(ctx)
-		if statsErr == nil {
-			groups = mergeCASLGroupsWithStatistics(groups, stats[strings.TrimSpace(record.ObjID)])
-		}
+	stats, statsErr := p.loadCASLGroupStatistics(ctx)
+	if statsErr == nil {
+		groups = mergeCASLGroupsWithStatistics(groups, caslGroupStatisticsForRecord(stats, record))
 	}
 
 	return groups
@@ -403,6 +402,23 @@ func cloneCASLGroupStatistics(src map[string]map[int]int) map[string]map[int]int
 	return dst
 }
 
+func caslGroupStatisticsForRecord(stats map[string]map[int]int, record caslGrdObject) map[int]int {
+	if len(stats) == 0 {
+		return nil
+	}
+	if number := record.DeviceNumber.Int64(); number > 0 {
+		if groups := stats[strconv.FormatInt(number, 10)]; len(groups) > 0 {
+			return groups
+		}
+	}
+	if objID := strings.TrimSpace(record.ObjID); objID != "" {
+		if groups := stats[objID]; len(groups) > 0 {
+			return groups
+		}
+	}
+	return nil
+}
+
 func mergeCASLGroupsWithStatistics(groups []models.ObjectGroup, stats map[int]int) []models.ObjectGroup {
 	if len(stats) == 0 {
 		return groups
@@ -472,16 +488,16 @@ func applyCASLGroupStatisticState(group *models.ObjectGroup, state int) {
 	case 1:
 		group.Armed = true
 		group.StateText = "ПІД ОХОРОНОЮ"
+	case 2:
+		group.Armed = true
+		group.StateText = "ЧАСТКОВО ПІД ОХОРОНОЮ"
+	case 3:
+		group.Armed = false
+		group.StateText = "НЕВІДОМО"
 	default:
-		if state > 0 {
-			group.Armed = true
-		}
+		group.Armed = false
 		if strings.TrimSpace(group.StateText) == "" || strings.TrimSpace(group.StateText) == "—" {
-			if group.Armed {
-				group.StateText = "ПІД ОХОРОНОЮ"
-			} else {
-				group.StateText = "ЗНЯТО"
-			}
+			group.StateText = "НЕВІДОМО"
 		}
 	}
 }

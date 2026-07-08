@@ -875,16 +875,24 @@ func TestMergeCASLGroupsWithStatistics_CreatesGroupsFromStatistic(t *testing.T) 
 	groups := mergeCASLGroupsWithStatistics(nil, map[int]int{
 		5: 1,
 		6: 0,
+		7: 2,
+		8: 3,
 	})
 
-	if len(groups) != 2 {
-		t.Fatalf("expected 2 groups from statistics, got %d", len(groups))
+	if len(groups) != 4 {
+		t.Fatalf("expected 4 groups from statistics, got %d", len(groups))
 	}
 	if groups[0].Number != 5 || !groups[0].Armed || groups[0].StateText != "ПІД ОХОРОНОЮ" {
 		t.Fatalf("unexpected first group: %+v", groups[0])
 	}
 	if groups[1].Number != 6 || groups[1].Armed || groups[1].StateText != "ЗНЯТО" {
 		t.Fatalf("unexpected second group: %+v", groups[1])
+	}
+	if groups[2].Number != 7 || !groups[2].Armed || groups[2].StateText != "ЧАСТКОВО ПІД ОХОРОНОЮ" {
+		t.Fatalf("unexpected third group: %+v", groups[2])
+	}
+	if groups[3].Number != 8 || groups[3].Armed || groups[3].StateText != "НЕВІДОМО" {
+		t.Fatalf("unexpected fourth group: %+v", groups[3])
 	}
 }
 
@@ -2085,8 +2093,8 @@ func TestCASLProvider_LoginAndReadObjects(t *testing.T) {
 	if loginCalls != 1 {
 		t.Fatalf("expected 1 login call, got %d", loginCalls)
 	}
-	if commandCalls != 4 {
-		t.Fatalf("expected 4 command calls after GetObjects, got %d", commandCalls)
+	if commandCalls != 5 {
+		t.Fatalf("expected 5 command calls after GetObjects, got %d", commandCalls)
 	}
 
 	gotByID := provider.GetObjectByID(strconv.Itoa(objects[0].ID))
@@ -2151,6 +2159,8 @@ func TestCASLProvider_ReloginOnWrongFormat(t *testing.T) {
 				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"31","obj_id":"25","number":1004,"type":"TYPE_DEVICE_CASL","sim1":"+380501234567","sim2":""}]}`))
 			case "get_disconnected_devices":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "get_objects_statistic":
+				_, _ = w.Write([]byte(`{"status":"ok","data":{"groupStatistics":{"1004":{"1":3}},"countOfRooms":1}}`))
 			case "read_dictionary":
 				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{"device_types":{"TYPE_DEVICE_CASL":"ППКО CASL"}}}`))
 			default:
@@ -2173,8 +2183,8 @@ func TestCASLProvider_ReloginOnWrongFormat(t *testing.T) {
 	if loginCalls != 1 {
 		t.Fatalf("expected 1 relogin call, got %d", loginCalls)
 	}
-	if commandCalls != 5 {
-		t.Fatalf("expected 5 command calls, got %d", commandCalls)
+	if commandCalls != 6 {
+		t.Fatalf("expected 6 command calls, got %d", commandCalls)
 	}
 }
 
@@ -2405,6 +2415,8 @@ func TestCASLProvider_GetObjectEvents_IncludesGeneralTapeItemHistory(t *testing.
 				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"51","number":1004,"type":"TYPE_DEVICE_CASL"}]}`))
 			case "get_disconnected_devices":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "get_objects_statistic":
+				_, _ = w.Write([]byte(`{"status":"ok","data":{"groupStatistics":{"1004":{"1":1}},"countOfRooms":1}}`))
 			case "read_user":
 				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
 			case "read_events_by_id":
@@ -2515,6 +2527,68 @@ func TestCASLProvider_GetObjectByID_FallsBackToObjectsStatisticGroups(t *testing
 	}
 	if details.Groups[1].Number != 6 || details.Groups[1].Armed {
 		t.Fatalf("unexpected second group: %+v", details.Groups[1])
+	}
+}
+
+func TestCASLProvider_GetObjects_UsesObjectsStatisticGroupGuardState(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-object-stats","user_id":"u-stat","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","address":"Addr 24","device_id":"23","device_number":1003},{"obj_id":"25","name":"Object 25","address":"Addr 25","device_id":"24","device_number":1004}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"type":"TYPE_DEVICE_CASL"},{"device_id":"24","obj_id":"25","number":1004,"type":"TYPE_DEVICE_CASL"}]}`))
+			case "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "get_objects_statistic":
+				_, _ = w.Write([]byte(`{"status":"ok","data":{"groupStatistics":{"1003":{"1":0},"1004":{"1":3}},"countOfRooms":2}}`))
+			case "read_dictionary":
+				_, _ = w.Write([]byte(`{"status":"ok","dictionary":{"device_types":{"TYPE_DEVICE_CASL":"ППКО CASL"}}}`))
+			default:
+				t.Fatalf("unexpected command type: %s", cmdType)
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objects := provider.GetObjects()
+	if len(objects) != 2 {
+		t.Fatalf("expected 2 objects, got %d", len(objects))
+	}
+
+	byName := make(map[string]models.Object, len(objects))
+	for _, object := range objects {
+		byName[object.Name] = object
+	}
+
+	disarmed := byName["Object 24"]
+	if disarmed.GuardStatus != models.GuardStatusDisarmed || disarmed.GuardState != 0 || disarmed.IsUnderGuard {
+		t.Fatalf("unexpected disarmed object guard state: %+v", disarmed)
+	}
+	if len(disarmed.Groups) != 1 || disarmed.Groups[0].StateText != "ЗНЯТО" {
+		t.Fatalf("unexpected disarmed object groups: %+v", disarmed.Groups)
+	}
+
+	unknown := byName["Object 25"]
+	if unknown.GuardStatus != models.GuardStatusUnknown || unknown.GuardState != -1 || unknown.IsUnderGuard {
+		t.Fatalf("unexpected unknown object guard state: %+v", unknown)
+	}
+	if len(unknown.Groups) != 1 || unknown.Groups[0].StateText != "НЕВІДОМО" {
+		t.Fatalf("unexpected unknown object groups: %+v", unknown.Groups)
 	}
 }
 

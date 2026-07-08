@@ -333,6 +333,8 @@ func buildWorkAreaGuardSummary(obj models.Object) string {
 	}
 
 	switch {
+	case obj.GuardStatus == models.GuardStatusUnknown || obj.GuardState < 0:
+		return "Стан охорони невідомий"
 	case obj.GuardStatusValue() == models.GuardStatusDisarmed || !obj.IsUnderGuard:
 		if ids.IsPhoenixObjectID(obj.ID) {
 			return "Без охорони"

@@ -1171,6 +1171,12 @@ func backendStatusText(runtime *dataruntime.Runtime) string {
 		case contracts.FrontendSourceHealthStatusOffline:
 			state = "недоступно"
 		}
+		if source.Status != contracts.FrontendSourceHealthStatusOnline {
+			if detail := strings.TrimSpace(source.HealthText); detail != "" {
+				parts = append(parts, detail)
+				continue
+			}
+		}
 		parts = append(parts, name+": "+state)
 	}
 	return "Джерела даних: " + strings.Join(parts, " | ")

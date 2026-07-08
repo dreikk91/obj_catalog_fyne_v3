@@ -145,18 +145,14 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 		applyCASLObjectDeviceConnectivityState(&obj, device)
 	}
 	stateCtx, stateCancel := withCASLRequestTimeout(context.Background())
+	stateConnectivityCurrent := false
+	var deviceState caslDeviceState
 	if state, stateErr := p.readDeviceState(stateCtx, record); stateErr == nil {
-		obj.PowerFault = state.Power.Int64()
-		obj.AkbState = state.Accum.Int64()
-		obj.PowerSource = models.PowerMains
-		if obj.PowerFault == 0 {
-			obj.PowerSource = models.PowerBattery
-		}
-		if state.Online.Int64() > 0 {
-			obj.IsConnState = 1
-			obj.IsConnOK = true
-		} else {
-			applyCASLObjectDisconnectedState(&obj, time.UnixMilli(state.LastPingDate.Int64()).Local())
+		deviceState = state
+		applyCASLDeviceState(&obj, state)
+		stateConnectivityCurrent = applyCASLDeviceConnectivityState(&obj, state)
+		if stateConnectivityCurrent && hasDevice && caslDeviceConnectivityMarkerOverridesState(device, state) {
+			stateConnectivityCurrent = false
 		}
 		if state.LastPingDate.Int64() > 0 {
 			msgTime := time.UnixMilli(state.LastPingDate.Int64()).Local()
@@ -169,16 +165,17 @@ func (p *CASLCloudProvider) GetObjectByID(idStr string) *models.Object {
 	}
 	stateCancel()
 	// read_device.offline/disconnected приходить з іншого CASL зрізу і для списку/картки
-	// має пріоритет над read_device_state.online, якщо сервер ще не встиг синхронізувати стани.
-	if hasDevice {
+	// може відставати від read_device_state, тому не перебиваємо поточний стан приладу.
+	if hasDevice && !stateConnectivityCurrent {
 		applyCASLObjectDeviceConnectivityState(&obj, device)
 	}
 	if obj.IsConnState > 0 {
 		disconnectedCtx, disconnectedCancel := withCASLRequestTimeout(context.Background())
 		disconnected := p.loadDisconnectedDevicesIndex(disconnectedCtx)
 		disconnectedCancel()
-		if disconnected.match(record, selectCASLDevice(hasDevice, device)) {
-			applyCASLObjectDisconnectedState(&obj, disconnected.lastSeen(record, selectCASLDevice(hasDevice, device)))
+		if lastSeen, ok := disconnected.lastSeenWithState(record, selectCASLDevice(hasDevice, device)); ok &&
+			(!stateConnectivityCurrent || caslDisconnectedMarkerOverridesState(lastSeen, deviceState)) {
+			applyCASLObjectDisconnectedState(&obj, lastSeen)
 		}
 	}
 	if obj.IsConnState > 0 {
@@ -344,9 +341,141 @@ func applyCASLObjectDeviceConnectivityState(obj *models.Object, device caslDevic
 		return
 	}
 
-	if device.Offline.Int64() > 0 {
+	if caslDeviceOfflineActive(device) {
 		applyCASLObjectDisconnectedState(obj, time.UnixMilli(device.Offline.Int64()).Local())
 	}
+}
+
+func applyCASLDeviceState(obj *models.Object, state caslDeviceState) {
+	if obj == nil {
+		return
+	}
+	obj.PowerFault = caslPowerFaultFromDeviceState(state.Power)
+	obj.AkbState = caslBatteryFaultFromDeviceState(state.Accum)
+	obj.PowerSource = models.PowerMains
+	if obj.PowerFault > 0 {
+		obj.PowerSource = models.PowerBattery
+	}
+}
+
+func applyCASLDeviceConnectivityState(obj *models.Object, state caslDeviceState) bool {
+	if obj == nil {
+		return false
+	}
+
+	lastSeen := time.Time{}
+	if state.LastPingDate.Int64() > 0 {
+		lastSeen = time.UnixMilli(state.LastPingDate.Int64()).Local()
+	}
+
+	if state.Online.Present {
+		switch online := state.Online.Int64(); {
+		case online > 0:
+			applyCASLObjectConnectedState(obj, lastSeen)
+			return true
+		case online == 0:
+			applyCASLObjectDisconnectedState(obj, lastSeen)
+			return false
+		default:
+			if caslDeviceStateHasCurrentSignal(state) {
+				applyCASLObjectConnectedState(obj, lastSeen)
+				return true
+			}
+			return false
+		}
+	}
+
+	if state.LastPingDate.Int64() > 0 {
+		if caslDeviceStateHasCurrentSignal(state) {
+			applyCASLObjectConnectedState(obj, lastSeen)
+			return true
+		}
+	}
+	return false
+}
+
+func applyCASLObjectConnectedState(obj *models.Object, lastSeen time.Time) {
+	if obj == nil {
+		return
+	}
+	obj.IsConnState = 1
+	obj.IsConnOK = true
+	if obj.Status == models.StatusOffline {
+		obj.Status = models.StatusNormal
+		obj.StatusText = caslObjectStatusText
+		obj.AlarmState = 0
+		obj.TechAlarmState = 0
+	}
+	if !lastSeen.IsZero() {
+		obj.LastMessageTime = lastSeen
+		obj.LastTestTime = lastSeen
+	}
+}
+
+func caslDeviceStateHasCurrentSignal(state caslDeviceState) bool {
+	return state.LastPingDate.Int64() > 0 ||
+		state.Enabled.Int64() > 0 ||
+		strings.TrimSpace(state.Model.String()) != ""
+}
+
+func caslPowerFaultFromDeviceState(raw caslOptionalInt64) int64 {
+	if !raw.Present {
+		return -1
+	}
+	switch raw.Int64() {
+	case 0:
+		return 1
+	case 1:
+		return 0
+	default:
+		return -1
+	}
+}
+
+func caslBatteryFaultFromDeviceState(raw caslOptionalInt64) int64 {
+	if !raw.Present {
+		return -1
+	}
+	switch raw.Int64() {
+	case 0:
+		return 1
+	case 1:
+		return 0
+	default:
+		return -1
+	}
+}
+
+func caslDeviceOfflineActive(device caslDevice) bool {
+	offlineAt := device.Offline.Int64()
+	if offlineAt <= 0 {
+		return false
+	}
+	lastPingAt := device.LastPingDate.Int64()
+	return lastPingAt <= 0 || lastPingAt <= offlineAt
+}
+
+func caslDeviceConnectivityMarkerOverridesState(device caslDevice, state caslDeviceState) bool {
+	stateLastPingAt := state.LastPingDate.Int64()
+	if caslDeviceOfflineActive(device) {
+		return stateLastPingAt <= 0 || stateLastPingAt <= device.Offline.Int64()
+	}
+	if !device.Disconnected {
+		return false
+	}
+	deviceLastPingAt := device.LastPingDate.Int64()
+	return stateLastPingAt <= 0 || (deviceLastPingAt > 0 && stateLastPingAt <= deviceLastPingAt)
+}
+
+func caslDisconnectedMarkerOverridesState(disconnectedAt time.Time, state caslDeviceState) bool {
+	stateLastPingAt := state.LastPingDate.Int64()
+	if stateLastPingAt <= 0 {
+		return true
+	}
+	if disconnectedAt.IsZero() {
+		return false
+	}
+	return stateLastPingAt <= disconnectedAt.UnixMilli()
 }
 
 func (p *CASLCloudProvider) loadCASLActiveAlarmIndex(ctx context.Context) map[int]models.Alarm {

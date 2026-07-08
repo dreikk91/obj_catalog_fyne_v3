@@ -2322,10 +2322,10 @@ func TestCASLProvider_GetObjectByID_DoesNotTreatNegativePowerStateAsAlarm(t *tes
 		t.Fatalf("expected object by id")
 	}
 	if got.PowerFault != -1 {
-		t.Fatalf("expected raw power fault -1, got %d", got.PowerFault)
+		t.Fatalf("expected unknown power fault -1, got %d", got.PowerFault)
 	}
 	if got.AkbState != -1 {
-		t.Fatalf("expected raw battery state -1, got %d", got.AkbState)
+		t.Fatalf("expected unknown battery state -1, got %d", got.AkbState)
 	}
 	if got.PowerSource != models.PowerMains {
 		t.Fatalf("expected mains power source, got %v", got.PowerSource)
@@ -4412,6 +4412,160 @@ func TestCASLProvider_GetObjectsMarksReadDeviceOfflineAsOffline(t *testing.T) {
 	}
 	if gotByID.Status != models.StatusOffline || gotByID.IsConnState != 0 {
 		t.Fatalf("expected offline object by id from read_device.offline, got %+v", gotByID)
+	}
+}
+
+func TestCASLProvider_GetObjectsIgnoresStaleReadDeviceOfflineMarker(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-device-stale-offline","user_id":"u-off","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","address":"Addr 24","status":"Включено","device_id":"23","device_number":1003}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"name":"Dunay","offline":1774769732000,"lastPingDate":1774769732941}]}`))
+			case "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_device_state":
+				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":1,"accum":1,"online":1,"lastPingDate":1774769732941}}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objects := provider.GetObjects()
+	if len(objects) != 1 {
+		t.Fatalf("expected 1 object, got %d", len(objects))
+	}
+	if objects[0].Status != models.StatusNormal || objects[0].IsConnState != 1 {
+		t.Fatalf("stale read_device.offline marker must not mark object offline, got %+v", objects[0])
+	}
+
+	gotByID := provider.GetObjectByID(strconv.Itoa(objects[0].ID))
+	if gotByID == nil {
+		t.Fatalf("expected object by id")
+	}
+	if gotByID.Status != models.StatusNormal || gotByID.IsConnState != 1 {
+		t.Fatalf("stale read_device.offline marker must not mark object offline by id, got %+v", gotByID)
+	}
+	if gotByID.PowerFault != 0 || gotByID.AkbState != 0 || gotByID.PowerSource != models.PowerMains {
+		t.Fatalf("CASL normal power state was not normalized, got %+v", gotByID)
+	}
+}
+
+func TestCASLProvider_GetObjectByIDTreatsUnknownOnlineWithCurrentDeviceStateAsConnected(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-device-state-current","user_id":"u-state","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Object 24","address":"Addr 24","status":"Включено","device_id":"2","device_number":1003}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"2","obj_id":"24","number":1003,"name":"Dunay CASL","offline":1770994850000,"lastPingDate":1770994859401}]}`))
+			case "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"2","obj_id":"24","number":1003,"offline":1770994850000}]}`))
+			case "read_device_state":
+				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":1,"accum":1,"door":1,"lines":{"1":"LINE_NORM","2":"LINE_NORM","4":"LINE_NORM","128":"LINE_NORM"},"groups":{"1":1},"adapters":{"1":{"conn":1,"door":1,"power":1},"2":{"power":1}},"model":"4l","enabled":1,"online":-1,"lastPingDate":1770994859401}}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objectID := mapCASLObjectID("24", "Object 24", "1003")
+	got := provider.GetObjectByID(strconv.Itoa(objectID))
+	if got == nil {
+		t.Fatalf("expected object by id")
+	}
+	if got.Status != models.StatusNormal || got.IsConnState != 1 || !got.IsConnOK || got.ConnectionStatus != models.ConnectionStatusOnline {
+		t.Fatalf("current read_device_state with online=-1 must keep object connected, got %+v", got)
+	}
+	if got.PowerFault != 0 || got.AkbState != 0 || got.PowerSource != models.PowerMains {
+		t.Fatalf("CASL normal power state was not normalized, got %+v", got)
+	}
+	if got.LastMessageTime.UnixMilli() != 1770994859401 || got.LastTestTime.UnixMilli() != 1770994859401 {
+		t.Fatalf("unexpected last state timestamps: message=%s test=%s", got.LastMessageTime, got.LastTestTime)
+	}
+}
+
+func TestCASLProvider_GetObjectByIDTreatsAjaxStateWithoutOnlineAsCurrentPartialState(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-ajax-partial-state","user_id":"u-ajax","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Ajax Object","address":"Addr 24","status":"Включено","device_id":"23","device_number":1003}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"23","obj_id":"24","number":1003,"name":"Ajax Hub","type":"TYPE_DEVICE_Ajax","lastPingDate":1783492122424}]}`))
+			case "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			case "read_device_state":
+				_, _ = w.Write([]byte(`{"status":"ok","state":{"power":1,"accum":-1,"door":1,"lines":{"4":"ZONE_NORM","6":"ZONE_NORM","9":"ZONE_NORM","10":"ZONE_NORM","19":"WATER_LEAK_FINISH"},"groups":{"1":0,"2":0},"adapters":{},"detectorState":{"21":{"conn":1},"24":{"conn":1},"27":{"door":1}},"lastPingDate":1783492122424}}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objectID := mapCASLObjectID("24", "Ajax Object", "1003")
+	got := provider.GetObjectByID(strconv.Itoa(objectID))
+	if got == nil {
+		t.Fatalf("expected object by id")
+	}
+	if got.Status != models.StatusNormal || got.IsConnState != 1 || got.ConnectionStatus != models.ConnectionStatusOnline {
+		t.Fatalf("Ajax partial read_device_state without online must keep object connected, got %+v", got)
+	}
+	if got.PowerFault != 0 || got.PowerSource != models.PowerMains {
+		t.Fatalf("Ajax normal power state was not normalized, got %+v", got)
+	}
+	if got.AkbState != -1 {
+		t.Fatalf("Ajax unknown battery state must stay unknown, got %+v", got)
+	}
+	if got.LastMessageTime.UnixMilli() != 1783492122424 || got.LastTestTime.UnixMilli() != 1783492122424 {
+		t.Fatalf("unexpected last state timestamps: message=%s test=%s", got.LastMessageTime, got.LastTestTime)
 	}
 }
 

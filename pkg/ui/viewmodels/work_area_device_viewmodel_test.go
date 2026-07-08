@@ -286,13 +286,31 @@ func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLPowerStates(t *test
 		ID:         ids.CASLObjectIDNamespaceStart + 26,
 		ObjChan:    5,
 		PowerFault: 0,
-		AkbState:   1,
+		AkbState:   0,
 	})
 
-	if presentation.SummaryPowerText != "220В відсутнє, АКБ в нормі" {
+	if presentation.SummaryPowerText != "220В в нормі, АКБ в нормі" {
 		t.Fatalf("unexpected CASL power summary: %q", presentation.SummaryPowerText)
 	}
 	if presentation.AkbText != "🔋 АКБ: Норма" {
+		t.Fatalf("unexpected CASL battery text: %q", presentation.AkbText)
+	}
+}
+
+func TestWorkAreaDeviceViewModel_BuildObjectPresentation_CASLPowerAlarms(t *testing.T) {
+	vm := NewWorkAreaDeviceViewModel()
+
+	presentation := vm.BuildObjectPresentation(models.Object{
+		ID:         ids.CASLObjectIDNamespaceStart + 27,
+		ObjChan:    5,
+		PowerFault: 1,
+		AkbState:   1,
+	})
+
+	if presentation.SummaryPowerText != "220В відсутнє, АКБ тривога" {
+		t.Fatalf("unexpected CASL power summary: %q", presentation.SummaryPowerText)
+	}
+	if presentation.AkbText != "🔋 АКБ: Тривога" {
 		t.Fatalf("unexpected CASL battery text: %q", presentation.AkbText)
 	}
 }

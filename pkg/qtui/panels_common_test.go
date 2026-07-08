@@ -9,10 +9,10 @@ import (
 	"obj_catalog_fyne_v3/pkg/utils"
 )
 
-func TestNormalizeTopSplitterSizesLimitsObjectListOnLaptop(t *testing.T) {
+func TestNormalizeTopSplitterSizesKeepsUserObjectListWidth(t *testing.T) {
 	got := normalizeTopSplitterSizes([]int{700, 580}, 1280)
-	if got[0] != 409 || got[1] != 871 {
-		t.Fatalf("normalizeTopSplitterSizes() = %v, want [409 871]", got)
+	if got[0] != 700 || got[1] != 580 {
+		t.Fatalf("normalizeTopSplitterSizes() = %v, want [700 580]", got)
 	}
 }
 

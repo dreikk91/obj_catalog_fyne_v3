@@ -44,8 +44,8 @@ func TestWorkAreaOverviewKeepsPriorityContactsAndCounts(t *testing.T) {
 		Notes1:                     "Ключі у чергового",
 		ConnectionStatus:           models.ConnectionStatusOnline,
 		MonitoringStatus:           models.MonitoringStatusActive,
-		PowerFault:                 1,
-		AkbState:                   1,
+		PowerFault:                 0,
+		AkbState:                   0,
 	}
 	contacts := []models.Contact{
 		{Name: "Другий", Priority: 2},

@@ -244,9 +244,9 @@ func buildWorkAreaBatterySummary(obj models.Object) string {
 	if ids.IsCASLObjectID(obj.ID) {
 		switch obj.AkbState {
 		case 0:
-			return "Тривога"
-		case 1:
 			return "Норма"
+		case 1:
+			return "Тривога"
 		default:
 			return "Невідомо"
 		}
@@ -261,9 +261,9 @@ func buildWorkAreaBatterySummary(obj models.Object) string {
 func buildWorkAreaCASLPowerState(raw int64) (text string, known bool, alarm bool) {
 	switch raw {
 	case 0:
-		return "220В відсутнє", true, true
-	case 1:
 		return "220В в нормі", true, false
+	case 1:
+		return "220В відсутнє", true, true
 	default:
 		return "220В невідоме", false, false
 	}
@@ -272,9 +272,9 @@ func buildWorkAreaCASLPowerState(raw int64) (text string, known bool, alarm bool
 func buildWorkAreaCASLBatteryState(raw int64) (text string, known bool, alarm bool) {
 	switch raw {
 	case 0:
-		return "АКБ тривога", true, true
-	case 1:
 		return "АКБ в нормі", true, false
+	case 1:
+		return "АКБ тривога", true, true
 	default:
 		return "АКБ невідомо", false, false
 	}

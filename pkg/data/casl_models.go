@@ -140,6 +140,18 @@ func (v *caslInt64) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("casl int64: invalid numeric token %s", raw)
 }
 
+type caslOptionalInt64 struct {
+	Value   caslInt64
+	Present bool
+}
+
+func (v caslOptionalInt64) Int64() int64 { return v.Value.Int64() }
+
+func (v *caslOptionalInt64) UnmarshalJSON(data []byte) error {
+	v.Present = true
+	return v.Value.UnmarshalJSON(data)
+}
+
 type caslText string
 
 func (v caslText) String() string { return strings.TrimSpace(string(v)) }
@@ -578,14 +590,16 @@ func (u caslUser) PrimaryPhone() string {
 }
 
 type caslDeviceState struct {
-	Power        caslInt64 `json:"power"`
-	Accum        caslInt64 `json:"accum"`
-	Door         caslInt64 `json:"door"`
-	Online       caslInt64 `json:"online"`
-	LastPingDate caslInt64 `json:"lastPingDate"`
-	Lines        any       `json:"lines"`
-	Groups       any       `json:"groups"`
-	Adapters     any       `json:"adapters"`
+	Power        caslOptionalInt64 `json:"power"`
+	Accum        caslOptionalInt64 `json:"accum"`
+	Door         caslOptionalInt64 `json:"door"`
+	Online       caslOptionalInt64 `json:"online"`
+	LastPingDate caslInt64         `json:"lastPingDate"`
+	Model        caslText          `json:"model"`
+	Enabled      caslInt64         `json:"enabled"`
+	Lines        any               `json:"lines"`
+	Groups       any               `json:"groups"`
+	Adapters     any               `json:"adapters"`
 }
 
 type caslStatsAlarmsData struct {

@@ -350,8 +350,12 @@ func applyCASLDeviceState(obj *models.Object, state caslDeviceState) {
 	if obj == nil {
 		return
 	}
-	obj.PowerFault = caslPowerFaultFromDeviceState(state.Power)
-	obj.AkbState = caslBatteryFaultFromDeviceState(state.Accum)
+	if state.Power.Present {
+		obj.PowerFault = caslPowerFaultFromDeviceState(state.Power)
+	}
+	if state.Accum.Present {
+		obj.AkbState = caslBatteryFaultFromDeviceState(state.Accum)
+	}
 	obj.PowerSource = models.PowerMains
 	if obj.PowerFault > 0 {
 		obj.PowerSource = models.PowerBattery
@@ -440,6 +444,17 @@ func caslBatteryFaultFromDeviceState(raw caslOptionalInt64) int64 {
 	case 0:
 		return 1
 	case 1:
+		return 0
+	default:
+		return -1
+	}
+}
+
+func caslPowerFaultFromDeviceNoPower(raw int64) int64 {
+	switch {
+	case raw > 0:
+		return 1
+	case raw < 0:
 		return 0
 	default:
 		return -1
@@ -926,6 +941,14 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 	if device != nil && device.LastPingDate.Int64() > 0 {
 		lastTestTime = time.UnixMilli(device.LastPingDate.Int64()).Local()
 	}
+	powerFault := int64(-1)
+	if device != nil {
+		powerFault = caslPowerFaultFromDeviceNoPower(device.NoPower.Int64())
+	}
+	powerSource := models.PowerMains
+	if powerFault > 0 {
+		powerSource = models.PowerBattery
+	}
 
 	hasAssignment := len(normalizeContactIDs(record.InCharge, record.ManagerID)) > 0
 	objectNum := preferredCASLObjectNumber(record.ObjID, record.Name, record.DeviceNumber.Int64())
@@ -971,6 +994,9 @@ func mapCASLGrdObjectToObject(record caslGrdObject, device *caslDevice) models.O
 		TestControl:    testControl,
 		TestTime:       testTime,
 		LastTestTime:   lastTestTime,
+		PowerFault:     powerFault,
+		PowerSource:    powerSource,
+		AkbState:       -1,
 		SIM1:           sim1,
 		SIM2:           sim2,
 		ObjChan:        5,

@@ -288,7 +288,9 @@ type caslDevice struct {
 	Type         caslText         `json:"type"`
 	Timeout      caslInt64        `json:"timeout"`
 	LastPingDate caslInt64        `json:"lastPingDate"`
+	Enabled      caslInt64        `json:"enabled"`
 	Offline      caslInt64        `json:"offline"`
+	NoPower      caslInt64        `json:"noPower"`
 	Blocked      bool             `json:"blocked"`
 	Disconnected bool             `json:"disconnected"`
 	SIM1         caslText         `json:"sim1"`
@@ -372,7 +374,9 @@ func (d *caslDevice) UnmarshalJSON(data []byte) error {
 		Type              caslText        `json:"type"`
 		Timeout           caslInt64       `json:"timeout"`
 		LastPingDate      caslInt64       `json:"lastPingDate"`
+		Enabled           caslInt64       `json:"enabled"`
 		Offline           json.RawMessage `json:"offline"`
+		NoPower           json.RawMessage `json:"noPower"`
 		Blocked           bool            `json:"blocked"`
 		Disconnected      json.RawMessage `json:"disconnected"`
 		DisconnectedState json.RawMessage `json:"disconnected_state"`
@@ -393,7 +397,9 @@ func (d *caslDevice) UnmarshalJSON(data []byte) error {
 	d.Type = raw.Type
 	d.Timeout = raw.Timeout
 	d.LastPingDate = raw.LastPingDate
+	d.Enabled = raw.Enabled
 	d.Offline = decodeCASLRawInt64(raw.Offline)
+	d.NoPower = decodeCASLRawInt64(raw.NoPower)
 	d.Blocked = raw.Blocked
 	d.Disconnected = decodeCASLRawBool(raw.Disconnected) || decodeCASLRawBool(raw.DisconnectedState)
 	d.SIM1 = raw.SIM1
@@ -465,8 +471,17 @@ func overlayCASLCoreDevice(base *caslDevice, overlay caslDevice) {
 	if base.LastPingDate.Int64() <= 0 {
 		base.LastPingDate = overlay.LastPingDate
 	}
+	if base.Enabled.Int64() == 0 {
+		base.Enabled = overlay.Enabled
+	}
+	if base.NoPower.Int64() == 0 {
+		base.NoPower = overlay.NoPower
+	}
 	if !base.Blocked {
 		base.Blocked = overlay.Blocked
+	}
+	if !base.Disconnected {
+		base.Disconnected = overlay.Disconnected
 	}
 	if strings.TrimSpace(base.SIM1.String()) == "" {
 		base.SIM1 = overlay.SIM1

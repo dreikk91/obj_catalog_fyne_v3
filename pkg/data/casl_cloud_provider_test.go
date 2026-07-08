@@ -4415,6 +4415,72 @@ func TestCASLProvider_GetObjectsMarksReadDeviceOfflineAsOffline(t *testing.T) {
 	}
 }
 
+func TestCASLProvider_GetObjectsUsesReadDeviceStatusMarkers(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-device-status-markers","user_id":"u-markers","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"obj_id":"24","name":"Dunay OK","address":"Addr 24","status":"Включено","device_id":"2","device_number":1},{"obj_id":"25","name":"Ajax Blocked","address":"Addr 25","status":"Включено","device_id":"4","device_number":8001},{"obj_id":"26","name":"Ajax OK","address":"Addr 26","status":"Включено","device_id":"13","device_number":2003}]}`))
+			case "read_device":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[{"device_id":"2","obj_id":"24","number":1,"name":"Ломбард - Agent Note","timeout":240,"type":"TYPE_DEVICE_Dunay_4L","blocked":false,"disconnected":0,"enabled":1776165222349,"lastPingDate":1770994859401,"offline":-1783441881917,"noPower":-1777798132629},{"device_id":"4","obj_id":"25","number":8001,"name":"AX HUB","timeout":360,"type":"AX_PRO","blocked":true,"disconnected":null,"enabled":-1,"lastPingDate":1767706195359,"offline":1772373626919,"noPower":1657529187429},{"device_id":"13","obj_id":"26","number":2003,"name":"Ajax","timeout":3600,"type":"TYPE_DEVICE_Ajax","blocked":false,"disconnected":null,"enabled":-1,"lastPingDate":1783490442604,"offline":-1783226100590,"noPower":null}]}`))
+			case "get_disconnected_devices":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			default:
+				_, _ = w.Write([]byte(`{"status":"ok","data":[]}`))
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	objects := provider.GetObjects()
+	if len(objects) != 3 {
+		t.Fatalf("expected 3 objects, got %d", len(objects))
+	}
+
+	byName := make(map[string]models.Object, len(objects))
+	for _, obj := range objects {
+		byName[obj.Name] = obj
+	}
+
+	dunay := byName["Dunay OK"]
+	if dunay.Status != models.StatusNormal || dunay.IsConnState != 1 {
+		t.Fatalf("negative offline marker must keep Dunay online, got %+v", dunay)
+	}
+	if dunay.PowerFault != 0 || dunay.PowerSource != models.PowerMains {
+		t.Fatalf("negative noPower marker must mean normal mains power, got %+v", dunay)
+	}
+
+	ajax := byName["Ajax Blocked"]
+	if ajax.BlockedArmedOnOff != 1 || ajax.MonitoringStatus != models.MonitoringStatusBlocked {
+		t.Fatalf("blocked read_device marker must block Ajax object, got %+v", ajax)
+	}
+	if ajax.PowerFault != 1 || ajax.PowerSource != models.PowerBattery {
+		t.Fatalf("positive noPower marker must mean mains power fault, got %+v", ajax)
+	}
+
+	ajaxOK := byName["Ajax OK"]
+	if ajaxOK.Status != models.StatusNormal || ajaxOK.IsConnState != 1 {
+		t.Fatalf("negative offline marker must keep Ajax online, got %+v", ajaxOK)
+	}
+	if ajaxOK.PowerFault != -1 || ajaxOK.PowerSource != models.PowerMains {
+		t.Fatalf("missing noPower marker must keep mains power unknown, got %+v", ajaxOK)
+	}
+}
+
 func TestCASLProvider_GetObjectsIgnoresStaleReadDeviceOfflineMarker(t *testing.T) {
 	t.Parallel()
 

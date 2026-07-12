@@ -112,6 +112,7 @@ type CASLCloudProvider struct {
 	realtimeCancel     context.CancelFunc
 	realtimeRunning    bool
 	realtimeSubscribed bool
+	realtimeSessionNo  atomic.Uint64
 
 	realtimeAlarmByObjID map[string]models.Alarm
 

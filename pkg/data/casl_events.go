@@ -1706,10 +1706,7 @@ func isCASLAlarmFinishBlockedAction(action string) bool {
 }
 
 func (p *CASLCloudProvider) refreshCASLAlarmSnapshot(ctx context.Context, forceTapeSnapshot bool) {
-	// Кожен підзапит отримує власний незалежний таймаут — як оригінальний CASL
-	// web-client, що шле кожен /command без спільного бюджету. Батьківський ctx
-	// використовується лише як сигнал дострокового виходу між етапами.
-	buildCtx, buildCancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+	buildCtx, buildCancel := context.WithTimeout(ctx, caslHTTPTimeout)
 	defer buildCancel()
 	_, byObject, ctxErr := p.buildSharedObjectContext(buildCtx)
 	if ctxErr != nil {
@@ -1719,7 +1716,7 @@ func (p *CASLCloudProvider) refreshCASLAlarmSnapshot(ctx context.Context, forceT
 		return
 	}
 
-	evCtx, evCancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+	evCtx, evCancel := context.WithTimeout(ctx, caslHTTPTimeout)
 	defer evCancel()
 	if _, err := p.readEventsJournalAsEvents(evCtx); err != nil {
 		log.Debug().Err(err).Msg("CASL bg: read_events недоступний")
@@ -1732,7 +1729,7 @@ func (p *CASLCloudProvider) refreshCASLAlarmSnapshot(ctx context.Context, forceT
 		return
 	}
 
-	tapeCtx, tapeCancel := context.WithTimeout(context.Background(), caslHTTPTimeout)
+	tapeCtx, tapeCancel := context.WithTimeout(ctx, caslHTTPTimeout)
 	defer tapeCancel()
 	tapeAlarms, err := p.readGeneralTapeAsAlarms(tapeCtx, byObject)
 	if err != nil {

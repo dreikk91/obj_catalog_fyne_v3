@@ -21,6 +21,8 @@ import (
 
 const caslRealtimePingGracePeriod = 12 * time.Second
 
+const caslRealtimeReconcileTimeout = 15 * time.Second
+
 var caslRealtimeWatchdogTimeout = 25 * time.Second
 
 func extractCASLRealtimeConnID(raw []byte) string {
@@ -632,7 +634,13 @@ func (p *CASLCloudProvider) runRealtimeSession(ctx context.Context) error {
 		p.realtimeMu.Lock()
 		p.realtimeSubscribed = true
 		p.realtimeMu.Unlock()
-		log.Info().Msg("CASL realtime connected and subscriptions renewed")
+		sessionNo := p.realtimeSessionNo.Add(1)
+		if sessionNo == 1 {
+			log.Info().Uint64("session", sessionNo).Msg("CASL realtime connected and subscribed")
+		} else {
+			log.Info().Uint64("session", sessionNo).Msg("CASL realtime reconnected and subscriptions renewed")
+		}
+		go p.reconcileRealtimeState(ctx, sessionNo)
 	}
 
 	for {
@@ -701,6 +709,37 @@ func (p *CASLCloudProvider) runRealtimeSession(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (p *CASLCloudProvider) reconcileRealtimeState(parent context.Context, sessionNo uint64) {
+	ctx, cancel := context.WithTimeout(parent, caslRealtimeReconcileTimeout)
+	defer cancel()
+
+	p.mu.RLock()
+	beforeRevision := p.eventsRevision
+	p.mu.RUnlock()
+
+	if _, err := p.readEventsJournalAsEvents(ctx); err != nil {
+		log.Warn().Err(err).Uint64("session", sessionNo).Msg("CASL realtime reconciliation: events refresh failed")
+	} else {
+		p.mu.RLock()
+		afterRevision := p.eventsRevision
+		p.mu.RUnlock()
+		log.Info().
+			Uint64("session", sessionNo).
+			Bool("eventsChanged", afterRevision != beforeRevision).
+			Msg("CASL realtime reconciliation: events refreshed")
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+	p.refreshCASLAlarmSnapshot(ctx, false)
+	if err := ctx.Err(); err != nil {
+		log.Warn().Err(err).Uint64("session", sessionNo).Msg("CASL realtime reconciliation: alarms refresh timed out")
+		return
+	}
+	log.Info().Uint64("session", sessionNo).Msg("CASL realtime reconciliation completed")
 }
 
 func (p *CASLCloudProvider) subscribeRealtimeTags(ctx context.Context, connID string) error {

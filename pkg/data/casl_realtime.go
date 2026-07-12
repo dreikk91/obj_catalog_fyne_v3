@@ -498,7 +498,7 @@ func (p *CASLCloudProvider) runRealtimeLoop(ctx context.Context) {
 		if err := p.runRealtimeSession(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			now := time.Now()
 			if lastLogAt.IsZero() || now.Sub(lastLogAt) >= 30*time.Second {
-				log.Debug().Err(err).Msg("CASL realtime stream: reconnect")
+				log.Warn().Err(err).Dur("retryIn", backoff).Msg("CASL realtime disconnected; reconnect scheduled")
 				lastLogAt = now
 			}
 		}
@@ -632,7 +632,7 @@ func (p *CASLCloudProvider) runRealtimeSession(ctx context.Context) error {
 		p.realtimeMu.Lock()
 		p.realtimeSubscribed = true
 		p.realtimeMu.Unlock()
-		log.Debug().Str("conn_id", candidate).Msg("CASL realtime subscribed")
+		log.Info().Msg("CASL realtime connected and subscriptions renewed")
 	}
 
 	for {

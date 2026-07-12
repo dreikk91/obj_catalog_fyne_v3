@@ -30,44 +30,48 @@ const (
 	mainThreadQueueDrainLimit   = 128
 	mainThreadEnqueueWarnAfter  = 5 * time.Second
 	mainThreadEnqueueRetryDelay = 200 * time.Millisecond
+	dataRefreshTimeout          = 30 * time.Second
 )
 
 type Application struct {
-	ui                     *qtui.App
-	runtime                *dataruntime.Runtime
-	uiData                 *backend.FrontendUIDataProvider
-	workVM                 *viewmodels.WorkAreaViewModel
-	currentObject          *models.Object
-	currentObjectZones     int
-	currentObjectContacts  int
-	currentObjectsCount    int
-	currentAlarmsCount     int
-	currentEventsCount     int
-	selectionSeq           int
-	objectsRefreshSeq      int
-	alarmsRefreshSeq       int
-	eventsRefreshSeq       int
-	eventBus               *eventbus.Bus
-	mainThreadQueue        chan func()
-	refreshLoopCancel      context.CancelFunc
-	refreshStateMu         sync.Mutex
-	objectsRefreshInFlight bool
-	objectsRefreshPending  bool
-	alarmsRefreshInFlight  bool
-	alarmsRefreshPending   bool
-	eventsRefreshInFlight  bool
-	eventsRefreshPending   bool
-	refreshCoalesceMu      sync.Mutex
-	pendingRefresh         eventbus.DataRefreshEvent
-	refreshCoalescePending bool
-	responseGroupsMu       sync.Mutex
-	responseGroupsCache    map[contracts.FrontendSource]responseGroupsCacheEntry
-	responseDialogMu       sync.Mutex
-	responseDialogAlarmID  int
-	responseDialogActive   bool
-	phoneDialer            contracts.PhoneDialer
-	backendStatusTimer     *qt.QTimer
-	lastBackendStatus      string
+	ui                      *qtui.App
+	runtime                 *dataruntime.Runtime
+	uiData                  *backend.FrontendUIDataProvider
+	workVM                  *viewmodels.WorkAreaViewModel
+	currentObject           *models.Object
+	currentObjectZones      int
+	currentObjectContacts   int
+	currentObjectsCount     int
+	currentAlarmsCount      int
+	currentEventsCount      int
+	selectionSeq            int
+	objectsRefreshSeq       int
+	alarmsRefreshSeq        int
+	eventsRefreshSeq        int
+	objectsRefreshActiveSeq int
+	alarmsRefreshActiveSeq  int
+	eventsRefreshActiveSeq  int
+	eventBus                *eventbus.Bus
+	mainThreadQueue         chan func()
+	refreshLoopCancel       context.CancelFunc
+	refreshStateMu          sync.Mutex
+	objectsRefreshInFlight  bool
+	objectsRefreshPending   bool
+	alarmsRefreshInFlight   bool
+	alarmsRefreshPending    bool
+	eventsRefreshInFlight   bool
+	eventsRefreshPending    bool
+	refreshCoalesceMu       sync.Mutex
+	pendingRefresh          eventbus.DataRefreshEvent
+	refreshCoalescePending  bool
+	responseGroupsMu        sync.Mutex
+	responseGroupsCache     map[contracts.FrontendSource]responseGroupsCacheEntry
+	responseDialogMu        sync.Mutex
+	responseDialogAlarmID   int
+	responseDialogActive    bool
+	phoneDialer             contracts.PhoneDialer
+	backendStatusTimer      *qt.QTimer
+	lastBackendStatus       string
 }
 
 type responseGroupsCacheEntry struct {
@@ -250,12 +254,22 @@ func (a *Application) refreshObjects() {
 	a.objectsRefreshInFlight = true
 	a.objectsRefreshSeq++
 	seq := a.objectsRefreshSeq
+	a.objectsRefreshActiveSeq = seq
 	a.refreshStateMu.Unlock()
 	go func() {
 		defer traceQtOperation("refreshObjects")()
-		objects := provider.GetObjects()
+		result := make(chan []models.Object, 1)
+		go func() { result <- provider.GetObjects() }()
+		var objects []models.Object
+		select {
+		case objects = <-result:
+		case <-time.After(dataRefreshTimeout):
+			log.Warn().Str("operation", "refreshObjects").Dur("timeout", dataRefreshTimeout).Msg("Qt data refresh timed out")
+			a.finishObjectsRefresh(seq)
+			return
+		}
 		a.runOnMainThread(func() {
-			defer a.finishObjectsRefresh()
+			defer a.finishObjectsRefresh(seq)
 			if a == nil || a.ui == nil || a.uiData != provider || seq != a.objectsRefreshSeq {
 				return
 			}
@@ -280,12 +294,22 @@ func (a *Application) refreshAlarms() {
 	a.alarmsRefreshInFlight = true
 	a.alarmsRefreshSeq++
 	seq := a.alarmsRefreshSeq
+	a.alarmsRefreshActiveSeq = seq
 	a.refreshStateMu.Unlock()
 	go func() {
 		defer traceQtOperation("refreshAlarms")()
-		alarms := provider.GetAlarms()
+		result := make(chan []models.Alarm, 1)
+		go func() { result <- provider.GetAlarms() }()
+		var alarms []models.Alarm
+		select {
+		case alarms = <-result:
+		case <-time.After(dataRefreshTimeout):
+			log.Warn().Str("operation", "refreshAlarms").Dur("timeout", dataRefreshTimeout).Msg("Qt data refresh timed out")
+			a.finishAlarmsRefresh(seq)
+			return
+		}
 		a.runOnMainThread(func() {
-			defer a.finishAlarmsRefresh()
+			defer a.finishAlarmsRefresh(seq)
 			if a == nil || a.ui == nil || a.uiData != provider || seq != a.alarmsRefreshSeq {
 				return
 			}
@@ -311,15 +335,25 @@ func (a *Application) refreshEvents() {
 	a.eventsRefreshInFlight = true
 	a.eventsRefreshSeq++
 	seq := a.eventsRefreshSeq
+	a.eventsRefreshActiveSeq = seq
 	a.refreshStateMu.Unlock()
 	go func() {
 		defer traceQtOperation("refreshEvents")()
-		events := provider.GetEvents()
+		result := make(chan []models.Event, 1)
+		go func() { result <- provider.GetEvents() }()
+		var events []models.Event
+		select {
+		case events = <-result:
+		case <-time.After(dataRefreshTimeout):
+			log.Warn().Str("operation", "refreshEvents").Dur("timeout", dataRefreshTimeout).Msg("Qt data refresh timed out")
+			a.finishEventsRefresh(seq)
+			return
+		}
 		if uiCfg.EventLogLimit > 0 && len(events) > uiCfg.EventLogLimit {
 			events = events[:uiCfg.EventLogLimit]
 		}
 		a.runOnMainThread(func() {
-			defer a.finishEventsRefresh()
+			defer a.finishEventsRefresh(seq)
 			if a == nil || a.ui == nil || a.uiData != provider || seq != a.eventsRefreshSeq {
 				return
 			}
@@ -329,11 +363,15 @@ func (a *Application) refreshEvents() {
 	}()
 }
 
-func (a *Application) finishObjectsRefresh() {
+func (a *Application) finishObjectsRefresh(seq int) {
 	if a == nil {
 		return
 	}
 	a.refreshStateMu.Lock()
+	if seq != a.objectsRefreshActiveSeq {
+		a.refreshStateMu.Unlock()
+		return
+	}
 	restart := a.objectsRefreshPending
 	a.objectsRefreshInFlight = false
 	a.objectsRefreshPending = false
@@ -343,11 +381,15 @@ func (a *Application) finishObjectsRefresh() {
 	}
 }
 
-func (a *Application) finishAlarmsRefresh() {
+func (a *Application) finishAlarmsRefresh(seq int) {
 	if a == nil {
 		return
 	}
 	a.refreshStateMu.Lock()
+	if seq != a.alarmsRefreshActiveSeq {
+		a.refreshStateMu.Unlock()
+		return
+	}
 	restart := a.alarmsRefreshPending
 	a.alarmsRefreshInFlight = false
 	a.alarmsRefreshPending = false
@@ -357,11 +399,15 @@ func (a *Application) finishAlarmsRefresh() {
 	}
 }
 
-func (a *Application) finishEventsRefresh() {
+func (a *Application) finishEventsRefresh(seq int) {
 	if a == nil {
 		return
 	}
 	a.refreshStateMu.Lock()
+	if seq != a.eventsRefreshActiveSeq {
+		a.refreshStateMu.Unlock()
+		return
+	}
 	restart := a.eventsRefreshPending
 	a.eventsRefreshInFlight = false
 	a.eventsRefreshPending = false

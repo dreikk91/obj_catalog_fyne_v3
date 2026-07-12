@@ -113,11 +113,19 @@ func (a *FrontendAdapter) Capabilities(context.Context) (contracts.FrontendCapab
 	return contracts.FrontendCapabilities{Sources: a.fallbackCapabilities()}, nil
 }
 
-func (a *FrontendAdapter) ListObjects(context.Context) ([]contracts.FrontendObjectSummary, error) {
+func (a *FrontendAdapter) ListObjects(ctx context.Context) ([]contracts.FrontendObjectSummary, error) {
 	if a == nil || a.dataProvider == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
 	}
-	objects := a.dataProvider.GetObjects()
+	var objects []models.Object
+	if provider, ok := a.dataProvider.(contracts.ContextObjectProvider); ok {
+		objects = provider.GetObjectsContext(ctx)
+	} else {
+		objects = a.dataProvider.GetObjects()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	result := make([]contracts.FrontendObjectSummary, 0, len(objects))
 	for _, object := range objects {
 		result = append(result, mapFrontendObjectSummary(object))
@@ -125,11 +133,19 @@ func (a *FrontendAdapter) ListObjects(context.Context) ([]contracts.FrontendObje
 	return result, nil
 }
 
-func (a *FrontendAdapter) ListAlarms(context.Context) ([]contracts.FrontendAlarmItem, error) {
+func (a *FrontendAdapter) ListAlarms(ctx context.Context) ([]contracts.FrontendAlarmItem, error) {
 	if a == nil || a.dataProvider == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
 	}
-	alarms := a.dataProvider.GetAlarms()
+	var alarms []models.Alarm
+	if provider, ok := a.dataProvider.(contracts.ContextAlarmProvider); ok {
+		alarms = provider.GetAlarmsContext(ctx)
+	} else {
+		alarms = a.dataProvider.GetAlarms()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var result []contracts.FrontendAlarmItem
 	for _, alarm := range alarms {
 		isPickedLocally := a.isBridgeAlarmPickedLocally(alarm.ID)
@@ -458,11 +474,19 @@ func ensureAlarmActionOwnership(alarm models.Alarm) error {
 	return fmt.Errorf("%w: %s", contracts.ErrAlarmOwnershipConflict, owner)
 }
 
-func (a *FrontendAdapter) ListEvents(context.Context) ([]contracts.FrontendEventItem, error) {
+func (a *FrontendAdapter) ListEvents(ctx context.Context) ([]contracts.FrontendEventItem, error) {
 	if a == nil || a.dataProvider == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
 	}
-	events := a.dataProvider.GetEvents()
+	var events []models.Event
+	if provider, ok := a.dataProvider.(contracts.ContextEventProvider); ok {
+		events = provider.GetEventsContext(ctx)
+	} else {
+		events = a.dataProvider.GetEvents()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	result := make([]contracts.FrontendEventItem, 0, len(events))
 	for _, event := range events {
 		result = append(result, mapFrontendEventItem(event))

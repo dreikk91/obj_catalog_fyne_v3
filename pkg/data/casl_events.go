@@ -382,6 +382,10 @@ func (p *CASLCloudProvider) buildSharedObjectContext(ctx context.Context) (
 const caslGetEventsHTTPTimeout = 1500 * time.Millisecond
 
 func (p *CASLCloudProvider) GetEvents() []models.Event {
+	return p.GetEventsContext(context.Background())
+}
+
+func (p *CASLCloudProvider) GetEventsContext(parent context.Context) []models.Event {
 	// Realtime bootstrap не має блокувати отримання журналу подій.
 	// Якщо websocket ще не готовий, піднімаємо його у фоні, а сам GetEvents
 	// працює через коротке HTTP-опитування або віддає кеш.
@@ -410,7 +414,7 @@ func (p *CASLCloudProvider) GetEvents() []models.Event {
 
 	// Стрім ще не підключений — HTTP-опитування для початкового завантаження.
 	// Використовуємо короткий таймаут, щоб не перевищувати ліміт combined provider.
-	ctx, cancel := context.WithTimeout(context.Background(), caslGetEventsHTTPTimeout)
+	ctx, cancel := context.WithTimeout(parent, caslGetEventsHTTPTimeout)
 	defer cancel()
 	if events, err := p.readEventsJournalAsEvents(ctx); err == nil {
 		return events
@@ -1741,7 +1745,14 @@ func (p *CASLCloudProvider) refreshCASLAlarmSnapshot(ctx context.Context, forceT
 }
 
 func (p *CASLCloudProvider) GetAlarms() []models.Alarm {
+	return p.GetAlarmsContext(context.Background())
+}
+
+func (p *CASLCloudProvider) GetAlarmsContext(parent context.Context) []models.Alarm {
 	p.ensureRealtimeStreamAsync()
+	if parent.Err() != nil {
+		return nil
+	}
 
 	initialLoad := len(p.snapshotRealtimeAlarms()) == 0
 	p.mu.RLock()

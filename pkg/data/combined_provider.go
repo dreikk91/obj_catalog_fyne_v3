@@ -458,10 +458,21 @@ func (p *CombinedDataProvider) SourceNameForObjectID(objectID int) string {
 }
 
 func (p *CombinedDataProvider) GetObjects() []models.Object {
+	return p.GetObjectsContext(context.Background())
+}
+
+func (p *CombinedDataProvider) GetObjectsContext(ctx context.Context) []models.Object {
 	objects := make([]models.Object, 0, defaultObjectsCapacity)
 	if p != nil {
 		for _, source := range p.sources {
-			objects = append(objects, source.Provider.GetObjects()...)
+			if err := ctx.Err(); err != nil {
+				break
+			}
+			if provider, ok := source.Provider.(contracts.ContextObjectProvider); ok {
+				objects = append(objects, provider.GetObjectsContext(ctx)...)
+			} else {
+				objects = append(objects, source.Provider.GetObjects()...)
+			}
 		}
 	}
 
@@ -572,6 +583,10 @@ func (p *CombinedDataProvider) GetEmployees(objectID string) []models.Contact {
 }
 
 func (p *CombinedDataProvider) GetEvents() []models.Event {
+	return p.GetEventsContext(context.Background())
+}
+
+func (p *CombinedDataProvider) GetEventsContext(ctx context.Context) []models.Event {
 	if p == nil || len(p.sources) == 0 {
 		return nil
 	}
@@ -590,8 +605,14 @@ func (p *CombinedDataProvider) GetEvents() []models.Event {
 		go func(src *ProviderSource) {
 			defer wg.Done()
 
+			sourceCtx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
 			resChan := make(chan []models.Event, 1)
 			go func() {
+				if provider, ok := src.Provider.(contracts.ContextEventProvider); ok {
+					resChan <- provider.GetEventsContext(sourceCtx)
+					return
+				}
 				resChan <- src.Provider.GetEvents()
 			}()
 
@@ -602,7 +623,7 @@ func (p *CombinedDataProvider) GetEvents() []models.Event {
 					events = append(events, sourceEvents...)
 					mu.Unlock()
 				}
-			case <-time.After(timeout):
+			case <-sourceCtx.Done():
 				log.Warn().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout — повертаємо дані без цього джерела")
 				triggerProviderRecovery(src, "combined get_events timeout")
 			}
@@ -700,6 +721,10 @@ func (p *CombinedDataProvider) GetActiveAlarmSourceMessages(alarm models.Alarm) 
 }
 
 func (p *CombinedDataProvider) GetAlarms() []models.Alarm {
+	return p.GetAlarmsContext(context.Background())
+}
+
+func (p *CombinedDataProvider) GetAlarmsContext(ctx context.Context) []models.Alarm {
 	if p == nil || len(p.sources) == 0 {
 		return nil
 	}
@@ -718,8 +743,14 @@ func (p *CombinedDataProvider) GetAlarms() []models.Alarm {
 		go func(src *ProviderSource) {
 			defer wg.Done()
 
+			sourceCtx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
 			resChan := make(chan []models.Alarm, 1)
 			go func() {
+				if provider, ok := src.Provider.(contracts.ContextAlarmProvider); ok {
+					resChan <- provider.GetAlarmsContext(sourceCtx)
+					return
+				}
 				resChan <- src.Provider.GetAlarms()
 			}()
 
@@ -730,7 +761,7 @@ func (p *CombinedDataProvider) GetAlarms() []models.Alarm {
 					alarms = append(alarms, sourceAlarms...)
 					mu.Unlock()
 				}
-			case <-time.After(timeout):
+			case <-sourceCtx.Done():
 				log.Debug().Str("provider", src.Name).Msg("CombinedDataProvider: GetAlarms timeout")
 				triggerProviderRecovery(src, "combined get_alarms timeout")
 			}

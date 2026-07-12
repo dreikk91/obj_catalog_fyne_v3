@@ -14,6 +14,11 @@ type ObjectProvider interface {
 	GetObjectByID(id string) *models.Object
 }
 
+// ContextObjectProvider supports cancellation of potentially blocking object reads.
+type ContextObjectProvider interface {
+	GetObjectsContext(ctx context.Context) []models.Object
+}
+
 type DetailProvider interface {
 	GetZones(objectID string) []models.Zone
 	GetEmployees(objectID string) []models.Contact
@@ -45,6 +50,11 @@ type WorkAreaProvider interface {
 type EventProvider interface {
 	GetEvents() []models.Event
 	GetObjectEvents(objectID string) []models.Event
+}
+
+// ContextEventProvider supports cancellation of potentially blocking event reads.
+type ContextEventProvider interface {
+	GetEventsContext(ctx context.Context) []models.Event
 }
 
 // ObjectEventsRangeProvider optionally loads an object's events for an explicit time range.
@@ -99,6 +109,11 @@ type ActiveAlarmHistoryProvider interface {
 type AlarmProvider interface {
 	GetAlarms() []models.Alarm
 	ProcessAlarm(id string, user string, note string) error
+}
+
+// ContextAlarmProvider supports cancellation of potentially blocking alarm reads.
+type ContextAlarmProvider interface {
+	GetAlarmsContext(ctx context.Context) []models.Alarm
 }
 
 // AlarmProcessingOption описує одну причину відпрацювання тривоги.

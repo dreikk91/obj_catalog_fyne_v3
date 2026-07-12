@@ -16,14 +16,18 @@ import (
 )
 
 func (p *CASLCloudProvider) GetObjects() []models.Object {
-	p.ensureRealtimeStream()
+	return p.GetObjectsContext(context.Background())
+}
 
-	loadCtx, loadCancel := withCASLRequestTimeout(context.Background())
+func (p *CASLCloudProvider) GetObjectsContext(parent context.Context) []models.Object {
+	p.ensureRealtimeStreamAsync()
+
+	loadCtx, loadCancel := withCASLRequestTimeout(parent)
 	records, err := p.loadObjects(loadCtx)
 	loadCancel()
 	if err != nil {
 		log.Warn().Err(err).Msg("CASL: read_grd_object недоступний, fallback на read_pult")
-		fallbackCtx, fallbackCancel := withCASLRequestTimeout(context.Background())
+		fallbackCtx, fallbackCancel := withCASLRequestTimeout(parent)
 		pults, pErr := p.readPultsPublic(fallbackCtx)
 		fallbackCancel()
 		if pErr != nil {
@@ -37,18 +41,18 @@ func (p *CASLCloudProvider) GetObjects() []models.Object {
 		return objects
 	}
 
-	devicesCtx, devicesCancel := withCASLRequestTimeout(context.Background())
+	devicesCtx, devicesCancel := withCASLRequestTimeout(parent)
 	if _, devicesErr := p.loadDevices(devicesCtx); devicesErr != nil {
 		log.Debug().Err(devicesErr).Msg("CASL: не вдалося завантажити read_device (продовжую без enrich)")
 	}
 	devicesCancel()
 
-	disconnectedCtx, disconnectedCancel := withCASLRequestTimeout(context.Background())
+	disconnectedCtx, disconnectedCancel := withCASLRequestTimeout(parent)
 	disconnected := p.loadDisconnectedDevicesIndex(disconnectedCtx)
 	disconnectedCancel()
 
-	activeAlarms := p.loadCASLActiveAlarmIndex(context.Background())
-	enrichCtx, enrichCancel := withCASLRequestTimeout(context.Background())
+	activeAlarms := p.loadCASLActiveAlarmIndex(parent)
+	enrichCtx, enrichCancel := withCASLRequestTimeout(parent)
 	defer enrichCancel()
 	groupStats, groupStatsErr := p.loadCASLGroupStatistics(enrichCtx)
 	if groupStatsErr != nil {

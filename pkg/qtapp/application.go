@@ -258,12 +258,14 @@ func (a *Application) refreshObjects() {
 	a.refreshStateMu.Unlock()
 	go func() {
 		defer traceQtOperation("refreshObjects")()
+		ctx, cancel := context.WithTimeout(context.Background(), dataRefreshTimeout)
+		defer cancel()
 		result := make(chan []models.Object, 1)
-		go func() { result <- provider.GetObjects() }()
+		go func() { result <- provider.GetObjectsContext(ctx) }()
 		var objects []models.Object
 		select {
 		case objects = <-result:
-		case <-time.After(dataRefreshTimeout):
+		case <-ctx.Done():
 			log.Warn().Str("operation", "refreshObjects").Dur("timeout", dataRefreshTimeout).Msg("Qt data refresh timed out")
 			a.finishObjectsRefresh(seq)
 			return
@@ -298,12 +300,14 @@ func (a *Application) refreshAlarms() {
 	a.refreshStateMu.Unlock()
 	go func() {
 		defer traceQtOperation("refreshAlarms")()
+		ctx, cancel := context.WithTimeout(context.Background(), dataRefreshTimeout)
+		defer cancel()
 		result := make(chan []models.Alarm, 1)
-		go func() { result <- provider.GetAlarms() }()
+		go func() { result <- provider.GetAlarmsContext(ctx) }()
 		var alarms []models.Alarm
 		select {
 		case alarms = <-result:
-		case <-time.After(dataRefreshTimeout):
+		case <-ctx.Done():
 			log.Warn().Str("operation", "refreshAlarms").Dur("timeout", dataRefreshTimeout).Msg("Qt data refresh timed out")
 			a.finishAlarmsRefresh(seq)
 			return
@@ -339,12 +343,14 @@ func (a *Application) refreshEvents() {
 	a.refreshStateMu.Unlock()
 	go func() {
 		defer traceQtOperation("refreshEvents")()
+		ctx, cancel := context.WithTimeout(context.Background(), dataRefreshTimeout)
+		defer cancel()
 		result := make(chan []models.Event, 1)
-		go func() { result <- provider.GetEvents() }()
+		go func() { result <- provider.GetEventsContext(ctx) }()
 		var events []models.Event
 		select {
 		case events = <-result:
-		case <-time.After(dataRefreshTimeout):
+		case <-ctx.Done():
 			log.Warn().Str("operation", "refreshEvents").Dur("timeout", dataRefreshTimeout).Msg("Qt data refresh timed out")
 			a.finishEventsRefresh(seq)
 			return

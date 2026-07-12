@@ -56,8 +56,15 @@ func (p *FrontendUIDataProvider) AppendObjectToDeletedReport(obj *models.Object,
 }
 
 func (p *FrontendUIDataProvider) GetObjects() []models.Object {
-	summaries, err := p.listObjects()
+	return p.GetObjectsContext(context.Background())
+}
+
+func (p *FrontendUIDataProvider) GetObjectsContext(ctx context.Context) []models.Object {
+	summaries, err := p.listObjects(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return p.fallbackObjects()
 	}
 
@@ -151,8 +158,15 @@ func (p *FrontendUIDataProvider) GetExternalData(objectID string) (signal string
 }
 
 func (p *FrontendUIDataProvider) GetEvents() []models.Event {
-	items, err := p.listEvents()
+	return p.GetEventsContext(context.Background())
+}
+
+func (p *FrontendUIDataProvider) GetEventsContext(ctx context.Context) []models.Event {
+	items, err := p.listEvents(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return p.fallbackEvents()
 	}
 
@@ -217,8 +231,15 @@ func filterObjectEventsRange(events []models.Event, from time.Time, to time.Time
 }
 
 func (p *FrontendUIDataProvider) GetAlarms() []models.Alarm {
-	items, err := p.listAlarms()
+	return p.GetAlarmsContext(context.Background())
+}
+
+func (p *FrontendUIDataProvider) GetAlarmsContext(ctx context.Context) []models.Alarm {
+	items, err := p.listAlarms(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return p.fallbackAlarms()
 	}
 
@@ -405,29 +426,29 @@ func (p *FrontendUIDataProvider) CancelResponseGroup(ctx context.Context, alarm 
 	return p.frontend.CancelResponseGroup(ctx, alarm.ID)
 }
 
-func (p *FrontendUIDataProvider) listObjects() ([]contracts.FrontendObjectSummary, error) {
+func (p *FrontendUIDataProvider) listObjects(parent context.Context) ([]contracts.FrontendObjectSummary, error) {
 	if p == nil || p.frontend == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), frontendReadTimeout)
+	ctx, cancel := context.WithTimeout(parent, frontendReadTimeout)
 	defer cancel()
 	return p.frontend.ListObjects(ctx)
 }
 
-func (p *FrontendUIDataProvider) listAlarms() ([]contracts.FrontendAlarmItem, error) {
+func (p *FrontendUIDataProvider) listAlarms(parent context.Context) ([]contracts.FrontendAlarmItem, error) {
 	if p == nil || p.frontend == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), frontendReadTimeout)
+	ctx, cancel := context.WithTimeout(parent, frontendReadTimeout)
 	defer cancel()
 	return p.frontend.ListAlarms(ctx)
 }
 
-func (p *FrontendUIDataProvider) listEvents() ([]contracts.FrontendEventItem, error) {
+func (p *FrontendUIDataProvider) listEvents(parent context.Context) ([]contracts.FrontendEventItem, error) {
 	if p == nil || p.frontend == nil {
 		return nil, contracts.ErrFrontendBackendUnavailable
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), frontendReadTimeout)
+	ctx, cancel := context.WithTimeout(parent, frontendReadTimeout)
 	defer cancel()
 	return p.frontend.ListEvents(ctx)
 }

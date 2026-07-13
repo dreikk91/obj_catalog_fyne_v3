@@ -289,17 +289,27 @@ func (p *DBDataProvider) GetEmployees(idStr string) []models.Contact {
 
 // GetEvents отримує глобальні події (інкрементально)
 func (p *DBDataProvider) GetEvents() []models.Event {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return p.GetEventsContext(ctx)
+}
+
+// GetEventsContext obtains global events while honoring cancellation from the caller.
+func (p *DBDataProvider) GetEventsContext(ctx context.Context) []models.Event {
 	if p.db == nil {
 		log.Warn().Msg("Спроба отримати eventos без активного з'єднання БД")
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-	p.eventMutex.Lock()
+	if !lockMutexContext(ctx, &p.eventMutex) {
+		return nil
+	}
 	defer p.eventMutex.Unlock()
 
 	log.Debug().Msg("Завантаження глобальних подій...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
 	// 1. Якщо це перший запуск, отримуємо останній ID з бази
 	if p.lastEventID == 0 {

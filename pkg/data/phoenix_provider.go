@@ -279,15 +279,24 @@ func (p *PhoenixDataProvider) GetEmployees(objectID string) []models.Contact {
 }
 
 func (p *PhoenixDataProvider) GetEvents() []models.Event {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return p.GetEventsContext(ctx)
+}
+
+// GetEventsContext obtains Phoenix events while honoring cancellation from the caller.
+func (p *PhoenixDataProvider) GetEventsContext(ctx context.Context) []models.Event {
 	if p == nil || p.db == nil {
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-	p.eventMu.Lock()
+	if !lockMutexContext(ctx, &p.eventMu) {
+		return nil
+	}
 	defer p.eventMu.Unlock()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 
 	if p.lastEventID == 0 {
 		var rows []phoenixEventRow

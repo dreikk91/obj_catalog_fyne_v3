@@ -377,9 +377,9 @@ func (p *CASLCloudProvider) buildSharedObjectContext(ctx context.Context) (
 	return byPPK, byObject, nil
 }
 
-// caslGetEventsHTTPTimeout — короткий таймаут для HTTP-опитування в GetEvents.
-// Менший за timeout агрегатора, щоб не блокувати загальне оновлення журналу.
-const caslGetEventsHTTPTimeout = 1500 * time.Millisecond
+// caslGetEventsHTTPTimeout leaves time for the combined provider to finish its
+// five-second refresh while allowing a cold CASL journal cache to bootstrap.
+const caslGetEventsHTTPTimeout = 4 * time.Second
 
 func (p *CASLCloudProvider) GetEvents() []models.Event {
 	return p.GetEventsContext(context.Background())
@@ -393,11 +393,10 @@ func (p *CASLCloudProvider) GetEventsContext(parent context.Context) []models.Ev
 
 	p.mu.RLock()
 	token := p.token
+	cached := append([]models.Event(nil), p.cachedEvents...)
 	p.mu.RUnlock()
 	if token == "" {
-		p.mu.RLock()
-		defer p.mu.RUnlock()
-		return append([]models.Event(nil), p.cachedEvents...)
+		return cached
 	}
 
 	// Якщо WebSocket-підписка активна — повертаємо кеш одразу.
@@ -406,14 +405,12 @@ func (p *CASLCloudProvider) GetEventsContext(parent context.Context) []models.Ev
 	subscribed := p.realtimeRunning && p.realtimeSubscribed
 	p.realtimeMu.Unlock()
 
-	if subscribed {
-		p.mu.RLock()
-		defer p.mu.RUnlock()
-		return append([]models.Event(nil), p.cachedEvents...)
+	if caslCanUseCachedEvents(subscribed, cached) {
+		return cached
 	}
 
-	// Стрім ще не підключений — HTTP-опитування для початкового завантаження.
-	// Використовуємо короткий таймаут, щоб не перевищувати ліміт combined provider.
+	// A subscribed realtime stream contains only events received after it was
+	// opened. Bootstrap the empty cache from the HTTP journal first.
 	ctx, cancel := context.WithTimeout(parent, caslGetEventsHTTPTimeout)
 	defer cancel()
 	if events, err := p.readEventsJournalAsEvents(ctx); err == nil {
@@ -423,6 +420,10 @@ func (p *CASLCloudProvider) GetEventsContext(parent context.Context) []models.Ev
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return append([]models.Event(nil), p.cachedEvents...)
+}
+
+func caslCanUseCachedEvents(subscribed bool, cached []models.Event) bool {
+	return subscribed && len(cached) > 0
 }
 
 func (p *CASLCloudProvider) FrontendSourceHealth() contracts.FrontendSourceHealthInfo {

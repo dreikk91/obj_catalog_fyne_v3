@@ -511,7 +511,7 @@ func setEventRows(model *qt.QStandardItemModel, events []models.Event) {
 }
 
 func eventDetailsText(event models.Event) string {
-	details := strings.TrimSpace(event.Details)
+	details := normalizeEventDisplayText(event.Details)
 	context := eventContextText(event, details)
 	if context == "" {
 		return details
@@ -520,6 +520,13 @@ func eventDetailsText(event models.Event) string {
 		return context
 	}
 	return details + " | " + context
+}
+
+func normalizeEventDisplayText(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	value = strings.ReplaceAll(value, " )", ")")
+	value = strings.ReplaceAll(value, " ]", "]")
+	return value
 }
 
 func eventContextText(event models.Event, details string) string {

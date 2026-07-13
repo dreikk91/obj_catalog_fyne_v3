@@ -142,6 +142,13 @@ func TestEventDetailsTextIncludesGroupForArmDisarm(t *testing.T) {
 	}
 }
 
+func TestEventDetailsTextCollapsesBridgePadding(t *testing.T) {
+	event := models.Event{Details: "Пожежа (Грп.№01 Тірас 16 оптичний                         )"}
+	if got := eventDetailsText(event); got != "Пожежа (Грп.№01 Тірас 16 оптичний)" {
+		t.Fatalf("eventDetailsText() = %q", got)
+	}
+}
+
 func TestMinimumColumnWidthsMatchEventTables(t *testing.T) {
 	if got := len(minimumColumnWidths("events")); got != len(eventLogHeaders()) {
 		t.Fatalf("events minimum widths = %d, headers = %d", got, len(eventLogHeaders()))

@@ -70,9 +70,11 @@ type ProviderSource struct {
 // CombinedDataProvider об'єднує декілька пультових систем в один DataProvider.
 // Назва збережена для зворотної сумісності.
 type CombinedDataProvider struct {
-	sources       []ProviderSource
-	eventsTimeout time.Duration
-	alarmsTimeout time.Duration
+	sources              []ProviderSource
+	eventsTimeout        time.Duration
+	alarmsTimeout        time.Duration
+	eventsCacheMu        sync.RWMutex
+	cachedEventsBySource map[string][]models.Event
 }
 
 func (p *CombinedDataProvider) FrontendSourceCapabilities() []contracts.FrontendSourceCapability {
@@ -157,9 +159,10 @@ func NewMultiSourceDataProvider(sources ...ProviderSource) *CombinedDataProvider
 		filtered = append(filtered, source)
 	}
 	return &CombinedDataProvider{
-		sources:       filtered,
-		eventsTimeout: defaultCombinedProviderGetEventsTimeout,
-		alarmsTimeout: defaultCombinedProviderGetAlarmsTimeout,
+		sources:              filtered,
+		eventsTimeout:        defaultCombinedProviderGetEventsTimeout,
+		alarmsTimeout:        defaultCombinedProviderGetAlarmsTimeout,
+		cachedEventsBySource: make(map[string][]models.Event, len(filtered)),
 	}
 }
 
@@ -605,6 +608,7 @@ func (p *CombinedDataProvider) GetEventsContext(ctx context.Context) []models.Ev
 		wg.Add(1)
 		go func(src *ProviderSource) {
 			defer wg.Done()
+			sourceName := strings.TrimSpace(src.Name)
 			appendSourceEvents := func(sourceEvents []models.Event) {
 				if len(sourceEvents) == 0 {
 					return
@@ -612,6 +616,18 @@ func (p *CombinedDataProvider) GetEventsContext(ctx context.Context) []models.Ev
 				mu.Lock()
 				events = append(events, sourceEvents...)
 				mu.Unlock()
+			}
+			cacheSourceEvents := func(sourceEvents []models.Event) {
+				p.cacheSourceEvents(sourceName, sourceEvents)
+				appendSourceEvents(sourceEvents)
+			}
+			appendCachedSourceEvents := func() {
+				cached := p.cachedSourceEvents(sourceName)
+				if len(cached) == 0 {
+					return
+				}
+				log.Warn().Str("provider", sourceName).Int("cachedEvents", len(cached)).Msg("CombinedDataProvider: GetEvents timeout — використовуємо останній успішний кеш джерела")
+				appendSourceEvents(cached)
 			}
 
 			sourceCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -628,10 +644,15 @@ func (p *CombinedDataProvider) GetEventsContext(ctx context.Context) []models.Ev
 
 			select {
 			case sourceEvents := <-resChan:
-				appendSourceEvents(sourceEvents)
+				if sourceCtx.Err() == nil {
+					cacheSourceEvents(sourceEvents)
+				} else {
+					appendSourceEvents(sourceEvents)
+				}
 			case <-sourceCtx.Done():
 				if !contextAware {
-					log.Warn().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout — повертаємо дані без цього джерела")
+					appendCachedSourceEvents()
+					log.Warn().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout")
 					triggerProviderRecovery(src, "combined get_events timeout")
 					return
 				}
@@ -640,9 +661,10 @@ func (p *CombinedDataProvider) GetEventsContext(ctx context.Context) []models.Ev
 				// merely because both channels became ready at the same moment.
 				select {
 				case sourceEvents := <-resChan:
-					appendSourceEvents(sourceEvents)
+					cacheSourceEvents(sourceEvents)
 				case <-time.After(combinedEventsResultGraceTimeout):
-					log.Warn().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout — повертаємо дані без цього джерела")
+					appendCachedSourceEvents()
+					log.Warn().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout")
 					triggerProviderRecovery(src, "combined get_events timeout")
 				}
 			}
@@ -652,6 +674,25 @@ func (p *CombinedDataProvider) GetEventsContext(ctx context.Context) []models.Ev
 
 	sortEvents(events)
 	return events
+}
+
+func (p *CombinedDataProvider) cacheSourceEvents(source string, events []models.Event) {
+	if p == nil || source == "" {
+		return
+	}
+	p.eventsCacheMu.Lock()
+	p.cachedEventsBySource[source] = append([]models.Event(nil), events...)
+	p.eventsCacheMu.Unlock()
+}
+
+func (p *CombinedDataProvider) cachedSourceEvents(source string) []models.Event {
+	if p == nil || source == "" {
+		return nil
+	}
+	p.eventsCacheMu.RLock()
+	cached := append([]models.Event(nil), p.cachedEventsBySource[source]...)
+	p.eventsCacheMu.RUnlock()
+	return cached
 }
 
 func (p *CombinedDataProvider) GetObjectEvents(objectID string) []models.Event {

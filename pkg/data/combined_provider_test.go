@@ -488,6 +488,29 @@ func TestCombinedDataProvider_GetEvents_UsesCacheReturnedOnContextCancellation(t
 	}
 }
 
+func TestCombinedDataProvider_GetEvents_PreservesLastEventsWhenSourceTimesOut(t *testing.T) {
+	t.Parallel()
+
+	bridge := &combinedStubProvider{
+		events: []models.Event{{ID: 42, ObjectID: 42, Source: models.EventSourceBridge}},
+	}
+	provider := NewMultiSourceDataProvider(ProviderSource{Name: "bridge", Provider: bridge})
+	provider.eventsTimeout = 20 * time.Millisecond
+
+	if events := provider.GetEvents(); len(events) != 1 || events[0].ID != 42 {
+		t.Fatalf("initial bridge events = %+v, want cached event", events)
+	}
+
+	bridge.eventsDelay = 80 * time.Millisecond
+	events := provider.GetEvents()
+	if len(events) != 1 || events[0].ID != 42 {
+		t.Fatalf("events after timeout = %+v, want last successful bridge event", events)
+	}
+	if reasons := bridge.reconnectReasons(); len(reasons) != 1 || reasons[0] != "combined get_events timeout" {
+		t.Fatalf("unexpected reconnect reasons: %+v", reasons)
+	}
+}
+
 func TestCombinedDataProvider_GetAlarms_TriggersReconnectOnTimeout(t *testing.T) {
 	t.Parallel()
 

@@ -34,6 +34,7 @@ type caslEventContext struct {
 	TranslatorAlarms map[string]bool
 	LineNames        map[int]string
 	LineInfos        map[int]caslEventLineInfo
+	GroupNames       map[int]string
 }
 
 // caslTapeMessage is a native CASL tape ppk_msg row (general_tape_item/general_tape_objects).

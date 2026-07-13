@@ -1142,8 +1142,17 @@ func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {
 	panelID := strings.TrimSpace(row.PanelID)
 	objectID := p.registerPanelID(panelID)
 
-	details := phoenixAlarmDetails(row.CodeMessage, row.ZoneName, int(nullInt64(row.GroupNo)), row.GroupName)
+	classificationDetails := phoenixAlarmDetails(row.CodeMessage, row.ZoneName, int(nullInt64(row.GroupNo)), row.GroupName)
 	typeLabel := strings.TrimSpace(nullString(row.TypeMessage))
+	eventType := phoenixEventType(
+		row.EventCode,
+		row.ContactIDCode,
+		row.TypeCodeID,
+		row.TypeMessage,
+		row.AccessCode,
+		row.SystemFlag,
+		classificationDetails,
+	)
 
 	return models.Event{
 		ID:           stablePhoenixEventID(panelID, row.EventID),
@@ -1151,18 +1160,12 @@ func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {
 		ObjectID:     objectID,
 		ObjectNumber: panelID,
 		ObjectName:   phoenixObjectName(panelID, row.CompanyName, row.GroupName),
-		Type: phoenixEventType(
-			row.EventCode,
-			row.ContactIDCode,
-			row.TypeCodeID,
-			row.TypeMessage,
-			row.AccessCode,
-			row.SystemFlag,
-			details,
-		),
-		TypeLabel:  typeLabel,
-		ZoneNumber: int(nullInt64(row.ZoneNo)),
-		Details:    details,
+		Type:         eventType,
+		TypeLabel:    typeLabel,
+		ZoneNumber:   int(nullInt64(row.ZoneNo)),
+		ZoneName:     strings.TrimSpace(nullString(row.ZoneName)),
+		GroupName:    strings.TrimSpace(nullString(row.GroupName)),
+		Details:      strings.TrimSpace(nullString(row.CodeMessage)),
 		SC1: phoenixEventSC1(
 			row.TypeCodeID,
 			row.EventCode,
@@ -1170,7 +1173,7 @@ func (p *PhoenixDataProvider) mapEventRow(row phoenixEventRow) models.Event {
 			row.TypeMessage,
 			row.AccessCode,
 			row.SystemFlag,
-			details,
+			classificationDetails,
 		),
 	}
 }

@@ -53,6 +53,8 @@ type Event struct {
 	Type           EventType // Тип події
 	TypeLabel      string    // Оригінальний текст типу події від джерела
 	ZoneNumber     int       // Номер зони (якщо застосовно)
+	ZoneName       string    // Назва зони (якщо відома джерелу)
+	GroupName      string    // Назва групи (для постановки/зняття)
 	Details        string    // Додаткові деталі
 	UserName       string    // Користувач (для постановки/зняття)
 	SC1            int       // Код кольору з БД

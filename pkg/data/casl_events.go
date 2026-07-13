@@ -687,11 +687,13 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 
 		translator := map[string]string(nil)
 		lineInfos := map[int]caslEventLineInfo(nil)
+		groupNames := map[int]string(nil)
 		translatorAlarms := map[string]bool(nil)
 		deviceType := ""
 		if hasCtx {
 			translator = ctxItem.Translator
 			lineInfos = ctxItem.LineInfos
+			groupNames = ctxItem.GroupNames
 			translatorAlarms = ctxItem.TranslatorAlarms
 			deviceType = strings.TrimSpace(ctxItem.DeviceType)
 		}
@@ -744,6 +746,8 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 			Type:         eventType,
 			TypeLabel:    caslActionTypeLabel(sourceType),
 			ZoneNumber:   number,
+			ZoneName:     caslEventZoneName(number, lineInfos),
+			GroupName:    caslEventGroupName(eventType, number, groupNames),
 			Details:      details,
 			SC1:          mapCASLEventSC1(eventType),
 			Source:       models.EventSourceCASL,
@@ -752,6 +756,34 @@ func (p *CASLCloudProvider) mapCASLRowsToEvents(ctx context.Context, rows []CASL
 
 	sortEvents(events)
 	return events, maxEventTime
+}
+
+func caslEventZoneName(number int, lineInfos map[int]caslEventLineInfo) string {
+	if number <= 0 || len(lineInfos) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(lineInfos[number].Description)
+}
+
+func caslEventGroupName(eventType models.EventType, number int, groupNames map[int]string) string {
+	if (eventType != models.EventArm && eventType != models.EventDisarm) || number <= 0 {
+		return ""
+	}
+	return strings.TrimSpace(groupNames[number])
+}
+
+func caslEventGroupNames(rooms []caslRoom) map[int]string {
+	result := make(map[int]string, len(rooms))
+	for index, room := range rooms {
+		number := parseCASLID(room.RoomID)
+		if number <= 0 {
+			number = index + 1
+		}
+		if name := strings.TrimSpace(room.Name); name != "" {
+			result[number] = name
+		}
+	}
+	return result
 }
 
 func (p *CASLCloudProvider) loadEventContextsByObjectNum(ctx context.Context, objFilter map[string]struct{}, byPPK map[int64]caslEventContext) map[string]caslEventContext {
@@ -807,6 +839,7 @@ func (p *CASLCloudProvider) loadEventContextsByObjectNum(ctx context.Context, ob
 			ctxItem.ObjectName = "Об'єкт #" + ctxItem.ObjectNum
 		}
 		ctxItem.ObjectName = formatCASLJournalObjectName(ctxItem.ObjectNum, ctxItem.ObjectName)
+		ctxItem.GroupNames = caslEventGroupNames(record.Rooms)
 
 		device, hasDevice := p.resolveDeviceForObject(record)
 		if hasDevice {
@@ -880,6 +913,7 @@ func (p *CASLCloudProvider) loadEventContextsByPPK(ctx context.Context, ppkFilte
 			ctxItem.ObjectID = mapCASLObjectID(objRecord.ObjID, objRecord.Name, strconv.FormatInt(ppkNum, 10))
 			ctxItem.ObjectNum = preferredCASLObjectNumber(objRecord.ObjID, objRecord.Name, ppkNum)
 			ctxItem.ObjectName = strings.TrimSpace(objRecord.Name)
+			ctxItem.GroupNames = caslEventGroupNames(objRecord.Rooms)
 			if ctxItem.ObjectName == "" {
 				ctxItem.ObjectName = "Об'єкт #" + ctxItem.ObjectNum
 			}
@@ -2498,6 +2532,7 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 		lineInfos  map[int]caslEventLineInfo
 		deviceType string
 	)
+	groupNames := caslEventGroupNames(record.Rooms)
 
 	device, hasDevice := p.resolveDeviceForObject(record)
 	if hasDevice {
@@ -2580,6 +2615,8 @@ func (p *CASLCloudProvider) mapCASLObjectEvents(ctx context.Context, record casl
 			Type:         eventType,
 			TypeLabel:    caslActionTypeLabel(sourceType),
 			ZoneNumber:   zoneNumber,
+			ZoneName:     caslEventZoneName(zoneNumber, lineInfos),
+			GroupName:    caslEventGroupName(eventType, zoneNumber, groupNames),
 			Details:      details,
 			SC1:          mapCASLEventSC1(eventType),
 		})

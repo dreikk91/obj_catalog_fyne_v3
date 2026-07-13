@@ -112,15 +112,6 @@ func TestEventRowColorsUseSemanticPalette(t *testing.T) {
 	}
 }
 
-func TestEventZoneText(t *testing.T) {
-	if got := eventZoneText(models.Event{ZoneNumber: 12}); got != "12" {
-		t.Fatalf("eventZoneText() = %q, want %q", got, "12")
-	}
-	if got := eventZoneText(models.Event{}); got != "" {
-		t.Fatalf("eventZoneText() = %q, want empty string", got)
-	}
-}
-
 func TestEventRowSignatureIncludesZone(t *testing.T) {
 	base := models.Event{ID: 1, ZoneNumber: 3}
 	changed := base
@@ -130,9 +121,23 @@ func TestEventRowSignatureIncludesZone(t *testing.T) {
 	}
 }
 
-func TestEventDetailsTextIncludesZone(t *testing.T) {
-	event := models.Event{ZoneNumber: 12, Details: "Пожежна тривога"}
-	if got := eventDetailsText(event); got != "Зона 12 — Пожежна тривога" {
+func TestEventDetailsTextIncludesZoneNameForZoneAlarm(t *testing.T) {
+	event := models.Event{Type: models.EventFire, ZoneNumber: 12, ZoneName: "Склад", Details: "Пожежна тривога"}
+	if got := eventDetailsText(event); got != "Пожежна тривога | Склад" {
+		t.Fatalf("eventDetailsText() = %q", got)
+	}
+}
+
+func TestEventDetailsTextSkipsZoneForBatteryFault(t *testing.T) {
+	event := models.Event{Type: models.EventFault, ZoneNumber: 12, ZoneName: "Склад", Details: "Несправність АКБ"}
+	if got := eventDetailsText(event); got != "Несправність АКБ" {
+		t.Fatalf("eventDetailsText() = %q", got)
+	}
+}
+
+func TestEventDetailsTextIncludesGroupForArmDisarm(t *testing.T) {
+	event := models.Event{Type: models.EventArm, GroupName: "Нічна охорона", Details: "Постановка"}
+	if got := eventDetailsText(event); got != "Постановка | Група: Нічна охорона" {
 		t.Fatalf("eventDetailsText() = %q", got)
 	}
 }
@@ -141,7 +146,7 @@ func TestMinimumColumnWidthsMatchEventTables(t *testing.T) {
 	if got := len(minimumColumnWidths("events")); got != len(eventLogHeaders()) {
 		t.Fatalf("events minimum widths = %d, headers = %d", got, len(eventLogHeaders()))
 	}
-	if got := len(minimumColumnWidths("object_events")); got != 4 {
-		t.Fatalf("object events minimum widths = %d, want 4", got)
+	if got := len(minimumColumnWidths("object_events")); got != 3 {
+		t.Fatalf("object events minimum widths = %d, want 3", got)
 	}
 }

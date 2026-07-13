@@ -499,46 +499,81 @@ func setContactRows(model *qt.QStandardItemModel, contacts []models.Contact) {
 
 func setEventRows(model *qt.QStandardItemModel, events []models.Event) {
 	model.Clear()
-	model.SetHorizontalHeaderLabels([]string{"Час", "Подія", "Зона", "Опис"})
+	model.SetHorizontalHeaderLabels([]string{"Час", "Подія", "Опис"})
 	for _, event := range events {
 		textColor, rowColor := eventRowColors(event)
 		addColoredReadOnlyRow(model, []string{
 			event.GetDateTimeDisplay(),
 			event.GetTypeDisplay(),
-			eventZoneText(event),
 			eventDetailsText(event),
 		}, event.ObjectID, textColor, rowColor)
 	}
 }
 
-func eventZoneText(event models.Event) string {
-	if event.ZoneNumber <= 0 {
-		return ""
-	}
-	return strconv.Itoa(event.ZoneNumber)
-}
-
 func eventDetailsText(event models.Event) string {
 	details := strings.TrimSpace(event.Details)
-	if event.ZoneNumber <= 0 {
+	context := eventContextText(event, details)
+	if context == "" {
 		return details
 	}
-	zone := "Зона " + strconv.Itoa(event.ZoneNumber)
 	if details == "" {
-		return zone
+		return context
 	}
-	return zone + " — " + details
+	return details + " | " + context
+}
+
+func eventContextText(event models.Event, details string) string {
+	switch event.Type {
+	case models.EventArm, models.EventDisarm:
+		if group := strings.TrimSpace(event.GroupName); group != "" && !containsEventText(details, group) {
+			return "Група: " + group
+		}
+	case models.EventFire, models.EventBurglary, models.EventPanic, models.EventMedical, models.EventGas, models.EventTamper:
+		return eventZoneContextText(event, details)
+	case models.EventFault:
+		if !isSystemFaultDetails(details) {
+			return eventZoneContextText(event, details)
+		}
+	}
+	return ""
+}
+
+func eventZoneContextText(event models.Event, details string) string {
+	zone := strings.TrimSpace(event.ZoneName)
+	if zone == "" && event.ZoneNumber > 0 {
+		zone = "Зона " + strconv.Itoa(event.ZoneNumber)
+	}
+	if zone == "" || containsEventText(details, zone) {
+		return ""
+	}
+	return zone
+}
+
+func containsEventText(details string, value string) bool {
+	return strings.Contains(strings.ToLower(details), strings.ToLower(value))
+}
+
+func isSystemFaultDetails(details string) bool {
+	value := strings.ToLower(details)
+	for _, marker := range []string{"акб", "акумулятор", "battery", "живлен", "живлення", "220", "мереж", "power"} {
+		if strings.Contains(value, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func eventRowSignature(event models.Event) string {
 	return fmt.Sprintf(
-		"%d:%d:%d:%s:%d:%d:%s:%s:%s:%s:%s",
+		"%d:%d:%d:%s:%d:%d:%s:%s:%s:%s:%s:%s:%s",
 		event.ID,
 		event.ObjectID,
 		event.Time.UnixNano(),
 		string(event.Type),
 		event.SC1,
 		event.ZoneNumber,
+		strings.TrimSpace(event.ZoneName),
+		strings.TrimSpace(event.GroupName),
 		strings.TrimSpace(event.TypeLabel),
 		strings.TrimSpace(event.ObjectName),
 		strings.TrimSpace(event.ObjectNumber),
@@ -549,14 +584,13 @@ func eventRowSignature(event models.Event) string {
 
 func setGlobalEventRows(model *qt.QStandardItemModel, events []models.Event) {
 	model.Clear()
-	model.SetHorizontalHeaderLabels([]string{"Час", "№", "Подія", "Зона", "Об'єкт", "Опис", "Джерело"})
+	model.SetHorizontalHeaderLabels([]string{"Час", "№", "Подія", "Об'єкт", "Опис", "Джерело"})
 	for _, event := range events {
 		textColor, rowColor := eventRowColors(event)
 		addColoredReadOnlyRow(model, []string{
 			event.GetDateTimeDisplay(),
 			eventObjectNumber(event),
 			event.GetTypeDisplay(),
-			eventZoneText(event),
 			strings.TrimSpace(event.ObjectName),
 			eventDetailsText(event),
 			viewmodels.EventSourceName(event),

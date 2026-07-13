@@ -1038,3 +1038,21 @@ func TestPhoenixMapEventRowPreservesZoneNumber(t *testing.T) {
 		t.Fatalf("ZoneNumber = %d, want 17", event.ZoneNumber)
 	}
 }
+
+func TestPhoenixMapEventRowPreservesZoneAndGroupNames(t *testing.T) {
+	t.Parallel()
+
+	provider := NewPhoenixDataProvider(nil, "")
+	event := provider.mapEventRow(phoenixEventRow{
+		PanelID:   "L00028",
+		ZoneName:  sql.NullString{String: "Склад", Valid: true},
+		GroupName: sql.NullString{String: "Нічна охорона", Valid: true},
+	})
+
+	if event.ZoneName != "Склад" {
+		t.Fatalf("ZoneName = %q, want %q", event.ZoneName, "Склад")
+	}
+	if event.GroupName != "Нічна охорона" {
+		t.Fatalf("GroupName = %q, want %q", event.GroupName, "Нічна охорона")
+	}
+}

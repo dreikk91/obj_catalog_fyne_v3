@@ -20,7 +20,7 @@ type eventLogTableModel struct {
 }
 
 func eventLogHeaders() []string {
-	return []string{"Час", "№", "Подія", "Зона", "Об'єкт", "Опис", "Джерело"}
+	return []string{"Час", "№", "Подія", "Об'єкт", "Опис", "Джерело"}
 }
 
 func newEventLogTableModel(headers []string) *eventLogTableModel {
@@ -124,12 +124,10 @@ func eventLogCellText(event models.Event, column int) string {
 	case 2:
 		return event.GetTypeDisplay()
 	case 3:
-		return eventZoneText(event)
-	case 4:
 		return strings.TrimSpace(event.ObjectName)
-	case 5:
+	case 4:
 		return eventDetailsText(event)
-	case 6:
+	case 5:
 		return viewmodels.EventSourceName(event)
 	default:
 		return ""

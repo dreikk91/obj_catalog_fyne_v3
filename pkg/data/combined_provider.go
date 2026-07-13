@@ -54,6 +54,7 @@ const (
 
 	defaultCombinedProviderGetEventsTimeout = 5 * time.Second
 	defaultCombinedProviderGetAlarmsTimeout = 3 * time.Second
+	combinedEventsResultGraceTimeout        = 100 * time.Millisecond
 )
 
 // ProviderSource описує одне джерело даних у мультисистемній конфігурації.
@@ -604,10 +605,19 @@ func (p *CombinedDataProvider) GetEventsContext(ctx context.Context) []models.Ev
 		wg.Add(1)
 		go func(src *ProviderSource) {
 			defer wg.Done()
+			appendSourceEvents := func(sourceEvents []models.Event) {
+				if len(sourceEvents) == 0 {
+					return
+				}
+				mu.Lock()
+				events = append(events, sourceEvents...)
+				mu.Unlock()
+			}
 
 			sourceCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			resChan := make(chan []models.Event, 1)
+			_, contextAware := src.Provider.(contracts.ContextEventProvider)
 			go func() {
 				if provider, ok := src.Provider.(contracts.ContextEventProvider); ok {
 					resChan <- provider.GetEventsContext(sourceCtx)
@@ -618,14 +628,23 @@ func (p *CombinedDataProvider) GetEventsContext(ctx context.Context) []models.Ev
 
 			select {
 			case sourceEvents := <-resChan:
-				if len(sourceEvents) > 0 {
-					mu.Lock()
-					events = append(events, sourceEvents...)
-					mu.Unlock()
-				}
+				appendSourceEvents(sourceEvents)
 			case <-sourceCtx.Done():
-				log.Warn().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout — повертаємо дані без цього джерела")
-				triggerProviderRecovery(src, "combined get_events timeout")
+				if !contextAware {
+					log.Warn().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout — повертаємо дані без цього джерела")
+					triggerProviderRecovery(src, "combined get_events timeout")
+					return
+				}
+				// Context-aware providers can return their last good cache as they
+				// observe cancellation. Keep that result instead of discarding it
+				// merely because both channels became ready at the same moment.
+				select {
+				case sourceEvents := <-resChan:
+					appendSourceEvents(sourceEvents)
+				case <-time.After(combinedEventsResultGraceTimeout):
+					log.Warn().Str("provider", src.Name).Msg("CombinedDataProvider: GetEvents timeout — повертаємо дані без цього джерела")
+					triggerProviderRecovery(src, "combined get_events timeout")
+				}
 			}
 		}(&p.sources[i])
 	}

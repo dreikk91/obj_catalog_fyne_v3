@@ -34,6 +34,15 @@ type combinedStubProvider struct {
 	reconnectCalls []string
 }
 
+type contextEventStubProvider struct {
+	*combinedStubProvider
+}
+
+func (s *contextEventStubProvider) GetEventsContext(ctx context.Context) []models.Event {
+	<-ctx.Done()
+	return append([]models.Event(nil), s.events...)
+}
+
 type combinedResponseGroupStub struct {
 	*combinedStubProvider
 	groups     []contracts.ResponseGroup
@@ -458,6 +467,24 @@ func TestCombinedDataProvider_GetEvents_TriggersReconnectOnTimeout(t *testing.T)
 	reasons := casl.reconnectReasons()
 	if len(reasons) != 1 || reasons[0] != "combined get_events timeout" {
 		t.Fatalf("unexpected reconnect reasons: %+v", reasons)
+	}
+}
+
+func TestCombinedDataProvider_GetEvents_UsesCacheReturnedOnContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	bridge := &contextEventStubProvider{combinedStubProvider: &combinedStubProvider{
+		events: []models.Event{{ID: 42, ObjectID: 42, Source: models.EventSourceBridge}},
+	}}
+	provider := NewMultiSourceDataProvider(ProviderSource{Name: "bridge", Provider: bridge})
+	provider.eventsTimeout = 20 * time.Millisecond
+
+	events := provider.GetEvents()
+	if len(events) != 1 || events[0].ID != 42 {
+		t.Fatalf("expected cached bridge event after cancellation, got %+v", events)
+	}
+	if reasons := bridge.reconnectReasons(); len(reasons) != 0 {
+		t.Fatalf("unexpected reconnect after cache result: %+v", reasons)
 	}
 }
 

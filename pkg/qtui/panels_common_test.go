@@ -111,3 +111,21 @@ func TestEventRowColorsUseSemanticPalette(t *testing.T) {
 		})
 	}
 }
+
+func TestEventZoneText(t *testing.T) {
+	if got := eventZoneText(models.Event{ZoneNumber: 12}); got != "12" {
+		t.Fatalf("eventZoneText() = %q, want %q", got, "12")
+	}
+	if got := eventZoneText(models.Event{}); got != "" {
+		t.Fatalf("eventZoneText() = %q, want empty string", got)
+	}
+}
+
+func TestEventRowSignatureIncludesZone(t *testing.T) {
+	base := models.Event{ID: 1, ZoneNumber: 3}
+	changed := base
+	changed.ZoneNumber = 4
+	if eventRowSignature(base) == eventRowSignature(changed) {
+		t.Fatal("eventRowSignature() must change when the zone changes")
+	}
+}

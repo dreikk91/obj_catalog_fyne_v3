@@ -1024,3 +1024,17 @@ func TestPhoenixMapEventRow_UsesTypeCodeMessageAsDisplayType(t *testing.T) {
 		t.Fatalf("alarm display type = %q, want %q", got, want)
 	}
 }
+
+func TestPhoenixMapEventRowPreservesZoneNumber(t *testing.T) {
+	t.Parallel()
+
+	provider := NewPhoenixDataProvider(nil, "")
+	event := provider.mapEventRow(phoenixEventRow{
+		PanelID: "L00028",
+		ZoneNo:  sql.NullInt64{Int64: 17, Valid: true},
+	})
+
+	if event.ZoneNumber != 17 {
+		t.Fatalf("ZoneNumber = %d, want 17", event.ZoneNumber)
+	}
+}

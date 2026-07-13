@@ -221,6 +221,17 @@ func TestMapDBEventRowsPreservesInputOrder(t *testing.T) {
 	}
 }
 
+func TestMapEventRowToModelPreservesBridgeZoneNumber(t *testing.T) {
+	t.Parallel()
+
+	zone := int64(17)
+	event := mapEventRowToModel(database.EventRow{Zonen: &zone}, 42)
+
+	if event.ZoneNumber != 17 {
+		t.Fatalf("ZoneNumber = %d, want 17", event.ZoneNumber)
+	}
+}
+
 func TestMapObjectRowToModel_PreservesSIMPhones(t *testing.T) {
 	t.Parallel()
 

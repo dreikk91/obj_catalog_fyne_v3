@@ -160,8 +160,8 @@ func NewWorkAreaPanel(prefs config.Preferences) *WorkAreaPanel {
 		panel.showContactContextMenu(pos)
 	})
 	panel.tabs.AddTab(panel.contactsTable.QWidget, "Контакти")
-	panel.eventsModel = qt.NewQStandardItemModel2(0, 3)
-	panel.eventsTable = newTable(panel.eventsModel, []string{"Час", "Подія", "Опис"})
+	panel.eventsModel = qt.NewQStandardItemModel2(0, 4)
+	panel.eventsTable = newTable(panel.eventsModel, []string{"Час", "Подія", "Зона", "Опис"})
 	panel.installTableColumnContextMenu("object_events", panel.eventsTable)
 	panel.tabs.AddTab(panel.buildEventsTab(), "Журнал")
 	panel.tabs.AddTab(panel.buildMediaTab(), "Медіа")
@@ -668,8 +668,8 @@ func (panel *WorkAreaPanel) SetObject(object models.Object, zones []models.Zone,
 		} else {
 			eventsWidths := panel.captureTableWidthsIfSized("object_events", panel.eventsTable)
 			panel.eventsModel.Clear()
-			panel.eventsModel.SetHorizontalHeaderLabels([]string{"Час", "Подія", "Опис"})
-			addReadOnlyRow(panel.eventsModel, []string{"", "Оберіть вкладку для завантаження подій", ""})
+			panel.eventsModel.SetHorizontalHeaderLabels([]string{"Час", "Подія", "Зона", "Опис"})
+			addReadOnlyRow(panel.eventsModel, []string{"", "Оберіть вкладку для завантаження подій", "", ""})
 			panel.restoreTableWidthsIfCaptured("object_events", panel.eventsTable, eventsWidths)
 			panel.eventsRowsReady = false
 		}
@@ -1563,8 +1563,8 @@ func (panel *WorkAreaPanel) clearObjectDetails() {
 	if panel.eventsModel != nil {
 		widths := panel.captureTableWidthsIfSized("object_events", panel.eventsTable)
 		panel.eventsModel.Clear()
-		panel.eventsModel.SetHorizontalHeaderLabels([]string{"Час", "Подія", "Опис"})
-		addReadOnlyRow(panel.eventsModel, []string{"", "Оберіть вкладку для завантаження подій", ""})
+		panel.eventsModel.SetHorizontalHeaderLabels([]string{"Час", "Подія", "Зона", "Опис"})
+		addReadOnlyRow(panel.eventsModel, []string{"", "Оберіть вкладку для завантаження подій", "", ""})
 		panel.restoreTableWidthsIfCaptured("object_events", panel.eventsTable, widths)
 	}
 }
@@ -1858,8 +1858,8 @@ func (panel *WorkAreaPanel) loadEventsForCurrentObjectWithMode(force bool) {
 	if !force || panel.eventsLoadedObjectID != objectID {
 		eventsWidths := panel.captureTableWidthsIfSized("object_events", panel.eventsTable)
 		panel.eventsModel.Clear()
-		panel.eventsModel.SetHorizontalHeaderLabels([]string{"Час", "Подія", "Опис"})
-		addReadOnlyRow(panel.eventsModel, []string{"--:--", "Завантаження подій...", ""})
+		panel.eventsModel.SetHorizontalHeaderLabels([]string{"Час", "Подія", "Зона", "Опис"})
+		addReadOnlyRow(panel.eventsModel, []string{"--:--", "Завантаження подій...", "", ""})
 		panel.restoreTableWidthsIfCaptured("object_events", panel.eventsTable, eventsWidths)
 		panel.eventsRowsReady = false
 	}

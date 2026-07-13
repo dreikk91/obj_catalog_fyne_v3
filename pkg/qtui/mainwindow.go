@@ -651,7 +651,7 @@ func minimumColumnWidths(key string) []int {
 	case "alarms":
 		return []int{92, 70, 180, 260, 92, 92}
 	case "events":
-		return []int{120, 70, 150, 220, 280, 92}
+		return []int{120, 70, 150, 70, 220, 280, 92}
 	case "object_zones_flat":
 		return []int{72, 180, 120, 110}
 	case "object_zones":
@@ -659,7 +659,7 @@ func minimumColumnWidths(key string) []int {
 	case "object_contacts":
 		return []int{160, 130, 150, 110}
 	case "object_events":
-		return []int{128, 140, 320}
+		return []int{128, 140, 70, 320}
 	default:
 		return nil
 	}

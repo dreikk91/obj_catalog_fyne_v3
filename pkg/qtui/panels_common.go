@@ -506,7 +506,7 @@ func setEventRows(model *qt.QStandardItemModel, events []models.Event) {
 			event.GetDateTimeDisplay(),
 			event.GetTypeDisplay(),
 			eventZoneText(event),
-			strings.TrimSpace(event.Details),
+			eventDetailsText(event),
 		}, event.ObjectID, textColor, rowColor)
 	}
 }
@@ -516,6 +516,18 @@ func eventZoneText(event models.Event) string {
 		return ""
 	}
 	return strconv.Itoa(event.ZoneNumber)
+}
+
+func eventDetailsText(event models.Event) string {
+	details := strings.TrimSpace(event.Details)
+	if event.ZoneNumber <= 0 {
+		return details
+	}
+	zone := "Зона " + strconv.Itoa(event.ZoneNumber)
+	if details == "" {
+		return zone
+	}
+	return zone + " — " + details
 }
 
 func eventRowSignature(event models.Event) string {
@@ -546,7 +558,7 @@ func setGlobalEventRows(model *qt.QStandardItemModel, events []models.Event) {
 			event.GetTypeDisplay(),
 			eventZoneText(event),
 			strings.TrimSpace(event.ObjectName),
-			strings.TrimSpace(event.Details),
+			eventDetailsText(event),
 			viewmodels.EventSourceName(event),
 		}, event.ObjectID, textColor, rowColor)
 	}

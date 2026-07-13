@@ -5,7 +5,6 @@ package qtui
 import (
 	"hash/fnv"
 	"strconv"
-	"strings"
 
 	qt "github.com/mappu/miqt/qt6"
 
@@ -361,7 +360,7 @@ func (panel *EventLogPanel) showContextMenu(pos *qt.QPoint) {
 	copyAction.OnTriggered(func() {
 		clipboard := qt.QGuiApplication_Clipboard()
 		if clipboard != nil {
-			clipboard.SetText(strings.TrimSpace(event.Details))
+			clipboard.SetText(eventDetailsText(event))
 		}
 	})
 

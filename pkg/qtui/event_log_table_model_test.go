@@ -19,4 +19,7 @@ func TestEventLogTableIncludesZoneColumn(t *testing.T) {
 	if got := eventLogCellText(event, 3); got != "17" {
 		t.Fatalf("zone cell = %q, want %q", got, "17")
 	}
+	if got := eventLogCellText(event, 5); got != "Зона 17" {
+		t.Fatalf("details cell = %q, want %q", got, "Зона 17")
+	}
 }

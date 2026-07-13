@@ -129,3 +129,19 @@ func TestEventRowSignatureIncludesZone(t *testing.T) {
 		t.Fatal("eventRowSignature() must change when the zone changes")
 	}
 }
+
+func TestEventDetailsTextIncludesZone(t *testing.T) {
+	event := models.Event{ZoneNumber: 12, Details: "Пожежна тривога"}
+	if got := eventDetailsText(event); got != "Зона 12 — Пожежна тривога" {
+		t.Fatalf("eventDetailsText() = %q", got)
+	}
+}
+
+func TestMinimumColumnWidthsMatchEventTables(t *testing.T) {
+	if got := len(minimumColumnWidths("events")); got != len(eventLogHeaders()) {
+		t.Fatalf("events minimum widths = %d, headers = %d", got, len(eventLogHeaders()))
+	}
+	if got := len(minimumColumnWidths("object_events")); got != 4 {
+		t.Fatalf("object events minimum widths = %d, want 4", got)
+	}
+}

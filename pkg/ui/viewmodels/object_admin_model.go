@@ -35,9 +35,11 @@ type ObjectCoordinates struct {
 }
 
 type SIMPhoneUsage struct {
-	ObjN int64
-	Name string
-	Slot string
+	ObjN          int64
+	DisplayNumber string
+	Name          string
+	Slot          string
+	Source        string
 }
 
 func ObjectPersonalFromContracts(item contracts.AdminObjectPersonal) ObjectPersonal {
@@ -136,9 +138,11 @@ func SIMPhoneUsagesFromContracts(items []contracts.AdminSIMPhoneUsage) []SIMPhon
 	result := make([]SIMPhoneUsage, 0, len(items))
 	for _, item := range items {
 		result = append(result, SIMPhoneUsage{
-			ObjN: item.ObjN,
-			Name: item.Name,
-			Slot: item.Slot,
+			ObjN:          item.ObjN,
+			DisplayNumber: item.DisplayNumber,
+			Name:          item.Name,
+			Slot:          item.Slot,
+			Source:        item.Source,
 		})
 	}
 	return result

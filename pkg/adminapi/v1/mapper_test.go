@@ -225,8 +225,8 @@ func TestObjectAdminRoundTrip(t *testing.T) {
 		t.Fatalf("roundTrip coords = %+v, want original values", roundTrip)
 	}
 
-	simUsages := ToSIMPhoneUsages([]contracts.AdminSIMPhoneUsage{{ObjN: 1001, Name: "School", Slot: "SIM1"}})
-	if len(simUsages) != 1 || simUsages[0].Slot != "SIM1" {
+	simUsages := ToSIMPhoneUsages([]contracts.AdminSIMPhoneUsage{{ObjN: 1001, DisplayNumber: "A-1", Name: "School", Slot: "SIM1", Source: "Phoenix"}})
+	if len(simUsages) != 1 || simUsages[0].ObjN != 1001 || simUsages[0].DisplayNumber != "A-1" || simUsages[0].Slot != "SIM1" || simUsages[0].Source != "Phoenix" {
 		t.Fatalf("simUsages = %+v, want mapped usage", simUsages)
 	}
 }

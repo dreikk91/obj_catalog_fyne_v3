@@ -17,10 +17,7 @@ func (s *simPhoneUsageLookupStub) FindObjectsBySIMPhone(phone string, excludeObj
 	s.calledLookup = true
 	s.lastPhone = phone
 	s.lastExclude = excludeObjN
-	if s.err != nil {
-		return nil, s.err
-	}
-	return s.usages, nil
+	return s.usages, s.err
 }
 
 func TestSIMPhoneUsageViewModel_ResolveUsageText_EmptyPhone(t *testing.T) {
@@ -41,7 +38,7 @@ func TestSIMPhoneUsageViewModel_ResolveUsageText_Error(t *testing.T) {
 	stub := &simPhoneUsageLookupStub{err: errors.New("db error")}
 
 	text := vm.ResolveUsageText(stub, " 0501234567 ", nil)
-	if text != "Не вдалося перевірити номер у базі" {
+	if text != "Не вдалося перевірити номер у всіх джерелах" {
 		t.Fatalf("unexpected text: %q", text)
 	}
 	if !stub.calledLookup {
@@ -76,5 +73,34 @@ func TestSIMPhoneUsageViewModel_FormatUsageList_Empty(t *testing.T) {
 	vm := NewSIMPhoneUsageViewModel()
 	if got := vm.FormatUsageList(nil); got != "" {
 		t.Fatalf("expected empty string, got %q", got)
+	}
+}
+
+func TestSIMPhoneUsageViewModel_FormatUsageList_IncludesSourceAndDisplayNumber(t *testing.T) {
+	vm := NewSIMPhoneUsageViewModel()
+	got := vm.FormatUsageList([]SIMPhoneUsage{{
+		ObjN:          2000001,
+		DisplayNumber: "P-17",
+		Name:          "Склад",
+		Slot:          "SIM 2",
+		Source:        "Phoenix",
+	}})
+	want := "Номер вже використовується: #P-17 (Склад, SIM 2, Phoenix)"
+	if got != want {
+		t.Fatalf("FormatUsageList() = %q, want %q", got, want)
+	}
+}
+
+func TestSIMPhoneUsageViewModel_ResolveUsageText_PartialResult(t *testing.T) {
+	vm := NewSIMPhoneUsageViewModel()
+	stub := &simPhoneUsageLookupStub{
+		usages: []SIMPhoneUsage{{ObjN: 1001, Slot: "SIM 1", Source: "МІСТ/Firebird"}},
+		err:    errors.New("CASL unavailable"),
+	}
+
+	got := vm.ResolveUsageText(stub, "0501234567", nil)
+	want := "Номер вже використовується: #1001 (SIM 1, МІСТ/Firebird). Не вдалося перевірити всі джерела"
+	if got != want {
+		t.Fatalf("ResolveUsageText() = %q, want %q", got, want)
 	}
 }

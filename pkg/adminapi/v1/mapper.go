@@ -413,9 +413,11 @@ func ToSIMPhoneUsages(items []contracts.AdminSIMPhoneUsage) []SIMPhoneUsage {
 	result := make([]SIMPhoneUsage, 0, len(items))
 	for _, item := range items {
 		result = append(result, SIMPhoneUsage{
-			ObjN: item.ObjN,
-			Name: item.Name,
-			Slot: item.Slot,
+			ObjN:          item.ObjN,
+			DisplayNumber: item.DisplayNumber,
+			Name:          item.Name,
+			Slot:          item.Slot,
+			Source:        item.Source,
 		})
 	}
 	return result

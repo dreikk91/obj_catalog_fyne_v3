@@ -236,7 +236,9 @@ type ObjectCoordinates struct {
 }
 
 type SIMPhoneUsage struct {
-	ObjN int64
-	Name string
-	Slot string
+	ObjN          int64
+	DisplayNumber string
+	Name          string
+	Slot          string
+	Source        string
 }

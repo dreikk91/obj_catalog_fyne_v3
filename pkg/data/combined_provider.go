@@ -186,7 +186,10 @@ func (p *CombinedDataProvider) AdminProvider() contracts.AdminProvider {
 	for _, source := range p.sources {
 		admin, ok := source.Provider.(contracts.AdminProvider)
 		if ok {
-			return admin
+			return combinedAdminProvider{
+				AdminProvider: admin,
+				lookup:        p,
+			}
 		}
 	}
 	return nil

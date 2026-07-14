@@ -2,7 +2,9 @@ package data
 
 import (
 	"context"
+	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +13,79 @@ import (
 	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 )
+
+func TestCombinedDataProviderFindObjectsBySIMPhoneChecksEverySource(t *testing.T) {
+	bridge := &combinedSIMLookupStub{
+		combinedStubProvider: &combinedStubProvider{},
+		usages:               []contracts.AdminSIMPhoneUsage{{ObjN: 101, Name: "Магазин", Slot: "SIM 1"}},
+	}
+	phoenix := &combinedSIMLookupStub{
+		combinedStubProvider: &combinedStubProvider{},
+		usages:               []contracts.AdminSIMPhoneUsage{{ObjN: 200001, DisplayNumber: "P-22", Slot: "SIM 2"}},
+	}
+	casl := &combinedSIMLookupStub{
+		combinedStubProvider: &combinedStubProvider{},
+		usages:               []contracts.AdminSIMPhoneUsage{{ObjN: 300001, DisplayNumber: "C-33", Slot: "SIM 1"}},
+	}
+	provider := NewMultiSourceDataProvider(
+		ProviderSource{Name: "bridge", Provider: bridge},
+		ProviderSource{Name: "phoenix", Provider: phoenix},
+		ProviderSource{Name: "casl", Provider: casl},
+	)
+
+	got, err := provider.FindObjectsBySIMPhone("+38 (075) 447-96-15", nil)
+	if err != nil {
+		t.Fatalf("FindObjectsBySIMPhone() error = %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("FindObjectsBySIMPhone() returned %d usages, want 3: %+v", len(got), got)
+	}
+	sources := make(map[string]bool, len(got))
+	for _, usage := range got {
+		sources[usage.Source] = true
+	}
+	for _, want := range []string{"МІСТ/Firebird", "Phoenix", "CASL Cloud"} {
+		if !sources[want] {
+			t.Fatalf("missing source %q in %+v", want, got)
+		}
+	}
+}
+
+func TestCombinedDataProviderFindObjectsBySIMPhoneReturnsPartialResultsWithError(t *testing.T) {
+	bridge := &combinedSIMLookupStub{
+		combinedStubProvider: &combinedStubProvider{},
+		usages:               []contracts.AdminSIMPhoneUsage{{ObjN: 101, Slot: "SIM 1"}},
+	}
+	casl := &combinedSIMLookupStub{
+		combinedStubProvider: &combinedStubProvider{},
+		err:                  errors.New("API unavailable"),
+	}
+	provider := NewMultiSourceDataProvider(
+		ProviderSource{Name: "bridge", Provider: bridge},
+		ProviderSource{Name: "casl", Provider: casl},
+	)
+
+	got, err := provider.FindObjectsBySIMPhone("0754479615", nil)
+	if err == nil || !strings.Contains(err.Error(), "CASL Cloud") {
+		t.Fatalf("FindObjectsBySIMPhone() error = %v, want CASL source error", err)
+	}
+	if len(got) != 1 || got[0].Source != "МІСТ/Firebird" {
+		t.Fatalf("FindObjectsBySIMPhone() partial result = %+v", got)
+	}
+}
+
+func TestFindSIMPhoneUsagesInObjectsExcludesCurrentObject(t *testing.T) {
+	exclude := int64(10)
+	objects := []models.Object{
+		{ID: 10, DisplayNumber: "10", SIM1: "+38 (075) 447-96-15"},
+		{ID: 20, DisplayNumber: "P-20", Name: "Склад", SIM2: "0754479615"},
+	}
+
+	got := findSIMPhoneUsagesInObjects(objects, "0754479615", &exclude)
+	if len(got) != 1 || got[0].ObjN != 20 || got[0].DisplayNumber != "P-20" || got[0].Slot != "SIM 2" {
+		t.Fatalf("findSIMPhoneUsagesInObjects() = %+v", got)
+	}
+}
 
 type combinedStubProvider struct {
 	objects      []models.Object
@@ -47,6 +122,16 @@ type combinedResponseGroupStub struct {
 	*combinedStubProvider
 	groups     []contracts.ResponseGroup
 	groupCalls int
+}
+
+type combinedSIMLookupStub struct {
+	*combinedStubProvider
+	usages []contracts.AdminSIMPhoneUsage
+	err    error
+}
+
+func (s *combinedSIMLookupStub) FindObjectsBySIMPhone(string, *int64) ([]contracts.AdminSIMPhoneUsage, error) {
+	return append([]contracts.AdminSIMPhoneUsage(nil), s.usages...), s.err
 }
 
 func (s *combinedResponseGroupStub) ListResponseGroups(context.Context) ([]contracts.ResponseGroup, error) {

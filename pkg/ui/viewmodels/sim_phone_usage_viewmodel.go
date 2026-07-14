@@ -32,7 +32,10 @@ func (vm *SIMPhoneUsageViewModel) ResolveUsageText(
 
 	usages, err := lookup.FindObjectsBySIMPhone(phone, excludeObjN)
 	if err != nil {
-		return "Не вдалося перевірити номер у базі"
+		if len(usages) > 0 {
+			return vm.FormatUsageList(usages) + ". Не вдалося перевірити всі джерела"
+		}
+		return "Не вдалося перевірити номер у всіх джерелах"
 	}
 	return vm.FormatUsageList(usages)
 }
@@ -44,12 +47,26 @@ func (vm *SIMPhoneUsageViewModel) FormatUsageList(usages []SIMPhoneUsage) string
 
 	parts := make([]string, 0, len(usages))
 	for _, u := range usages {
+		objectNumber := strings.TrimSpace(u.DisplayNumber)
+		if objectNumber == "" {
+			objectNumber = fmt.Sprintf("%d", u.ObjN)
+		}
+		details := make([]string, 0, 3)
 		name := strings.TrimSpace(u.Name)
 		if name != "" {
-			parts = append(parts, fmt.Sprintf("#%d (%s, %s)", u.ObjN, name, u.Slot))
+			details = append(details, name)
+		}
+		if slot := strings.TrimSpace(u.Slot); slot != "" {
+			details = append(details, slot)
+		}
+		if source := strings.TrimSpace(u.Source); source != "" {
+			details = append(details, source)
+		}
+		if len(details) == 0 {
+			parts = append(parts, "#"+objectNumber)
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("#%d (%s)", u.ObjN, u.Slot))
+		parts = append(parts, fmt.Sprintf("#%s (%s)", objectNumber, strings.Join(details, ", ")))
 	}
 	return "Номер вже використовується: " + strings.Join(parts, "; ")
 }

@@ -11,6 +11,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/models"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -2391,6 +2392,77 @@ func TestCASLProvider_GetEmployees_EnrichesRoomUsersFromReadUser(t *testing.T) {
 	}
 	if contacts[0].Position != "IN_CHARGE" {
 		t.Fatalf("unexpected contact position: %q", contacts[0].Position)
+	}
+}
+
+func TestCASLProviderGetAllObjectContactsUsesSingleReadUserWithoutDeviceState(t *testing.T) {
+	var (
+		mu           sync.Mutex
+		commandCalls = make(map[string]int)
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case caslLoginPath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","token":"token-contact-export","user_id":"u-export","ws_url":"ws://localhost:23322"}`))
+		case caslCommandPath:
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			cmdType := strings.TrimSpace(asString(payload["type"]))
+			mu.Lock()
+			commandCalls[cmdType]++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+
+			switch cmdType {
+			case "read_grd_object":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[
+					{"obj_id":"24","name":"1003 Object","device_id":"23","device_number":1003,"in_charge":["41"],"rooms":[{"room_id":"10","users":[{"user_id":"41","role":"IN_CHARGE"}]}]},
+					{"obj_id":"25","name":"1004 Object","device_id":"24","device_number":1004,"in_charge":["42"]}
+				]}`))
+			case "read_user":
+				_, _ = w.Write([]byte(`{"status":"ok","data":[
+					{"user_id":"41","last_name":"Іваненко","first_name":"Іван","role":"IN_CHARGE","phone_numbers":[{"active":true,"number":"+380671112233"}]},
+					{"user_id":"42","last_name":"Петренко","first_name":"Петро","role":"IN_CHARGE","phone_numbers":[{"active":true,"number":"+380501112233"}]}
+				]}`))
+			default:
+				t.Fatalf("unexpected CASL command during contact export: %s", cmdType)
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewCASLCloudProvider(server.URL, "", 1, "test@lot.lviv.ua", "test123")
+	contactsByObject, err := provider.GetAllObjectContacts(context.Background())
+	if err != nil {
+		t.Fatalf("GetAllObjectContacts() error = %v", err)
+	}
+
+	firstID := mapCASLObjectID("24", "1003 Object", "1003")
+	secondID := mapCASLObjectID("25", "1004 Object", "1004")
+	if contacts := contactsByObject[firstID]; len(contacts) != 1 ||
+		contacts[0].Name != "Іваненко Іван" ||
+		contacts[0].Phone != "+380671112233" {
+		t.Fatalf("first object contacts = %+v", contacts)
+	}
+	if contacts := contactsByObject[secondID]; len(contacts) != 1 ||
+		contacts[0].Name != "Петренко Петро" ||
+		contacts[0].Phone != "+380501112233" {
+		t.Fatalf("second object contacts = %+v", contacts)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if commandCalls["read_grd_object"] != 1 {
+		t.Fatalf("read_grd_object calls = %d, want 1", commandCalls["read_grd_object"])
+	}
+	if commandCalls["read_user"] != 1 {
+		t.Fatalf("read_user calls = %d, want 1", commandCalls["read_user"])
+	}
+	if commandCalls["read_device_state"] != 0 {
+		t.Fatalf("read_device_state calls = %d, want 0", commandCalls["read_device_state"])
 	}
 }
 

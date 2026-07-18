@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -236,6 +237,80 @@ func (p *CASLCloudProvider) GetEmployees(objectID string) []models.Contact {
 		contacts = append(contacts, contact)
 	}
 
+	return contacts
+}
+
+// GetAllObjectContacts loads all CASL users once and maps them to cached objects locally.
+func (p *CASLCloudProvider) GetAllObjectContacts(ctx context.Context) (map[int][]models.Contact, error) {
+	if p == nil {
+		return nil, errors.New("контакти CASL: provider не ініціалізовано")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	records, err := p.loadObjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("завантажити об'єкти CASL: %w", err)
+	}
+	users, err := p.loadUsers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("виконати read_user для CASL: %w", err)
+	}
+
+	result := make(map[int][]models.Contact, len(records))
+	for _, record := range records {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		objectID := mapCASLObjectID(
+			record.ObjID,
+			record.Name,
+			strconv.FormatInt(record.DeviceNumber.Int64(), 10),
+		)
+		result[objectID] = buildCASLContactsForExport(record, users)
+	}
+	return result, nil
+}
+
+func buildCASLContactsForExport(record caslGrdObject, users map[string]caslUser) []models.Contact {
+	orderedIDs := normalizeContactIDs(record.InCharge, "")
+	contacts := make([]models.Contact, 0, len(orderedIDs))
+	seen := make(map[string]struct{}, len(orderedIDs))
+	priority := 1
+
+	appendUser := func(userID string, fallback caslUser) {
+		userID = strings.TrimSpace(userID)
+		if userID == "" {
+			return
+		}
+		if _, exists := seen[userID]; exists {
+			return
+		}
+		seen[userID] = struct{}{}
+
+		user := fallback
+		if detailed, ok := users[userID]; ok {
+			user = mergeCASLUsers(user, detailed)
+		}
+		if strings.TrimSpace(user.UserID) == "" {
+			user.UserID = userID
+		}
+		if !isCASLResponsibleUser(user) {
+			return
+		}
+		contacts = append(contacts, buildCASLContact(user, priority))
+		priority++
+	}
+
+	for _, room := range record.Rooms {
+		for _, roomUser := range room.Users {
+			appendUser(roomUser.UserID, roomUser)
+		}
+	}
+	for _, userID := range orderedIDs {
+		appendUser(userID, caslUser{UserID: userID, Role: "IN_CHARGE"})
+	}
 	return contacts
 }
 

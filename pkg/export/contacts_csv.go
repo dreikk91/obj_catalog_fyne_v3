@@ -213,7 +213,7 @@ func splitContactPhones(raw string) []string {
 	})
 	result := make([]string, 0, min(len(parts), 2))
 	for _, part := range parts {
-		part = strings.TrimSpace(part)
+		part = normalizeContactPhone(part)
 		if part == "" {
 			continue
 		}
@@ -223,4 +223,26 @@ func splitContactPhones(raw string) []string {
 		}
 	}
 	return result
+}
+
+func normalizeContactPhone(raw string) string {
+	digits := utils.DigitsOnly(raw)
+	if digits == "" {
+		return ""
+	}
+
+	switch {
+	case strings.HasPrefix(digits, "00") && len(digits) > 2:
+		return "+" + digits[2:]
+	case len(digits) == 10 && strings.HasPrefix(digits, "0"):
+		return "+38" + digits
+	case len(digits) == 9:
+		return "+380" + digits
+	case len(digits) == 12 && strings.HasPrefix(digits, "380"):
+		return "+" + digits
+	case strings.HasPrefix(strings.TrimSpace(raw), "+"):
+		return "+" + digits
+	default:
+		return digits
+	}
 }

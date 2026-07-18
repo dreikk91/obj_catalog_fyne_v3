@@ -17,22 +17,22 @@ func TestWriteContactsCSVGroupsSourcesAndBuildsSpeedDial(t *testing.T) {
 			Source:       contracts.FrontendSourceCASL,
 			ObjectNumber: "C-77",
 			Object:       models.Object{Name: "CASL object", Address: "CASL address"},
-			Contacts:     []models.Contact{{Name: "CASL user", Phone: "0500000003"}},
+			Contacts:     []models.Contact{{Name: "CASL user", Phone: "+38 (050) 000-00-03"}},
 		},
 		{
 			Source:       contracts.FrontendSourceBridge,
 			ObjectNumber: "1001",
 			Object:       models.Object{Name: "Bridge object", Address: "Bridge address"},
 			Contacts: []models.Contact{
-				{Name: "Second", Position: "Owner", Phone: "0500000002", Priority: 2},
-				{Name: "First", Position: "Manager", Phone: "0500000001 / 0670000001", Priority: 1},
+				{Name: "Second", Position: "Owner", Phone: "050-000-00-02", Priority: 2},
+				{Name: "First", Position: "Manager", Phone: "050 000 00 01 / (067) 000-00-01", Priority: 1},
 			},
 		},
 		{
 			Source:       contracts.FrontendSourcePhoenix,
 			ObjectNumber: "L00028",
 			Object:       models.Object{Name: "Phoenix object", Address: "Phoenix address"},
-			Contacts:     []models.Contact{{Name: "Phoenix user", Phone: "0500000004"}},
+			Contacts:     []models.Contact{{Name: "Phoenix user", Phone: "+38 (050) 000-00-04"}},
 		},
 	}
 
@@ -64,17 +64,35 @@ func TestWriteContactsCSVGroupsSourcesAndBuildsSpeedDial(t *testing.T) {
 	if first[0] != "МІСТ" || first[2] != "First" || first[6] != "Bridge object" {
 		t.Fatalf("first contact = %#v", first)
 	}
-	if first[9] != "0500000001" || first[12] != "*210011" || first[14] != "0670000001" {
+	if first[9] != "+380500000001" || first[12] != "*210011" || first[14] != "+380670000001" {
 		t.Fatalf("first contact phones/speed dial = %#v", first)
 	}
 	if records[2][2] != "Second" || records[2][12] != "*210012" {
 		t.Fatalf("second Bridge contact = %#v", records[2])
 	}
-	if records[3][0] != "Phoenix" || records[3][12] != "*3000281" {
+	if records[3][0] != "Phoenix" || records[3][9] != "+380500000004" || records[3][12] != "*3000281" {
 		t.Fatalf("Phoenix contact = %#v", records[3])
 	}
-	if records[4][0] != "CASL" || records[4][12] != "*4771" {
+	if records[4][0] != "CASL" || records[4][9] != "+380500000003" || records[4][12] != "*4771" {
 		t.Fatalf("CASL contact = %#v", records[4])
+	}
+}
+
+func TestNormalizeContactPhone(t *testing.T) {
+	tests := map[string]string{
+		"+38 (098) 985-25-98": "+380989852598",
+		"067-674-94-48":       "+380676749448",
+		"380 67 674 94 48":    "+380676749448",
+		"0038 067 674 94 48":  "+380676749448",
+		"67 674 94 48":        "+380676749448",
+		"+48 123 456 789":     "+48123456789",
+		"12345":               "12345",
+	}
+
+	for input, want := range tests {
+		if got := normalizeContactPhone(input); got != want {
+			t.Errorf("normalizeContactPhone(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 

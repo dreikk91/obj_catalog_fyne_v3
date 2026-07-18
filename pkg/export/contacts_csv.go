@@ -289,7 +289,7 @@ func splitUkrainianPhoneDigits(digits string) ([]string, bool) {
 		return nil, true
 	}
 
-	lengths := []int{14, 12, 10, 9}
+	lengths := []int{14, 12, 10, 9, 7}
 	for _, length := range lengths {
 		if len(digits) < length || !isUkrainianPhoneDigits(digits[:length]) {
 			continue
@@ -312,6 +312,8 @@ func isUkrainianPhoneDigits(digits string) bool {
 		return strings.HasPrefix(digits, "0")
 	case 9:
 		return !strings.HasPrefix(digits, "0")
+	case 7:
+		return true
 	default:
 		return false
 	}
@@ -330,6 +332,8 @@ func normalizeContactPhone(raw string) string {
 		return "+38" + digits
 	case len(digits) == 9:
 		return "+380" + digits
+	case len(digits) == 7:
+		return "+38032" + digits
 	case len(digits) == 12 && strings.HasPrefix(digits, "380"):
 		return "+" + digits
 	case strings.HasPrefix(strings.TrimSpace(raw), "+"):

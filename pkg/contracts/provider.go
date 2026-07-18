@@ -26,6 +26,11 @@ type DetailProvider interface {
 	GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time)
 }
 
+// AllObjectContactsProvider loads contacts for all objects without issuing one query per object.
+type AllObjectContactsProvider interface {
+	GetAllObjectContacts(ctx context.Context) (map[int][]models.Contact, error)
+}
+
 // WorkAreaDetailsProvider визначає мінімальний набір даних для правої панелі об'єкта.
 type WorkAreaDetailsProvider interface {
 	GetObjectByID(id string) *models.Object

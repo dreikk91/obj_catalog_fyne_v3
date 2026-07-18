@@ -589,6 +589,53 @@ func (p *CombinedDataProvider) GetEmployees(objectID string) []models.Contact {
 	return provider.GetEmployees(objectID)
 }
 
+// GetAllObjectContacts loads contacts from every configured source.
+func (p *CombinedDataProvider) GetAllObjectContacts(ctx context.Context) (map[int][]models.Contact, error) {
+	result := make(map[int][]models.Contact)
+	if p == nil {
+		return result, errors.New("combined provider is nil")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var loadErrors []error
+	for _, source := range p.sources {
+		if err := ctx.Err(); err != nil {
+			loadErrors = append(loadErrors, err)
+			break
+		}
+
+		if provider, ok := source.Provider.(contracts.AllObjectContactsProvider); ok {
+			contacts, err := provider.GetAllObjectContacts(ctx)
+			if err != nil {
+				loadErrors = append(loadErrors, fmt.Errorf("%s: %w", source.Name, err))
+				continue
+			}
+			for objectID, items := range contacts {
+				result[objectID] = append(result[objectID], items...)
+			}
+			continue
+		}
+
+		objects := source.Provider.GetObjects()
+		if provider, ok := source.Provider.(contracts.ContextObjectProvider); ok {
+			objects = provider.GetObjectsContext(ctx)
+		}
+		for _, object := range objects {
+			if err := ctx.Err(); err != nil {
+				loadErrors = append(loadErrors, err)
+				break
+			}
+			result[object.ID] = append(
+				result[object.ID],
+				source.Provider.GetEmployees(strconv.Itoa(object.ID))...,
+			)
+		}
+	}
+	return result, errors.Join(loadErrors...)
+}
+
 func (p *CombinedDataProvider) GetEvents() []models.Event {
 	return p.GetEventsContext(context.Background())
 }

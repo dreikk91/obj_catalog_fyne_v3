@@ -130,6 +130,22 @@ type combinedSIMLookupStub struct {
 	err    error
 }
 
+type combinedAllContactsStub struct {
+	*combinedStubProvider
+	contacts map[int][]models.Contact
+	err      error
+	calls    int
+}
+
+func (s *combinedAllContactsStub) GetAllObjectContacts(context.Context) (map[int][]models.Contact, error) {
+	s.calls++
+	result := make(map[int][]models.Contact, len(s.contacts))
+	for objectID, contacts := range s.contacts {
+		result[objectID] = append([]models.Contact(nil), contacts...)
+	}
+	return result, s.err
+}
+
 func (s *combinedSIMLookupStub) FindObjectsBySIMPhone(string, *int64) ([]contracts.AdminSIMPhoneUsage, error) {
 	return append([]contracts.AdminSIMPhoneUsage(nil), s.usages...), s.err
 }
@@ -350,6 +366,40 @@ func TestCombinedDataProvider_RoutesByObjectIDNamespace(t *testing.T) {
 	caslZones := provider.GetZones(secondaryObjIDStr)
 	if len(caslZones) != 1 || caslZones[0].Name != "CASL zone" {
 		t.Fatalf("unexpected CASL zones: %+v", caslZones)
+	}
+}
+
+func TestCombinedDataProviderGetAllObjectContactsUsesBulkProviderAndFallback(t *testing.T) {
+	bridge := &combinedAllContactsStub{
+		combinedStubProvider: &combinedStubProvider{},
+		contacts: map[int][]models.Contact{
+			1001: {{Name: "Bridge contact", Phone: "0500000001"}},
+		},
+	}
+	phoenixID := ids.PhoenixObjectIDNamespaceStart + 28
+	phoenix := &combinedStubProvider{
+		objects: []models.Object{{ID: phoenixID}},
+		employees: map[string][]models.Contact{
+			strconv.Itoa(phoenixID): {{Name: "Phoenix contact", Phone: "0500000002"}},
+		},
+	}
+	provider := NewMultiSourceDataProvider(
+		ProviderSource{Name: "bridge", Provider: bridge},
+		ProviderSource{Name: "phoenix", Provider: phoenix, OwnsObjectID: ids.IsPhoenixObjectID},
+	)
+
+	contacts, err := provider.GetAllObjectContacts(context.Background())
+	if err != nil {
+		t.Fatalf("GetAllObjectContacts() error = %v", err)
+	}
+	if bridge.calls != 1 {
+		t.Fatalf("bulk provider calls = %d, want 1", bridge.calls)
+	}
+	if got := contacts[1001]; len(got) != 1 || got[0].Name != "Bridge contact" {
+		t.Fatalf("Bridge contacts = %+v", got)
+	}
+	if got := contacts[phoenixID]; len(got) != 1 || got[0].Name != "Phoenix contact" {
+		t.Fatalf("Phoenix contacts = %+v", got)
 	}
 }
 

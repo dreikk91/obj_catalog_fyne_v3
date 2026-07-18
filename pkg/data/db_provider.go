@@ -287,6 +287,60 @@ func (p *DBDataProvider) GetEmployees(idStr string) []models.Contact {
 	return contacts
 }
 
+// GetAllObjectContacts loads all МІСТ contacts in one query for CSV export.
+func (p *DBDataProvider) GetAllObjectContacts(ctx context.Context) (map[int][]models.Contact, error) {
+	if p == nil || p.db == nil {
+		return nil, fmt.Errorf("контакти МІСТ: база не ініціалізована")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	type contactRow struct {
+		ObjectID int64   `db:"OBJN"`
+		ID       int64   `db:"ID"`
+		Surname  *string `db:"SURNAME1"`
+		Name     *string `db:"NAME1"`
+		Phone    *string `db:"PHONES1"`
+		Position *string `db:"STATUS1"`
+		Order    *int16  `db:"ORDER1"`
+	}
+
+	const query = `
+		SELECT
+			oi.OBJN,
+			p.ID,
+			p.SURNAME1,
+			p.NAME1,
+			p.PHONES1,
+			p.STATUS1,
+			p.ORDER1
+		FROM PERSONAL p
+		INNER JOIN OBJECTS_INFO oi ON oi.OBJUIN = p.OBJUIN
+		ORDER BY oi.OBJN, p.ORDER1, p.ID
+	`
+
+	var rows []contactRow
+	if err := p.db.SelectContext(ctx, &rows, p.db.Rebind(query)); err != nil {
+		return nil, fmt.Errorf("завантажити всі контакти МІСТ: %w", err)
+	}
+
+	result := make(map[int][]models.Contact)
+	for _, row := range rows {
+		if row.ObjectID <= 0 {
+			continue
+		}
+		objectID := int(row.ObjectID)
+		result[objectID] = append(result[objectID], models.Contact{
+			Name:     strings.TrimSpace(ptrToString(row.Surname) + " " + ptrToString(row.Name)),
+			Position: strings.TrimSpace(ptrToString(row.Position)),
+			Phone:    strings.TrimSpace(ptrToString(row.Phone)),
+			Priority: int(ptrToInt16(row.Order)),
+		})
+	}
+	return result, nil
+}
+
 // GetEvents отримує глобальні події (інкрементально)
 func (p *DBDataProvider) GetEvents() []models.Event {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

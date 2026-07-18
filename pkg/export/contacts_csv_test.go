@@ -83,3 +83,27 @@ func TestContactSpeedDialRequiresNumericObjectNumber(t *testing.T) {
 		t.Fatalf("contactSpeedDial() = %q, want empty", got)
 	}
 }
+
+func TestWriteContactsCSVCreatesHeaderBeforeContactsAreLoaded(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "contacts.csv")
+	count, err := WriteContactsCSV(filePath, nil)
+	if err != nil {
+		t.Fatalf("WriteContactsCSV() error = %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("WriteContactsCSV() count = %d, want 0", count)
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		t.Fatalf("open CSV: %v", err)
+	}
+	defer file.Close()
+	records, err := csv.NewReader(file).ReadAll()
+	if err != nil {
+		t.Fatalf("read CSV: %v", err)
+	}
+	if len(records) != 1 || len(records[0]) != len(contactsCSVHeader) {
+		t.Fatalf("header-only CSV = %#v", records)
+	}
+}

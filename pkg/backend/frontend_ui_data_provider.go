@@ -145,6 +145,26 @@ func (p *FrontendUIDataProvider) GetEmployees(objectID string) []models.Contact 
 	return mapModelContacts(details.Contacts)
 }
 
+// GetAllObjectContacts loads contacts through the aggregate data provider when available.
+func (p *FrontendUIDataProvider) GetAllObjectContacts(ctx context.Context) (map[int][]models.Contact, error) {
+	if p == nil || p.fallback == nil {
+		return nil, contracts.ErrFrontendBackendUnavailable
+	}
+	if provider, ok := p.fallback.(contracts.AllObjectContactsProvider); ok {
+		return provider.GetAllObjectContacts(ctx)
+	}
+
+	result := make(map[int][]models.Contact)
+	objects := p.GetObjectsContext(ctx)
+	for _, object := range objects {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		result[object.ID] = p.GetEmployees(strconv.Itoa(object.ID))
+	}
+	return result, nil
+}
+
 func (p *FrontendUIDataProvider) GetExternalData(objectID string) (signal string, testMsg string, lastTest time.Time, lastMsg time.Time) {
 	id, ok := parseObjectID(objectID)
 	if !ok {

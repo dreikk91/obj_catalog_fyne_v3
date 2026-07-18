@@ -175,11 +175,17 @@ func (a *Application) exportContacts() {
 	if !ok {
 		return
 	}
+	if _, err := objexport.WriteContactsCSV(filePath, nil); err != nil {
+		a.ui.ShowError("Експорт контактів", "Не вдалося створити CSV: "+err.Error())
+		a.ui.SetStatus("Експорт контактів не виконано")
+		return
+	}
 
 	provider := a.uiData
-	a.ui.SetStatus("Експорт контактів: завантаження об'єктів...")
+	a.ui.SetStatus("CSV створено, завантаження контактів: " + filePath)
+	log.Info().Str("file", filePath).Msg("Qt contact CSV export started")
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		objects := provider.GetObjectsContext(ctx)
 		if ctx.Err() != nil {
@@ -192,36 +198,25 @@ func (a *Application) exportContacts() {
 			return
 		}
 
-		const workers = 8
-		type exportJob struct {
-			index  int
-			object models.Object
-		}
-		jobs := make(chan exportJob)
+		contactsByObject, contactsErr := provider.GetAllObjectContacts(ctx)
 		exportObjects := make([]objexport.ContactExportObject, len(objects))
-		var wg sync.WaitGroup
-		for range workers {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for job := range jobs {
-					objectNumber := viewmodels.ObjectDisplayNumber(job.object)
-					exportObjects[job.index] = objexport.ContactExportObject{
-						Source:       contracts.DetectFrontendSourceByObjectID(job.object.ID),
-						ObjectNumber: objectNumber,
-						Object:       job.object,
-						Contacts:     provider.GetEmployees(strconv.Itoa(job.object.ID)),
-					}
-				}
-			}()
-		}
 		for index, object := range objects {
-			jobs <- exportJob{index: index, object: object}
+			exportObjects[index] = objexport.ContactExportObject{
+				Source:       contracts.DetectFrontendSourceByObjectID(object.ID),
+				ObjectNumber: viewmodels.ObjectDisplayNumber(object),
+				Object:       object,
+				Contacts:     contactsByObject[object.ID],
+			}
 		}
-		close(jobs)
-		wg.Wait()
 
 		count, err := objexport.WriteContactsCSV(filePath, exportObjects)
+		if err == nil && contactsErr != nil {
+			log.Warn().Err(contactsErr).Str("file", filePath).Int("contacts", count).
+				Msg("Qt contact CSV export completed with partial source errors")
+		} else if err == nil {
+			log.Info().Str("file", filePath).Int("contacts", count).
+				Msg("Qt contact CSV export completed")
+		}
 		a.runOnMainThread(func() {
 			if a.uiData != provider {
 				return
@@ -229,6 +224,19 @@ func (a *Application) exportContacts() {
 			if err != nil {
 				a.ui.ShowError("Експорт контактів", "Не вдалося створити CSV: "+err.Error())
 				a.ui.SetStatus("Експорт контактів не виконано")
+				return
+			}
+			if contactsErr != nil {
+				a.ui.ShowInfo(
+					"Експорт контактів",
+					fmt.Sprintf(
+						"Файл створено частково: %d контактів\nФайл: %s\n\nНе всі джерела відповіли: %v",
+						count,
+						filePath,
+						contactsErr,
+					),
+				)
+				a.ui.SetStatus(fmt.Sprintf("Частково експортовано контактів: %d", count))
 				return
 			}
 			a.ui.ShowInfo(

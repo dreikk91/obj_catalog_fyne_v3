@@ -254,28 +254,70 @@ func (p *PhoenixDataProvider) GetEmployees(objectID string) []models.Contact {
 
 	contacts := make([]models.Contact, 0, len(rows))
 	for _, row := range rows {
-		value := strings.TrimSpace(nullString(row.ContactValue))
-		if value == "" {
+		contact, ok := phoenixContactFromResponsibleRow(row)
+		if !ok {
 			continue
 		}
-		effectiveDisabled := phoenixEffectiveDisabled(row.GroupDisabled, row.PanelDisabled)
-		label := strings.TrimSpace(nullString(row.ContactLabel))
-		if label == "" {
-			label = strings.TrimSpace(nullString(row.ContactKind))
-		}
-		contacts = append(contacts, models.Contact{
-			Name:           strings.TrimSpace(nullString(row.ResponsibleName)),
-			Position:       label,
-			Phone:          value,
-			Priority:       int(nullInt64(row.CallOrder)),
-			CodeWord:       strings.TrimSpace(nullString(row.ResponsibleAddr)),
-			GroupID:        buildPhoenixGroupID(row.PanelID, row.GroupNo),
-			GroupNumber:    row.GroupNo,
-			GroupName:      phoenixGroupName(row.GroupNo, row.GroupName),
-			GroupStateText: phoenixGroupStateText(row.GroupIsOpen, effectiveDisabled, row.TestPanel, sql.NullInt64{}),
-		})
+		contacts = append(contacts, contact)
 	}
 	return contacts
+}
+
+// GetAllObjectContacts loads all Phoenix contacts in one query for CSV export.
+func (p *PhoenixDataProvider) GetAllObjectContacts(ctx context.Context) (map[int][]models.Contact, error) {
+	if p == nil || p.db == nil {
+		return nil, fmt.Errorf("контакти Phoenix: база не ініціалізована")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var rows []phoenixResponsibleRow
+	if err := p.db.SelectContext(ctx, &rows, phoenixAllResponsiblesQuery()); err != nil {
+		return nil, fmt.Errorf("завантажити всі контакти Phoenix: %w", err)
+	}
+
+	result := make(map[int][]models.Contact)
+	for _, row := range rows {
+		panelID := strings.TrimSpace(row.PanelID)
+		if panelID == "" {
+			continue
+		}
+		contact, ok := phoenixContactFromResponsibleRow(row)
+		if !ok {
+			continue
+		}
+		objectID := p.registerPanelID(panelID)
+		result[objectID] = append(result[objectID], contact)
+	}
+	return result, nil
+}
+
+func phoenixAllResponsiblesQuery() string {
+	return strings.ReplaceAll(phoenixResponsiblesQuery, "R.panel_id = @p1\n\tAND ", "")
+}
+
+func phoenixContactFromResponsibleRow(row phoenixResponsibleRow) (models.Contact, bool) {
+	value := strings.TrimSpace(nullString(row.ContactValue))
+	if value == "" {
+		return models.Contact{}, false
+	}
+	effectiveDisabled := phoenixEffectiveDisabled(row.GroupDisabled, row.PanelDisabled)
+	label := strings.TrimSpace(nullString(row.ContactLabel))
+	if label == "" {
+		label = strings.TrimSpace(nullString(row.ContactKind))
+	}
+	return models.Contact{
+		Name:           strings.TrimSpace(nullString(row.ResponsibleName)),
+		Position:       label,
+		Phone:          value,
+		Priority:       int(nullInt64(row.CallOrder)),
+		CodeWord:       strings.TrimSpace(nullString(row.ResponsibleAddr)),
+		GroupID:        buildPhoenixGroupID(row.PanelID, row.GroupNo),
+		GroupNumber:    row.GroupNo,
+		GroupName:      phoenixGroupName(row.GroupNo, row.GroupName),
+		GroupStateText: phoenixGroupStateText(row.GroupIsOpen, effectiveDisabled, row.TestPanel, sql.NullInt64{}),
+	}, true
 }
 
 func (p *PhoenixDataProvider) GetEvents() []models.Event {

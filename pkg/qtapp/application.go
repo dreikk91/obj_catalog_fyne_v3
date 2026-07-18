@@ -5,6 +5,8 @@ package qtapp
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +20,7 @@ import (
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/dataruntime"
 	"obj_catalog_fyne_v3/pkg/eventbus"
+	objexport "obj_catalog_fyne_v3/pkg/export"
 	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 	"obj_catalog_fyne_v3/pkg/omnicell"
@@ -129,6 +132,7 @@ func NewApplication() *Application {
 	app.ui.OnResponseGroupsRequested = app.showResponseGroups
 	app.ui.OnOperationalMapRequested = app.showOperationalMap
 	app.ui.OnNewObjectsRequested = app.showNewObjectsReport
+	app.ui.OnExportContacts = app.exportContacts
 	app.ui.OnCreateObject = app.createObject
 	app.ui.OnCreateCASLObject = app.createCASLObject
 	app.ui.OnEditObject = app.editCurrentObject
@@ -154,6 +158,86 @@ func (a *Application) showNewObjectsReport() {
 		return
 	}
 	a.ui.ShowNewObjectsReport(a.uiData, a.applyObjectContext)
+}
+
+func (a *Application) exportContacts() {
+	if a == nil || a.ui == nil || a.uiData == nil {
+		return
+	}
+
+	initialDir := strings.TrimSpace(config.LoadUIConfig(a.ui.Preferences()).ExportDir)
+	if initialDir == "" {
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			initialDir = filepath.Join(homeDir, "Downloads")
+		}
+	}
+	filePath, ok := a.ui.ChooseContactsCSVPath(initialDir)
+	if !ok {
+		return
+	}
+
+	provider := a.uiData
+	a.ui.SetStatus("Експорт контактів: завантаження об'єктів...")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		objects := provider.GetObjectsContext(ctx)
+		if ctx.Err() != nil {
+			a.runOnMainThread(func() {
+				if a.uiData == provider {
+					a.ui.ShowError("Експорт контактів", "Не вдалося завантажити список об'єктів за відведений час.")
+					a.ui.SetStatus("Експорт контактів не виконано")
+				}
+			})
+			return
+		}
+
+		const workers = 8
+		type exportJob struct {
+			index  int
+			object models.Object
+		}
+		jobs := make(chan exportJob)
+		exportObjects := make([]objexport.ContactExportObject, len(objects))
+		var wg sync.WaitGroup
+		for range workers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for job := range jobs {
+					objectNumber := viewmodels.ObjectDisplayNumber(job.object)
+					exportObjects[job.index] = objexport.ContactExportObject{
+						Source:       contracts.DetectFrontendSourceByObjectID(job.object.ID),
+						ObjectNumber: objectNumber,
+						Object:       job.object,
+						Contacts:     provider.GetEmployees(strconv.Itoa(job.object.ID)),
+					}
+				}
+			}()
+		}
+		for index, object := range objects {
+			jobs <- exportJob{index: index, object: object}
+		}
+		close(jobs)
+		wg.Wait()
+
+		count, err := objexport.WriteContactsCSV(filePath, exportObjects)
+		a.runOnMainThread(func() {
+			if a.uiData != provider {
+				return
+			}
+			if err != nil {
+				a.ui.ShowError("Експорт контактів", "Не вдалося створити CSV: "+err.Error())
+				a.ui.SetStatus("Експорт контактів не виконано")
+				return
+			}
+			a.ui.ShowInfo(
+				"Експорт контактів",
+				fmt.Sprintf("Експортовано контактів: %d\nФайл: %s", count, filePath),
+			)
+			a.ui.SetStatus(fmt.Sprintf("Експортовано контактів: %d", count))
+		})
+	}()
 }
 
 func (a *Application) showPhoenixLoginIfNeeded() {

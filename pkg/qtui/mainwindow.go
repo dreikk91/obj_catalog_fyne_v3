@@ -45,6 +45,7 @@ type MainWindow struct {
 	OnResponseGroupsRequested func()
 	OnOperationalMapRequested func()
 	OnNewObjectsRequested     func()
+	OnExportContactsRequested func()
 	OnCreateObjectRequested   func()
 	OnCreateCASLRequested     func()
 }
@@ -104,7 +105,12 @@ func (mw *MainWindow) buildMenuBar() {
 			mw.OnRefreshRequested()
 		}
 	})
-	fileMenu.AddActionWithText("Експорт")
+	exportContactsAction := fileMenu.AddActionWithText("Експорт контактів у CSV")
+	exportContactsAction.OnTriggered(func() {
+		if mw.OnExportContactsRequested != nil {
+			mw.OnExportContactsRequested()
+		}
+	})
 	fileMenu.AddSeparator()
 	exitAction := fileMenu.AddActionWithText("Вийти")
 	exitAction.SetShortcut(qt.NewQKeySequence2("Ctrl+Q"))

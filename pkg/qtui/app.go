@@ -5,6 +5,7 @@ package qtui
 import (
 	_ "embed"
 	"os"
+	"path/filepath"
 	"strings"
 
 	qt "github.com/mappu/miqt/qt6"
@@ -31,6 +32,7 @@ type App struct {
 	OnResponseGroupsRequested func()
 	OnOperationalMapRequested func()
 	OnNewObjectsRequested     func()
+	OnExportContacts          func()
 	OnCreateObject            func()
 	OnCreateCASLObject        func()
 	OnEditObject              func()
@@ -95,6 +97,11 @@ func NewApp() *App {
 	app.mainWindow.OnNewObjectsRequested = func() {
 		if app.OnNewObjectsRequested != nil {
 			app.OnNewObjectsRequested()
+		}
+	}
+	app.mainWindow.OnExportContactsRequested = func() {
+		if app.OnExportContacts != nil {
+			app.OnExportContacts()
 		}
 	}
 	app.mainWindow.OnCreateObjectRequested = func() {
@@ -234,6 +241,37 @@ func (a *App) ShowNewObjectsReport(provider contracts.ObjectProvider, onOpen fun
 		return
 	}
 	ShowNewObjectsReport(a.mainWindow.QWidget, provider, onOpen)
+}
+
+// ChooseContactsCSVPath opens a save dialog for the contacts CSV file.
+func (a *App) ChooseContactsCSVPath(initialDir string) (string, bool) {
+	if a == nil || a.mainWindow == nil {
+		return "", false
+	}
+	initialDir = strings.TrimSpace(initialDir)
+	dialog := qt.NewQFileDialog6(
+		a.mainWindow.QWidget,
+		"Експорт контактів",
+		initialDir,
+		"CSV files (*.csv)",
+	)
+	defer dialog.Delete()
+	dialog.SetAcceptMode(qt.QFileDialog__AcceptSave)
+	dialog.SetFileMode(qt.QFileDialog__AnyFile)
+	dialog.SetDefaultSuffix("csv")
+	dialog.SelectFile("contacts.csv")
+	if dialog.Exec() != int(qt.QDialog__Accepted) {
+		return "", false
+	}
+	files := dialog.SelectedFiles()
+	if len(files) == 0 || strings.TrimSpace(files[0]) == "" {
+		return "", false
+	}
+	filePath := strings.TrimSpace(files[0])
+	if !strings.EqualFold(filepath.Ext(filePath), ".csv") {
+		filePath += ".csv"
+	}
+	return filePath, true
 }
 
 func (a *App) Preferences() config.Preferences {

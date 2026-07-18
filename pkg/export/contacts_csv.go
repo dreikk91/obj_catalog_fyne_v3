@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"unicode"
 
 	"obj_catalog_fyne_v3/pkg/contracts"
 	"obj_catalog_fyne_v3/pkg/models"
@@ -90,11 +91,13 @@ func WriteContactsCSV(filePath string, objects []ContactExportObject) (int, erro
 		})
 
 		for index, contact := range contacts {
-			if err := writer.Write(contactCSVRecord(item, contact, index+1)); err != nil {
-				_ = file.Close()
-				return written, fmt.Errorf("записати контакт у CSV: %w", err)
+			for _, record := range contactCSVRecords(item, contact, index+1) {
+				if err := writer.Write(record); err != nil {
+					_ = file.Close()
+					return written, fmt.Errorf("записати контакт у CSV: %w", err)
+				}
+				written++
 			}
-			written++
 		}
 	}
 
@@ -109,8 +112,29 @@ func WriteContactsCSV(filePath string, objects []ContactExportObject) (int, erro
 	return written, nil
 }
 
+func contactCSVRecords(item ContactExportObject, contact models.Contact, ordinal int) [][]string {
+	phones := splitContactPhones(contact.Phone)
+	if len(phones) <= 2 {
+		return [][]string{contactCSVRecord(item, contact, ordinal)}
+	}
+
+	records := make([][]string, 0, (len(phones)+1)/2)
+	for index := 0; index < len(phones); index += 2 {
+		end := min(index+2, len(phones))
+		phoneContact := contact
+		phoneContact.Phone = strings.Join(phones[index:end], " / ")
+		recordOrdinal := 0
+		if index == 0 {
+			recordOrdinal = ordinal
+		}
+		records = append(records, contactCSVRecord(item, phoneContact, recordOrdinal))
+	}
+	return records
+}
+
 func contactCSVRecord(item ContactExportObject, contact models.Contact, ordinal int) []string {
 	phones := splitContactPhones(contact.Phone)
+	displayName, firstName := contactCSVNames(contact.Name, item.ObjectNumber)
 	phone1 := ""
 	phone2 := ""
 	if len(phones) > 0 {
@@ -128,8 +152,8 @@ func contactCSVRecord(item ContactExportObject, contact models.Contact, ordinal 
 	return []string{
 		contactSourceGroup(item.Source),
 		"external",
-		strings.TrimSpace(contact.Name),
-		strings.TrimSpace(contact.Name),
+		displayName,
+		firstName,
 		"",
 		strings.TrimSpace(contact.Position),
 		strings.TrimSpace(item.Object.Name),
@@ -145,6 +169,22 @@ func contactCSVRecord(item ContactExportObject, contact models.Contact, ordinal 
 		"",
 		"",
 	}
+}
+
+func contactCSVNames(name string, objectNumber string) (string, string) {
+	name = strings.TrimSpace(name)
+	objectNumber = strings.TrimSpace(objectNumber)
+
+	hasName := strings.ContainsFunc(name, func(r rune) bool {
+		return unicode.IsLetter(r) || unicode.IsDigit(r)
+	})
+	if !hasName {
+		return objectNumber, objectNumber
+	}
+	if objectNumber == "" {
+		return name, name
+	}
+	return objectNumber + " " + name, name
 }
 
 func contactSourceGroup(source contracts.FrontendSource) string {
@@ -211,18 +251,70 @@ func splitContactPhones(raw string) []string {
 			return false
 		}
 	})
-	result := make([]string, 0, min(len(parts), 2))
+	result := make([]string, 0, len(parts))
 	for _, part := range parts {
-		part = normalizeContactPhone(part)
-		if part == "" {
-			continue
-		}
-		result = append(result, part)
-		if len(result) == 2 {
-			break
+		for _, phone := range splitJoinedUkrainianPhones(part) {
+			phone = normalizeContactPhone(phone)
+			if phone == "" {
+				continue
+			}
+			result = append(result, phone)
 		}
 	}
 	return result
+}
+
+func splitJoinedUkrainianPhones(raw string) []string {
+	digits := utils.DigitsOnly(raw)
+	if digits == "" {
+		return nil
+	}
+
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(trimmed, "+") && !strings.HasPrefix(digits, "380") {
+		return []string{raw}
+	}
+	if strings.HasPrefix(digits, "00") && !strings.HasPrefix(digits, "00380") {
+		return []string{raw}
+	}
+
+	if phones, ok := splitUkrainianPhoneDigits(digits); ok {
+		return phones
+	}
+	return []string{raw}
+}
+
+func splitUkrainianPhoneDigits(digits string) ([]string, bool) {
+	if digits == "" {
+		return nil, true
+	}
+
+	lengths := []int{14, 12, 10, 9}
+	for _, length := range lengths {
+		if len(digits) < length || !isUkrainianPhoneDigits(digits[:length]) {
+			continue
+		}
+		tail, ok := splitUkrainianPhoneDigits(digits[length:])
+		if ok {
+			return append([]string{digits[:length]}, tail...), true
+		}
+	}
+	return nil, false
+}
+
+func isUkrainianPhoneDigits(digits string) bool {
+	switch len(digits) {
+	case 14:
+		return strings.HasPrefix(digits, "00380")
+	case 12:
+		return strings.HasPrefix(digits, "380")
+	case 10:
+		return strings.HasPrefix(digits, "0")
+	case 9:
+		return !strings.HasPrefix(digits, "0")
+	default:
+		return false
+	}
 }
 
 func normalizeContactPhone(raw string) string {

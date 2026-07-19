@@ -266,6 +266,12 @@ func (c DBConfig) PhoenixDSN() string {
 		q.Set("instance", instance)
 	}
 	applyURLQueryParams(q, c.PhoenixParams)
+	if _, configured := q["dial timeout"]; !configured {
+		q.Set("dial timeout", "5")
+	}
+	if _, configured := q["keepalive"]; !configured {
+		q.Set("keepalive", "5")
+	}
 	u.RawQuery = q.Encode()
 
 	dsn := u.String()

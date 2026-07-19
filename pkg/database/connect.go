@@ -65,11 +65,12 @@ func InitNamedDB(driverName string, connStr string, label string) (*sqlx.DB, err
 	db.SetMaxOpenConns(10)                  // Макс. активних з'єднань
 	db.SetMaxIdleConns(2)                   // Макс. з'єднань у черзі
 	db.SetConnMaxLifetime(time.Minute * 15) // Час життя з'єднання
+	db.SetConnMaxIdleTime(time.Minute)
 	zlog.Debug().Int("maxOpenConns", 10).Int("maxIdleConns", 2).Str("maxConnLifetime", "15m").Msg("Пул з'єднань налаштовано")
 
 	// Перша фізична перевірка з'єднання
 	zlog.Debug().Msg("Виконання першої перевірки з'єднання (ping)...")
-	if err := db.Ping(); err != nil {
+	if err := PingWithTimeout(context.Background(), db, 5*time.Second); err != nil {
 		zlog.Warn().Err(err).Str("label", dbLabel).Msg("БД недоступна при старті. Продовжуємо роботу, буде повторна спроба...")
 		// Не припиняємо роботу - спробуємо пізніше
 	} else {
@@ -106,9 +107,7 @@ func StartNamedHealthCheckWithStatus(db *sqlx.DB, label string) (context.CancelF
 		defer ticker.Stop()
 		for {
 			checkCount++
-			pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
-			err := db.PingContext(pingCtx)
-			pingCancel()
+			err := PingWithTimeout(ctx, db, 5*time.Second)
 			if err == nil {
 				health.state.Store(connectionHealthOnline)
 			} else {
@@ -129,17 +128,11 @@ func StartNamedHealthCheckWithStatus(db *sqlx.DB, label string) (context.CancelF
 				// Відновлюємо пул при багаторазових збоях
 				if failCount >= 3 {
 					zlog.Error().Err(err).Str("label", dbLabel).Int("consecutiveFailures", failCount).Msg("Багаторазові відмови з'єднання з БД")
-					// Видаляємо мертві з'єднання з пулу
-					db.SetMaxIdleConns(0)
-					time.Sleep(500 * time.Millisecond)
-					db.SetMaxIdleConns(2)
-
+					ResetIdleConnections(db)
 				} else {
 					// Спроба "м'якого" відновлення - скидаємо простійні з'єднання
 					zlog.Warn().Str("label", dbLabel).Msg("Спроба скидання пулу з'єднань...")
-					db.SetMaxIdleConns(0)
-					time.Sleep(500 * time.Millisecond)
-					db.SetMaxIdleConns(2)
+					ResetIdleConnections(db)
 				}
 			} else {
 				if failCount > 0 {
@@ -158,4 +151,42 @@ func StartNamedHealthCheckWithStatus(db *sqlx.DB, label string) (context.CancelF
 		}
 	}()
 	return cancel, health
+}
+
+// PingWithTimeout bounds the caller even when a database driver does not
+// return promptly after its context is canceled.
+func PingWithTimeout(parent context.Context, db *sqlx.DB, timeout time.Duration) error {
+	if db == nil {
+		return fmt.Errorf("database is nil")
+	}
+	if parent == nil {
+		parent = context.Background()
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+
+	result := make(chan error, 1)
+	go func() {
+		result <- db.PingContext(ctx)
+	}()
+
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// ResetIdleConnections discards pooled idle connections after a transport failure.
+func ResetIdleConnections(db *sqlx.DB) {
+	if db == nil {
+		return
+	}
+	db.SetMaxIdleConns(0)
+	db.SetMaxIdleConns(2)
 }

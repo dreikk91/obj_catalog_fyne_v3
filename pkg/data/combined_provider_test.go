@@ -113,6 +113,21 @@ type contextEventStubProvider struct {
 	*combinedStubProvider
 }
 
+type blockingLatestEventStubProvider struct {
+	*combinedStubProvider
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *blockingLatestEventStubProvider) GetLatestEventID() (int64, error) {
+	select {
+	case s.started <- struct{}{}:
+	default:
+	}
+	<-s.release
+	return 0, errors.New("released")
+}
+
 func (s *contextEventStubProvider) GetEventsContext(ctx context.Context) []models.Event {
 	<-ctx.Done()
 	return append([]models.Event(nil), s.events...)
@@ -430,6 +445,35 @@ func TestCombinedDataProvider_GetLatestEventID_ChangesWhenAnySourceChanges(t *te
 	if third == second {
 		t.Fatalf("cursor must change when secondary source changes: %d == %d", third, second)
 	}
+}
+
+func TestCombinedDataProvider_GetLatestEventID_RecoversFromPausedSource(t *testing.T) {
+	blocked := &blockingLatestEventStubProvider{
+		combinedStubProvider: &combinedStubProvider{},
+		started:              make(chan struct{}, 1),
+		release:              make(chan struct{}),
+	}
+	provider := NewMultiSourceDataProvider(ProviderSource{Name: "bridge", Provider: blocked})
+	provider.latestProbeTimeout = 20 * time.Millisecond
+
+	start := time.Now()
+	_, err := provider.GetLatestEventID()
+	if err == nil {
+		t.Fatal("GetLatestEventID() error = nil, want no available cursor")
+	}
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("GetLatestEventID() took %v, want a hard timeout", elapsed)
+	}
+	if reasons := blocked.reconnectReasons(); len(reasons) != 1 || reasons[0] != "combined latest event probe timeout" {
+		t.Fatalf("reconnect reasons = %+v", reasons)
+	}
+
+	select {
+	case <-blocked.started:
+	default:
+		t.Fatal("latest event probe did not start")
+	}
+	close(blocked.release)
 }
 
 func TestCombinedDataProvider_FrontendSourceCapabilities_IncludeHealth(t *testing.T) {

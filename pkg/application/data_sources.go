@@ -64,7 +64,7 @@ func buildDataProviderFromConfig(cfg config.DBConfig, pref fyne.Preferences, ver
 			return providerBuildResult{}, err
 		}
 		if verifyConnectivity {
-			if err := db.Ping(); err != nil {
+			if err := database.PingWithTimeout(context.Background(), db, 5*time.Second); err != nil {
 				_ = db.Close()
 				return providerBuildResult{}, fmt.Errorf("firebird ping failed: %w", err)
 			}
@@ -93,7 +93,7 @@ func buildDataProviderFromConfig(cfg config.DBConfig, pref fyne.Preferences, ver
 			return providerBuildResult{}, err
 		}
 		if verifyConnectivity {
-			if err := db.Ping(); err != nil {
+			if err := database.PingWithTimeout(context.Background(), db, 5*time.Second); err != nil {
 				_ = db.Close()
 				closeManagedDBResources(result.managedDBs)
 				return providerBuildResult{}, fmt.Errorf("phoenix ping failed: %w", err)

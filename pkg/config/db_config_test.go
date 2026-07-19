@@ -63,7 +63,22 @@ func TestDBConfig_PhoenixDSN(t *testing.T) {
 	}
 
 	got := cfg.PhoenixDSN()
-	want := "sqlserver://sa@localhost?database=Pult4DB&encrypt=disable&instance=PHOENIX4&trustservercertificate=true"
+	want := "sqlserver://sa@localhost?database=Pult4DB&dial+timeout=5&encrypt=disable&instance=PHOENIX4&keepalive=5&trustservercertificate=true"
+	if got != want {
+		t.Fatalf("PhoenixDSN() = %q, want %q", got, want)
+	}
+}
+
+func TestDBConfig_PhoenixDSNPreservesConfiguredTransportTimeouts(t *testing.T) {
+	t.Parallel()
+
+	cfg := DBConfig{
+		PhoenixHost:   "phoenix.local",
+		PhoenixParams: "dial timeout=9&keepalive=12",
+	}
+
+	got := cfg.PhoenixDSN()
+	want := "sqlserver://phoenix.local?dial+timeout=9&keepalive=12"
 	if got != want {
 		t.Fatalf("PhoenixDSN() = %q, want %q", got, want)
 	}

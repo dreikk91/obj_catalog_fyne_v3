@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -28,16 +29,19 @@ const initialGlobalEventsWindow = int64(5000)
 type DBDataProvider struct {
 	db *sqlx.DB
 
-	// Поля для інкрементального завантаження подій
-	lastEventID  int64
-	cachedEvents []models.Event
-	eventMutex   sync.RWMutex
+	eventState atomic.Pointer[dbEventState]
 
 	// Базовий DSN для підключення до інших БД на тому ж сервері
 	baseDSN string
 
 	vodafone *VodafoneService
 	kyivstar *KyivstarService
+}
+
+type dbEventState struct {
+	lastEventID  int64
+	cachedEvents []models.Event
+	eventMutex   sync.RWMutex
 }
 
 type DBProviderOption func(*DBDataProvider)
@@ -62,6 +66,7 @@ func WithKyivstarConfigStore(store config.KyivstarConfigStore) DBProviderOption 
 
 func NewDBDataProvider(db *sqlx.DB, baseDSN string, opts ...DBProviderOption) *DBDataProvider {
 	provider := &DBDataProvider{db: db, baseDSN: baseDSN}
+	provider.eventState.Store(&dbEventState{})
 	for _, opt := range opts {
 		if opt != nil {
 			opt(provider)
@@ -358,25 +363,26 @@ func (p *DBDataProvider) GetEventsContext(ctx context.Context) []models.Event {
 		ctx = context.Background()
 	}
 
-	if !lockMutexContext(ctx, &p.eventMutex) {
+	state := p.currentEventState()
+	if !lockMutexContext(ctx, &state.eventMutex) {
 		return nil
 	}
-	defer p.eventMutex.Unlock()
+	defer state.eventMutex.Unlock()
 
 	log.Debug().Msg("Завантаження глобальних подій...")
 
 	// 1. Якщо це перший запуск, отримуємо останній ID з бази
-	if p.lastEventID == 0 {
+	if state.lastEventID == 0 {
 		log.Debug().Msg("Перший запуск GetEvents - отримання останнього ID...")
 		lastID, err := database.GetLastEventID(ctx, p.db)
 		if err == nil {
 			if lastID > initialGlobalEventsWindow {
-				p.lastEventID = lastID - initialGlobalEventsWindow
+				state.lastEventID = lastID - initialGlobalEventsWindow
 			} else {
-				p.lastEventID = 0
+				state.lastEventID = 0
 			}
 			log.Debug().
-				Int64("lastEventID", p.lastEventID).
+				Int64("lastEventID", state.lastEventID).
 				Int64("lastSeenID", lastID).
 				Int64("initialWindow", initialGlobalEventsWindow).
 				Msg("Встановлено стартовий курсор подій")
@@ -386,34 +392,61 @@ func (p *DBDataProvider) GetEventsContext(ctx context.Context) []models.Event {
 	}
 
 	// 2. Отримуємо тільки нові події
-	rows, err := database.GetGlobalEvents(ctx, p.db, p.lastEventID)
+	rows, err := database.GetGlobalEvents(ctx, p.db, state.lastEventID)
 	if err != nil {
 		log.Error().Err(err).Msg("Помилка завантаження подій")
-		return append([]models.Event(nil), p.cachedEvents...)
+		return append([]models.Event(nil), state.cachedEvents...)
 	}
 
 	// 3. Додаємо нові події в кеш
 	if len(rows) > 0 {
 		log.Debug().Int("newEventsCount", len(rows)).Msg("Знайдено нові события")
 		newEvents := mapDBEventRows(rows, 0)
-		p.lastEventID = maxDBEventRowID(rows, p.lastEventID)
+		state.lastEventID = maxDBEventRowID(rows, state.lastEventID)
 
 		// Перевертаємо нові події, щоб остання була першою в списку (традиційний вигляд журналу)
 		reverseDBEvents(newEvents)
 
 		// Об'єднуємо: спочатку нові, потім старі
-		p.cachedEvents = append(newEvents, p.cachedEvents...)
+		state.cachedEvents = append(newEvents, state.cachedEvents...)
 
 		// Технічне обмеження кешу, щоб не роздувати пам'ять.
-		if len(p.cachedEvents) > maxCachedEvents {
-			log.Debug().Int("cachedEventsBefore", len(p.cachedEvents)).Int("maxCachedEvents", maxCachedEvents).Msg("Кеш подій перевищує ліміт, обрізаємо...")
-			p.cachedEvents = p.cachedEvents[:maxCachedEvents]
-			log.Debug().Int("cachedEventsAfter", len(p.cachedEvents)).Msg("Кеш обрізаний")
+		if len(state.cachedEvents) > maxCachedEvents {
+			log.Debug().Int("cachedEventsBefore", len(state.cachedEvents)).Int("maxCachedEvents", maxCachedEvents).Msg("Кеш подій перевищує ліміт, обрізаємо...")
+			state.cachedEvents = state.cachedEvents[:maxCachedEvents]
+			log.Debug().Int("cachedEventsAfter", len(state.cachedEvents)).Msg("Кеш обрізаний")
 		}
 	}
 
-	log.Debug().Int("totalCachedEvents", len(p.cachedEvents)).Msg("Події завантажено")
-	return append([]models.Event(nil), p.cachedEvents...)
+	log.Debug().Int("totalCachedEvents", len(state.cachedEvents)).Msg("Події завантажено")
+	return append([]models.Event(nil), state.cachedEvents...)
+}
+
+func (p *DBDataProvider) currentEventState() *dbEventState {
+	if p == nil {
+		return &dbEventState{}
+	}
+	if state := p.eventState.Load(); state != nil {
+		return state
+	}
+	state := &dbEventState{}
+	if p.eventState.CompareAndSwap(nil, state) {
+		return state
+	}
+	return p.eventState.Load()
+}
+
+// TriggerReconnect detaches event refreshes from a query stuck during a database outage.
+func (p *DBDataProvider) TriggerReconnect(reason string) {
+	if p == nil {
+		return
+	}
+	p.eventState.Store(&dbEventState{})
+	database.ResetIdleConnections(p.db)
+	log.Warn().
+		Str("provider", "bridge").
+		Str("reason", strings.TrimSpace(reason)).
+		Msg("БД/МІСТ: завислий цикл подій від'єднано; наступний запит використає нове з'єднання")
 }
 
 // GetLatestEventID повертає ID останньої події для легкого probe-перевіряння змін.

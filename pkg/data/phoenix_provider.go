@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"obj_catalog_fyne_v3/pkg/config"
+	"obj_catalog_fyne_v3/pkg/database"
 	"obj_catalog_fyne_v3/pkg/ids"
 	"obj_catalog_fyne_v3/pkg/models"
 
@@ -65,6 +66,10 @@ type PhoenixDataProvider struct {
 	latestProbeAt    time.Time
 	latestProbeValue int64
 
+	eventState atomic.Pointer[phoenixEventState]
+}
+
+type phoenixEventState struct {
 	eventMu      sync.RWMutex
 	lastEventID  int64
 	cachedEvents []models.Event
@@ -117,7 +122,7 @@ func (p *PhoenixDataProvider) isCurrentAlarmOperator(operator string) bool {
 }
 
 func NewPhoenixDataProvider(db *sqlx.DB, dsn string) *PhoenixDataProvider {
-	return &PhoenixDataProvider{
+	provider := &PhoenixDataProvider{
 		db:             db,
 		dsn:            dsn,
 		panelByID:      make(map[int]string),
@@ -125,6 +130,8 @@ func NewPhoenixDataProvider(db *sqlx.DB, dsn string) *PhoenixDataProvider {
 		objectCacheTTL: 15 * time.Second,
 		controlPending: make(map[string][]chan struct{}),
 	}
+	provider.eventState.Store(&phoenixEventState{})
+	return provider
 }
 
 func (p *PhoenixDataProvider) GetObjects() []models.Object {
@@ -335,40 +342,69 @@ func (p *PhoenixDataProvider) GetEventsContext(ctx context.Context) []models.Eve
 		ctx = context.Background()
 	}
 
-	if !lockMutexContext(ctx, &p.eventMu) {
+	state := p.currentEventState()
+	if !lockMutexContext(ctx, &state.eventMu) {
 		return nil
 	}
-	defer p.eventMu.Unlock()
+	defer state.eventMu.Unlock()
 
-	if p.lastEventID == 0 {
+	if state.lastEventID == 0 {
 		var rows []phoenixEventRow
 		if err := p.db.SelectContext(ctx, &rows, phoenixRecentEventsQuery); err != nil {
 			log.Error().Err(err).Msg("Phoenix: помилка початкового завантаження журналу подій")
-			return append([]models.Event(nil), p.cachedEvents...)
+			return append([]models.Event(nil), state.cachedEvents...)
 		}
 
-		p.lastEventID = maxPhoenixEventID(rows, p.lastEventID)
-		p.cachedEvents = mapPhoenixEventRows(rows, p.mapEventRow)
-		return append([]models.Event(nil), p.cachedEvents...)
+		state.lastEventID = maxPhoenixEventID(rows, state.lastEventID)
+		state.cachedEvents = mapPhoenixEventRows(rows, p.mapEventRow)
+		return append([]models.Event(nil), state.cachedEvents...)
 	}
 
 	var rows []phoenixEventRow
-	if err := p.db.SelectContext(ctx, &rows, phoenixIncrementalEventsQuery, p.lastEventID); err != nil {
-		log.Error().Err(err).Int64("lastEventID", p.lastEventID).Msg("Phoenix: помилка інкрементального завантаження подій")
-		return append([]models.Event(nil), p.cachedEvents...)
+	if err := p.db.SelectContext(ctx, &rows, phoenixIncrementalEventsQuery, state.lastEventID); err != nil {
+		log.Error().Err(err).Int64("lastEventID", state.lastEventID).Msg("Phoenix: помилка інкрементального завантаження подій")
+		return append([]models.Event(nil), state.cachedEvents...)
 	}
 	if len(rows) == 0 {
-		return append([]models.Event(nil), p.cachedEvents...)
+		return append([]models.Event(nil), state.cachedEvents...)
 	}
 
 	newEvents := mapPhoenixEventRows(rows, p.mapEventRow)
-	p.lastEventID = maxPhoenixEventID(rows, p.lastEventID)
+	state.lastEventID = maxPhoenixEventID(rows, state.lastEventID)
 	reversePhoenixEvents(newEvents)
-	p.cachedEvents = append(newEvents, p.cachedEvents...)
-	if len(p.cachedEvents) > 5000 {
-		p.cachedEvents = p.cachedEvents[:5000]
+	state.cachedEvents = append(newEvents, state.cachedEvents...)
+	if len(state.cachedEvents) > 5000 {
+		state.cachedEvents = state.cachedEvents[:5000]
 	}
-	return append([]models.Event(nil), p.cachedEvents...)
+	return append([]models.Event(nil), state.cachedEvents...)
+}
+
+func (p *PhoenixDataProvider) currentEventState() *phoenixEventState {
+	if p == nil {
+		return &phoenixEventState{}
+	}
+	if state := p.eventState.Load(); state != nil {
+		return state
+	}
+	state := &phoenixEventState{}
+	if p.eventState.CompareAndSwap(nil, state) {
+		return state
+	}
+	return p.eventState.Load()
+}
+
+// TriggerReconnect detaches event refreshes from a query stuck during a database outage.
+func (p *PhoenixDataProvider) TriggerReconnect(reason string) {
+	if p == nil {
+		return
+	}
+	p.eventState.Store(&phoenixEventState{})
+	p.invalidatePhoenixCaches()
+	database.ResetIdleConnections(p.db)
+	log.Warn().
+		Str("provider", phoenixSourceName).
+		Str("reason", strings.TrimSpace(reason)).
+		Msg("Phoenix: завислий цикл подій від'єднано; наступний запит використає нове з'єднання")
 }
 
 func (p *PhoenixDataProvider) GetObjectEvents(objectID string) []models.Event {

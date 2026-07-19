@@ -71,7 +71,7 @@ func New(cfg config.DBConfig, store ConfigStore, verifyConnectivity bool) (*Runt
 			return nil, err
 		}
 		if verifyConnectivity {
-			if err := db.Ping(); err != nil {
+			if err := database.PingWithTimeout(context.Background(), db, 5*time.Second); err != nil {
 				_ = db.Close()
 				return nil, fmt.Errorf("firebird ping failed: %w", err)
 			}
@@ -109,7 +109,7 @@ func New(cfg config.DBConfig, store ConfigStore, verifyConnectivity bool) (*Runt
 			return nil, err
 		}
 		if verifyConnectivity {
-			if err := db.Ping(); err != nil {
+			if err := database.PingWithTimeout(context.Background(), db, 5*time.Second); err != nil {
 				_ = db.Close()
 				runtime.Close()
 				return nil, fmt.Errorf("phoenix ping failed: %w", err)

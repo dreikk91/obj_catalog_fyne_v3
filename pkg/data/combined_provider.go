@@ -46,6 +46,8 @@ type timeoutRecoverableProvider interface {
 	TriggerReconnect(reason string)
 }
 
+var errLatestEventProbeTimeout = errors.New("latest event probe timeout")
+
 // Default slice capacities for pre-allocation
 const (
 	defaultObjectsCapacity = 128
@@ -55,6 +57,7 @@ const (
 	defaultCombinedProviderGetEventsTimeout = 5 * time.Second
 	defaultCombinedProviderGetAlarmsTimeout = 3 * time.Second
 	combinedEventsResultGraceTimeout        = 100 * time.Millisecond
+	combinedLatestEventProbeTimeout         = 4 * time.Second
 )
 
 // ProviderSource описує одне джерело даних у мультисистемній конфігурації.
@@ -73,6 +76,7 @@ type CombinedDataProvider struct {
 	sources              []ProviderSource
 	eventsTimeout        time.Duration
 	alarmsTimeout        time.Duration
+	latestProbeTimeout   time.Duration
 	eventsCacheMu        sync.RWMutex
 	cachedEventsBySource map[string][]models.Event
 }
@@ -981,6 +985,10 @@ func (p *CombinedDataProvider) GetLatestEventID() (int64, error) {
 
 	h := fnv.New64a()
 	written := false
+	timeout := p.latestProbeTimeout
+	if timeout <= 0 {
+		timeout = combinedLatestEventProbeTimeout
+	}
 
 	writePart := func(tag byte, value int64) {
 		_, _ = h.Write([]byte{tag})
@@ -994,8 +1002,16 @@ func (p *CombinedDataProvider) GetLatestEventID() (int64, error) {
 		if !ok {
 			continue
 		}
-		id, err := latest.GetLatestEventID()
+
+		id, err := latestEventIDWithTimeout(latest, timeout)
 		if err != nil {
+			if errors.Is(err, errLatestEventProbeTimeout) {
+				log.Warn().
+					Str("provider", source.Name).
+					Dur("timeout", timeout).
+					Msg("CombinedDataProvider: latest event probe timeout")
+				triggerProviderRecovery(&p.sources[i], "combined latest event probe timeout")
+			}
 			continue
 		}
 		tag := byte('a' + (i % 26))
@@ -1009,6 +1025,32 @@ func (p *CombinedDataProvider) GetLatestEventID() (int64, error) {
 		return 0, errors.New("no latest event cursor available")
 	}
 	return int64(h.Sum64() & 0x7fffffffffffffff), nil
+}
+
+func latestEventIDWithTimeout(provider latestEventIDProvider, timeout time.Duration) (int64, error) {
+	if provider == nil {
+		return 0, errors.New("latest event provider is nil")
+	}
+	if timeout <= 0 {
+		timeout = combinedLatestEventProbeTimeout
+	}
+
+	type probeResult struct {
+		id  int64
+		err error
+	}
+	result := make(chan probeResult, 1)
+	go func() {
+		id, err := provider.GetLatestEventID()
+		result <- probeResult{id: id, err: err}
+	}()
+
+	select {
+	case probe := <-result:
+		return probe.id, probe.err
+	case <-time.After(timeout):
+		return 0, errLatestEventProbeTimeout
+	}
 }
 
 func (p *CombinedDataProvider) providerForObjectID(objectID string) contracts.DataProvider {

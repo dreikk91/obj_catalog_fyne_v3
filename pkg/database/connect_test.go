@@ -39,6 +39,41 @@ func (c healthTestConn) Ping(_ context.Context) error {
 	return c.pingErr
 }
 
+type blockingPingDriver struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (d blockingPingDriver) Open(string) (driver.Conn, error) {
+	return blockingPingConn{started: d.started, release: d.release}, nil
+}
+
+type blockingPingConn struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (blockingPingConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (blockingPingConn) Close() error {
+	return nil
+}
+
+func (blockingPingConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (c blockingPingConn) Ping(context.Context) error {
+	select {
+	case c.started <- struct{}{}:
+	default:
+	}
+	<-c.release
+	return errors.New("released")
+}
+
 func TestInitNamedDB_ReturnsErrorForInvalidDriver(t *testing.T) {
 	db, err := InitNamedDB("missing-driver-for-test", "", "Broken")
 	if err == nil {
@@ -75,4 +110,32 @@ func TestStartNamedHealthCheckWithStatusRecordsInitialPing(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+func TestPingWithTimeoutBoundsDriverThatIgnoresContext(t *testing.T) {
+	const driverName = "connection-health-hard-timeout-test"
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	sql.Register(driverName, blockingPingDriver{started: started, release: release})
+	db, err := sql.Open(driverName, "")
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	defer db.Close()
+
+	start := time.Now()
+	err = PingWithTimeout(context.Background(), sqlx.NewDb(db, driverName), 20*time.Millisecond)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("PingWithTimeout() error = %v, want context deadline exceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("PingWithTimeout() took %v, want a hard timeout", elapsed)
+	}
+
+	select {
+	case <-started:
+	default:
+		t.Fatal("driver ping did not start")
+	}
+	close(release)
 }

@@ -97,6 +97,7 @@ type CASLCloudProvider struct {
 	eventsStartAtMs int64
 	eventsCursorMs  int64
 	eventsRevision  int64
+	eventsHTTPAt    time.Time
 
 	cachedDictionary        map[string]any
 	cachedDictionaryAt      time.Time

@@ -381,6 +381,10 @@ func (p *CASLCloudProvider) buildSharedObjectContext(ctx context.Context) (
 // five-second refresh while allowing a cold CASL journal cache to bootstrap.
 const caslGetEventsHTTPTimeout = 4 * time.Second
 
+// caslEventsHTTPReconcileInterval bounds how long a subscribed realtime stream
+// may serve its cache without checking the HTTP journal for missed events.
+const caslEventsHTTPReconcileInterval = time.Minute
+
 func (p *CASLCloudProvider) GetEvents() []models.Event {
 	return p.GetEventsContext(context.Background())
 }
@@ -394,6 +398,7 @@ func (p *CASLCloudProvider) GetEventsContext(parent context.Context) []models.Ev
 	p.mu.RLock()
 	token := p.token
 	cached := append([]models.Event(nil), p.cachedEvents...)
+	eventsHTTPAt := p.eventsHTTPAt
 	p.mu.RUnlock()
 	if token == "" {
 		return cached
@@ -405,12 +410,13 @@ func (p *CASLCloudProvider) GetEventsContext(parent context.Context) []models.Ev
 	subscribed := p.realtimeRunning && p.realtimeSubscribed
 	p.realtimeMu.Unlock()
 
-	if caslCanUseCachedEvents(subscribed, cached) {
+	if caslCanUseCachedEvents(subscribed, cached, eventsHTTPAt, time.Now()) {
 		return cached
 	}
 
-	// A subscribed realtime stream contains only events received after it was
-	// opened. Bootstrap the empty cache from the HTTP journal first.
+	// A realtime connection can keep receiving ping while its event
+	// subscriptions are no longer delivering rows. Periodically reconcile the
+	// incremental HTTP journal even while the WebSocket looks healthy.
 	ctx, cancel := context.WithTimeout(parent, caslGetEventsHTTPTimeout)
 	defer cancel()
 	if events, err := p.readEventsJournalAsEvents(ctx); err == nil {
@@ -422,8 +428,11 @@ func (p *CASLCloudProvider) GetEventsContext(parent context.Context) []models.Ev
 	return append([]models.Event(nil), p.cachedEvents...)
 }
 
-func caslCanUseCachedEvents(subscribed bool, cached []models.Event) bool {
-	return subscribed && len(cached) > 0
+func caslCanUseCachedEvents(subscribed bool, cached []models.Event, lastHTTPAt, now time.Time) bool {
+	return subscribed &&
+		len(cached) > 0 &&
+		!lastHTTPAt.IsZero() &&
+		now.Sub(lastHTTPAt) < caslEventsHTTPReconcileInterval
 }
 
 func (p *CASLCloudProvider) FrontendSourceHealth() contracts.FrontendSourceHealthInfo {
@@ -542,6 +551,7 @@ func (p *CASLCloudProvider) readEventsJournalAsEvents(ctx context.Context) ([]mo
 	if added > 0 {
 		p.eventsRevision++
 	}
+	p.eventsHTTPAt = time.Now()
 	cached := append([]models.Event(nil), p.cachedEvents...)
 	p.mu.Unlock()
 

@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 
@@ -26,6 +27,9 @@ func main() {
 	}
 
 	logConfig := logger.DefaultConfig()
+	if executable, err := os.Executable(); err == nil {
+		logConfig.LogDir = filepath.Join(filepath.Dir(executable), "log")
+	}
 	if err := logger.Setup(logConfig); err != nil {
 		fmt.Printf("Помилка налаштування логера: %v\n", err)
 	}
